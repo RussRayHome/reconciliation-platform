@@ -17,11 +17,9 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
   postingDate: overrides.postingDate,
   transactionType: overrides.transactionType,
   checkNumber: overrides.checkNumber,
-  import { randomUUID } from 'node:crypto';
   serialNumber: overrides.serialNumber,
   referenceNumber: overrides.referenceNumber,
   description: overrides.description,
-    id: overrides.id ?? randomUUID(),
   payeeName: overrides.payeeName,
   amount: overrides.amount ?? 0,
   debit: overrides.debit ?? null,
