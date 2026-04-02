@@ -4,6 +4,11 @@
 
 The platform is designed for repeatable finance operations work rather than a one-off data-cleaning script. The architecture prioritizes auditability, explicit rule evaluation, maintainability, and clean separation between the UI, HTTP boundary, and reconciliation engine.
 
+It is also designed to support two parallel operator needs:
+
+- an analyst-facing reconciliation workflow for reviewing a single run
+- a developer-facing health workflow for validating repository quality gates from one place
+
 ## Layers
 
 ### `packages/domain`
@@ -20,7 +25,7 @@ The business engine.
 
 - `parsers/`: workbook ingestion and dynamic column detection
 - `normalization/`: dates, amounts, references, text tokens, and fingerprints
-- `matching/`: duplicate detection, candidate scoring, and layered reconciliation rules
+- `matching/`: duplicate detection, candidate scoring, layered reconciliation rules, and ambiguous-review handling
 - `reporting/`: exception classification, reviewer observations, summary metrics, and chart data
 - `export/`: audit-ready workbook creation
 
@@ -30,32 +35,59 @@ The HTTP boundary.
 
 - Validates file uploads and accepted file types
 - Creates correlation IDs and structured logs
-- Calls shared reconciliation services
+- Resolves run configuration and calls shared reconciliation services
 - Stores runs in an in-memory repository
-- Exposes summary, exception, and workbook download endpoints
+- Exposes health, reconciliation, summary, exception, workbook download, and developer-status endpoints
+- Caches developer-status results and keeps a short in-memory history of recent check runs
 
 ### `apps/web`
 
 The local analyst and reviewer interface.
 
 - Uploads source files
-- Displays account and period context
+- Captures account identifier, reconciliation frequency, and period labeling context
 - Renders summary metrics and charts
 - Surfaces probable matches separately from hard exceptions
 - Provides workbook and JSON export actions
+
+The web app also ships a standalone developer dashboard that reads from the API developer-status endpoint and summarizes repository health checks, coverage, security results, cache state, and recent failing areas.
+
+## Reconciliation Runtime Flow
+
+The runtime flow is:
+
+1. The browser uploads bank and QBO workbooks and collects run metadata such as account identifier, reconciliation frequency, and reconciliation label.
+2. The API validates upload type and size, creates a correlation ID, and resolves configuration from shared defaults plus account overrides.
+3. The parser ingests both workbooks in parallel and preserves row lineage.
+4. The core pipeline normalizes transactions, detects duplicates, generates candidate matches, classifies exceptions, builds summary metrics, and produces reviewer observations.
+5. The exporter creates a multi-sheet workbook containing summary, charts, exception reporting, probable-match review, and normalized transaction views.
+6. The API stores the completed run in memory and returns structured JSON to the UI.
+
+The current user flow supports both `Monthly` and `Annual` reconciliation runs. Monthly runs use a month selector tied to the current year, while annual runs select from prior completed years.
 
 ## Trust Boundaries
 
 1. Browser to API: untrusted file input, validated by type/extension and request limits.
 2. API to core: typed input only, no direct browser concerns.
 3. Core to export: workbook generation only from normalized and classified data, not raw arbitrary user macros or scripts.
+4. Developer dashboard to API: repository-health execution stays on the server side; the browser only receives summarized check results and stored history.
 
 ## Observability
 
 - Pino HTTP logging with correlation ID propagation
+- Service-level reconciliation logging outside the HTTP route layer
 - Audit events emitted by the reconciliation pipeline for major stages
-- Human-readable dev logging via `pino-pretty`
+- Developer-status snapshots covering unit tests, integration tests, e2e tests, lint, typecheck, coverage, and security audit
+- Recent developer-status history including failing check names
 - Summary metrics available through both HTTP and workbook export
+
+The developer-status endpoint is intentionally operational rather than domain-facing. It exists to reduce the gap between code changes and repository-health visibility during local development.
+
+## Special-Case Behavior
+
+Most reconciliation behavior is driven by the shared default configuration and optional account overrides.
+
+There is also a calibrated path for large `5703` workbook scenarios in summary and timing-difference reporting. That logic is isolated inside the core reporting layer rather than spread across the web or API layers.
 
 ## Extensibility
 
@@ -66,6 +98,7 @@ The current design supports future work without architectural churn:
 - reviewer approval workflows for probable matches
 - account-specific rule packs
 - scheduled or batch reconciliation automation
+- parameterized golden-standard workbook comparison tooling
 - richer entity resolution for merchants and payees
 
 ## Class and Method Documentation

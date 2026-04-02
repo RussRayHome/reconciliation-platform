@@ -225,6 +225,9 @@ function App() {
             <a className="hero-primary-cta" href="#source-upload-form">
               Start reconciliation
             </a>
+            <a className="hero-secondary-cta" href="/developer-dashboard.html">
+              Open developer dashboard
+            </a>
           </div>
           <div className="hero-meta">
             <div className="hero-brand">

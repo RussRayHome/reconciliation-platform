@@ -6,6 +6,41 @@
 
 Returns service status and timestamp.
 
+## Developer Status
+
+### `GET /api/developer/status`
+
+Runs or returns a cached repository-health snapshot for the developer dashboard.
+
+Query parameters:
+
+- `force=1` or `force=true`: bypass the cache and rerun all checks
+
+Response includes:
+
+- `generatedAt`
+- `repositoryPath`
+- `overallStatus`
+- `failedChecks`
+- `passedChecks`
+- `totalChecks`
+- `totalDurationMs`
+- `checks[]` with `name`, `command`, `ok`, `exitCode`, `durationMs`, `summary`, `details`, and optional `highlights`
+- `history[]` with recent snapshots, including `failingCheckNames`
+- `cache` with `ttlMs`, `ageMs`, and `fromCache`
+
+Current checks:
+
+- `Unit tests`
+- `Integration tests`
+- `E2E tests`
+- `Static analysis (lint)`
+- `Static analysis (typecheck)`
+- `Coverage`
+- `Security vulnerabilities`
+
+Coverage highlights are summarized as `S`, `B`, `F`, and `L`. Security highlights are summarized by severity counts.
+
 ## Run Reconciliation
 
 ### `POST /api/reconciliation/run`
@@ -21,6 +56,7 @@ Optional fields:
 
 - `accountIdentifier`
 - `periodLabel`
+- `reconciliationFrequency`
 
 Response includes:
 
@@ -62,6 +98,8 @@ Returns the generated `.xlsx` workbook as an attachment.
 ## Error Behavior
 
 - `400` for missing required uploads
+- `400` for invalid upload type
+- `413` for files that exceed the configured upload limit
 - `404` for unknown run IDs
 - `500` for unexpected parse or processing failures
 

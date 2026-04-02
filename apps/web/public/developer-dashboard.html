@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Developer Dashboard</title>
+    <style>
+      :root {
+        --bg: #f2f5f7;
+        --card: #ffffff;
+        --ink: #1f2933;
+        --muted: #52606d;
+        --border: #d9e2ec;
+        --ok: #18794e;
+        --bad: #b42318;
+        --accent: #0f6c7a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background: linear-gradient(160deg, #f8fbff 0%, #edf2f7 42%, #f2f5f7 100%);
+        color: var(--ink);
+      }
+
+      .container {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 28px 18px 42px;
+      }
+
+      .header {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 1.75rem;
+      }
+
+      .subtitle {
+        margin: 6px 0 0;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .button {
+        border: 1px solid #0f6c7a;
+        background: #0f6c7a;
+        color: #fff;
+        padding: 9px 14px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .button.secondary {
+        background: #fff;
+        color: #0f6c7a;
+      }
+
+      .status-strip {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        margin-bottom: 16px;
+      }
+
+      .sub-strip {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        margin-bottom: 16px;
+      }
+
+      .metric {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .metric-label {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .metric-value {
+        margin: 6px 0 0;
+        font-size: 1.3rem;
+        font-weight: 700;
+      }
+
+      .ok {
+        color: var(--ok);
+      }
+
+      .bad {
+        color: var(--bad);
+      }
+
+      .cards {
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .card h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .pill {
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        border: 1px solid currentColor;
+      }
+
+      .details {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .highlights {
+        margin: 8px 0 0;
+        padding-left: 18px;
+        color: #334e68;
+        font-size: 0.88rem;
+      }
+
+      .highlights li {
+        margin-bottom: 2px;
+      }
+
+      .coverage-metrics {
+        margin-top: 6px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .coverage-metric-box {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #f8fbff;
+        padding: 5px 10px;
+        width: 100px;
+        flex-shrink: 0;
+      }
+
+      .coverage-metric-box.cov-green {
+        background: #f0faf4;
+        border-color: #a8dfc0;
+      }
+
+      .coverage-metric-box.cov-amber {
+        background: #fffbf0;
+        border-color: #f5d67a;
+      }
+
+      .coverage-metric-box.cov-red {
+        background: #fff5f5;
+        border-color: #f5a9a9;
+      }
+
+      .coverage-metric-label {
+        margin: 0;
+        font-size: 0.76rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      .coverage-metric-value {
+        margin: 4px 0 0;
+        font-size: 1rem;
+        font-weight: 700;
+        color: #102a43;
+      }
+
+      .coverage-metric-box.cov-green .coverage-metric-value {
+        color: #18794e;
+      }
+
+      .coverage-metric-box.cov-amber .coverage-metric-value {
+        color: #92600a;
+      }
+
+      .coverage-metric-box.cov-red .coverage-metric-value {
+        color: #b42318;
+      }
+
+      .coverage-metric-box.sec-clear {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+      }
+
+      .coverage-metric-box.sec-clear .coverage-metric-value {
+        color: #475569;
+      }
+
+      .coverage-metric-box.sec-info {
+        background: #f3f4f6;
+        border-color: #d1d5db;
+      }
+
+      .coverage-metric-box.sec-info .coverage-metric-value {
+        color: #4b5563;
+      }
+
+      .coverage-metric-box.sec-low {
+        background: #f0faf4;
+        border-color: #a7e3bf;
+      }
+
+      .coverage-metric-box.sec-low .coverage-metric-value {
+        color: #18794e;
+      }
+
+      .coverage-metric-box.sec-moderate {
+        background: #fffbeb;
+        border-color: #facc15;
+      }
+
+      .coverage-metric-box.sec-moderate .coverage-metric-value {
+        color: #a16207;
+      }
+
+      .coverage-metric-box.sec-high {
+        background: #fff7ed;
+        border-color: #fb923c;
+      }
+
+      .coverage-metric-box.sec-high .coverage-metric-value {
+        color: #c2410c;
+      }
+
+      .coverage-metric-box.sec-critical {
+        background: #fff5f5;
+        border-color: #f5a9a9;
+      }
+
+      .coverage-metric-box.sec-critical .coverage-metric-value {
+        color: #b42318;
+      }
+
+      .history-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .history-list li {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px 10px;
+      }
+
+      pre {
+        margin-top: 10px;
+        background: #0b1220;
+        color: #c6d3e1;
+        border-radius: 10px;
+        padding: 10px;
+        overflow-x: auto;
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div>
+          <h1 class="title">Developer Dashboard</h1>
+          <p class="subtitle">Live status for tests, static analysis, and security checks.</p>
+        </div>
+        <div class="actions">
+          <button id="refresh" class="button">Refresh checks</button>
+          <button id="force-refresh" class="button secondary">Force refresh</button>
+          <a class="button secondary" href="/">Open application</a>
+        </div>
+      </header>
+
+      <section class="status-strip">
+        <article class="metric">
+          <p class="metric-label">Overall status</p>
+          <p id="overall" class="metric-value">Loading...</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Failed checks</p>
+          <p id="failed" class="metric-value">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Total checks</p>
+          <p id="total" class="metric-value">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Passed checks</p>
+          <p id="passed" class="metric-value">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Total runtime</p>
+          <p id="runtime" class="metric-value" style="font-size: 1.1rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Last updated</p>
+          <p id="updated" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+      </section>
+
+      <section class="sub-strip">
+        <article class="metric">
+          <p class="metric-label">Cache status</p>
+          <p id="cache-status" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Cache age / TTL</p>
+          <p id="cache-age" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+      </section>
+
+      <section class="card" style="margin-bottom: 12px;">
+        <div class="card-top">
+          <h3>Recent History</h3>
+          <span id="history-count" class="pill">0 runs</span>
+        </div>
+        <ul id="history" class="history-list"></ul>
+      </section>
+
+      <section id="cards" class="cards"></section>
+    </main>
+
+    <script>
+      const cards = document.getElementById('cards');
+      const overall = document.getElementById('overall');
+      const failed = document.getElementById('failed');
+      const total = document.getElementById('total');
+      const passed = document.getElementById('passed');
+      const runtime = document.getElementById('runtime');
+      const updated = document.getElementById('updated');
+      const cacheStatus = document.getElementById('cache-status');
+      const cacheAge = document.getElementById('cache-age');
+      const history = document.getElementById('history');
+      const historyCount = document.getElementById('history-count');
+      const refreshButton = document.getElementById('refresh');
+      const forceRefreshButton = document.getElementById('force-refresh');
+
+      const asLocal = (iso) => {
+        const date = new Date(iso);
+        if (Number.isNaN(date.getTime())) {
+          return iso;
+        }
+        return date.toLocaleString();
+      };
+
+      const escapeHtml = (value) =>
+        String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+
+      const formatDuration = (milliseconds) => {
+        if (!Number.isFinite(milliseconds)) {
+          return '-';
+        }
+
+        if (milliseconds < 1000) {
+          return `${milliseconds} ms`;
+        }
+
+        const seconds = milliseconds / 1000;
+        return `${seconds.toFixed(2)} s`;
+      };
+
+      const setButtonsBusy = (busy, activeButton = null) => {
+        refreshButton.disabled = busy;
+        forceRefreshButton.disabled = busy;
+        refreshButton.textContent = busy && activeButton === refreshButton ? 'Running...' : 'Refresh checks';
+        forceRefreshButton.textContent = busy && activeButton === forceRefreshButton ? 'Running...' : 'Force refresh';
+      };
+
+      const getCoverageMetricBoxes = (check) => {
+        if (check?.name !== 'Coverage' || !Array.isArray(check?.highlights)) {
+          return [];
+        }
+
+        const metricLabelByKey = {
+          S: 'Statements',
+          B: 'Branches',
+          F: 'Functions',
+          L: 'Lines',
+        };
+
+        return check.highlights
+          .map((item) => {
+            const match = String(item).match(/^\s*([SBFL])\s*:\s*([\d.]+%?)\s*$/i);
+            if (!match) {
+              return null;
+            }
+
+            const metricKey = (match[1] || '').toUpperCase();
+            const metricLabel = metricLabelByKey[metricKey];
+            const metricValue = match[2] || '';
+            if (!metricLabel || !metricValue) {
+              return null;
+            }
+
+            const pct = parseFloat(metricValue);
+            const colorClass = pct >= 90 ? 'cov-green' : pct >= 80 ? 'cov-amber' : 'cov-red';
+
+            return {
+              label: metricLabel,
+              value: metricValue,
+              colorClass,
+            };
+          })
+          .filter(Boolean);
+      };
+
+      const getSecurityMetricBoxes = (check) => {
+        if (check?.name !== 'Security vulnerabilities' || !Array.isArray(check?.highlights)) {
+          return [];
+        }
+
+        const severityColorFn = {
+          Critical: (n) => n > 0 ? 'sec-critical' : 'sec-clear',
+          High: (n) => n > 0 ? 'sec-high' : 'sec-clear',
+          Moderate: (n) => n > 0 ? 'sec-moderate' : 'sec-clear',
+          Low: (n) => n > 0 ? 'sec-low' : 'sec-clear',
+          Info: (n) => n > 0 ? 'sec-info' : 'sec-clear',
+        };
+
+        return check.highlights
+          .map((item) => {
+            const match = String(item).match(/^\s*(Critical|High|Moderate|Low|Info)\s*:\s*(\d+)\s*$/i);
+            if (!match) {
+              return null;
+            }
+
+            const label = match[1] || '';
+            const count = parseInt(match[2] || '0', 10);
+            const colorFn = severityColorFn[label];
+            if (!colorFn) {
+              return null;
+            }
+
+            return { label, value: String(count), colorClass: colorFn(count) };
+          })
+          .filter(Boolean);
+      };
+
+      const renderHistory = (items) => {
+        history.innerHTML = '';
+
+        const rows = Array.isArray(items) ? items.slice(0, 8) : [];
+        historyCount.textContent = `${rows.length} runs`;
+
+        if (rows.length === 0) {
+          const empty = document.createElement('li');
+          empty.textContent = 'No historical runs yet.';
+          history.appendChild(empty);
+          return;
+        }
+
+        for (const run of rows) {
+          const row = document.createElement('li');
+          const left = document.createElement('div');
+          const right = document.createElement('div');
+          const isHealthy = run.overallStatus === 'healthy';
+          const failingAreas = Array.isArray(run.failingCheckNames) && run.failingCheckNames.length > 0
+            ? run.failingCheckNames.join(', ')
+            : 'none';
+
+          left.textContent = `${asLocal(run.generatedAt)} | failed ${run.failedChecks}/${run.totalChecks} | areas ${failingAreas} | runtime ${formatDuration(run.totalDurationMs)}`;
+          right.textContent = isHealthy ? 'PASS' : 'FAIL';
+          right.className = isHealthy ? 'ok' : 'bad';
+
+          row.appendChild(left);
+          row.appendChild(right);
+          history.appendChild(row);
+        }
+      };
+
+      const loadStatus = async (force = false, activeButton = null) => {
+        setButtonsBusy(true, activeButton);
+
+        try {
+          const response = await fetch(`/api/developer/status${force ? '?force=1' : ''}`);
+          if (!response.ok) {
+            throw new Error('Failed to load developer status.');
+          }
+
+          const payload = await response.json();
+          overall.textContent = payload.overallStatus === 'healthy' ? 'Healthy' : 'Attention needed';
+          overall.className = `metric-value ${payload.overallStatus === 'healthy' ? 'ok' : 'bad'}`;
+
+          failed.textContent = String(payload.failedChecks);
+          failed.className = `metric-value ${payload.failedChecks === 0 ? 'ok' : 'bad'}`;
+
+          total.textContent = String(payload.totalChecks);
+          passed.textContent = String(payload.passedChecks ?? Math.max(0, payload.totalChecks - payload.failedChecks));
+          passed.className = `metric-value ${Number(passed.textContent) === Number(total.textContent) ? 'ok' : ''}`.trim();
+          runtime.textContent = formatDuration(payload.totalDurationMs);
+          updated.textContent = asLocal(payload.generatedAt);
+
+          cacheStatus.textContent = payload.cache?.fromCache ? 'Served from cache' : 'Fresh run';
+          cacheStatus.className = `metric-value ${payload.cache?.fromCache ? '' : 'ok'}`.trim();
+          cacheAge.textContent = payload.cache
+            ? `${formatDuration(payload.cache.ageMs)} / ${formatDuration(payload.cache.ttlMs)}`
+            : '-';
+
+          renderHistory(payload.history);
+
+          cards.innerHTML = '';
+          for (const check of payload.checks) {
+            const card = document.createElement('article');
+            card.className = 'card';
+
+            const statusClass = check.ok ? 'ok' : 'bad';
+            const statusText = check.ok ? 'PASS' : 'FAIL';
+            const metricBoxes = getCoverageMetricBoxes(check).length > 0
+              ? getCoverageMetricBoxes(check)
+              : getSecurityMetricBoxes(check);
+
+            const summaryHtml = metricBoxes.length > 0
+              ? `<div><strong>Summary:</strong></div>
+                 <div class="coverage-metrics">${metricBoxes
+                   .map(
+                     (metric) => `<div class="coverage-metric-box ${escapeHtml(metric.colorClass)}">
+                       <p class="coverage-metric-label">${escapeHtml(metric.label)}</p>
+                       <p class="coverage-metric-value">${escapeHtml(metric.value)}</p>
+                     </div>`,
+                   )
+                   .join('')}</div>`
+              : `<div><strong>Summary:</strong> ${escapeHtml(check.summary)}</div>`;
+
+            card.innerHTML = `
+              <div class="card-top">
+                <h3>${escapeHtml(check.name)}</h3>
+                <span class="pill ${statusClass}">${statusText}</span>
+              </div>
+              <div class="details">
+                ${summaryHtml}
+                <div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>
+                <div><strong>Duration:</strong> ${escapeHtml(formatDuration(check.durationMs))}</div>
+                <div><strong>Command:</strong> ${escapeHtml(check.command)}</div>
+              </div>
+              <pre>${escapeHtml(check.details || 'No additional output')}</pre>
+            `;
+
+            if (metricBoxes.length === 0 && Array.isArray(check.highlights) && check.highlights.length > 0) {
+              const highlightList = document.createElement('ul');
+              highlightList.className = 'highlights';
+
+              for (const item of check.highlights.slice(0, 3)) {
+                const row = document.createElement('li');
+                row.textContent = item;
+                highlightList.appendChild(row);
+              }
+
+              card.insertBefore(highlightList, card.querySelector('pre'));
+            }
+
+            cards.appendChild(card);
+          }
+        } catch (error) {
+          overall.textContent = 'Unavailable';
+          overall.className = 'metric-value bad';
+          cards.innerHTML = `<article class="card"><div class="details bad">${error instanceof Error ? error.message : 'Unknown error'}</div></article>`;
+        } finally {
+          setButtonsBusy(false, null);
+        }
+      };
+
+      refreshButton.addEventListener('click', () => {
+        void loadStatus(false, refreshButton);
+      });
+
+      forceRefreshButton.addEventListener('click', () => {
+        void loadStatus(true, forceRefreshButton);
+      });
+
+      void loadStatus();
+    </script>
+  </body>
+</html>

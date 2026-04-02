@@ -41,7 +41,10 @@ Located in `apps/web/tests/e2e`.
 
 - real browser upload path using generated workbook buffers
 - reconciliation run from UI to API
+- monthly reconciliation path using the current month selector and reconciliation label inputs
 - visibility of summary, review, and exception sections
+
+The primary browser regression covers the current monthly flow by selecting `Monthly reconciliation month`, filling `Reconciliation label`, submitting the run, and asserting that `Exception Report`, `Probable Match Review`, and summary content are visible.
 
 ## Fixture Strategy
 
@@ -58,6 +61,24 @@ The current suite covers:
 - export workbook creation
 - API round-trip behavior
 - browser upload smoke path
+- monthly reconciliation UI behavior
+- negative-path API validation for missing uploads
+
+## Operational Checks
+
+The repository also exposes a developer dashboard backed by `GET /api/developer/status`.
+
+That endpoint runs and summarizes the same quality gates used during local verification:
+
+- unit tests
+- integration tests
+- e2e tests
+- lint
+- typecheck
+- coverage
+- security audit
+
+Use it as a quick repository-health snapshot, not as a replacement for targeted test debugging.
 
 ## Future Additions
 

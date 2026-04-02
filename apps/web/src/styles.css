@@ -194,6 +194,16 @@ select {
   font-weight: 600;
 }
 
+.hero-secondary-cta {
+  display: inline-flex;
+  margin-left: 0.8rem;
+  margin-top: 1rem;
+  color: var(--teal);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .hero-meta {
   display: grid;
   gap: 1rem;

@@ -50,6 +50,7 @@ npm run dev
 
 - API: `http://localhost:4000`
 - Web: `http://127.0.0.1:5173`
+- Developer dashboard: `http://127.0.0.1:5173/developer-dashboard.html`
 
 ## Scripts
 
@@ -71,11 +72,32 @@ npm run dev
 ## Core Flow
 
 1. Upload bank and QBO workbooks from the web UI.
-2. API validates file types, assigns a correlation ID, parses both workbooks, and resolves account-specific config.
-3. Shared core logic normalizes source rows and runs the matching engine.
-4. Exception classification and summary metrics are generated for accounting review.
-5. The API stores the run in memory and serves summary, exception, and workbook export endpoints.
-6. The web UI renders dashboard metrics, charts, probable matches, and filterable exceptions.
+2. Optionally provide an account identifier, select a reconciliation frequency, and confirm the generated reconciliation label.
+3. API validates file types, assigns a correlation ID, parses both workbooks, and resolves account-specific config.
+4. Shared core logic normalizes source rows and runs the matching engine.
+5. Exception classification and summary metrics are generated for accounting review.
+6. The API stores the run in memory and serves summary, exception, and workbook export endpoints.
+7. The web UI renders dashboard metrics, charts, probable matches, and filterable exceptions.
+
+For monthly runs, the web app uses `Monthly reconciliation month` plus an editable `Reconciliation label`. For annual runs, it switches to `Annual reconciliation year`.
+
+## Developer Dashboard
+
+The developer dashboard provides a single-page health view for the repository:
+
+- route: `http://127.0.0.1:5173/developer-dashboard.html`
+- API source: `GET /api/developer/status`
+- checks: unit tests, integration tests, e2e tests, static analysis (lint), static analysis (typecheck), coverage, and security vulnerabilities
+- recent history: stores the most recent status runs and identifies which check areas failed
+- cache behavior: standard refresh uses the cached payload when it is still within TTL, and force refresh reruns all checks immediately
+
+Coverage is summarized as `S/B/F/L` and security results are summarized by severity (`Critical`, `High`, `Moderate`, `Low`, `Info`).
+
+## Workbook Comparison Utilities
+
+The repository includes workbook comparison helpers under `scripts/`, including `workbook-parity.py` and `compare-attached-workbooks.py`.
+
+These utilities are useful for golden-standard comparisons, but they currently assume locally edited workbook paths. Update or parameterize the input paths before relying on them for a new comparison run.
 
 ## Documentation
 
