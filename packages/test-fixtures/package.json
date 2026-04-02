@@ -1,0 +1,16 @@
+{
+  "name": "@recon/test-fixtures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@recon/domain": "0.1.0",
+    "exceljs": "^4.4.0"
+  }
+}

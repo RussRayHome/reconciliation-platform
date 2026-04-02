@@ -1,0 +1,18 @@
+{
+  "name": "@recon/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@recon/config": "0.1.0",
+    "@recon/domain": "0.1.0",
+    "exceljs": "^4.4.0",
+    "zod": "^3.24.3"
+  }
+}

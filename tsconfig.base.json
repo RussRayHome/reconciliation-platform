@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@recon/domain": ["packages/domain/src/index.ts"],
+      "@recon/domain/*": ["packages/domain/src/*"],
+      "@recon/core": ["packages/core/src/index.ts"],
+      "@recon/core/*": ["packages/core/src/*"],
+      "@recon/config": ["packages/config/src/index.ts"],
+      "@recon/config/*": ["packages/config/src/*"],
+      "@recon/ui": ["packages/ui/src/index.ts"],
+      "@recon/ui/*": ["packages/ui/src/*"],
+      "@recon/test-fixtures": ["packages/test-fixtures/src/index.ts"],
+      "@recon/test-fixtures/*": ["packages/test-fixtures/src/*"]
+    }
+  }
+}

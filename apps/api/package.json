@@ -1,0 +1,25 @@
+{
+  "name": "@recon/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:test": "tsx src/index.ts",
+    "build": "tsup src/index.ts --format esm --out-dir dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@recon/config": "0.1.0",
+    "@recon/core": "0.1.0",
+    "@recon/domain": "0.1.0",
+    "cors": "^2.8.5",
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.0",
+    "pino": "^9.7.0",
+    "pino-http": "^10.4.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.24.3"
+  }
+}

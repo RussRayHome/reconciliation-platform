@@ -1,0 +1,21 @@
+{
+  "name": "@recon/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:test": "vite --host 127.0.0.1 --port 4173",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@recon/domain": "0.1.0",
+    "@recon/ui": "0.1.0",
+    "@tanstack/react-query": "^5.74.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "recharts": "^2.15.2",
+    "zod": "^3.24.3"
+  }
+}
