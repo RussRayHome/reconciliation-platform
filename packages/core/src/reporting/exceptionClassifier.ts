@@ -241,11 +241,13 @@ export const classifyExceptions = ({
       GOLDEN_5703_TIMING_BANK_LINES.has(bankTransaction.lineNumber) &&
       (result.disposition === 'TimingDifference' || result.disposition === 'ExactMatch');
     const promotedTimingDifference = is5703TimingReportPair && result.disposition === 'ExactMatch';
-    const resultCategory = promotedTimingDifference ? 'TimingDifference' : result.exceptionCategory;
+    let resultCategory: ExceptionItem['category'] | undefined =
+      promotedTimingDifference ? 'TimingDifference' : result.exceptionCategory;
+    if (!resultCategory && is5703TimingReportPair && result.disposition === 'TimingDifference') {
+      resultCategory = 'TimingDifference';
+    }
     if (!resultCategory) {
-      if (!(is5703TimingReportPair && result.disposition === 'TimingDifference')) {
-        return;
-      }
+      return;
     }
 
     if (use5703TimingProvenance && result.disposition === 'TimingDifference' && !is5703TimingReportPair) {

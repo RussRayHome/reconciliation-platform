@@ -80,18 +80,19 @@ const addChartDataTable = (
   const anchor = worksheet.getCell(startCell);
   anchor.value = heading;
   anchor.font = { bold: true, size: 12 };
+  const anchorCol = typeof anchor.col === 'number' ? anchor.col : Number(anchor.col);
 
-  const headerRow = anchor.row + 1;
-  worksheet.getCell(headerRow, anchor.col).value = 'Category';
-  worksheet.getCell(headerRow, anchor.col + 1).value = formatAsCurrency ? 'Absolute Dollars' : 'Count';
+  const headerRow = Number(anchor.row) + 1;
+  worksheet.getCell(headerRow, anchorCol).value = 'Category';
+  worksheet.getCell(headerRow, anchorCol + 1).value = formatAsCurrency ? 'Absolute Dollars' : 'Count';
   worksheet.getRow(headerRow).font = { bold: true };
 
   data.forEach((item, index) => {
     const rowNumber = headerRow + index + 1;
-    worksheet.getCell(rowNumber, anchor.col).value = item.label;
-    worksheet.getCell(rowNumber, anchor.col + 1).value = item.value;
+    worksheet.getCell(rowNumber, anchorCol).value = item.label;
+    worksheet.getCell(rowNumber, anchorCol + 1).value = item.value;
     if (formatAsCurrency) {
-      worksheet.getCell(rowNumber, anchor.col + 1).numFmt = '$#,##0.00';
+      worksheet.getCell(rowNumber, anchorCol + 1).numFmt = '$#,##0.00';
     }
   });
 };
@@ -162,13 +163,15 @@ const addSummaryCharts = (
   addChartDataTable(worksheet, 'D22', 'Summary chart data', countChartData, false);
   addChartDataTable(worksheet, 'D49', 'Exposure chart data', resolvedExposureData, true);
 
-  const countChartImageId = workbook.addImage({
-    buffer: createBarChartPng(countChartData, {
+  const countChartPng = createBarChartPng(countChartData, {
       width: 960,
       height: 420,
       barColor: [43, 120, 178, 255],
       accentColor: [15, 118, 110, 255],
-    }),
+    });
+
+  const countChartImageId = workbook.addImage({
+    base64: `data:image/png;base64,${countChartPng.toString('base64')}`,
     extension: 'png',
   });
 
@@ -177,13 +180,15 @@ const addSummaryCharts = (
     ext: { width: 760, height: 300 },
   });
 
-  const exposureChartImageId = workbook.addImage({
-    buffer: createBarChartPng(resolvedExposureData, {
+  const exposureChartPng = createBarChartPng(resolvedExposureData, {
       width: 880,
       height: 420,
       barColor: [194, 65, 12, 255],
       accentColor: [166, 27, 67, 255],
-    }),
+    });
+
+  const exposureChartImageId = workbook.addImage({
+    base64: `data:image/png;base64,${exposureChartPng.toString('base64')}`,
     extension: 'png',
   });
 

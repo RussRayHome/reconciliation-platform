@@ -135,7 +135,7 @@ describe('App', () => {
       target: { files: [new File(['qbo'], 'qbo.xlsx')] },
     });
 
-    expect(overallMeter.value).toBe(50);
+    expect((overallMeter as HTMLProgressElement).value).toBe(50);
   });
 
   it('shows an annual year picker with the previous seven years when annual is selected', () => {

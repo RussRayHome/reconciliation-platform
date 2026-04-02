@@ -16,7 +16,7 @@ for (let index = 0; index < 256; index += 1) {
 const crc32 = (buffer: Buffer): number => {
   let value = 0xffffffff;
   for (const byte of buffer) {
-    value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8);
+    value = (crcTable[(value ^ byte) & 0xff] ?? 0) ^ (value >>> 8);
   }
   return (value ^ 0xffffffff) >>> 0;
 };

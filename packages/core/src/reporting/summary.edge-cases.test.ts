@@ -1,6 +1,7 @@
 import type { ExceptionItem, MatchResult, NormalizedTransaction } from '@recon/domain';
+import { build5703CalibratedSummary, buildSummaryMetrics, is5703Workbook } from './summary';
 import { describe, expect, it } from 'vitest';
-import { buildSummaryMetrics, is5703Workbook, build5703CalibratedSummary } from './summary';
+
 import { randomUUID } from 'node:crypto';
 
 const buildTransaction = (overrides: Partial<NormalizedTransaction>): NormalizedTransaction => ({
@@ -150,10 +151,10 @@ describe('Summary Edge Cases', () => {
 
     it('handles mixed positive, negative, and zero amounts', () => {
       const transactions: NormalizedTransaction[] = [
-        buildTransaction({ id: 'bank-1', source: 'bank', amount: 1000.50 }),
+          buildTransaction({ id: 'bank-1', source: 'bank', amount: 1000.5 }),
         buildTransaction({ id: 'bank-2', source: 'bank', amount: -500.25 }),
         buildTransaction({ id: 'bank-3', source: 'bank', amount: 0 }),
-        buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 1000.50 }),
+          buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 1000.5 }),
       ];
 
       const summary = buildSummaryMetrics(transactions, [], []);
@@ -207,11 +208,16 @@ describe('Summary Edge Cases', () => {
       ];
       const matchResults: MatchResult[] = [
         {
+          id: randomUUID(),
           bankTransactionId: 'bank-1',
           qboTransactionId: 'qbo-1',
           disposition: 'ExactMatch',
-          justification: 'Same amount and description',
+          confidence: 'Exact',
+          ruleName: 'Exact amount and normalized text',
           score: 0.99,
+          dateDifferenceDays: 0,
+          amountDifference: 0,
+          evidence: ['Same amount and description'],
         },
       ];
 

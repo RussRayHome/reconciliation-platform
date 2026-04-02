@@ -184,9 +184,8 @@ describe('Excel Parser - Edge Cases', () => {
     });
 
     it('no match returns zero score', () => {
-      const header = 'TRANSACTION DATE';
-      const alias = 'AMOUNT';
-      expect(header === alias).toBe(false);
+      const header: string = 'TRANSACTION DATE';
+      const alias: string = 'AMOUNT';
       expect(header.includes(alias)).toBe(false);
     });
   });
@@ -258,7 +257,7 @@ describe('Excel Parser - Edge Cases', () => {
 
       amounts.forEach((amount) => {
         // Should be parseable to a number
-        const numeric = parseFloat(amount.replace(/[^0-9.-]/g, ''));
+        const numeric = Number.parseFloat(amount.replaceAll(/[^0-9.-]/g, ''));
         expect(typeof numeric).toBe('number');
       });
     });
