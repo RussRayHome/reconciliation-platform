@@ -35,12 +35,20 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
   return (
     <div className="table-shell">
       <div className="table-toolbar">
+        <label className="visually-hidden" htmlFor="exception-search-input">
+          Search exceptions
+        </label>
         <input
+          id="exception-search-input"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search file, message, or tokens"
         />
+        <label className="visually-hidden" htmlFor="exception-category-filter">
+          Filter exceptions by category
+        </label>
         <select
+          id="exception-category-filter"
           value={categoryFilter}
           onChange={(event) => {
             const value = event.target.value;
@@ -56,6 +64,9 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
       </div>
       <div className="table-scroll">
         <table>
+          <caption className="visually-hidden">
+            Exception report with severity, category, source, amount, and source line details.
+          </caption>
           <thead>
             <tr>
               <th>Severity</th>

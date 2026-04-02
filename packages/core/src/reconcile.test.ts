@@ -60,6 +60,9 @@ const buildRun = async () => {
 const buildRunFromRows = async (
   bankRows: Array<Array<string | number>>,
   qboRows: Array<Array<string | number>>,
+  options?: {
+    reconciliationFrequency?: 'Monthly' | 'Annual';
+  },
 ) => {
   const [bankBuffer, qboBuffer] = await Promise.all([
     createWorkbookFromRows(bankRows),
@@ -92,6 +95,7 @@ const buildRunFromRows = async (
     rawRows: [...bankParsed.rawRows, ...qboParsed.rawRows],
     config: defaultReconciliationConfig,
     accountIdentifier: 'OPERATING-001',
+    reconciliationFrequency: options?.reconciliationFrequency,
     periodLabel: 'Edge Case Period',
   });
 };
@@ -246,5 +250,37 @@ describe('runReconciliation', () => {
 
     expect(invalidItems.length).toBeGreaterThanOrEqual(1);
     expect(missingItems).toHaveLength(0);
+  });
+
+  it('adds reviewer observations for missing months when annual reconciliation is selected', async () => {
+    const output = await buildRunFromRows(
+      [
+        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-01-15', 'JAN ENTRY', '', '100.00', '', '900.00'],
+        ['2025-03-15', 'MAR ENTRY', '', '200.00', '', '700.00'],
+      ],
+      [
+        ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+        ['2025-02-20', 'Expense', '', 'Vendor A', 'FEB ENTRY', '-150.00'],
+        ['2025-04-20', 'Expense', '', 'Vendor B', 'APR ENTRY', '-175.00'],
+      ],
+      { reconciliationFrequency: 'Annual' },
+    );
+
+    const annualCoverageObservations = output.reviewerObservations.filter(
+      (item) => item.title === 'Annual month coverage gap detected',
+    );
+
+    expect(annualCoverageObservations.length).toBeGreaterThanOrEqual(2);
+    expect(
+      annualCoverageObservations.some(
+        (item) => item.message.includes('bank-edge.xlsx') && item.message.includes('Feb'),
+      ),
+    ).toBe(true);
+    expect(
+      annualCoverageObservations.some(
+        (item) => item.message.includes('qbo-edge.xlsx') && item.message.includes('Jan'),
+      ),
+    ).toBe(true);
   });
 });

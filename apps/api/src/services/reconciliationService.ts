@@ -28,6 +28,7 @@ export interface ExecuteReconciliationInput {
   bankFile: UploadedFile;
   qboFile: UploadedFile;
   accountIdentifier?: string;
+  reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
 }
 
@@ -36,6 +37,7 @@ export const executeReconciliation = async ({
   bankFile,
   qboFile,
   accountIdentifier,
+  reconciliationFrequency,
   periodLabel,
 }: ExecuteReconciliationInput): Promise<ReconciliationRun> => {
   const log = serviceLogger.child({ correlationId, accountIdentifier });
@@ -116,6 +118,7 @@ export const executeReconciliation = async ({
       rawRows: [...bankParsed.rawRows, ...qboParsed.rawRows],
       config,
       accountIdentifier,
+      reconciliationFrequency,
       periodLabel,
     });
   } catch (reconError) {
@@ -144,6 +147,7 @@ export const executeReconciliation = async ({
     id: runId,
     correlationId,
     accountIdentifier,
+    reconciliationFrequency,
     periodLabel,
     status: 'Completed',
     startedAt: new Date(t0).toISOString(),

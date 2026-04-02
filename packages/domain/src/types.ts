@@ -210,6 +210,8 @@ export interface ReviewerObservation {
   relatedTransactionIds: string[];
 }
 
+export type ReconciliationFrequency = 'Monthly' | 'Annual';
+
 export interface AuditEvent {
   timestamp: string;
   action: string;
@@ -221,6 +223,7 @@ export interface ReconciliationRun {
   correlationId: string;
   accountIdentifier?: string;
   periodLabel?: string;
+  reconciliationFrequency?: ReconciliationFrequency;
   status: ReconciliationRunStatus;
   startedAt: string;
   completedAt?: string;
@@ -307,6 +310,7 @@ export interface ReconciliationInput {
   config: ReconciliationConfig;
   accountIdentifier?: string;
   periodLabel?: string;
+  reconciliationFrequency?: ReconciliationFrequency;
 }
 
 export interface ReconciliationOutput {

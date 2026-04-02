@@ -7,6 +7,8 @@ import multer from 'multer';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'node:crypto';
 
+const reconciliationFrequencies = new Set(['Monthly', 'Annual'] as const);
+
 const acceptedMimeTypes = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/octet-stream',
@@ -125,6 +127,11 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
           ? body.accountIdentifier
           : undefined;
         const periodLabel = typeof body.periodLabel === 'string' ? body.periodLabel : undefined;
+        const reconciliationFrequency =
+          typeof body.reconciliationFrequency === 'string' &&
+          reconciliationFrequencies.has(body.reconciliationFrequency as 'Monthly' | 'Annual')
+            ? (body.reconciliationFrequency as 'Monthly' | 'Annual')
+            : undefined;
         const correlationId = resolveCorrelationId(request.id);
 
         request.log.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
@@ -134,6 +141,7 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
           bankFile,
           qboFile,
           accountIdentifier,
+          reconciliationFrequency,
           periodLabel,
         });
 

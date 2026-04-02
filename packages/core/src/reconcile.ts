@@ -49,6 +49,7 @@ export const runReconciliation = async (
 
   const exceptionOutput = classifyExceptions({
     runId: input.runId,
+    sourceFiles: input.sourceFiles,
     normalizedTransactions,
     matchResults: matching.matchResults,
     unmatchedBankTransactionIds: matching.unmatchedBankTransactionIds,
@@ -56,6 +57,7 @@ export const runReconciliation = async (
     duplicateTransactionIds: matching.duplicateTransactionIds,
     reporting: input.config.reporting,
     matching: input.config.matching,
+    reconciliationFrequency: input.reconciliationFrequency,
   });
   appendAuditEvent('reconciliation.classify.completed', {
     exceptionCount: exceptionOutput.exceptions.length,

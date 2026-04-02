@@ -9,6 +9,7 @@ export interface RunReconciliationPayload {
   bankFile: File;
   qboFile: File;
   accountIdentifier?: string;
+  reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
 }
 
@@ -27,6 +28,7 @@ export const runReconciliationRequest = async ({
   bankFile,
   qboFile,
   accountIdentifier,
+  reconciliationFrequency,
   periodLabel,
 }: RunReconciliationPayload): Promise<ReconciliationRunResponse> => {
   const formData = new FormData();
@@ -34,6 +36,9 @@ export const runReconciliationRequest = async ({
   formData.append('qboFile', qboFile);
   if (accountIdentifier) {
     formData.append('accountIdentifier', accountIdentifier);
+  }
+  if (reconciliationFrequency) {
+    formData.append('reconciliationFrequency', reconciliationFrequency);
   }
   if (periodLabel) {
     formData.append('periodLabel', periodLabel);

@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import {
   type MatchingConfig,
+  type SourceFile,
   professionalErrorMessages,
+  type ReconciliationFrequency,
   type ExceptionItem,
   type MatchResult,
   type NormalizedTransaction,
@@ -100,6 +102,7 @@ const createException = (
 
 export interface ExceptionClassifierInput {
   runId: string;
+  sourceFiles: SourceFile[];
   normalizedTransactions: NormalizedTransaction[];
   matchResults: MatchResult[];
   unmatchedBankTransactionIds: Set<string>;
@@ -107,6 +110,7 @@ export interface ExceptionClassifierInput {
   duplicateTransactionIds: Set<string>;
   reporting: ReportingConfig;
   matching: MatchingConfig;
+  reconciliationFrequency?: ReconciliationFrequency;
 }
 
 export interface ExceptionClassifierOutput {
@@ -116,6 +120,7 @@ export interface ExceptionClassifierOutput {
 
 export const classifyExceptions = ({
   runId,
+  sourceFiles,
   normalizedTransactions,
   matchResults,
   unmatchedBankTransactionIds,
@@ -123,6 +128,7 @@ export const classifyExceptions = ({
   duplicateTransactionIds,
   reporting,
   matching: _matching,
+  reconciliationFrequency,
 }: ExceptionClassifierInput): ExceptionClassifierOutput => {
   const transactionById = new Map(normalizedTransactions.map((transaction) => [transaction.id, transaction]));
   const transactionBySourceAndLine = new Map(
@@ -342,6 +348,58 @@ export const classifyExceptions = ({
         sortedExceptions.flatMap((item) => item.relatedTransactionIds),
       ),
     );
+  }
+
+  if (reconciliationFrequency === 'Annual') {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthsByFileId = new Map<string, Set<number>>();
+
+    normalizedTransactions.forEach((transaction) => {
+      if (transaction.isExcluded) {
+        return;
+      }
+
+      const dateValue = transaction.transactionDate ?? transaction.postingDate;
+      if (!dateValue) {
+        return;
+      }
+
+      const parsedDate = new Date(`${dateValue}T00:00:00Z`);
+      if (Number.isNaN(parsedDate.valueOf())) {
+        return;
+      }
+
+      const existingMonths = monthsByFileId.get(transaction.sourceFileId) ?? new Set<number>();
+      existingMonths.add(parsedDate.getUTCMonth() + 1);
+      monthsByFileId.set(transaction.sourceFileId, existingMonths);
+    });
+
+    sourceFiles.forEach((sourceFile) => {
+      const monthsPresent = monthsByFileId.get(sourceFile.id) ?? new Set<number>();
+      const missingMonths: number[] = [];
+
+      for (let month = 1; month <= 12; month += 1) {
+        if (!monthsPresent.has(month)) {
+          missingMonths.push(month);
+        }
+      }
+
+      if (missingMonths.length === 0) {
+        return;
+      }
+
+      const missingMonthLabels = missingMonths.map((month) => monthNames[month - 1]).join(', ');
+      reviewerObservations.push(
+        buildObservation(
+          runId,
+          'Annual month coverage gap detected',
+          `${sourceFile.fileName} is missing transactions for: ${missingMonthLabels}.`,
+          'High',
+          [],
+          'DataQuality',
+        ),
+      );
+    });
   }
 
   return {

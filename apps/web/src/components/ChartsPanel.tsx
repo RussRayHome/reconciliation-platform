@@ -23,6 +23,28 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
             <Bar dataKey="value" fill="#0f766e" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+        <details className="chart-data-details">
+          <summary>View chart data table</summary>
+          <div className="table-scroll">
+            <table>
+              <caption className="visually-hidden">Counts by category data table</caption>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(countChart?.data ?? []).map((item) => (
+                  <tr key={`count-${item.label}`}>
+                    <td>{item.label}</td>
+                    <td>{item.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </div>
       <div className="chart-card">
         <h3>Dollar Exposure by Category</h3>
@@ -35,6 +57,28 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
             <Bar dataKey="value" fill="#c2410c" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+        <details className="chart-data-details">
+          <summary>View chart data table</summary>
+          <div className="table-scroll">
+            <table>
+              <caption className="visually-hidden">Dollar exposure by category data table</caption>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Exposure</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(exposureChart?.data ?? []).map((item) => (
+                  <tr key={`exposure-${item.label}`}>
+                    <td>{item.label}</td>
+                    <td>{Number(item.value).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </div>
     </div>
   );

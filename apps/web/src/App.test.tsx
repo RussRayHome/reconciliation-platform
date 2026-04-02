@@ -116,7 +116,26 @@ describe('App', () => {
       `Monthly Recon for ${month} ${currentYear}`,
     );
     expect(screen.getByText(`Month applies to the current year (${currentYear}).`)).toBeInTheDocument();
-    expect(screen.getByText('Suggested')).toBeInTheDocument();
+    expect(
+      screen.getByText(`Suggested: Monthly Recon for ${month} ${currentYear}`),
+    ).toBeInTheDocument();
+  });
+
+  it('shows overall process progress and updates it after file selection', () => {
+    renderApp();
+
+    const overallMeter = screen.getByLabelText('Overall process progress') as HTMLProgressElement;
+    expect(screen.getByText('Process Progress')).toBeInTheDocument();
+    expect(overallMeter.value).toBe(0);
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+    });
+
+    expect(overallMeter.value).toBe(50);
   });
 
   it('shows an annual year picker with the previous seven years when annual is selected', () => {
@@ -140,6 +159,43 @@ describe('App', () => {
       `Annual Recon for ${String(currentYear - 1)}`,
     );
     expect(screen.getByText('Choose one of the last 7 completed years.')).toBeInTheDocument();
+  });
+
+  it('shows and hides field help text when question-mark buttons are clicked', () => {
+    renderApp();
+
+    const bankHelpButton = screen.getByRole('button', { name: 'Open help for bank source file' });
+    expect(
+      screen.queryByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+    ).toBeNull();
+
+    fireEvent.click(bankHelpButton);
+
+    expect(
+      screen.getByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(bankHelpButton);
+
+    expect(
+      screen.queryByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+    ).toBeNull();
+  });
+
+  it('closes an open field help popover when clicking outside the field', () => {
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open help for bank source file' }));
+
+    expect(
+      screen.getByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+    ).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(
+      screen.queryByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+    ).toBeNull();
   });
 
   it('uploads files and renders returned reconciliation metrics', async () => {
@@ -285,24 +341,21 @@ describe('App', () => {
     expect(formData.get('periodLabel')).toBe('Custom Monthly Label');
   });
 
-  it('allows restoring the suggested label after custom edits', () => {
+  it('keeps the suggested label hint visible after custom edits', () => {
     renderApp();
 
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: 'Custom Label' },
     });
-    expect(screen.getByText('Custom')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
       target: { value: 'April' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Use suggested' }));
-
-    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue(
-      `Monthly Recon for April ${new Date().getFullYear()}`,
-    );
-    expect(screen.getByText('Suggested')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue('Custom Label');
+    expect(
+      screen.getByText(`Suggested: Monthly Recon for April ${new Date().getFullYear()}`),
+    ).toBeInTheDocument();
   });
 
   it('disables submit when reconciliation label is blank', () => {
