@@ -192,7 +192,7 @@ function App() {
 
       const activeHelpGroup = target.closest('[data-help-field]');
 
-      if (activeHelpGroup?.dataset.helpField === openHelpField) {
+      if ((activeHelpGroup as HTMLElement | null)?.dataset?.helpField === openHelpField) {
         return;
       }
 

@@ -179,7 +179,6 @@ describe('Excel Parser - Edge Cases', () => {
 
     it('token partial match returns good score', () => {
       const header = 'CHECK NUMBER';
-      const alias = 'CHK#';
       // After tokenization, should find overlap
       expect(header.toUpperCase().includes('CHECK')).toBe(true);
     });

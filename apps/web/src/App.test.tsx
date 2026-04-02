@@ -124,9 +124,9 @@ describe('App', () => {
   it('shows overall process progress and updates it after file selection', () => {
     renderApp();
 
-    const overallMeter = screen.getByLabelText('Overall process progress') as HTMLProgressElement;
+    const overallMeter = screen.getByLabelText('Overall process progress');
     expect(screen.getByText('Process Progress')).toBeInTheDocument();
-    expect(overallMeter.value).toBe(0);
+    expect((overallMeter as HTMLProgressElement).value).toBe(0);
 
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank'], 'bank.xlsx')] },

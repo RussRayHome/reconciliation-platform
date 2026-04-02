@@ -1,6 +1,5 @@
 import type { NormalizedTransaction } from '@recon/domain';
 import { describe, expect, it } from 'vitest';
-import { normalizeAmount, normalizeCaseInsensitive, normalizeDate } from './transactions';
 import { randomUUID } from 'node:crypto';
 
 describe('Transaction Normalization - Edge Cases', () => {
