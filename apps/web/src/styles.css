@@ -189,6 +189,52 @@ select {
   font-weight: 600;
 }
 
+.field-hint {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.label-input-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.label-input-row input {
+  flex: 1;
+}
+
+.label-state-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.label-state-chip--suggested {
+  background: var(--teal-soft);
+  color: #0d5c55;
+  border-color: rgba(15, 118, 110, 0.3);
+}
+
+.label-state-chip--custom {
+  background: var(--amber-soft);
+  color: #8f3309;
+  border-color: rgba(194, 65, 12, 0.3);
+}
+
+.label-input-row .secondary-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
 input,
 select {
   width: 100%;
@@ -380,5 +426,14 @@ th {
   .stats-grid,
   .upload-form {
     grid-template-columns: 1fr;
+  }
+
+  .label-input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .label-state-chip {
+    align-self: flex-start;
   }
 }

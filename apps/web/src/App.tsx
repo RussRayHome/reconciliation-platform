@@ -7,7 +7,7 @@ import { ExceptionTable } from './components/ExceptionTable';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import { downloadWorkbookUrl } from './lib/api';
 import { useReconciliationRun } from './hooks/useReconciliationRun';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const downloadJson = (fileName: string, data: unknown): void => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -19,13 +19,65 @@ const downloadJson = (fileName: string, data: unknown): void => {
   URL.revokeObjectURL(url);
 };
 
+const monthsWithinYear = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const buildDefaultPeriodLabel = (
+  frequency: 'Monthly' | 'Annual',
+  month: string,
+  year: string,
+  currentYear: number,
+): string =>
+  frequency === 'Annual'
+    ? `Annual Recon for ${year}`
+    : `Monthly Recon for ${month} ${currentYear}`;
+
 function App() {
+  const currentYear = new Date().getFullYear();
+  const previousSevenYears = Array.from({ length: 7 }, (_, index) =>
+    String(currentYear - index - 1),
+  );
+  const defaultMonth = monthsWithinYear[new Date().getMonth()] ?? 'January';
   const [bankFile, setBankFile] = useState<File | null>(null);
   const [qboFile, setQboFile] = useState<File | null>(null);
   const [accountIdentifier, setAccountIdentifier] = useState('');
-  const [periodLabel, setPeriodLabel] = useState('');
+  const [reconciliationFrequency, setReconciliationFrequency] = useState<'Monthly' | 'Annual'>('Monthly');
+  const [annualYear, setAnnualYear] = useState(previousSevenYears[0] ?? '');
+  const [monthlyMonth, setMonthlyMonth] = useState(defaultMonth);
+  const suggestedPeriodLabel = useMemo(
+    () => buildDefaultPeriodLabel(reconciliationFrequency, monthlyMonth, annualYear, currentYear),
+    [reconciliationFrequency, monthlyMonth, annualYear, currentYear],
+  );
+  const [isCustomPeriodLabel, setIsCustomPeriodLabel] = useState(false);
+  const [periodLabel, setPeriodLabel] = useState(
+    buildDefaultPeriodLabel('Monthly', defaultMonth, annualYear, currentYear),
+  );
   const reconciliation = useReconciliationRun();
   const run = reconciliation.data;
+
+  const trimmedPeriodLabel = periodLabel.trim();
+  const isUsingSuggestedLabel = !isCustomPeriodLabel;
+  const canSubmit = Boolean(
+    bankFile && qboFile && !reconciliation.isPending && trimmedPeriodLabel.length > 0,
+  );
+
+  useEffect(() => {
+    if (!isCustomPeriodLabel) {
+      setPeriodLabel(suggestedPeriodLabel);
+    }
+  }, [isCustomPeriodLabel, suggestedPeriodLabel]);
 
   return (
     <div className="app-shell">
@@ -60,6 +112,10 @@ function App() {
               <span>Current period</span>
               <strong>{run?.periodLabel ?? (periodLabel || 'Not set')}</strong>
             </div>
+            <div>
+              <span>Reconciliation frequency</span>
+              <strong>{reconciliationFrequency}</strong>
+            </div>
           </div>
         </header>
 
@@ -80,7 +136,8 @@ function App() {
                 bankFile,
                 qboFile,
                 accountIdentifier,
-                periodLabel,
+                reconciliationFrequency,
+                periodLabel: trimmedPeriodLabel,
               });
             }}
           >
@@ -97,11 +154,73 @@ function App() {
               <input value={accountIdentifier} onChange={(event) => setAccountIdentifier(event.target.value)} placeholder="OPERATING-001" />
             </label>
             <label>
-              <span>Period label</span>
-              <input value={periodLabel} onChange={(event) => setPeriodLabel(event.target.value)} placeholder="January 2025" />
+              <span>Reconciliation frequency</span>
+              <select
+                value={reconciliationFrequency}
+                onChange={(event) =>
+                  setReconciliationFrequency(event.target.value as 'Monthly' | 'Annual')
+                }
+              >
+                <option value="Monthly">Monthly</option>
+                <option value="Annual">Annual</option>
+              </select>
+            </label>
+            {reconciliationFrequency === 'Annual' ? (
+              <label>
+                <span>Annual reconciliation year</span>
+                <select value={annualYear} onChange={(event) => setAnnualYear(event.target.value)}>
+                  {previousSevenYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-hint">Choose one of the last 7 completed years.</small>
+              </label>
+            ) : (
+              <label>
+                <span>Monthly reconciliation month</span>
+                <select value={monthlyMonth} onChange={(event) => setMonthlyMonth(event.target.value)}>
+                  {monthsWithinYear.map((month) => (
+                    <option key={month} value={month}>
+                      {month}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-hint">Month applies to the current year ({currentYear}).</small>
+              </label>
+            )}
+            <label>
+              <span>Reconciliation label</span>
+              <div className="label-input-row">
+                <input
+                  value={periodLabel}
+                  onChange={(event) => {
+                    setIsCustomPeriodLabel(true);
+                    setPeriodLabel(event.target.value);
+                  }}
+                  placeholder="Reconciliation label"
+                />
+                <span
+                  className={`label-state-chip ${isUsingSuggestedLabel ? 'label-state-chip--suggested' : 'label-state-chip--custom'}`}
+                >
+                  {isUsingSuggestedLabel ? 'Suggested' : 'Custom'}
+                </span>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setIsCustomPeriodLabel(false);
+                    setPeriodLabel(suggestedPeriodLabel);
+                  }}
+                >
+                  Use suggested
+                </button>
+              </div>
+              <small className="field-hint">Suggested: {suggestedPeriodLabel}</small>
             </label>
             <div className="upload-actions">
-              <button type="submit" disabled={!bankFile || !qboFile || reconciliation.isPending}>
+              <button type="submit" disabled={!canSubmit}>
                 {reconciliation.isPending ? 'Running reconciliation...' : 'Run reconciliation'}
               </button>
               {run ? (
@@ -119,6 +238,9 @@ function App() {
                 </>
               ) : null}
             </div>
+            {!trimmedPeriodLabel ? (
+              <p className="error-banner">Reconciliation label is required before running.</p>
+            ) : null}
             {reconciliation.error ? <p className="error-banner">{reconciliation.error.message}</p> : null}
           </form>
         </SectionCard>
