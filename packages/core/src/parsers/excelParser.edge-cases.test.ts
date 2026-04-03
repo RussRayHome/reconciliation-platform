@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 describe('Excel Parser - Edge Cases', () => {
+
   describe('Header Normalization and Scoring', () => {
     it('handles headers with leading/trailing whitespace', () => {
       // Test normalization of headers with various whitespace patterns
@@ -184,8 +185,9 @@ describe('Excel Parser - Edge Cases', () => {
     });
 
     it('no match returns zero score', () => {
-      const header: string = 'TRANSACTION DATE';
-      const alias: string = 'AMOUNT';
+      const values: string[] = ['TRANSACTION DATE', 'AMOUNT'];
+      const header = values[0] ?? '';
+      const alias = values[1] ?? '';
       expect(header.includes(alias)).toBe(false);
     });
   });

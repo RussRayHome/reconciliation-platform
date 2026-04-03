@@ -1,4 +1,5 @@
 import { createApp } from './app';
+import { markServerStarted } from './services/runtimeDiagnostics';
 import { createWriteStream } from 'node:fs';
 import pino from 'pino';
 
@@ -36,6 +37,7 @@ export const startServer = (): void => {
   const port = Number(process.env.PORT ?? '4000');
 
   app.listen(port, '0.0.0.0', () => {
+    markServerStarted();
     logger.info({ port, logFile: logFile ?? null, level }, 'Reconciliation API listening');
   });
 };

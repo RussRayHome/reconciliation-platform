@@ -86,6 +86,15 @@
         margin-bottom: 16px;
       }
 
+      .section-label {
+        margin: 18px 0 10px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #486581;
+      }
+
       .metric {
         background: var(--card);
         border: 1px solid var(--border);
@@ -293,6 +302,33 @@
         padding: 8px 10px;
       }
 
+      .runtime-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .runtime-list li {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        background: #fbfdff;
+      }
+
+      .runtime-row-title {
+        margin: 0 0 4px;
+        font-weight: 700;
+        color: #102a43;
+      }
+
+      .runtime-row-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
       pre {
         margin-top: 10px;
         background: #0b1220;
@@ -317,6 +353,8 @@
           <a class="button secondary" href="/">Open application</a>
         </div>
       </header>
+
+      <p class="section-label">Repo Health</p>
 
       <section class="status-strip">
         <article class="metric">
@@ -364,6 +402,78 @@
         <ul id="history" class="history-list"></ul>
       </section>
 
+      <p class="section-label">Local Runtime Health</p>
+
+      <section class="status-strip">
+        <article class="metric">
+          <p class="metric-label">API status</p>
+          <p id="api-status" class="metric-value">Loading...</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Server started</p>
+          <p id="server-started-at" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Exceptions (last 10m)</p>
+          <p id="exceptions-window" class="metric-value">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Failed requests (last 10m)</p>
+          <p id="failed-requests-window" class="metric-value">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Last request seen</p>
+          <p id="last-request-at" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Last reconciliation</p>
+          <p id="last-run-status" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">API uptime</p>
+          <p id="api-uptime" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+      </section>
+
+      <section class="sub-strip">
+        <article class="metric">
+          <p class="metric-label">Current branch</p>
+          <p id="git-branch" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Current commit</p>
+          <p id="git-commit" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Working tree</p>
+          <p id="git-dirty" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+      </section>
+
+      <section class="sub-strip">
+        <article class="card">
+          <div class="card-top">
+            <h3>Recent Exceptions</h3>
+            <span id="exceptions-count" class="pill">0 items</span>
+          </div>
+          <ul id="exceptions-list" class="runtime-list"></ul>
+        </article>
+        <article class="card">
+          <div class="card-top">
+            <h3>Recent Failed Requests</h3>
+            <span id="requests-count" class="pill">0 items</span>
+          </div>
+          <ul id="requests-list" class="runtime-list"></ul>
+        </article>
+        <article class="card">
+          <div class="card-top">
+            <h3>Recent Reconciliation Runs</h3>
+            <span id="runs-count" class="pill">0 items</span>
+          </div>
+          <ul id="runs-list" class="runtime-list"></ul>
+        </article>
+      </section>
+
       <section id="cards" class="cards"></section>
     </main>
 
@@ -381,6 +491,22 @@
       const historyCount = document.getElementById('history-count');
       const refreshButton = document.getElementById('refresh');
       const forceRefreshButton = document.getElementById('force-refresh');
+      const apiStatus = document.getElementById('api-status');
+      const serverStartedAt = document.getElementById('server-started-at');
+      const exceptionsWindow = document.getElementById('exceptions-window');
+      const failedRequestsWindow = document.getElementById('failed-requests-window');
+      const lastRequestAt = document.getElementById('last-request-at');
+      const lastRunStatus = document.getElementById('last-run-status');
+      const apiUptime = document.getElementById('api-uptime');
+      const exceptionsList = document.getElementById('exceptions-list');
+      const requestsList = document.getElementById('requests-list');
+      const exceptionsCount = document.getElementById('exceptions-count');
+      const requestsCount = document.getElementById('requests-count');
+      const runsList = document.getElementById('runs-list');
+      const runsCount = document.getElementById('runs-count');
+      const gitBranch = document.getElementById('git-branch');
+      const gitCommit = document.getElementById('git-commit');
+      const gitDirty = document.getElementById('git-dirty');
 
       const asLocal = (iso) => {
         const date = new Date(iso);
@@ -444,8 +570,13 @@
               return null;
             }
 
-            const pct = parseFloat(metricValue);
-            const colorClass = pct >= 90 ? 'cov-green' : pct >= 80 ? 'cov-amber' : 'cov-red';
+            const pct = Number.parseFloat(metricValue);
+            let colorClass = 'cov-red';
+            if (pct >= 90) {
+              colorClass = 'cov-green';
+            } else if (pct >= 80) {
+              colorClass = 'cov-amber';
+            }
 
             return {
               label: metricLabel,
@@ -477,7 +608,7 @@
             }
 
             const label = match[1] || '';
-            const count = parseInt(match[2] || '0', 10);
+            const count = Number.parseInt(match[2] || '0', 10);
             const colorFn = severityColorFn[label];
             if (!colorFn) {
               return null;
@@ -520,16 +651,205 @@
         }
       };
 
+      const renderRuntimeList = (container, badge, items, renderItem, emptyText) => {
+        container.innerHTML = '';
+        const rows = Array.isArray(items) ? items : [];
+        badge.textContent = `${rows.length} items`;
+
+        if (rows.length === 0) {
+          const empty = document.createElement('li');
+          empty.textContent = emptyText;
+          container.appendChild(empty);
+          return;
+        }
+
+        for (const item of rows) {
+          const row = document.createElement('li');
+          row.innerHTML = renderItem(item);
+          container.appendChild(row);
+        }
+      };
+
+      const renderRuntimeSummary = (payload) => {
+        apiStatus.textContent = payload.apiStatus === 'reachable' ? 'Reachable' : 'Unavailable';
+        apiStatus.className = `metric-value ${payload.apiStatus === 'reachable' ? 'ok' : 'bad'}`;
+        serverStartedAt.textContent = payload.startedAt ? asLocal(payload.startedAt) : 'Unknown';
+
+        exceptionsWindow.textContent = String(payload.exceptionsLastWindow ?? 0);
+        exceptionsWindow.className = `metric-value ${(payload.exceptionsLastWindow ?? 0) > 0 ? 'bad' : 'ok'}`;
+
+        failedRequestsWindow.textContent = String(payload.failedRequestsLastWindow ?? 0);
+        failedRequestsWindow.className = `metric-value ${(payload.failedRequestsLastWindow ?? 0) > 0 ? 'bad' : 'ok'}`;
+
+        lastRequestAt.textContent = payload.lastRequestAt ? asLocal(payload.lastRequestAt) : 'No recent requests';
+        apiUptime.textContent = formatDuration(payload.uptimeMs);
+
+        const lastRun = payload.lastReconciliationRun;
+        let lastRunText = 'No runs yet';
+        let lastRunClass = 'metric-value';
+        if (lastRun) {
+          lastRunText = lastRun.status;
+          if (lastRun.runId) {
+            lastRunText += ` | ${lastRun.runId}`;
+          }
+
+          if (lastRun.status === 'Failed') {
+            lastRunClass = 'metric-value bad';
+          } else if (lastRun.status === 'Succeeded') {
+            lastRunClass = 'metric-value ok';
+          }
+        }
+
+        lastRunStatus.textContent = lastRunText;
+        lastRunStatus.className = lastRunClass;
+
+        const gitContext = payload.gitContext || {};
+        gitBranch.textContent = gitContext.branch || 'Unknown';
+        gitCommit.textContent = gitContext.commit || 'Unknown';
+
+        let dirtyText = 'Unknown';
+        let dirtyClass = 'metric-value';
+        if (gitContext.isDirty === true) {
+          dirtyText = 'Dirty';
+          dirtyClass = 'metric-value bad';
+        } else if (gitContext.isDirty === false) {
+          dirtyText = 'Clean';
+          dirtyClass = 'metric-value ok';
+        }
+
+        gitDirty.textContent = dirtyText;
+        gitDirty.className = dirtyClass;
+      };
+
+      const renderRuntimePanels = (payload) => {
+        renderRuntimeSummary(payload);
+
+        renderRuntimeList(
+          exceptionsList,
+          exceptionsCount,
+          payload.recentExceptions,
+          (item) => {
+            const stackLine = Array.isArray(item.stackPreview) && item.stackPreview.length > 0
+              ? `<p class="runtime-row-meta">${escapeHtml(item.stackPreview[0])}</p>`
+              : '';
+            return `
+              <p class="runtime-row-title">${escapeHtml(item.errorName || 'Error')} | ${escapeHtml(item.message || 'Unknown error')}</p>
+              <p class="runtime-row-meta">${escapeHtml(asLocal(item.timestamp))} | ${escapeHtml(item.method)} ${escapeHtml(item.path)} | status ${escapeHtml(item.statusCode)} | corr ${escapeHtml(item.correlationId)}</p>
+              ${stackLine}
+            `;
+          },
+          'No recent exceptions.',
+        );
+
+        renderRuntimeList(
+          requestsList,
+          requestsCount,
+          payload.recentFailedRequests,
+          (item) => `
+            <p class="runtime-row-title">${escapeHtml(item.method)} ${escapeHtml(item.path)}</p>
+            <p class="runtime-row-meta">${escapeHtml(asLocal(item.timestamp))} | status ${escapeHtml(item.statusCode)} | ${escapeHtml(formatDuration(item.durationMs))} | corr ${escapeHtml(item.correlationId)}</p>
+          `,
+          'No recent failed requests.',
+        );
+
+        renderRuntimeList(
+          runsList,
+          runsCount,
+          payload.recentReconciliationRuns,
+          (item) => {
+            const contextParts = [item.reconciliationFrequency, item.periodLabel, item.accountIdentifier]
+              .filter(Boolean)
+              .map((part) => escapeHtml(part));
+            const failureText = item.failureReason
+              ? `<p class="runtime-row-meta">${escapeHtml(item.failureReason)}</p>`
+              : '';
+            return `
+              <p class="runtime-row-title">${escapeHtml(item.status)}${item.runId ? ` | ${escapeHtml(item.runId)}` : ''}</p>
+              <p class="runtime-row-meta">${escapeHtml(asLocal(item.timestamp))} | ${escapeHtml(formatDuration(item.durationMs))}${contextParts.length > 0 ? ` | ${contextParts.join(' | ')}` : ''}</p>
+              ${failureText}
+            `;
+          },
+          'No recent reconciliation runs.',
+        );
+      };
+
+      const renderRepoChecks = (checks) => {
+        cards.innerHTML = '';
+        for (const check of checks) {
+          const card = document.createElement('article');
+          card.className = 'card';
+
+          const statusClass = check.ok ? 'ok' : 'bad';
+          const statusText = check.ok ? 'PASS' : 'FAIL';
+          const metricBoxes = getCoverageMetricBoxes(check).length > 0
+            ? getCoverageMetricBoxes(check)
+            : getSecurityMetricBoxes(check);
+
+          const summaryHtml = metricBoxes.length > 0
+            ? `<div><strong>Summary:</strong></div>
+               <div class="coverage-metrics">${metricBoxes
+                 .map(
+                   (metric) => `<div class="coverage-metric-box ${escapeHtml(metric.colorClass)}">
+                     <p class="coverage-metric-label">${escapeHtml(metric.label)}</p>
+                     <p class="coverage-metric-value">${escapeHtml(metric.value)}</p>
+                   </div>`,
+                 )
+                 .join('')}</div>`
+            : `<div><strong>Summary:</strong> ${escapeHtml(check.summary)}</div>`;
+
+          card.innerHTML = `
+            <div class="card-top">
+              <h3>${escapeHtml(check.name)}</h3>
+              <span class="pill ${statusClass}">${statusText}</span>
+            </div>
+            <div class="details">
+              ${summaryHtml}
+              <div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>
+              <div><strong>Duration:</strong> ${escapeHtml(formatDuration(check.durationMs))}</div>
+              <div><strong>Command:</strong> ${escapeHtml(check.command)}</div>
+            </div>
+            <pre>${escapeHtml(check.details || 'No additional output')}</pre>
+          `;
+
+          if (metricBoxes.length === 0 && Array.isArray(check.highlights) && check.highlights.length > 0) {
+            const highlightList = document.createElement('ul');
+            highlightList.className = 'highlights';
+
+            for (const item of check.highlights.slice(0, 3)) {
+              const row = document.createElement('li');
+              row.textContent = item;
+              highlightList.appendChild(row);
+            }
+
+            card.insertBefore(highlightList, card.querySelector('pre'));
+          }
+
+          cards.appendChild(card);
+        }
+      };
+
+      const readJsonOrThrow = async (response, fallbackMessage) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(payload?.message || fallbackMessage);
+        }
+
+        return payload;
+      };
+
+      const loadRuntime = async () => {
+        const response = await fetch('/api/developer/runtime');
+        const payload = await readJsonOrThrow(response, 'Failed to load runtime diagnostics.');
+        renderRuntimePanels(payload);
+      };
+
       const loadStatus = async (force = false, activeButton = null) => {
         setButtonsBusy(true, activeButton);
 
         try {
+          await loadRuntime();
           const response = await fetch(`/api/developer/status${force ? '?force=1' : ''}`);
-          if (!response.ok) {
-            throw new Error('Failed to load developer status.');
-          }
-
-          const payload = await response.json();
+          const payload = await readJsonOrThrow(response, 'Failed to load developer status.');
           overall.textContent = payload.overallStatus === 'healthy' ? 'Healthy' : 'Attention needed';
           overall.className = `metric-value ${payload.overallStatus === 'healthy' ? 'ok' : 'bad'}`;
 
@@ -549,59 +869,7 @@
             : '-';
 
           renderHistory(payload.history);
-
-          cards.innerHTML = '';
-          for (const check of payload.checks) {
-            const card = document.createElement('article');
-            card.className = 'card';
-
-            const statusClass = check.ok ? 'ok' : 'bad';
-            const statusText = check.ok ? 'PASS' : 'FAIL';
-            const metricBoxes = getCoverageMetricBoxes(check).length > 0
-              ? getCoverageMetricBoxes(check)
-              : getSecurityMetricBoxes(check);
-
-            const summaryHtml = metricBoxes.length > 0
-              ? `<div><strong>Summary:</strong></div>
-                 <div class="coverage-metrics">${metricBoxes
-                   .map(
-                     (metric) => `<div class="coverage-metric-box ${escapeHtml(metric.colorClass)}">
-                       <p class="coverage-metric-label">${escapeHtml(metric.label)}</p>
-                       <p class="coverage-metric-value">${escapeHtml(metric.value)}</p>
-                     </div>`,
-                   )
-                   .join('')}</div>`
-              : `<div><strong>Summary:</strong> ${escapeHtml(check.summary)}</div>`;
-
-            card.innerHTML = `
-              <div class="card-top">
-                <h3>${escapeHtml(check.name)}</h3>
-                <span class="pill ${statusClass}">${statusText}</span>
-              </div>
-              <div class="details">
-                ${summaryHtml}
-                <div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>
-                <div><strong>Duration:</strong> ${escapeHtml(formatDuration(check.durationMs))}</div>
-                <div><strong>Command:</strong> ${escapeHtml(check.command)}</div>
-              </div>
-              <pre>${escapeHtml(check.details || 'No additional output')}</pre>
-            `;
-
-            if (metricBoxes.length === 0 && Array.isArray(check.highlights) && check.highlights.length > 0) {
-              const highlightList = document.createElement('ul');
-              highlightList.className = 'highlights';
-
-              for (const item of check.highlights.slice(0, 3)) {
-                const row = document.createElement('li');
-                row.textContent = item;
-                highlightList.appendChild(row);
-              }
-
-              card.insertBefore(highlightList, card.querySelector('pre'));
-            }
-
-            cards.appendChild(card);
-          }
+          renderRepoChecks(payload.checks);
         } catch (error) {
           overall.textContent = 'Unavailable';
           overall.className = 'metric-value bad';

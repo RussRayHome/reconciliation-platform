@@ -1,5 +1,15 @@
 import { InMemoryRunRepository } from './services/runRepository';
 import type { ReconciliationRun } from '@recon/domain';
+import {
+  getRuntimeSummary,
+  listExceptions,
+  listFailedRequests,
+  listReconciliationRuns,
+  noteRequestSeen,
+  recordException,
+  recordFailedRequest,
+  recordReconciliationRun,
+} from './services/runtimeDiagnostics';
 import cors from 'cors';
 import { executeReconciliation } from './services/reconciliationService';
 import express from 'express';
@@ -14,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 const execFileAsync = promisify(execFile);
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const gitExecutable = 'git';
 
 const reconciliationFrequencies = new Set(['Monthly', 'Annual'] as const);
 
@@ -74,6 +85,91 @@ const resolveUploadErrorStatus = (error: unknown): number => {
   return 500;
 };
 
+const parseLimit = (value: unknown, defaultValue: number, max = 50): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return defaultValue;
+  }
+
+  return Math.min(Math.trunc(parsed), max);
+};
+
+const isDeveloperDiagnosticsPath = (value: string): boolean =>
+  value.startsWith('/api/developer');
+
+const parseBooleanFlag = (value: string | undefined): boolean | null => {
+  if (value === undefined) {
+    return null;
+  }
+
+  if (value === 'true') {
+    return true;
+  }
+
+  if (value === 'false') {
+    return false;
+  }
+
+  return null;
+};
+
+const isDeveloperDiagnosticsEnabled = (): boolean => {
+  const override = parseBooleanFlag(process.env.ENABLE_DEVELOPER_DIAGNOSTICS);
+  if (override !== null) {
+    return override;
+  }
+
+  return process.env.NODE_ENV !== 'production';
+};
+
+type LocalGitContext = {
+  branch: string | null;
+  commit: string | null;
+  latestMessage: string | null;
+  isDirty: boolean | null;
+};
+
+const GIT_CONTEXT_TTL_MS = 15000;
+let gitContextCache: { value: LocalGitContext; cachedAt: number } | null = null;
+
+const readGitOutput = async (args: string[]): Promise<string | null> => {
+  try {
+    const result = await execFileAsync(gitExecutable, args, {
+      cwd: repoRoot,
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
+    });
+    const value = result.stdout?.toString().trim() ?? '';
+    return value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const getGitContext = async (): Promise<LocalGitContext> => {
+  const now = Date.now();
+  if (gitContextCache && now - gitContextCache.cachedAt < GIT_CONTEXT_TTL_MS) {
+    return gitContextCache.value;
+  }
+
+  const [branch, commit, latestMessage, statusOutput] = await Promise.all([
+    readGitOutput(['branch', '--show-current']),
+    readGitOutput(['rev-parse', '--short', 'HEAD']),
+    readGitOutput(['log', '-1', '--pretty=%s']),
+    readGitOutput(['status', '--porcelain']),
+  ]);
+
+  const value: LocalGitContext = {
+    branch,
+    commit,
+    latestMessage,
+    isDirty: statusOutput === null ? null : statusOutput.length > 0,
+  };
+
+  gitContextCache = { value, cachedAt: now };
+  return value;
+};
+
 type DeveloperCheck = {
   name: string;
   command: string;
@@ -132,15 +228,15 @@ const stripAnsi = (value: string): string =>
 
 const summarizeTestOutput = (stdout: string): string => {
   const clean = stripAnsi(stdout);
-  const failedMatch = clean.match(/(\d+)\s+failed/i);
+  const failedMatch = /(\d+)\s+failed/i.exec(clean);
   const failedCount = Number(failedMatch?.[1] ?? '0');
   if (failedCount > 0) {
     return `${failedCount} test${failedCount === 1 ? '' : 's'} failed`;
   }
 
-  const testFilesMatch = clean.match(/Test Files\s+(\d+)\s+passed/i);
-  const testsMatch = clean.match(/Tests\s+(\d+)\s+passed/i);
-  const playwrightPassedMatch = clean.match(/(\d+)\s+passed/i);
+  const testFilesMatch = /Test Files\s+(\d+)\s+passed/i.exec(clean);
+  const testsMatch = /Tests\s+(\d+)\s+passed/i.exec(clean);
+  const playwrightPassedMatch = /(\d+)\s+passed/i.exec(clean);
   if (testFilesMatch && testsMatch) {
     const testCount = Number(testsMatch[1] ?? '0');
     const fileCount = Number(testFilesMatch[1] ?? '0');
@@ -156,7 +252,7 @@ const summarizeTestOutput = (stdout: string): string => {
 };
 
 const summarizeLintOutput = (stdout: string): string => {
-  const problemsMatch = stdout.match(/(\d+) problems?/i);
+  const problemsMatch = /(\d+) problems?/i.exec(stdout);
   if (problemsMatch) {
     const problemCount = Number(problemsMatch[1]);
     return problemCount === 0 ? 'No lint problems' : `${problemCount} lint problems`;
@@ -176,8 +272,8 @@ type CoverageMetrics = {
 
 const parseCoverageMetrics = (output: string): CoverageMetrics | null => {
   const clean = stripAnsi(output);
-  const allFilesMatch = clean.match(
-    /All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/i,
+  const allFilesMatch = /All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/i.exec(
+    clean,
   );
   if (!allFilesMatch) {
     return null;
@@ -280,17 +376,17 @@ const parseTestHighlights = (output: string): string[] => {
     return [];
   }
 
-  const failingTestMatch = clean.match(/([^\s]+\.(?:spec|test)\.[^\s:]+:\d+:\d+)\s+›\s+([^\n]+)/);
+  const failingTestMatch = /([^\s]+\.(?:spec|test)\.[^\s:]+:\d+:\d+)\s+›\s+([^\n]+)/.exec(clean);
   if (failingTestMatch) {
     highlights.push(`Failing test: ${failingTestMatch[1] ?? 'unknown'} - ${(failingTestMatch[2] ?? 'unknown').trim()}`);
   }
 
-  const timeoutOrErrorMatch = clean.match(/(Test timeout[^\n]*|Error:\s*[^\n]*)/);
+  const timeoutOrErrorMatch = /(Test timeout[^\n]*|Error:\s*[^\n]*)/.exec(clean);
   if (timeoutOrErrorMatch) {
     highlights.push((timeoutOrErrorMatch[1] ?? 'Error').trim());
   }
 
-  const tracePathMatch = clean.match(/(test-results\/[\w\-./]+\/trace\.zip)/);
+  const tracePathMatch = /(test-results\/[\w\-./]+\/trace\.zip)/.exec(clean);
   if (tracePathMatch) {
     highlights.push(`Trace: ${tracePathMatch[1] ?? 'not available'}`);
   }
@@ -447,6 +543,7 @@ const getDeveloperStatus = async (
 export const createApp = (repository = new InMemoryRunRepository()) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
+  const developerDiagnosticsEnabled = isDeveloperDiagnosticsEnabled();
 
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
@@ -477,8 +574,44 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
     next();
   });
 
+  app.use((request, response, next) => {
+    const started = Date.now();
+
+    if (!isDeveloperDiagnosticsPath(request.originalUrl)) {
+      noteRequestSeen();
+    }
+
+    response.on('finish', () => {
+      if (isDeveloperDiagnosticsPath(request.originalUrl) || response.statusCode < 400) {
+        return;
+      }
+
+      recordFailedRequest({
+        timestamp: new Date().toISOString(),
+        method: request.method,
+        path: request.originalUrl,
+        statusCode: response.statusCode,
+        durationMs: Date.now() - started,
+        correlationId: resolveCorrelationId(request.id),
+      });
+    });
+
+    next();
+  });
+
   app.get('/api/health', (_request, response) => {
     response.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  app.use('/api/developer', (_request, response, next) => {
+    if (developerDiagnosticsEnabled) {
+      next();
+      return;
+    }
+
+    response.status(403).json({
+      message: 'Developer diagnostics are disabled in this environment.',
+    });
   });
 
   app.get('/api/developer/status', async (request, response, next) => {
@@ -500,6 +633,35 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
     }
   });
 
+  app.get('/api/developer/runtime', async (_request, response, next) => {
+    try {
+      response.json({
+        ...getRuntimeSummary(),
+        gitContext: await getGitContext(),
+        recentFailedRequests: listFailedRequests(5),
+        recentExceptions: listExceptions(5),
+        recentReconciliationRuns: listReconciliationRuns(5),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/developer/runtime/requests', (request, response) => {
+    const limit = parseLimit(request.query.limit, 10, 100);
+    response.json({ items: listFailedRequests(limit) });
+  });
+
+  app.get('/api/developer/runtime/exceptions', (request, response) => {
+    const limit = parseLimit(request.query.limit, 10, 100);
+    response.json({ items: listExceptions(limit) });
+  });
+
+  app.get('/api/developer/runtime/runs', (request, response) => {
+    const limit = parseLimit(request.query.limit, 10, 50);
+    response.json({ items: listReconciliationRuns(limit) });
+  });
+
   app.post(
     '/api/reconciliation/run',
     upload.fields([
@@ -507,6 +669,7 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
       { name: 'qboFile', maxCount: 1 },
     ]),
     async (request, response, next) => {
+      const started = Date.now();
       try {
         const files = (request.files ?? {}) as UploadFileMap;
         const bankFile = files?.bankFile?.[0];
@@ -549,8 +712,39 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
           exceptions: run.exceptions.length,
         });
 
+        recordReconciliationRun({
+          timestamp: new Date().toISOString(),
+          status: 'Succeeded',
+          correlationId,
+          runId: run.id,
+          accountIdentifier,
+          reconciliationFrequency,
+          periodLabel,
+          durationMs: Date.now() - started,
+          exceptionCount: run.exceptions.length,
+        });
+
         response.status(201).json(sanitizeRun(run));
       } catch (error) {
+        const requestBody = (request.body ?? {}) as Record<string, unknown>;
+        recordReconciliationRun({
+          timestamp: new Date().toISOString(),
+          status: 'Failed',
+          correlationId: resolveCorrelationId(request.id),
+          accountIdentifier: typeof requestBody.accountIdentifier === 'string'
+            ? requestBody.accountIdentifier
+            : undefined,
+          reconciliationFrequency:
+            typeof requestBody.reconciliationFrequency === 'string' &&
+            reconciliationFrequencies.has(requestBody.reconciliationFrequency as 'Monthly' | 'Annual')
+              ? (requestBody.reconciliationFrequency as 'Monthly' | 'Annual')
+              : undefined,
+          periodLabel: typeof requestBody.periodLabel === 'string'
+            ? requestBody.periodLabel
+            : undefined,
+          durationMs: Date.now() - started,
+          failureReason: error instanceof Error ? error.message : 'Unexpected reconciliation failure',
+        });
         next(error);
       }
     },
@@ -608,8 +802,21 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
     const message = error instanceof Error ? error.message : 'Unexpected server error.';
     const stack = error instanceof Error ? error.stack : undefined;
     const statusCode = resolveUploadErrorStatus(error);
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
 
     request.log.error({ action: 'api.unhandled.error', statusCode, err: { message, stack } });
+    if (!isDeveloperDiagnosticsPath(request.originalUrl)) {
+      recordException({
+        timestamp: new Date().toISOString(),
+        method: request.method,
+        path: request.originalUrl,
+        statusCode,
+        correlationId: resolveCorrelationId(request.id),
+        errorName,
+        message,
+        stack,
+      });
+    }
     response.status(statusCode).json({ message });
   });
 

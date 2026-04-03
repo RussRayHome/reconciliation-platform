@@ -25,6 +25,11 @@ Useful local URLs:
 - API health: `http://127.0.0.1:4000/api/health`
 - Developer status API: `http://127.0.0.1:4000/api/developer/status`
 
+The developer dashboard is intended to stay local by default:
+
+- the web app only shows the dashboard link in dev builds
+- the API blocks `/api/developer/*` in production unless explicitly enabled
+
 ## Useful Commands
 
 ```bash
@@ -82,6 +87,8 @@ Copy values from `.env.example` as needed.
 - `MAX_UPLOAD_MB`: upload cap for source files
 - `DEV_STATUS_CACHE_TTL_MS`: cache TTL for the developer status endpoint in milliseconds
 - `DEV_STATUS_HISTORY_LIMIT`: number of recent developer-status snapshots to retain in memory
+- `ENABLE_DEVELOPER_DIAGNOSTICS`: set to `true` to expose `/api/developer/*` outside the default local/dev behavior; set to `false` to force-disable it
+- `VITE_ENABLE_DEVELOPER_DASHBOARD`: set to `true` to show the dashboard link in a non-dev frontend build
 - `JAVA_HOME`: JDK home for Python- or JVM-backed tooling on macOS
 - `JAVA_BIN`: explicit `java` executable path when a library cannot resolve `PATH`
 

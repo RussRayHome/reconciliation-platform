@@ -57,6 +57,22 @@ const buildException = (overrides: Partial<ExceptionItem>): ExceptionItem => ({
   relatedTransactionIds: overrides.relatedTransactionIds ?? [],
 });
 
+const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => ({
+  id: overrides.id ?? randomUUID(),
+  disposition: overrides.disposition ?? 'ExactMatch',
+  confidence: overrides.confidence ?? 'Exact',
+  ruleName: overrides.ruleName ?? 'Exact amount and normalized text',
+  score: overrides.score ?? 0.99,
+  bankTransactionId: overrides.bankTransactionId,
+  qboTransactionId: overrides.qboTransactionId,
+  dateDifferenceDays: overrides.dateDifferenceDays ?? 0,
+  amountDifference: overrides.amountDifference ?? 0,
+  evidence: overrides.evidence ?? ['Same amount and description'],
+  likelyMatchingReference: overrides.likelyMatchingReference,
+  exceptionCategory: overrides.exceptionCategory,
+  reviewerNotes: overrides.reviewerNotes,
+});
+
 describe('Summary Edge Cases', () => {
   describe('is5703Workbook', () => {
     it('detects 5703 account by filename and transaction count threshold', () => {
@@ -207,18 +223,10 @@ describe('Summary Edge Cases', () => {
         buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 1000 }),
       ];
       const matchResults: MatchResult[] = [
-        {
-          id: randomUUID(),
+        buildMatchResult({
           bankTransactionId: 'bank-1',
           qboTransactionId: 'qbo-1',
-          disposition: 'ExactMatch',
-          confidence: 'Exact',
-          ruleName: 'Exact amount and normalized text',
-          score: 0.99,
-          dateDifferenceDays: 0,
-          amountDifference: 0,
-          evidence: ['Same amount and description'],
-        },
+        }),
       ];
 
       const summary = buildSummaryMetrics(transactions, matchResults, []);

@@ -210,6 +210,9 @@ function App() {
     setOpenHelpField((current) => (current === field ? null : field));
   };
 
+  const showDeveloperDashboardLink =
+    import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEVELOPER_DASHBOARD === 'true';
+
   return (
     <div className="app-shell">
       <div className="hero-backdrop" />
@@ -225,9 +228,11 @@ function App() {
             <a className="hero-primary-cta" href="#source-upload-form">
               Start reconciliation
             </a>
-            <a className="hero-secondary-cta" href="/developer-dashboard.html">
-              Open developer dashboard
-            </a>
+            {showDeveloperDashboardLink ? (
+              <a className="hero-secondary-cta" href="/developer-dashboard.html">
+                Open developer dashboard
+              </a>
+            ) : null}
           </div>
           <div className="hero-meta">
             <div className="hero-brand">
