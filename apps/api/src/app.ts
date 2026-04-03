@@ -179,6 +179,26 @@ type DeveloperCheck = {
   summary: string;
   details: string;
   highlights?: string[];
+  areaLabel?: string;
+  testType?: 'unit' | 'integration' | 'e2e';
+  passedCount?: number;
+  failedCount?: number;
+  totalCount?: number;
+};
+
+type TestBreakdown = {
+  type: 'unit' | 'integration' | 'e2e';
+  label: string;
+  passed: number;
+  failed: number;
+  total: number;
+};
+
+type DeveloperHistoryTestTotals = {
+  passed: number;
+  failed: number;
+  total: number;
+  byType: TestBreakdown[];
 };
 
 type DeveloperStatusSnapshot = {
@@ -188,6 +208,8 @@ type DeveloperStatusSnapshot = {
   totalChecks: number;
   totalDurationMs: number;
   failingCheckNames: string[];
+  failingAreas: string[];
+  testTotals: DeveloperHistoryTestTotals;
   checks: Array<Pick<DeveloperCheck, 'name' | 'ok' | 'durationMs' | 'summary'>>;
 };
 
@@ -226,26 +248,51 @@ const stripAnsi = (value: string): string =>
     .map((segment, index) => (index === 0 ? segment : segment.replace(/^\[[0-9;]*m/, '')))
     .join('');
 
+const parseSummaryCounts = (value: string): { passed: number; failed: number } | null => {
+  const passedMatch = /(\d+)\s+passed\b/i.exec(value);
+  const failedMatch = /(\d+)\s+failed\b/i.exec(value);
+  const passed = Number(passedMatch?.[1] ?? '0');
+  const failed = Number(failedMatch?.[1] ?? '0');
+
+  if (passed === 0 && failed === 0) {
+    return null;
+  }
+
+  return { passed, failed };
+};
+
+const parseTestMetrics = (output: string): { passed: number; failed: number; total: number } | null => {
+  const clean = stripAnsi(output);
+  const lines = clean
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const vitestTestsLine = [...lines].reverse().find((line) => /^Tests\b/i.test(line));
+  const vitestCounts = vitestTestsLine ? parseSummaryCounts(vitestTestsLine) : null;
+  if (vitestCounts) {
+    return {
+      ...vitestCounts,
+      total: vitestCounts.passed + vitestCounts.failed,
+    };
+  }
+
+  const playwrightLine = [...lines].reverse().find((line) => /^\d+\s+(?:passed|failed)\b/i.test(line));
+  const playwrightCounts = playwrightLine ? parseSummaryCounts(playwrightLine) : null;
+  if (playwrightCounts) {
+    return {
+      ...playwrightCounts,
+      total: playwrightCounts.passed + playwrightCounts.failed,
+    };
+  }
+
+  return null;
+};
+
 const summarizeTestOutput = (stdout: string): string => {
-  const clean = stripAnsi(stdout);
-  const failedMatch = /(\d+)\s+failed/i.exec(clean);
-  const failedCount = Number(failedMatch?.[1] ?? '0');
-  if (failedCount > 0) {
-    return `${failedCount} test${failedCount === 1 ? '' : 's'} failed`;
-  }
-
-  const testFilesMatch = /Test Files\s+(\d+)\s+passed/i.exec(clean);
-  const testsMatch = /Tests\s+(\d+)\s+passed/i.exec(clean);
-  const playwrightPassedMatch = /(\d+)\s+passed/i.exec(clean);
-  if (testFilesMatch && testsMatch) {
-    const testCount = Number(testsMatch[1] ?? '0');
-    const fileCount = Number(testFilesMatch[1] ?? '0');
-    return `${testCount} test${testCount === 1 ? '' : 's'} passed across ${fileCount} file${fileCount === 1 ? '' : 's'}`;
-  }
-
-  if (playwrightPassedMatch) {
-    const passedCount = Number(playwrightPassedMatch[1] ?? '0');
-    return `${passedCount} test${passedCount === 1 ? '' : 's'} passed`;
+  const metrics = parseTestMetrics(stdout);
+  if (metrics) {
+    return `Passed: ${metrics.passed}, Failed: ${metrics.failed}`;
   }
 
   return 'Completed successfully';
@@ -394,12 +441,56 @@ const parseTestHighlights = (output: string): string[] => {
   return highlights.slice(0, 3);
 };
 
+const parseTestMetadata = (
+  testType: 'unit' | 'integration' | 'e2e',
+  areaLabel: string,
+) => (output: string): Partial<DeveloperCheck> => {
+  const metrics = parseTestMetrics(output);
+
+  return {
+    areaLabel,
+    testType,
+    passedCount: metrics?.passed,
+    failedCount: metrics?.failed,
+    totalCount: metrics?.total,
+  };
+};
+
+const buildHistoryTestTotals = (checks: DeveloperCheck[]): DeveloperHistoryTestTotals => {
+  const labelByType: Record<TestBreakdown['type'], string> = {
+    unit: 'Unit',
+    integration: 'Integration',
+    e2e: 'E2E',
+  };
+
+  const byType = checks
+    .filter(
+      (check): check is DeveloperCheck & { testType: TestBreakdown['type'] } =>
+        Boolean(check.testType),
+    )
+    .map((check) => ({
+      type: check.testType,
+      label: labelByType[check.testType],
+      passed: check.passedCount ?? 0,
+      failed: check.failedCount ?? 0,
+      total: check.totalCount ?? (check.passedCount ?? 0) + (check.failedCount ?? 0),
+    }));
+
+  return {
+    passed: byType.reduce((sum, item) => sum + item.passed, 0),
+    failed: byType.reduce((sum, item) => sum + item.failed, 0),
+    total: byType.reduce((sum, item) => sum + item.total, 0),
+    byType,
+  };
+};
+
 const runDeveloperCheck = async (
   name: string,
   args: string[],
   summarize: (stdout: string, stderr: string) => string,
   extractHighlights?: (output: string) => string[],
   timeout = 240000,
+  parseMetadata?: (output: string) => Partial<DeveloperCheck>,
 ): Promise<DeveloperCheck> => {
   const started = Date.now();
   const command = formatCommand(npmExecutable, args);
@@ -415,6 +506,7 @@ const runDeveloperCheck = async (
     const stderr = result.stderr?.toString() ?? '';
     const output = `${stdout}\n${stderr}`.trim();
     const highlights = extractHighlights?.(output);
+    const metadata = parseMetadata?.(output) ?? {};
 
     return {
       name,
@@ -425,6 +517,7 @@ const runDeveloperCheck = async (
       summary: summarize(stdout, stderr),
       details: truncateOutput(output),
       highlights,
+      ...metadata,
     };
   } catch (error) {
     const durationMs = Date.now() - started;
@@ -442,6 +535,7 @@ const runDeveloperCheck = async (
       : failure.stderr?.toString() ?? '';
     const output = `${stdout}\n${stderr}`.trim();
     const highlights = extractHighlights?.(output);
+    const metadata = parseMetadata?.(output) ?? {};
 
     return {
       name,
@@ -452,34 +546,62 @@ const runDeveloperCheck = async (
       summary: summarize(stdout, stderr),
       details: truncateOutput(output.length > 0 ? output : failure.message ?? 'Command failed'),
       highlights,
+      ...metadata,
     };
   }
 };
 
-const buildStatusSnapshot = (payload: DeveloperStatusPayload): DeveloperStatusSnapshot => ({
-  generatedAt: payload.generatedAt,
-  overallStatus: payload.overallStatus,
-  failedChecks: payload.failedChecks,
-  totalChecks: payload.totalChecks,
-  totalDurationMs: payload.totalDurationMs,
-  failingCheckNames: payload.checks.filter((check) => !check.ok).map((check) => check.name),
-  checks: payload.checks.map((check) => ({
-    name: check.name,
-    ok: check.ok,
-    durationMs: check.durationMs,
-    summary: check.summary,
-  })),
-});
+const buildStatusSnapshot = (payload: DeveloperStatusPayload): DeveloperStatusSnapshot => {
+  const failingChecks = payload.checks.filter((check) => !check.ok);
+
+  return {
+    generatedAt: payload.generatedAt,
+    overallStatus: payload.overallStatus,
+    failedChecks: payload.failedChecks,
+    totalChecks: payload.totalChecks,
+    totalDurationMs: payload.totalDurationMs,
+    failingCheckNames: failingChecks.map((check) => check.name),
+    failingAreas: [...new Set(failingChecks.map((check) => check.areaLabel ?? check.name))],
+    testTotals: buildHistoryTestTotals(payload.checks),
+    checks: payload.checks.map((check) => ({
+      name: check.name,
+      ok: check.ok,
+      durationMs: check.durationMs,
+      summary: check.summary,
+    })),
+  };
+};
 
 const collectDeveloperStatus = async (): Promise<DeveloperStatusPayload> => {
   const [unitTests, integrationTests, e2eTests, lint, typecheck, coverage, security] = await Promise.all([
-    runDeveloperCheck('Unit tests', ['run', 'test:unit'], (stdout) => summarizeTestOutput(stdout), parseTestHighlights),
-    runDeveloperCheck('Integration tests', ['run', 'test:integration'], (stdout) => summarizeTestOutput(stdout), parseTestHighlights),
-    runDeveloperCheck('E2E tests', ['run', 'test:e2e'], (stdout) => summarizeTestOutput(stdout), parseTestHighlights, 420000),
-    runDeveloperCheck('Static analysis (lint)', ['run', 'lint'], (stdout) => summarizeLintOutput(stdout)),
-    runDeveloperCheck('Static analysis (typecheck)', ['run', 'typecheck'], () => summarizeTypecheckOutput()),
-    runDeveloperCheck('Coverage', ['run', 'coverage'], (stdout) => summarizeCoverageOutput(stdout), parseCoverageHighlights, 420000),
-    runDeveloperCheck('Security vulnerabilities', ['audit', '--json'], (stdout, stderr) => parseAuditSummary(stdout || stderr), parseSecurityHighlights, 300000),
+    runDeveloperCheck(
+      'Unit tests',
+      ['run', 'test:unit'],
+      (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
+      parseTestHighlights,
+      240000,
+      parseTestMetadata('unit', 'Unit'),
+    ),
+    runDeveloperCheck(
+      'Integration tests',
+      ['run', 'test:integration'],
+      (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
+      parseTestHighlights,
+      240000,
+      parseTestMetadata('integration', 'Integration'),
+    ),
+    runDeveloperCheck(
+      'E2E tests',
+      ['run', 'test:e2e'],
+      (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
+      parseTestHighlights,
+      420000,
+      parseTestMetadata('e2e', 'E2E'),
+    ),
+    runDeveloperCheck('Static analysis (lint)', ['run', 'lint'], (stdout) => summarizeLintOutput(stdout), undefined, 240000, () => ({ areaLabel: 'Smells' })),
+    runDeveloperCheck('Static analysis (typecheck)', ['run', 'typecheck'], () => summarizeTypecheckOutput(), undefined, 240000, () => ({ areaLabel: 'Types' })),
+    runDeveloperCheck('Coverage', ['run', 'coverage'], (stdout) => summarizeCoverageOutput(stdout), parseCoverageHighlights, 420000, () => ({ areaLabel: 'Coverage' })),
+    runDeveloperCheck('Security vulnerabilities', ['audit', '--json'], (stdout, stderr) => parseAuditSummary(stdout || stderr), parseSecurityHighlights, 300000, () => ({ areaLabel: 'Security' })),
   ]);
 
   const checks = [unitTests, integrationTests, e2eTests, lint, typecheck, coverage, security];

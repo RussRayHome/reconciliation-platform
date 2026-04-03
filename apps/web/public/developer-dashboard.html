@@ -637,11 +637,17 @@
           const left = document.createElement('div');
           const right = document.createElement('div');
           const isHealthy = run.overallStatus === 'healthy';
-          const failingAreas = Array.isArray(run.failingCheckNames) && run.failingCheckNames.length > 0
-            ? run.failingCheckNames.join(', ')
+          const testTotals = run.testTotals || { passed: 0, failed: 0, byType: [] };
+          const testsByType = Array.isArray(testTotals.byType) && testTotals.byType.length > 0
+            ? testTotals.byType
+                .map((item) => `${item.label} P:${item.passed} F:${item.failed}`)
+                .join(', ')
+            : 'No test details';
+          const failingAreas = Array.isArray(run.failingAreas) && run.failingAreas.length > 0
+            ? run.failingAreas.join(', ')
             : 'none';
 
-          left.textContent = `${asLocal(run.generatedAt)} | failed ${run.failedChecks}/${run.totalChecks} | areas ${failingAreas} | runtime ${formatDuration(run.totalDurationMs)}`;
+          left.textContent = `${asLocal(run.generatedAt)} | Passed: ${testTotals.passed ?? 0}, Failed: ${testTotals.failed ?? 0} | tests ${testsByType} | areas ${failingAreas} | runtime ${formatDuration(run.totalDurationMs)}`;
           right.textContent = isHealthy ? 'PASS' : 'FAIL';
           right.className = isHealthy ? 'ok' : 'bad';
 

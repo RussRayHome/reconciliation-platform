@@ -5,7 +5,16 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      exclude: ['**/*.config.*', '**/dist/**', '**/coverage/**'],
+      exclude: [
+        '**/*.config.*',
+        '**/dist/**',
+        '**/coverage/**',
+        'apps/api/src/index.ts',
+        'apps/api/src/server.ts',
+        'apps/web/src/main.tsx',
+        'packages/domain/src/types.ts',
+        'scripts/**',
+      ],
     },
     projects: [
       {

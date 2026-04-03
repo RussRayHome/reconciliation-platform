@@ -6,10 +6,35 @@
       "type": "shell",
       "command": "npm run dev",
       "options": {
-        "cwd": "${workspaceFolder}/reconciliation-platform",
+        "cwd": "${workspaceFolder}",
         "env": {
-          "JAVA_HOME": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home",
-          "PATH": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home/bin:${env:PATH}"
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "dev:api",
+      "type": "shell",
+      "command": "npm run dev:api",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "dev:web",
+      "type": "shell",
+      "command": "npm run dev:web",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
         }
       },
       "isBackground": true,
@@ -20,24 +45,87 @@
       "type": "shell",
       "command": "npm run typecheck",
       "options": {
-        "cwd": "${workspaceFolder}/reconciliation-platform",
+        "cwd": "${workspaceFolder}",
         "env": {
-          "JAVA_HOME": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home",
-          "PATH": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home/bin:${env:PATH}"
+          "JAVA_HOME": "${env:JAVA_HOME}"
         }
       },
       "group": "test",
-      "problemMatcher": []
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "lint",
+      "type": "shell",
+      "command": "npm run lint",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "group": "test",
+      "problemMatcher": ["$eslint-stylish"]
     },
     {
       "label": "test",
       "type": "shell",
       "command": "npm run test",
       "options": {
-        "cwd": "${workspaceFolder}/reconciliation-platform",
+        "cwd": "${workspaceFolder}",
         "env": {
-          "JAVA_HOME": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home",
-          "PATH": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home/bin:${env:PATH}"
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "test:e2e",
+      "type": "shell",
+      "command": "npm run test:e2e",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "coverage",
+      "type": "shell",
+      "command": "npm run coverage",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "security:scan",
+      "type": "shell",
+      "command": "npm run security:scan",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
         }
       },
       "group": "test",

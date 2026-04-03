@@ -10,9 +10,10 @@
   },
   "python.envFile": "${workspaceFolder}/.env",
   "python.terminal.activateEnvironment": true,
-  "python.pydev.java.home": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home",
-  "terminal.integrated.env.osx": {
-    "JAVA_HOME": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home",
-    "PATH": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home/bin:${env:PATH}"
-  }
+  "python.pydev.java.home": "${env:JAVA_HOME}",
+  "eslint.workingDirectories": [
+    {
+      "mode": "auto"
+    }
+  ]
 }

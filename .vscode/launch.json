@@ -7,11 +7,10 @@
       "request": "launch",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:api"],
-      "cwd": "${workspaceFolder}/reconciliation-platform",
-      "envFile": "${workspaceFolder}/reconciliation-platform/.env",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "env": {
-        "JAVA_HOME": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home",
-        "PATH": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home/bin:${env:PATH}"
+        "JAVA_HOME": "${env:JAVA_HOME}"
       },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]
@@ -22,11 +21,32 @@
       "request": "launch",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:web"],
-      "cwd": "${workspaceFolder}/reconciliation-platform",
-      "envFile": "${workspaceFolder}/reconciliation-platform/.env",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "env": {
-        "JAVA_HOME": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home",
-        "PATH": "/usr/local/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home/bin:${env:PATH}"
+        "JAVA_HOME": "${env:JAVA_HOME}"
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Web (Chrome)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:5173",
+      "webRoot": "${workspaceFolder}/apps/web",
+      "preLaunchTask": "dev:web"
+    },
+    {
+      "name": "Playwright E2E",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "test:e2e", "--", "--debug"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "JAVA_HOME": "${env:JAVA_HOME}"
       },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]
@@ -36,6 +56,10 @@
     {
       "name": "API + Web",
       "configurations": ["API", "Web"]
+    },
+    {
+      "name": "Full Stack",
+      "configurations": ["API", "Web", "Web (Chrome)"]
     }
   ]
 }
