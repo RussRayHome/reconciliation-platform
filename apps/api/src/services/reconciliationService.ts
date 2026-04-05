@@ -23,6 +23,10 @@ interface UploadedFile {
   buffer: Buffer;
 }
 
+/**
+ * Input contract for executing one reconciliation run from uploaded workbook
+ * files and optional business context.
+ */
 export interface ExecuteReconciliationInput {
   correlationId: string;
   bankFile: UploadedFile;
@@ -32,6 +36,13 @@ export interface ExecuteReconciliationInput {
   periodLabel?: string;
 }
 
+/**
+ * Parses the uploaded bank and QBO workbooks, resolves reconciliation config,
+ * executes the shared matching pipeline, and returns a completed run payload.
+ *
+ * @param input Uploaded workbooks plus correlation and optional accounting context.
+ * @returns A completed reconciliation run suitable for API responses and export.
+ */
 export const executeReconciliation = async ({
   correlationId,
   bankFile,

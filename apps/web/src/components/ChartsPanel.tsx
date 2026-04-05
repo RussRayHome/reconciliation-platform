@@ -15,9 +15,9 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
       <div className="chart-card">
         <h3>Counts by Category</h3>
         <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={countChart?.data ?? []}>
+          <BarChart data={countChart?.data ?? []} margin={{ top: 8, right: 16, bottom: 12, left: 0 }} barCategoryGap="18%">
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} angle={-18} textAnchor="end" height={70} />
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} angle={-32} textAnchor="end" height={92} tickMargin={10} />
             <YAxis />
             <Tooltip />
             <Bar dataKey="value" fill="#0f766e" radius={[6, 6, 0, 0]} />
@@ -48,10 +48,10 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
       </div>
       <div className="chart-card">
         <h3>Dollar Exposure by Category</h3>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={exposureChart?.data ?? []}>
+        <ResponsiveContainer width="100%" height={292}>
+          <BarChart data={exposureChart?.data ?? []} margin={{ top: 8, right: 16, bottom: 12, left: 0 }} barCategoryGap="18%">
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} angle={-18} textAnchor="end" height={70} />
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} angle={-32} textAnchor="end" height={108} tickMargin={10} />
             <YAxis />
             <Tooltip formatter={(value: number) => value.toFixed(2)} />
             <Bar dataKey="value" fill="#c2410c" radius={[6, 6, 0, 0]} />

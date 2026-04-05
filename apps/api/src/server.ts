@@ -1,8 +1,22 @@
 import { createApp } from './app';
-import { markServerStarted } from './services/runtimeDiagnostics';
 import { createWriteStream } from 'node:fs';
+import { markServerStarted } from './services/runtimeDiagnostics';
+import { FileBackedRunRepository } from './services/runRepository';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import pino from 'pino';
 
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const persistedRunPath = process.env.RECONCILIATION_RUN_STORE_PATH ??
+  path.join(repoRoot, 'test-results', 'latest-reconciliation-run.json');
+
+/**
+ * Starts the Express API server with environment-aware logging and runtime
+ * diagnostics tracking.
+ *
+ * Logging is written to stdout in every environment and optionally mirrored to
+ * a newline-delimited JSON file when `LOG_FILE` is configured.
+ */
 export const startServer = (): void => {
   const isProduction = process.env.NODE_ENV === 'production';
   const logFile = process.env.LOG_FILE;
@@ -33,7 +47,7 @@ export const startServer = (): void => {
 
   const logger = pino({ level }, pino.multistream(streams));
 
-  const app = createApp();
+  const app = createApp(new FileBackedRunRepository(persistedRunPath));
   const port = Number(process.env.PORT ?? '4000');
 
   app.listen(port, '0.0.0.0', () => {

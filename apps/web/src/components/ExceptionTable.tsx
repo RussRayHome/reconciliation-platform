@@ -1,6 +1,6 @@
 import { startTransition, useDeferredValue, useState } from 'react';
 
-import type { ExceptionItem } from '@recon/domain';
+import { errorCategoryDisplayNames, type ExceptionItem } from '@recon/domain';
 import { Pill } from '@recon/ui';
 
 interface ExceptionTableProps {
@@ -57,7 +57,9 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
         >
           {categories.map((category) => (
             <option key={category} value={category}>
-              {category}
+              {category === 'All'
+                ? category
+                : errorCategoryDisplayNames[category as keyof typeof errorCategoryDisplayNames] ?? category}
             </option>
           ))}
         </select>
@@ -71,10 +73,14 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
             <tr>
               <th>Severity</th>
               <th>Category</th>
+              <th>Rule</th>
               <th>Source</th>
               <th>Date</th>
               <th>Amount</th>
-              <th>Message</th>
+              <th>Reason</th>
+              <th>Evidence</th>
+              <th>Next Actions</th>
+              <th>Counterpart</th>
               <th>File / Line</th>
             </tr>
           </thead>
@@ -84,11 +90,19 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
                 <td>
                   <Pill tone={toneBySeverity[item.severity]}>{item.severity}</Pill>
                 </td>
-                <td>{item.category}</td>
+                <td>{errorCategoryDisplayNames[item.category] ?? item.category}</td>
+                <td>{item.ruleTrace?.ruleName ?? 'Derived classification'}</td>
                 <td>{item.source.toUpperCase()}</td>
                 <td>{item.transactionDate ?? 'N/A'}</td>
                 <td>{item.amount?.toFixed(2) ?? 'N/A'}</td>
-                <td>{item.errorMessage}</td>
+                <td>{item.ruleTrace?.reason ?? item.errorMessage}</td>
+                <td>{item.ruleTrace?.evidence.join(' | ') ?? 'N/A'}</td>
+                <td>{item.recommendedNextActions.join(' | ')}</td>
+                <td>
+                  {item.ruleTrace?.counterpart?.spreadsheetFileName
+                    ? `${item.ruleTrace.counterpart.source?.toUpperCase() ?? ''} ${item.ruleTrace.counterpart.spreadsheetFileName} / ${item.ruleTrace.counterpart.lineNumber ?? 'N/A'}`
+                    : item.likelyMatchingReference ?? 'N/A'}
+                </td>
                 <td>
                   {item.spreadsheetFileName} / {item.lineNumber}
                 </td>

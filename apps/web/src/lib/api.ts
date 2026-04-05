@@ -52,5 +52,10 @@ export const runReconciliationRequest = async ({
   return parseResponse<ReconciliationRunResponse>(response);
 };
 
+export const getLatestReconciliationRunRequest = async (): Promise<ReconciliationRunResponse> => {
+  const response = await fetch('/api/reconciliation/latest');
+  return parseResponse<ReconciliationRunResponse>(response);
+};
+
 export const downloadWorkbookUrl = (runId: string): string =>
   `/api/reconciliation/${runId}/export/workbook`;

@@ -6,6 +6,45 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 
 import App from './App';
 
+const mockedApiState = vi.hoisted(() => ({
+  latestRunResponse: null as unknown,
+}));
+
+vi.mock('./lib/api', async () => {
+  const actual = await vi.importActual<typeof import('./lib/api')>('./lib/api');
+
+  return {
+    ...actual,
+    getLatestReconciliationRunRequest: vi.fn(async () => {
+      if (!mockedApiState.latestRunResponse) {
+        throw new Error('No latest reconciliation run available in test state.');
+      }
+
+      return mockedApiState.latestRunResponse as Awaited<
+        ReturnType<typeof actual.getLatestReconciliationRunRequest>
+      >;
+    }),
+  };
+});
+
+const storage = new Map<string, string>();
+
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    },
+    removeItem: (key: string) => {
+      storage.delete(key);
+    },
+    clear: () => {
+      storage.clear();
+    },
+  },
+});
+
 const monthsWithinYear = [
   'January',
   'February',
@@ -34,7 +73,17 @@ const createRunResponse = () => ({
   rawRows: [],
   normalizedTransactions: [],
   matchResults: [],
-  probableMatches: [],
+  probableMatches: [
+    {
+      id: 'probable-1',
+      disposition: 'Review',
+      confidence: 'Medium',
+      ruleName: 'Amount + Date + Text with Reference Variance',
+      dateDifferenceDays: 2,
+      amountDifference: 0,
+      evidence: ['Amount aligned', 'Date within tolerance', 'Reference mismatch detected'],
+    },
+  ],
   exceptions: [
     {
       id: 'exception-1',
@@ -45,8 +94,48 @@ const createRunResponse = () => ({
       lineNumber: 5,
       amount: 125.5,
       errorMessage: 'Missing from QBO',
+      ruleTrace: {
+        ruleId: 'missing-from-qbo',
+        ruleName: 'Missing from QBO',
+        reason: 'No QBO-side transaction remained after exact, review, and variance matching rules were applied.',
+        evidence: ['Transaction stayed unmatched after cross-source candidate selection.'],
+      },
+      recommendedNextActions: [
+        'Check whether the bank transaction was recorded to the correct QBO account and period.',
+        'Create or correct the QBO entry if source support confirms the bank activity is valid.',
+      ],
       normalizedComparisonTokens: ['ACME'],
       relatedTransactionIds: [],
+    },
+    {
+      id: 'exception-2',
+      category: 'LikelySplitCombineIssue',
+      severity: 'High',
+      source: 'bank',
+      spreadsheetFileName: 'bank.xlsx',
+      lineNumber: 8,
+      amount: 250,
+      errorMessage: 'Likely split/combine issue',
+      recommendedNextActions: [
+        'Review nearby transactions for one-to-many or many-to-one combinations that sum to the same net activity.',
+      ],
+      normalizedComparisonTokens: ['GROUPED', 'PAYMENT'],
+      relatedTransactionIds: ['bank-8', 'qbo-4', 'qbo-5'],
+    },
+    {
+      id: 'exception-3',
+      category: 'DepositGroupingIssue',
+      severity: 'High',
+      source: 'qbo',
+      spreadsheetFileName: 'qbo.xlsx',
+      lineNumber: 12,
+      amount: 410,
+      errorMessage: 'Deposit grouping issue',
+      recommendedNextActions: [
+        'Compare the bank deposit to underlying receipts or batch detail to confirm whether multiple book entries roll into one deposit.',
+      ],
+      normalizedComparisonTokens: ['BATCH', 'DEPOSIT'],
+      relatedTransactionIds: ['bank-12', 'qbo-8', 'qbo-9'],
     },
   ],
   summary: {
@@ -57,18 +146,27 @@ const createRunResponse = () => ({
     probableMatches: 1,
     unmatchedItems: 2,
     duplicates: 1,
+    bankDuplicates: 1,
+    qboDuplicates: 0,
+    dateVariances: 1,
     timingDifferences: 1,
     dataQualityIssues: 1,
     amountMismatches: 0,
     missingFromBank: 1,
     missingFromQBO: 1,
+    unmatchedBankNetAmount: 125.5,
+    unmatchedQboNetAmount: 0,
     cleanMatchedAmount: 6400,
     unresolvedExposure: 125.5,
     countsByCategory: {
       MissingFromQBO: 1,
+      LikelySplitCombineIssue: 1,
+      DepositGroupingIssue: 1,
     },
     amountByCategory: {
       MissingFromQBO: 125.5,
+      LikelySplitCombineIssue: 250,
+      DepositGroupingIssue: 410,
     },
     charts: [
       { id: 'countByCategory', title: 'Counts', data: [] },
@@ -80,7 +178,7 @@ const createRunResponse = () => ({
   outputWorkbook: {
     fileName: 'run-1.xlsx',
     generatedAt: new Date().toISOString(),
-    tabNames: ['Summary'],
+    tabNames: ['Summary', 'Probable Matches', 'Exceptions'],
   },
 });
 
@@ -94,9 +192,124 @@ const renderApp = () =>
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  storage.clear();
+  mockedApiState.latestRunResponse = null;
+  globalThis.history.replaceState({}, '', '/');
 });
 
 describe('App', () => {
+  it('renders the documentation hub on the docs route', () => {
+    globalThis.history.pushState({}, '', '/docs');
+
+    renderApp();
+
+    expect(screen.getByRole('heading', { name: 'Project Documents Overview' })).toBeInTheDocument();
+    expect(screen.getByText('Project Overview')).toBeInTheDocument();
+    expect(screen.getByLabelText('Selected document preview')).toBeInTheDocument();
+  });
+
+  it('renders the four top-level application tabs and defaults to Upload', () => {
+    renderApp();
+
+    expect(screen.getByRole('tab', { name: /Upload/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Rules/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /Exceptions/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /Reports/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByText('Source Upload')).toBeInTheDocument();
+  });
+
+  it('shows the reports browser and swaps displayed results when a report link is clicked', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
+    );
+
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Total reviewed')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+
+    expect(screen.getByRole('heading', { name: 'Reports' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Run Summary/i })).toBeInTheDocument();
+    expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: 'Exception Category Breakdown' })).toBeInTheDocument();
+    expect(screen.getByText('Likely Split/Combine Issue')).toBeInTheDocument();
+    expect(screen.getByText('Deposit Grouping Issue')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Exception Report/i }));
+
+    expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Export Artifacts/i }));
+
+    expect(screen.getByText('run-1.xlsx')).toBeInTheDocument();
+    expect(screen.getByText(/Summary \| Probable Matches \| Exceptions/i)).toBeInTheDocument();
+  });
+
+  it('hydrates the Reports tab from the last successful persisted run after remount', () => {
+    globalThis.localStorage.setItem(
+      'reconciliation-platform:last-successful-run',
+      JSON.stringify(createRunResponse()),
+    );
+
+    renderApp();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+
+    expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
+    expect(screen.queryByText('No report output yet')).toBeNull();
+  });
+
+  it('hydrates the Reports tab from the backend latest-run endpoint when storage is empty', async () => {
+    mockedApiState.latestRunResponse = createRunResponse();
+
+    renderApp();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
+    expect(screen.queryByText('No report output yet')).toBeNull();
+  });
+
+  it('shows the rules catalog with last-change metadata when the Rules tab is selected', () => {
+    renderApp();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Rules/i }));
+
+    expect(screen.getByText('Rules Catalog')).toBeInTheDocument();
+    expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
+    expect(screen.getByText('Likely Miscoding')).toBeInTheDocument();
+    expect(screen.getAllByText(/Last Change/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows an empty exceptions state before any reconciliation run exists', () => {
+    renderApp();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Exceptions/i }));
+
+    expect(screen.getByText('No exception set yet')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Upload both source workbooks in the Upload tab and run the reconciliation/i),
+    ).toBeInTheDocument();
+  });
+
   it('shows a monthly month picker by default with twelve month options', () => {
     renderApp();
 
@@ -222,7 +435,10 @@ describe('App', () => {
       expect(screen.getByText('Kinney Software Solutions LLC')).toBeInTheDocument();
       expect(screen.getByText('Total reviewed')).toBeInTheDocument();
       expect(screen.getByText('12')).toBeInTheDocument();
-      expect(screen.getByText('Missing from QBO')).toBeInTheDocument();
+      expect(screen.getAllByText('Missing in QBO').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Missing from QBO').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Likely Split/Combine Issue').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Deposit Grouping Issue').length).toBeGreaterThanOrEqual(1);
     });
   });
 

@@ -1,5 +1,3 @@
-import { InMemoryRunRepository } from './services/runRepository';
-import type { ReconciliationRun } from '@recon/domain';
 import {
   getRuntimeSummary,
   listExceptions,
@@ -10,16 +8,19 @@ import {
   recordFailedRequest,
   recordReconciliationRun,
 } from './services/runtimeDiagnostics';
+
+import { InMemoryRunRepository } from './services/runRepository';
+import type { ReconciliationRun } from '@recon/domain';
 import cors from 'cors';
+import { execFile } from 'node:child_process';
 import { executeReconciliation } from './services/reconciliationService';
 import express from 'express';
-import multer from 'multer';
-import pinoHttp from 'pino-http';
-import { randomUUID } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import multer from 'multer';
+import path from 'node:path';
+import pinoHttp from 'pino-http';
+import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -662,6 +663,14 @@ const getDeveloperStatus = async (
   }
 };
 
+/**
+ * Creates the HTTP application for reconciliation, diagnostics, health checks,
+ * and workbook export endpoints.
+ *
+ * @param repository Optional run repository implementation used to store and
+ * retrieve completed reconciliation runs.
+ * @returns Configured Express application instance.
+ */
 export const createApp = (repository = new InMemoryRunRepository()) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
@@ -871,6 +880,16 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
       }
     },
   );
+
+  app.get('/api/reconciliation/latest', (_request, response) => {
+    const run = repository.findLatest();
+    if (!run) {
+      response.status(404).json({ message: 'No completed reconciliation run found.' });
+      return;
+    }
+
+    response.json(sanitizeRun(run));
+  });
 
   app.get('/api/reconciliation/:id', (request, response) => {
     const run = repository.findById(request.params.id);
