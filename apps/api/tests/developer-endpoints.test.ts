@@ -1,8 +1,10 @@
+/** Integration tests for developer-facing API endpoints and diagnostics. */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createSampleBankWorkbook,
   createSampleQboWorkbook,
 } from '@recon/test-fixtures';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import request from 'supertest';
 
@@ -54,6 +56,85 @@ type ErrorResponseBody = {
   message: string;
 };
 
+type ExecFileResult = { stdout: string; stderr: string };
+type ExecFileMatcher = {
+  matches: (joined: string) => boolean;
+  result: ExecFileResult;
+};
+
+const execFileMatchers: ExecFileMatcher[] = [
+  {
+    matches: (joined) => joined.includes('git branch --show-current'),
+    result: { stdout: 'feature/developer-dashboard-docs\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git rev-parse --short HEAD'),
+    result: { stdout: 'abc1234\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git log -1 --pretty=%s'),
+    result: { stdout: 'Latest commit\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git status --porcelain'),
+    result: { stdout: '', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run test:unit'),
+    result: {
+      stdout: 'Test Files  9 passed (9)\nTests  114 passed (114)\n',
+      stderr: '',
+    },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run test:integration'),
+    result: {
+      stdout: 'Test Files  1 passed (1)\nTests  5 passed (5)\n',
+      stderr: '',
+    },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run test:e2e'),
+    result: {
+      stdout: 'Running 1 test using 1 worker\n\n  1 passed (7.0s)\n',
+      stderr: '',
+    },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run lint'),
+    result: { stdout: '', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run typecheck'),
+    result: { stdout: '', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run coverage'),
+    result: {
+      stdout: 'All files          |   81.2 |    80.0 |   82.1 |   81.2',
+      stderr: '',
+    },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('audit --json'),
+    result: {
+      stdout: JSON.stringify({
+        metadata: {
+          vulnerabilities: {
+            info: 0,
+            low: 0,
+            moderate: 0,
+            high: 0,
+            critical: 0,
+            total: 0,
+          },
+        },
+      }),
+      stderr: '',
+    },
+  },
+];
+
 const mockExecFile = vi.fn(
   (
     command: string,
@@ -63,86 +144,10 @@ const mockExecFile = vi.fn(
   ) => {
     const joined = [command, ...args].join(' ');
 
-    if (joined.includes('git branch --show-current')) {
-      callback(null, { stdout: 'feature/developer-dashboard-docs\n', stderr: '' });
-      return;
-    }
+    const matched = execFileMatchers.find((matcher) => matcher.matches(joined));
 
-    if (joined.includes('git rev-parse --short HEAD')) {
-      callback(null, { stdout: 'abc1234\n', stderr: '' });
-      return;
-    }
-
-    if (joined.includes('git log -1 --pretty=%s')) {
-      callback(null, { stdout: 'Latest commit\n', stderr: '' });
-      return;
-    }
-
-    if (joined.includes('git status --porcelain')) {
-      callback(null, { stdout: '', stderr: '' });
-      return;
-    }
-
-    if (joined.includes('npm') && joined.includes('run test:unit')) {
-      callback(null, {
-        stdout: 'Test Files  9 passed (9)\nTests  114 passed (114)\n',
-        stderr: '',
-      });
-      return;
-    }
-
-    if (joined.includes('npm') && joined.includes('run test:integration')) {
-      callback(null, {
-        stdout: 'Test Files  1 passed (1)\nTests  5 passed (5)\n',
-        stderr: '',
-      });
-      return;
-    }
-
-    if (joined.includes('npm') && joined.includes('run test:e2e')) {
-      callback(null, {
-        stdout: 'Running 1 test using 1 worker\n\n  1 passed (7.0s)\n',
-        stderr: '',
-      });
-      return;
-    }
-
-    if (joined.includes('npm') && joined.includes('run lint')) {
-      callback(null, { stdout: '', stderr: '' });
-      return;
-    }
-
-    if (joined.includes('npm') && joined.includes('run typecheck')) {
-      callback(null, { stdout: '', stderr: '' });
-      return;
-    }
-
-    if (joined.includes('npm') && joined.includes('run coverage')) {
-      callback(null, {
-        stdout: [
-          'All files          |   81.2 |    80.0 |   82.1 |   81.2',
-        ].join('\n'),
-        stderr: '',
-      });
-      return;
-    }
-
-    if (joined.includes('npm') && joined.includes('audit --json')) {
-      callback(null, {
-        stdout: JSON.stringify({
-          metadata: {
-            vulnerabilities: {
-              info: 0,
-              low: 0,
-              moderate: 0,
-              high: 0,
-              critical: 0,
-              total: 0,
-            },
-          },
-        }),
-        stderr: '',
-      });
+    if (matched) {
+      callback(null, matched.result);
       return;
     }
 

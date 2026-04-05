@@ -10,12 +10,12 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
 
   await page.goto('/');
 
-  await page.getByLabel('Bank workbook').setInputFiles({
+  await page.locator('#bank-workbook-input').setInputFiles({
     name: 'bank.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankBuffer,
   });
-  await page.getByLabel('QBO workbook').setInputFiles({
+  await page.locator('#qbo-workbook-input').setInputFiles({
     name: 'qbo.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: qboBuffer,

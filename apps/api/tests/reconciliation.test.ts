@@ -1,4 +1,7 @@
 import {
+  allExceptionCategories,
+  createAllExceptionsBankWorkbook,
+  createAllExceptionsQboWorkbook,
   createSampleBankWorkbook,
   createSampleQboWorkbook,
   createWorkbookFromRows,
@@ -6,9 +9,10 @@ import {
   nonStandardHeaderQboRows,
 } from '@recon/test-fixtures';
 import { describe, expect, it } from 'vitest';
-import ExcelJS from 'exceljs';
 
+import ExcelJS from 'exceljs';
 import { createApp } from '../src/app';
+import { errorCategoryDisplayNames } from '@recon/domain';
 import request from 'supertest';
 
 const parseBinaryBody = (
@@ -51,12 +55,30 @@ describe('reconciliation API', () => {
 
     const { id } = runPayload;
 
+    const latestResponse = await request(app).get('/api/reconciliation/latest').expect(200);
+    const latestPayload = latestResponse.body as { id: string };
+    expect(latestPayload.id).toBe(id);
+
     const summaryResponse = await request(app).get(`/api/reconciliation/${id}/summary`).expect(200);
-    const summaryPayload = summaryResponse.body as { exactMatches: number };
+    const summaryPayload = summaryResponse.body as {
+      exactMatches: number;
+      countsByCategory: Record<string, number>;
+    };
     expect(summaryPayload.exactMatches).toBeGreaterThanOrEqual(1);
 
     const exceptionsResponse = await request(app).get(`/api/reconciliation/${id}/exceptions`).expect(200);
     expect(Array.isArray(exceptionsResponse.body)).toBe(true);
+    const exceptionsPayload = exceptionsResponse.body as Array<{
+      category: string;
+      ruleTrace?: { ruleId?: string; reason?: string };
+      recommendedNextActions?: string[];
+    }>;
+    expect(exceptionsPayload.length).toBeGreaterThan(0);
+    expect(
+      exceptionsPayload.every(
+        (item) => typeof item.ruleTrace?.reason === 'string' && (item.recommendedNextActions?.length ?? 0) > 0,
+      ),
+    ).toBe(true);
 
     const workbookResponse = await request(app)
       .get(`/api/reconciliation/${id}/export/workbook`)
@@ -94,6 +116,21 @@ describe('reconciliation API', () => {
 
     const nonHeaderCategories = categoryColumnValues.filter((value) => value !== 'Category');
     expect(nonHeaderCategories.some((value) => value.includes(' '))).toBe(true);
+
+    const workbookCategoryCounts = nonHeaderCategories.reduce<Record<string, number>>((counts, label) => {
+      counts[label] = (counts[label] ?? 0) + 1;
+      return counts;
+    }, {});
+    const exceptionCounts = exceptionsPayload.reduce<Record<string, number>>((counts, item) => {
+      counts[item.category] = (counts[item.category] ?? 0) + 1;
+      return counts;
+    }, {});
+
+    Object.entries(exceptionCounts).forEach(([category, count]) => {
+      const displayName = errorCategoryDisplayNames[category as keyof typeof errorCategoryDisplayNames] ?? category;
+      expect(workbookCategoryCounts[displayName]).toBe(count);
+      expect(summaryPayload.countsByCategory[category]).toBe(count);
+    });
   });
 
   it('handles non-standard bank headers for account 5703 without cascading invalid amount errors', async () => {
@@ -126,6 +163,48 @@ describe('reconciliation API', () => {
 
     expect(runPayload.summary.exactMatches).toBeGreaterThanOrEqual(2);
     expect(runPayload.summary.dataQualityIssues).toBe(0);
+  });
+
+  it('accepts the combined all-exceptions workbook pair and surfaces every exception category through the API', async () => {
+    const app = createApp();
+    const [bankBuffer, qboBuffer] = await Promise.all([
+      createAllExceptionsBankWorkbook(),
+      createAllExceptionsQboWorkbook(),
+    ]);
+
+    const runResponse = await request(app)
+      .post('/api/reconciliation/run')
+      .field('accountIdentifier', 'OPERATING-001')
+      .field('periodLabel', 'All Exception Categories')
+      .attach('bankFile', bankBuffer, {
+        filename: 'sample-all-exceptions-bank.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .attach('qboFile', qboBuffer, {
+        filename: 'sample-all-exceptions-qbo.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+
+    const runPayload = runResponse.body as {
+      id: string;
+      summary: { countsByCategory: Record<string, number> };
+    };
+
+    const exceptionsResponse = await request(app)
+      .get(`/api/reconciliation/${runPayload.id}/exceptions`)
+      .expect(200);
+
+    const exceptionsPayload = exceptionsResponse.body as Array<{ category: string }>;
+    const exceptionCounts = exceptionsPayload.reduce<Record<string, number>>((counts, item) => {
+      counts[item.category] = (counts[item.category] ?? 0) + 1;
+      return counts;
+    }, {});
+
+    allExceptionCategories.forEach((category) => {
+      expect(exceptionCounts[category]).toBeGreaterThan(0);
+      expect(runPayload.summary.countsByCategory[category]).toBe(exceptionCounts[category]);
+    });
   });
 
   it('accepts browser uploads when the workbook MIME type is application/octet-stream', async () => {
@@ -182,5 +261,14 @@ describe('reconciliation API', () => {
     const response = await request(app).post('/api/reconciliation/run').expect(400);
     const payload = response.body as { message: string };
     expect(payload.message).toContain('Both bankFile and qboFile');
+  });
+
+  it('returns 404 when no latest reconciliation run has been stored yet', async () => {
+    const app = createApp();
+
+    const response = await request(app).get('/api/reconciliation/latest').expect(404);
+    const payload = response.body as { message: string };
+
+    expect(payload.message).toContain('No completed reconciliation run found');
   });
 });
