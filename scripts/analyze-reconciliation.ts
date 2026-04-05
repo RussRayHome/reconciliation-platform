@@ -86,7 +86,7 @@ const parseNumberList = (
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
-    .map((item) => Number(item));
+    .map(Number);
 
   if (parsed.length === 0 || parsed.some((item) => Number.isNaN(item))) {
     throw new Error(`Invalid ${flagName} value: "${value}". Expected a comma-separated list of numbers.\n\n${usage()}`);
@@ -186,7 +186,7 @@ const isMonthEndDate = (value?: string): boolean => {
 };
 
 const includesText = (text: string | undefined, fragment: string): boolean =>
-  Boolean(text && text.toLowerCase().includes(fragment));
+  Boolean(text?.toLowerCase().includes(fragment));
 
 const buildAmountFrequency = (values: Array<{ amount: number | null }>): Map<number, number> => {
   const frequency = new Map<number, number>();
@@ -616,8 +616,10 @@ const main = async (): Promise<void> => {
   console.log(JSON.stringify(result, null, 2));
 };
 
-void main().catch((error: unknown) => {
+try {
+  await main();
+} catch (error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(message);
   process.exitCode = 1;
-});
+}

@@ -12,6 +12,7 @@
         --muted: #52606d;
         --border: #d9e2ec;
         --ok: #18794e;
+        --warn: #b26a00;
         --bad: #b42318;
         --accent: #0f6c7a;
       }
@@ -120,6 +121,10 @@
 
       .bad {
         color: var(--bad);
+      }
+
+      .warn {
+        color: var(--warn);
       }
 
       .cards {
@@ -329,6 +334,12 @@
         font-size: 0.86rem;
       }
 
+      .summary-copy {
+        margin: 10px 0 0;
+        color: #334e68;
+        line-height: 1.5;
+      }
+
       pre {
         margin-top: 10px;
         background: #0b1220;
@@ -350,6 +361,7 @@
         <div class="actions">
           <button id="refresh" class="button">Refresh checks</button>
           <button id="force-refresh" class="button secondary">Force refresh</button>
+          <a class="button secondary" href="/docs">Open docs hub</a>
           <a class="button secondary" href="/">Open application</a>
         </div>
       </header>
@@ -392,6 +404,23 @@
           <p class="metric-label">Cache age / TTL</p>
           <p id="cache-age" class="metric-value" style="font-size: 0.98rem;">-</p>
         </article>
+        <article class="metric">
+          <p class="metric-label">Health ratio</p>
+          <p id="health-ratio" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Failing areas</p>
+          <p id="failing-areas" class="metric-value" style="font-size: 0.98rem;">-</p>
+        </article>
+      </section>
+
+      <section class="card" style="margin-bottom: 12px;">
+        <div class="card-top">
+          <h3>Current Repo Focus</h3>
+          <span id="repo-focus-badge" class="pill">Loading</span>
+        </div>
+        <p id="repo-focus-summary" class="summary-copy">Loading current repo health summary...</p>
+        <ul id="repo-focus-list" class="highlights"></ul>
       </section>
 
       <section class="card" style="margin-bottom: 12px;">
@@ -487,6 +516,11 @@
       const updated = document.getElementById('updated');
       const cacheStatus = document.getElementById('cache-status');
       const cacheAge = document.getElementById('cache-age');
+      const healthRatio = document.getElementById('health-ratio');
+      const failingAreas = document.getElementById('failing-areas');
+      const repoFocusBadge = document.getElementById('repo-focus-badge');
+      const repoFocusSummary = document.getElementById('repo-focus-summary');
+      const repoFocusList = document.getElementById('repo-focus-list');
       const history = document.getElementById('history');
       const historyCount = document.getElementById('history-count');
       const refreshButton = document.getElementById('refresh');
@@ -834,6 +868,54 @@
         }
       };
 
+      const renderRepoFocus = (payload) => {
+        const checks = Array.isArray(payload?.checks) ? payload.checks : [];
+        const failingChecks = checks.filter((check) => !check.ok);
+        const uniqueFailingAreas = [...new Set(failingChecks.map((check) => check.areaLabel || check.name))];
+        const passedChecks = Number(payload?.passedChecks ?? Math.max(0, checks.length - failingChecks.length));
+        const totalChecks = Number(payload?.totalChecks ?? checks.length);
+        const ratioPercent = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0;
+
+        healthRatio.textContent = totalChecks > 0
+          ? `${passedChecks}/${totalChecks} (${ratioPercent}%)`
+          : 'No checks';
+        healthRatio.className = `metric-value ${failingChecks.length === 0 ? 'ok' : 'bad'}`;
+
+        failingAreas.textContent = uniqueFailingAreas.length > 0 ? uniqueFailingAreas.join(', ') : 'None';
+        failingAreas.className = `metric-value ${uniqueFailingAreas.length === 0 ? 'ok' : 'bad'}`;
+
+        repoFocusList.innerHTML = '';
+
+        if (failingChecks.length === 0) {
+          repoFocusBadge.textContent = 'All clear';
+          repoFocusBadge.className = 'pill ok';
+          repoFocusSummary.textContent = `All ${totalChecks} repository checks passed in ${formatDuration(payload.totalDurationMs)}.`;
+
+          const strongestChecks = checks
+            .slice()
+            .sort((left, right) => right.durationMs - left.durationMs)
+            .slice(0, 3);
+
+          for (const check of strongestChecks) {
+            const row = document.createElement('li');
+            row.textContent = `${check.name}: ${check.summary}`;
+            repoFocusList.appendChild(row);
+          }
+
+          return;
+        }
+
+        repoFocusBadge.textContent = `${failingChecks.length} blocker${failingChecks.length === 1 ? '' : 's'}`;
+        repoFocusBadge.className = 'pill bad';
+        repoFocusSummary.textContent = `${failingChecks.length} checks are currently blocking repo health across ${uniqueFailingAreas.length} area${uniqueFailingAreas.length === 1 ? '' : 's'}.`;
+
+        for (const check of failingChecks.slice(0, 4)) {
+          const row = document.createElement('li');
+          row.textContent = `${check.name}: ${check.summary}`;
+          repoFocusList.appendChild(row);
+        }
+      };
+
       const readJsonOrThrow = async (response, fallbackMessage) => {
         const payload = await response.json().catch(() => null);
         if (!response.ok) {
@@ -874,11 +956,18 @@
             ? `${formatDuration(payload.cache.ageMs)} / ${formatDuration(payload.cache.ttlMs)}`
             : '-';
 
+          renderRepoFocus(payload);
           renderHistory(payload.history);
           renderRepoChecks(payload.checks);
         } catch (error) {
           overall.textContent = 'Unavailable';
           overall.className = 'metric-value bad';
+          healthRatio.textContent = '-';
+          failingAreas.textContent = '-';
+          repoFocusBadge.textContent = 'Unavailable';
+          repoFocusBadge.className = 'pill bad';
+          repoFocusSummary.textContent = error instanceof Error ? error.message : 'Unknown error';
+          repoFocusList.innerHTML = '';
           cards.innerHTML = `<article class="card"><div class="details bad">${error instanceof Error ? error.message : 'Unknown error'}</div></article>`;
         } finally {
           setButtonsBusy(false, null);

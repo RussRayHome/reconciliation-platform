@@ -1,19 +1,44 @@
+"""Run second-pass diagnostics against two reconciliation workbooks."""
+
+import argparse
 from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from openpyxl import load_workbook
 
-A = Path('/Users/rray/Desktop/FinancialRecon/BankingRecon/2025_5703_reconciliation_workpaper.xlsx')
-B = Path('/Users/rray/Desktop/FinancialRecon/BankingRecon/Account5703Test_recon_workspaper.xlsx')
+
+def parse_args():
+    """Parse command-line arguments for the second-pass comparison."""
+    parser = argparse.ArgumentParser(
+        description=(
+            'Run second-pass diagnostics against two workbooks '
+            'using the expected Error Report layouts.'
+        )
+    )
+    parser.add_argument(
+        '--baseline', required=True, help='Path to the baseline workbook.'
+    )
+    parser.add_argument(
+        '--candidate', required=True, help='Path to the candidate workbook.'
+    )
+    return parser.parse_args()
 
 
 def s(v):
+    """Return a stripped string representation for a worksheet value."""
     return '' if v is None else str(v).strip()
 
 
 def num(v):
-    t = s(v).replace(',', '').replace('$', '').replace('(', '-').replace(')', '')
+    """Parse a worksheet amount cell into a float when possible."""
+    t = (
+        s(v)
+        .replace(',', '')
+        .replace('$', '')
+        .replace('(', '-')
+        .replace(')', '')
+    )
     if not t:
         return None
     try:
@@ -23,6 +48,7 @@ def num(v):
 
 
 def read_a(path: Path):
+    """Read rows from the baseline workbook error report layout."""
     wb = load_workbook(path, data_only=True)
     ws = wb['Error Report']
     rows = []
@@ -50,6 +76,7 @@ def read_a(path: Path):
 
 
 def read_b(path: Path):
+    """Read rows from the candidate workbook error report layout."""
     wb = load_workbook(path, data_only=True)
     ws = wb['Error Report']
     rows = []
@@ -77,8 +104,22 @@ def read_b(path: Path):
 
 
 def main():
-    a = read_a(A)
-    b = read_b(B)
+    """Print category, coverage, and exposure diagnostics.
+
+    The report compares both workbook layouts and their category totals.
+    """
+    args = parse_args()
+    a_path = Path(args.baseline).expanduser().resolve()
+    b_path = Path(args.candidate).expanduser().resolve()
+
+    if not a_path.exists() or not b_path.exists():
+        print('ERROR: workbook path missing')
+        print(f'  A exists: {a_path.exists()} => {a_path}')
+        print(f'  B exists: {b_path.exists()} => {b_path}')
+        raise SystemExit(1)
+
+    a = read_a(a_path)
+    b = read_b(b_path)
 
     idx_a = defaultdict(list)
     idx_b = defaultdict(list)
@@ -92,7 +133,10 @@ def main():
     only_b = set(idx_b) - set(idx_a)
 
     print('KEY COVERAGE')
-    print(f"A keys: {len(idx_a)} B keys: {len(idx_b)} Common: {len(common)} OnlyA: {len(only_a)} OnlyB: {len(only_b)}")
+    print(
+        f'A keys: {len(idx_a)} B keys: {len(idx_b)} Common: {len(common)} '
+        f'OnlyA: {len(only_a)} OnlyB: {len(only_b)}'
+    )
 
     cat_mismatch = Counter()
     cat_match = Counter()
@@ -123,10 +167,11 @@ def main():
     print(f'ONLY IN B (app-only keys): {len(only_b)}')
 
     print('\nSAMPLE ONLY-IN-B KEYS (first 30)')
-    for k in list(sorted(only_b))[:30]:
+    for k in sorted(only_b)[:30]:
         r = idx_b[k][0]
         print(
-            f"{r['source']} line {r['line']} | cat={r['cat']} | amount={r['amount']} | "
+            f"{r['source']} line {r['line']} | cat={r['cat']} | "
+            f"amount={r['amount']} | "
             f"msg={r['msg'][:90]}"
         )
 
@@ -134,7 +179,8 @@ def main():
     examples.sort(reverse=True, key=lambda t: t[0])
     for _, ra, rb, da in examples[:50]:
         print(
-            f"{ra['source']} line {ra['line']} | A:{ra['cat']} amt={ra['amount']} -> "
+            f"{ra['source']} line {ra['line']} | A:{ra['cat']} "
+            f"amt={ra['amount']} -> "
             f"B:{rb['cat']} amt={rb['amount']} | dAmt={da} | "
             f"Amsg={ra['msg'][:70]} | Bmsg={rb['msg'][:70]}"
         )

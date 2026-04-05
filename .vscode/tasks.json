@@ -41,6 +41,56 @@
       "problemMatcher": []
     },
     {
+      "label": "harness:start",
+      "type": "shell",
+      "command": "npm run harness:start",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "harness:restart",
+      "type": "shell",
+      "command": "npm run harness:restart",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "harness:stop",
+      "type": "shell",
+      "command": "npm run harness:stop",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "harness:status",
+      "type": "shell",
+      "command": "npm run harness:status",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "JAVA_HOME": "${env:JAVA_HOME}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "typecheck",
       "type": "shell",
       "command": "npm run typecheck",

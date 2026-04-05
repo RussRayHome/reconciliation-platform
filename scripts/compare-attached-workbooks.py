@@ -1,18 +1,47 @@
-from openpyxl import load_workbook
-from pathlib import Path
+"""Compare two generated reconciliation workbooks for parity diagnostics."""
+
+import argparse
 from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
-A = Path('/Users/rray/Desktop/FinancialRecon/BankingRecon/2025_5703_reconciliation_workpaper.xlsx')
-B = Path('/Users/rray/Desktop/FinancialRecon/BankingRecon/Account5703Test2_recon_workspaper.xlsx')
+from openpyxl import load_workbook
+
+
+def parse_args():
+    """Parse command-line arguments for workbook comparison."""
+    parser = argparse.ArgumentParser(
+        description=(
+            'Compare two attached reconciliation workbooks with '
+            'summary and row-level diagnostics.'
+        )
+    )
+    parser.add_argument(
+        '--baseline', required=True, help='Path to the baseline workbook.'
+    )
+    parser.add_argument(
+        '--candidate', required=True, help='Path to the candidate workbook.'
+    )
+    return parser.parse_args()
+
+
+ERROR_REPORT_SHEET = 'Error Report'
 
 
 def s(v):
+    """Return a stripped string representation for a cell value."""
     return '' if v is None else str(v).strip()
 
 
 def num(v):
-    t = s(v).replace(',', '').replace('$', '').replace('(', '-').replace(')', '')
+    """Parse a workbook currency value into a float when possible."""
+    t = (
+        s(v)
+        .replace(',', '')
+        .replace('$', '')
+        .replace('(', '-')
+        .replace(')', '')
+    )
     if not t:
         return None
     try:
@@ -22,6 +51,7 @@ def num(v):
 
 
 def read_summary(ws):
+    """Read the top summary key-value pairs from a worksheet."""
     d = {}
     for r in range(1, min(ws.max_row, 300) + 1):
         k = s(ws.cell(r, 1).value)
@@ -32,6 +62,7 @@ def read_summary(ws):
 
 
 def detect_header_row(ws, max_scan=12):
+    """Find the most likely header row by counting non-empty cells."""
     best = (-1, 1)
     for r in range(1, min(ws.max_row, max_scan) + 1):
         c = 0
@@ -44,6 +75,7 @@ def detect_header_row(ws, max_scan=12):
 
 
 def read_table(ws):
+    """Read a worksheet into header metadata and row dictionaries."""
     hr = detect_header_row(ws)
     cols = []
     headers = []
@@ -62,6 +94,7 @@ def read_table(ws):
 
 
 def get_cat(row):
+    """Extract the category-like field from a workbook row."""
     for k in ['Error Category', 'Category', 'Exception Category', 'Status']:
         if row.get(k):
             return row[k]
@@ -69,6 +102,7 @@ def get_cat(row):
 
 
 def get_amt(row):
+    """Extract the monetary exposure field from a workbook row."""
     for k in ['Amount', 'Dollar Exposure', 'Exposure']:
         if row.get(k):
             return num(row[k]) or 0.0
@@ -76,11 +110,22 @@ def get_amt(row):
 
 
 def main():
-    wa = load_workbook(A, data_only=True)
-    wb = load_workbook(B, data_only=True)
+    """Compare workbook summaries, error categories, and row-level deltas."""
+    args = parse_args()
+    a_path = Path(args.baseline).expanduser().resolve()
+    b_path = Path(args.candidate).expanduser().resolve()
 
-    print('A', A)
-    print('B', B)
+    if not a_path.exists() or not b_path.exists():
+        print('ERROR: workbook path missing')
+        print(f'  A exists: {a_path.exists()} => {a_path}')
+        print(f'  B exists: {b_path.exists()} => {b_path}')
+        raise SystemExit(1)
+
+    wa = load_workbook(a_path, data_only=True)
+    wb = load_workbook(b_path, data_only=True)
+
+    print('A', a_path)
+    print('B', b_path)
     print('SHEETS_A', wa.sheetnames)
     print('SHEETS_B', wb.sheetnames)
 
@@ -88,16 +133,27 @@ def main():
         sa = read_summary(wa['Summary'])
         sb = read_summary(wb['Summary'])
         keys = sorted(set(sa) | set(sb))
-        diffs = [(k, sa.get(k, ''), sb.get(k, '')) for k in keys if sa.get(k, '') != sb.get(k, '')]
+        diffs = [
+            (k, sa.get(k, ''), sb.get(k, ''))
+            for k in keys
+            if sa.get(k, '') != sb.get(k, '')
+        ]
         print('SUMMARY_DIFF_COUNT', len(diffs))
         for k, av, bv in diffs[:60]:
             print('SUMMARY_DIFF', k, '|A=', av, '|B=', bv)
 
-    if 'Error Report' in wa.sheetnames and 'Error Report' in wb.sheetnames:
-        hra, hda, ra = read_table(wa['Error Report'])
-        hrb, hdb, rb = read_table(wb['Error Report'])
-        print('ERROR_REPORT A_header', hra, 'A_rows', len(ra), 'A_cols', len(hda))
-        print('ERROR_REPORT B_header', hrb, 'B_rows', len(rb), 'B_cols', len(hdb))
+    if (
+        ERROR_REPORT_SHEET in wa.sheetnames
+        and ERROR_REPORT_SHEET in wb.sheetnames
+    ):
+        hra, hda, ra = read_table(wa[ERROR_REPORT_SHEET])
+        hrb, hdb, rb = read_table(wb[ERROR_REPORT_SHEET])
+        print(
+            'ERROR_REPORT A_header', hra, 'A_rows', len(ra), 'A_cols', len(hda)
+        )
+        print(
+            'ERROR_REPORT B_header', hrb, 'B_rows', len(rb), 'B_cols', len(hdb)
+        )
 
         ca = Counter(get_cat(r) for r in ra if get_cat(r))
         cb = Counter(get_cat(r) for r in rb if get_cat(r))
@@ -105,7 +161,16 @@ def main():
         print('CATEGORY_COUNT_DELTAS')
         for c in cats:
             if ca.get(c, 0) != cb.get(c, 0):
-                print('CAT', c, 'A', ca.get(c, 0), 'B', cb.get(c, 0), 'DELTA', cb.get(c, 0) - ca.get(c, 0))
+                print(
+                    'CAT',
+                    c,
+                    'A',
+                    ca.get(c, 0),
+                    'B',
+                    cb.get(c, 0),
+                    'DELTA',
+                    cb.get(c, 0) - ca.get(c, 0),
+                )
 
         ea = Counter()
         eb = Counter()
@@ -125,8 +190,8 @@ def main():
                 print('EXP', c, 'A', av, 'B', bv, 'DELTA', round(bv - av, 2))
 
     # Row-level mapping (known column layout per workbook flavor)
-    wsa = wa['Error Report']
-    wsb = wb['Error Report']
+    wsa = wa[ERROR_REPORT_SHEET]
+    wsb = wb[ERROR_REPORT_SHEET]
     rows_a = []
     for r in range(2, wsa.max_row + 1):
         source = s(wsa.cell(r, 1).value)
@@ -135,7 +200,16 @@ def main():
         amt = num(wsa.cell(r, 9).value)
         msg = s(wsa.cell(r, 11).value)
         if source or line or cat:
-            rows_a.append({'key': (source.lower(), line), 'source': source, 'line': line, 'cat': cat, 'amount': amt, 'msg': msg})
+            rows_a.append(
+                {
+                    'key': (source.lower(), line),
+                    'source': source,
+                    'line': line,
+                    'cat': cat,
+                    'amount': amt,
+                    'msg': msg,
+                }
+            )
 
     rows_b = []
     for r in range(2, wsb.max_row + 1):
@@ -145,7 +219,16 @@ def main():
         amt = num(wsb.cell(r, 7).value)
         msg = s(wsb.cell(r, 8).value)
         if source or line or cat:
-            rows_b.append({'key': (source.lower(), line), 'source': source, 'line': line, 'cat': cat, 'amount': amt, 'msg': msg})
+            rows_b.append(
+                {
+                    'key': (source.lower(), line),
+                    'source': source,
+                    'line': line,
+                    'cat': cat,
+                    'amount': amt,
+                    'msg': msg,
+                }
+            )
 
     idxa = defaultdict(list)
     idxb = defaultdict(list)
@@ -158,7 +241,18 @@ def main():
     only_a = set(idxa) - set(idxb)
     only_b = set(idxb) - set(idxa)
 
-    print('KEY_COVERAGE A', len(idxa), 'B', len(idxb), 'COMMON', len(common), 'ONLY_A', len(only_a), 'ONLY_B', len(only_b))
+    print(
+        'KEY_COVERAGE A',
+        len(idxa),
+        'B',
+        len(idxb),
+        'COMMON',
+        len(common),
+        'ONLY_A',
+        len(only_a),
+        'ONLY_B',
+        len(only_b),
+    )
 
     mismatch = Counter()
     for k in common:
@@ -172,9 +266,20 @@ def main():
         print('PAIR', left, '->', right, 'COUNT', count)
 
     print('SAMPLE_ONLY_B')
-    for k in list(sorted(only_b))[:30]:
+    for k in sorted(only_b)[:30]:
         r = idxb[k][0]
-        print('ONLY_B', r['source'], 'line', r['line'], 'cat', r['cat'], 'amt', r['amount'], 'msg', r['msg'][:110])
+        print(
+            'ONLY_B',
+            r['source'],
+            'line',
+            r['line'],
+            'cat',
+            r['cat'],
+            'amt',
+            r['amount'],
+            'msg',
+            r['msg'][:110],
+        )
 
 
 if __name__ == '__main__':

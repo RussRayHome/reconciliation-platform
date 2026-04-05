@@ -1,12 +1,39 @@
-from openpyxl import load_workbook
-from pathlib import Path
-from collections import Counter
+"""Compare reconciliation workbooks at the summary and error-report levels."""
 
-A = Path('/Users/rray/Desktop/FinancialRecon/BankingRecon/2025_5703_reconciliation_workpaper.xlsx')
-B = Path('/Users/rray/Desktop/FinancialRecon/BankingRecon/Account5703Test_recon_workspaper.xlsx')
+import argparse
+from collections import Counter
+from pathlib import Path
+
+from openpyxl import load_workbook
+
+
+def parse_args():
+    """Parse command-line arguments for workbook parity checks."""
+    parser = argparse.ArgumentParser(
+        description=(
+            'Compare two reconciliation workbooks at the summary '
+            'and error-report level.'
+        )
+    )
+    parser.add_argument(
+        '--baseline', required=True, help='Path to the baseline workbook.'
+    )
+    parser.add_argument(
+        '--candidate', required=True, help='Path to the candidate workbook.'
+    )
+    return parser.parse_args()
+
+
+ERROR_REPORT_SHEET = 'Error Report'
+REVIEW_SHEETS = [
+    'Mapping and Assumptions',
+    'Probable Matches Review',
+    'Reviewer Observations',
+]
 
 
 def sval(v):
+    """Normalize worksheet values into stable string representations."""
     if v is None:
         return ''
     if isinstance(v, float):
@@ -15,6 +42,7 @@ def sval(v):
 
 
 def read_summary(ws):
+    """Read summary rows from a workbook summary worksheet."""
     d = {}
     max_r = min(ws.max_row, 250)
     for r in range(1, max_r + 1):
@@ -26,6 +54,7 @@ def read_summary(ws):
 
 
 def detect_header_row(ws, max_scan=12):
+    """Detect the best table header row within the scan range."""
     best_count = -1
     best_row = 1
     for r in range(1, min(ws.max_row, max_scan) + 1):
@@ -40,6 +69,7 @@ def detect_header_row(ws, max_scan=12):
 
 
 def read_table(ws):
+    """Read a table worksheet into header metadata and row dictionaries."""
     hr = detect_header_row(ws)
     idx = []
     headers = []
@@ -58,6 +88,7 @@ def read_table(ws):
 
 
 def parse_money(value):
+    """Parse currency-like text values into signed floats."""
     text = sval(value)
     if not text:
         return 0.0
@@ -86,6 +117,7 @@ def parse_money(value):
 
 
 def category_counts(rows):
+    """Count rows by their detected exception or status category."""
     keys = ['Error Category', 'Category', 'Exception Category', 'Status']
     out = Counter()
     for row in rows:
@@ -100,6 +132,7 @@ def category_counts(rows):
 
 
 def category_exposure(rows):
+    """Aggregate exposure totals by detected exception category."""
     cat_keys = ['Error Category', 'Category', 'Exception Category', 'Status']
     amt_keys = ['Amount', 'Dollar Exposure', 'Exposure']
     out = Counter()
@@ -123,6 +156,7 @@ def category_exposure(rows):
 
 
 def print_summary_diff(sa, sb):
+    """Print key-by-key differences between two summary sections."""
     keys = sorted(set(sa) | set(sb))
     diffs = []
     for k in keys:
@@ -137,17 +171,22 @@ def print_summary_diff(sa, sb):
 
 
 def main():
-    if not A.exists() or not B.exists():
+    """Compare workbook structure, summary values, and category deltas."""
+    args = parse_args()
+    a_path = Path(args.baseline).expanduser().resolve()
+    b_path = Path(args.candidate).expanduser().resolve()
+
+    if not a_path.exists() or not b_path.exists():
         print('ERROR: workbook path missing')
-        print(f'  A exists: {A.exists()} => {A}')
-        print(f'  B exists: {B.exists()} => {B}')
+        print(f'  A exists: {a_path.exists()} => {a_path}')
+        print(f'  B exists: {b_path.exists()} => {b_path}')
         raise SystemExit(1)
 
-    wa = load_workbook(A, data_only=True)
-    wb = load_workbook(B, data_only=True)
+    wa = load_workbook(a_path, data_only=True)
+    wb = load_workbook(b_path, data_only=True)
 
-    print('WORKBOOK_A:', A)
-    print('WORKBOOK_B:', B)
+    print('WORKBOOK_A:', a_path)
+    print('WORKBOOK_B:', b_path)
     print('')
 
     print('SHEETS_A:', wa.sheetnames)
@@ -162,9 +201,12 @@ def main():
         print('SUMMARY: missing in one of workbooks')
     print('')
 
-    if 'Error Report' in wa.sheetnames and 'Error Report' in wb.sheetnames:
-        hra, hda, ra = read_table(wa['Error Report'])
-        hrb, hdb, rb = read_table(wb['Error Report'])
+    if (
+        ERROR_REPORT_SHEET in wa.sheetnames
+        and ERROR_REPORT_SHEET in wb.sheetnames
+    ):
+        hra, hda, ra = read_table(wa[ERROR_REPORT_SHEET])
+        hrb, hdb, rb = read_table(wb[ERROR_REPORT_SHEET])
 
         print('ERROR_REPORT:')
         print(f'  A header_row={hra}, rows={len(ra)}, cols={len(hda)}')
@@ -187,16 +229,22 @@ def main():
             av = round(da.get(cat, 0.0), 2)
             bv = round(db.get(cat, 0.0), 2)
             if av != bv:
-                print(f'    - {cat}: A={av}, B={bv}, delta={round(bv - av, 2)}')
+                print(
+                    f'    - {cat}: A={av}, B={bv}, '
+                    f'delta={round(bv - av, 2)}'
+                )
     else:
         print('ERROR_REPORT: missing in one of workbooks')
 
     print('')
-    for sheet in ['Mapping and Assumptions', 'Probable Matches Review', 'Reviewer Observations']:
+    for sheet in REVIEW_SHEETS:
         if sheet in wa.sheetnames and sheet in wb.sheetnames:
             a = wa[sheet]
             b = wb[sheet]
-            print(f'{sheet}: A rows={a.max_row}, B rows={b.max_row}, A cols={a.max_column}, B cols={b.max_column}')
+            print(
+                f'{sheet}: A rows={a.max_row}, B rows={b.max_row}, '
+                f'A cols={a.max_column}, B cols={b.max_column}'
+            )
 
 
 if __name__ == '__main__':
