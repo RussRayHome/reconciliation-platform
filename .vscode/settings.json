@@ -10,7 +10,7 @@
   },
   "python.envFile": "${workspaceFolder}/.env",
   "python.terminal.activateEnvironment": true,
-  "python.pydev.java.home": "${env:JAVA_HOME}",
+  "python.pydev.java.home": "/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home",
   "eslint.workingDirectories": [
     {
       "mode": "auto"
