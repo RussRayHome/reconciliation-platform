@@ -7,11 +7,11 @@
     <style>
       :root {
         color-scheme: light;
-        --bg: #f4efe6;
+        --bg: #f3efe8;
         --paper: #ffffff;
-        --ink: #17212b;
-        --muted: #5b6773;
-        --line: #d9e2ec;
+        --ink: #14202b;
+        --muted: #52606d;
+        --line: #d8e1e8;
         --accent: #0f766e;
         --accent-soft: #ecfdf5;
         --warn: #b45309;
@@ -25,8 +25,8 @@
 
       body {
         margin: 0;
-        background: linear-gradient(180deg, #efe8dc 0%, #f8f5ef 100%);
         color: var(--ink);
+        background: linear-gradient(180deg, #efe8dc 0%, #f9f5ef 100%);
         font: 14px/1.55 "Helvetica Neue", Arial, sans-serif;
       }
 
@@ -83,8 +83,8 @@
       .legend {
         margin: 0.65rem 0 0.9rem;
         padding: 0.65rem 0.8rem;
-        background: #f8fafc;
         border: 1px solid var(--line);
+        background: #f8fafc;
       }
 
       .tag {
@@ -113,8 +113,8 @@
         font-weight: 700;
       }
 
-      .severity-critical,
-      .severity-high {
+      .severity-high,
+      .severity-critical {
         color: var(--danger);
       }
 
@@ -165,20 +165,10 @@
         font-size: 12px;
       }
 
-      .section-note {
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.7rem;
-      }
-
       .card {
+        margin: 0.7rem 0;
+        padding: 0.6rem 0.75rem;
         border: 1px solid var(--line);
-        padding: 0.6rem 0.7rem;
         background: #fbfdff;
       }
 
@@ -188,8 +178,8 @@
         }
 
         .page {
-          margin: 0;
           width: auto;
+          margin: 0;
           padding: 0;
         }
       }
@@ -205,37 +195,39 @@
       <h1>Reconciliation Exception Classification Review</h1>
       <p class="meta">
         Prepared for the reconciliation-platform workspace. Review date: April 5, 2026. Scope:
-        full reconciliation flow from upload and workbook parsing through normalization, matching,
-        exception classification, summary generation, workbook export, API delivery, and web presentation.
-        This rerun reflects the current grouped-residual enhancements and current regression coverage.
+        end-to-end trace from workbook parsing through normalization, pairwise matching,
+        residual exception classification, summary generation, workbook export, API delivery,
+        and web reporting.
       </p>
 
       <div class="legend">
         <span class="tag tag-verified">Verified finding</span>
-        <span class="tag tag-inferred">Recommendation / inferred next step</span>
-        Verified findings are grounded in the current workspace code, docs, and tests. Recommendations are
-        based on the remaining gaps that are visible in the current implementation.
+        <span class="tag tag-inferred">Inferred recommendation</span>
+        Verified findings are grounded in the current source, tests, docs, and surfaced outputs.
+        Recommendations are limited to changes supported by the implementation already present.
       </div>
 
       <h2>Executive Summary</h2>
       <p>
-        The project is now materially capable of actionable exception classification. The reconciliation
-        flow is deterministic from parse, normalize, rank, match, classify, summarize, export, and render.
-        It emits accountant-facing categories with rule reasons, evidence, counterpart references, and
-        recommended next actions through the API, workbook export, and web UI.
+        The project is already capable of actionable exception classification. It no longer relies on a
+        user-facing generic unmatched bucket. Instead, it parses workbook rows, normalizes fields,
+        performs pairwise match evaluation, promotes residual cases into typed exception categories,
+        builds summary metrics from the final exception set, exports those categories to workbook
+        sheets, exposes them over API, and renders them in the web UI.
       </p>
       <p>
-        The most significant improvement since the prior review is that grouped residual cases are no longer
-        taxonomy-only placeholders. The classifier now emits <code>LikelySplitCombineIssue</code> and
-        <code>DepositGroupingIssue</code> from unmatched residual pools, and the test suite exercises those
-        paths end-to-end. The largest remaining gap is architectural: grouped reasoning still happens only
-        after a one-to-one greedy matcher leaves residuals, so support is bounded rather than complete.
+        The largest remaining gap is architectural rather than taxonomic. Grouped categories such as
+        <code>LikelySplitCombineIssue</code> and <code>DepositGroupingIssue</code> are implemented only as a
+        bounded residual stage after greedy one-to-one matching has already consumed candidates.
+        The second-largest gap is audit lineage: promoted classifications such as Date Variance to
+        Timing Difference or Likely Miscoding are explainable, but the full original-to-final decision
+        chain is not preserved.
       </p>
 
       <div class="callout">
-        <strong>Bottom line:</strong> the platform has moved beyond generic unmatched reporting and now covers
-        the full required taxonomy at runtime, but grouped categories remain partial because their logic is
-        residual and size-limited rather than native to the matching engine.
+        <strong>Bottom line:</strong> the platform already supports a meaningful, accountant-facing
+        exception taxonomy end-to-end. The next step is to strengthen grouped reasoning and preserve
+        richer rule lineage, not to invent new category names.
       </div>
 
       <h2>Current-State Findings</h2>
@@ -243,60 +235,46 @@
         <li>
           <span class="tag tag-verified">Verified</span>
           <span class="severity severity-high">High:</span>
-          The system now classifies all required exception families somewhere in the runtime flow. In
-          particular, the classifier contains residual grouped logic and residual timing logic before generic
-          missing-item fallback, and those categories are validated in dedicated classifier and full-pipeline
-          tests.
-          <div class="section-note">
-            Key modules: <code>packages/core/src/reporting/exceptionClassifier.ts</code>,
-            <code>packages/core/src/reconcile.test.ts</code>,
-            <code>packages/core/src/reporting/exceptionClassifier.test.ts</code>.
-          </div>
+          The runtime path is explicit and connected from
+          <code>packages/core/src/parsers/excelParser.ts</code> through
+          <code>packages/core/src/normalization/transactions.ts</code>,
+          <code>packages/core/src/matching/engine.ts</code>,
+          <code>packages/core/src/reporting/exceptionClassifier.ts</code>,
+          <code>packages/core/src/reporting/summary.ts</code>,
+          <code>packages/core/src/export/workbookExporter.ts</code>,
+          <code>apps/api/src/app.ts</code>, and
+          <code>apps/web/src/components/ExceptionTable.tsx</code>.
         </li>
         <li>
           <span class="tag tag-verified">Verified</span>
           <span class="severity severity-medium">Medium:</span>
-          Summary and detail parity is materially stronger than in the prior review. The summary is built
-          from final match results and final exceptions, and API tests now assert parity between exception
-          counts, workbook Error Report category counts, and <code>summary.countsByCategory</code>.
-          <div class="section-note">
-            Key modules: <code>packages/core/src/reporting/summary.ts</code>,
-            <code>apps/api/tests/reconciliation.test.ts</code>.
-          </div>
-        </li>
-        <li>
-          <span class="tag tag-verified">Verified</span>
-          <span class="severity severity-medium">Medium:</span>
-          Reporting surfaces are accountant-usable. The workbook Error Report, API exceptions endpoint, and
-          web exception table all expose category name, rule name, reason, evidence, next actions, and some
-          counterpart context.
+          The surfaced reporting model is category-specific. Shared taxonomy is defined in
+          <code>packages/domain/src/enums.ts</code>, display names and next actions in
+          <code>packages/domain/src/messages.ts</code>, and those categories reach both workbook and web output.
         </li>
         <li>
           <span class="tag tag-verified">Verified</span>
           <span class="severity severity-high">High:</span>
-          Grouped support is still bounded. The grouped classifier searches only one-to-many and many-to-one
-          residual combinations up to three transactions on the grouped side, after the one-to-one matcher
-          has already consumed candidates. This is strong enough for deterministic small grouped cases, but
-          it is not a full grouped matching engine.
-          <div class="section-note">
-            Key modules: <code>packages/core/src/matching/engine.ts</code>,
-            <code>packages/core/src/reporting/exceptionClassifier.ts</code>,
-            <code>docs/reconciliation-rules.md</code>.
-          </div>
+          Grouped classification is partial because grouped reasoning is residual-only and capped to three
+          grouped members. Oversized grouped scenarios are already proven to fall back to missing-item categories.
         </li>
         <li>
           <span class="tag tag-verified">Verified</span>
           <span class="severity severity-medium">Medium:</span>
-          There is still a maintainability warning in the classifier: the match-result classification block
-          remains cognitively complex. This does not currently appear to be a functional bug, but it raises
-          the cost of evolving exception precedence safely.
+          Promotion logic from Date Variance to Timing Difference or Likely Miscoding is useful, but it
+          overwrites the original classification path instead of preserving both traces.
         </li>
         <li>
           <span class="tag tag-verified">Verified</span>
           <span class="severity severity-medium">Medium:</span>
-          The codebase still contains a special <code>5703</code> calibration helper in summary code. The
-          prior summary overwrite drift was addressed, but the legacy helper and provenance path remain and
-          keep complexity high in reporting code.
+          Grouped exceptions preserve rich evidence text, but only one structured counterpart is stored,
+          which limits reviewer traceability for multi-row issues.
+        </li>
+        <li>
+          <span class="tag tag-verified">Verified</span>
+          <span class="severity severity-low">Low:</span>
+          Internal fallback terms such as <code>Unmatched</code> and defensive handling for unknown summary
+          categories still exist, but they are not the user-facing reporting model.
         </li>
       </ol>
 
@@ -306,8 +284,8 @@
           <tr>
             <th style="width: 15%">Classification</th>
             <th style="width: 10%">Supported?</th>
-            <th style="width: 28%">Evidence in Code</th>
-            <th style="width: 21%">Gaps</th>
+            <th style="width: 31%">Evidence in Code</th>
+            <th style="width: 18%">Gaps</th>
             <th style="width: 26%">Recommendation</th>
           </tr>
         </thead>
@@ -315,231 +293,199 @@
           <tr>
             <td>timing difference</td>
             <td>Yes</td>
-            <td>Extended-window matches can be promoted into TimingDifference, and unmatched residual same-amount timing-compatible pairs are classified before missing fallback.</td>
-            <td>Still residual rather than native to the matcher; transaction-kind rules remain selective.</td>
-            <td>Keep current residual stage and eventually move timing logic into a staged residual engine.</td>
+            <td>Extended-window candidates come from the matcher and residual timing is emitted by the classifier before missing fallback.</td>
+            <td>Promotion from Date Variance does not preserve lineage.</td>
+            <td>Keep original and promoted traces together.</td>
           </tr>
           <tr>
             <td>missing in bank</td>
             <td>Yes</td>
-            <td>Unmatched QBO rows become MissingFromBank only after stronger categories are exhausted.</td>
-            <td>Fallback correctness still depends on earlier grouped and timing passes being complete enough.</td>
-            <td>Retain as a final fallback and preserve precedence discipline.</td>
+            <td>Unmatched QBO rows fall through to Missing from Bank after stronger stages are exhausted.</td>
+            <td>Depends on earlier residual coverage being complete enough.</td>
+            <td>Keep as a final fallback only.</td>
           </tr>
           <tr>
             <td>missing in QBO</td>
             <td>Yes</td>
-            <td>Unmatched bank rows become MissingFromQBO only after stronger categories are exhausted.</td>
-            <td>Same limitation as MissingFromBank.</td>
-            <td>Retain as a final fallback and continue expanding stronger upstream categories.</td>
+            <td>Unmatched bank rows fall through to Missing from QBO after stronger stages are exhausted.</td>
+            <td>Depends on earlier residual coverage being complete enough.</td>
+            <td>Keep as a final fallback only.</td>
           </tr>
           <tr>
             <td>duplicate in bank</td>
             <td>Yes</td>
-            <td>Same-source duplicate detection runs before cross-source matching and is classified separately.</td>
-            <td>No deeper duplicate-versus-reversal distinction.</td>
-            <td>Keep current rule and add richer evidence only if operations require it.</td>
+            <td>Same-source duplicate detection runs before cross-source matching and yields a bank-specific category.</td>
+            <td>No duplicate subtype beyond the main category.</td>
+            <td>Accept current design unless reversal-specific handling becomes necessary.</td>
           </tr>
           <tr>
             <td>duplicate in QBO</td>
             <td>Yes</td>
-            <td>Same-source QBO duplicate detection is implemented and surfaced across summary and reporting.</td>
-            <td>No subreason taxonomy.</td>
-            <td>Keep deterministic duplicate rules as-is for now.</td>
+            <td>Same-source duplicate detection yields a QBO-specific category.</td>
+            <td>No duplicate subtype beyond the main category.</td>
+            <td>Accept current design unless reversal-specific handling becomes necessary.</td>
           </tr>
           <tr>
             <td>amount variance</td>
             <td>Yes</td>
-            <td>The matcher emits AmountMismatch candidates and the classifier/reporting surfaces preserve them.</td>
-            <td>No explicit settlement-fee or partial-payment subtypes.</td>
-            <td>Add subreasons only if accounting review needs finer segmentation.</td>
+            <td>The implemented category is Amount Mismatch, emitted by the matcher and surfaced as a final exception.</td>
+            <td>The prompt term and code term differ.</td>
+            <td>Document Amount Mismatch as the canonical implementation of amount variance.</td>
           </tr>
           <tr>
             <td>date variance</td>
             <td>Yes</td>
-            <td>Extended-window same-amount candidates remain DateVariance unless promoted to TimingDifference by later evidence.</td>
-            <td>Boundary with timing is still heuristic.</td>
-            <td>Keep current rule but make transaction-type evidence more explicit in the promotion path.</td>
+            <td>Extended-window same-amount matches are classified as Date Variance unless stronger evidence promotes them.</td>
+            <td>Some Date Variance cases are promoted away.</td>
+            <td>Preserve promotion lineage.</td>
           </tr>
           <tr>
             <td>likely miscoding</td>
             <td>Yes</td>
-            <td>Distinctive same-amount near-date contextual conflict becomes LikelyMiscoding with counterpart trace and next actions.</td>
-            <td>Still heuristic; not a true account-code diagnosis.</td>
-            <td>Preserve current rule and enrich with account or entity evidence if available later.</td>
+            <td>Residual same-amount near-date conflicts and some Date Variance pairs become Likely Miscoding.</td>
+            <td>Depends on text and reference conflict heuristics.</td>
+            <td>Keep thresholds deterministic and configurable where practical.</td>
           </tr>
           <tr>
             <td>likely split/combine issue</td>
             <td>Partial</td>
-            <td>The classifier now emits grouped split/combine exceptions from residual balanced one-to-many and many-to-one sets, and tests verify the path.</td>
-            <td>Limited to residual groups and to combinations of up to three grouped items.</td>
-            <td>Promote grouped logic into a first-class staged residual engine or native grouped matcher.</td>
+            <td>Grouped residual logic emits this category for balanced one-to-many and many-to-one residuals.</td>
+            <td>Residual-only and capped to three grouped members.</td>
+            <td>Promote grouped reasoning into a staged matcher with configurable bounds.</td>
           </tr>
           <tr>
             <td>stale outstanding check</td>
             <td>Yes</td>
-            <td>Unmatched aged QBO check-like disbursements are promoted to a dedicated stale category.</td>
-            <td>Check-like inference is still pattern-based.</td>
-            <td>Optionally allow account-specific stale thresholds and richer check typing.</td>
+            <td>Unmatched aged QBO check-like disbursements are promoted before Missing from Bank fallback.</td>
+            <td>The threshold is fixed at 45 days.</td>
+            <td>Make stale thresholds configurable by account or source profile.</td>
           </tr>
           <tr>
             <td>deposit grouping issue</td>
             <td>Partial</td>
-            <td>The classifier now emits grouped positive residual deposit-like sets as DepositGroupingIssue, with grouped evidence and tests.</td>
-            <td>Same size and staging limitations as split/combine logic; no native batching in the matcher.</td>
-            <td>Promote grouped deposit reasoning earlier in the residual decision pipeline.</td>
+            <td>Grouped positive residuals with deposit-like kinds are emitted as Deposit Grouping Issue.</td>
+            <td>Residual-only and capped to three grouped members.</td>
+            <td>Move grouped deposit logic into a first-class residual stage with full member traceability.</td>
           </tr>
         </tbody>
       </table>
 
       <h2>Logic and Architecture Assessment</h2>
       <p>
-        The current design supports clean deterministic classification better than it did in the previous
-        review. Parsing, normalization, matching, classification, summary generation, export, and UI are
-        separated cleanly enough that new categories were added without a broad rewrite.
+        The current design is already materially stronger than a generic unmatched-reporting workflow.
+        The taxonomy is explicit, shared, and surfaced consistently. Summary metrics are built from the
+        final exception set instead of a separate hand-maintained reporting layer, which reduces drift
+        between details and totals.
       </p>
       <p>
-        The main architectural constraint remains the pairwise greedy matcher. It is still the primary
-        decision engine, and grouped reasoning only happens after pairwise consumption has already removed
-        candidates. That means the project now supports grouped categories in practical bounded cases, but
-        not as a general matching capability. The next architectural step should be a staged residual engine
-        that treats timing, grouped split/combine, grouped deposits, miscoding, stale checks, and missing
-        fallback as explicit phases rather than ad hoc tails on top of pairwise matching.
+        The main architectural weakness is that the matching engine is still fundamentally greedy and pairwise.
+        That is acceptable for exact matches, reference variance, description variance, and amount mismatch,
+        but it means grouped categories are a downstream repair step rather than a native matching capability.
       </p>
 
       <h2>Reporting and Auditability Assessment</h2>
       <p>
-        The output is actionable for accounting staff. Exception rows expose the category, the originating
-        rule, a human-readable reason, evidence, next actions, and source-row context. The workbook export
-        and UI both preserve accountant-facing labels rather than developer shorthand.
+        Reporting is already actionable for accounting staff. Exception items carry category, severity,
+        rule trace, evidence, recommended next actions, and counterpart references where they exist.
+        The workbook Error Report and the web exception table both preserve those fields.
       </p>
       <p>
-        Auditability is also meaningfully improved because summary and detail parity is now asserted across
-        API and workbook output. The remaining auditability risk is completeness of grouped reasoning rather
-        than lack of explanation. When the system chooses a category, it is usually explainable. The harder
-        question is whether a richer grouped or timing category should have been chosen earlier.
+        Auditability is good but not complete. The biggest reporting limitation is grouped traceability:
+        grouped categories preserve evidence text, but not a full structured counterpart set. The second
+        limitation is rule-lineage visibility for promoted exceptions.
       </p>
 
       <h2>Prioritized Recommendations</h2>
 
       <h3>Immediate Improvements</h3>
       <div class="card">
-        <p><strong>Title:</strong> Refactor the match-result classification block in the classifier</p>
-        <p><strong>Problem observed:</strong> The main match-result handling path in the classifier still carries a cognitive-complexity warning.</p>
-        <p><strong>Why it matters:</strong> Exception precedence is now richer, and complex control flow increases regression risk when rules evolve.</p>
+        <p><strong>Title:</strong> Preserve lineage for promoted classifications</p>
+        <p><strong>Problem observed:</strong> Date Variance can be promoted into Timing Difference or Likely Miscoding, but the original classification path is not retained.</p>
+        <p><strong>Why it matters:</strong> Reviewers can see the final category, but not the original decision that was superseded.</p>
         <p><strong>Severity:</strong> <span class="severity severity-medium">Medium</span></p>
         <p><strong>Implementation complexity:</strong> Medium</p>
-        <p><strong>Recommended solution:</strong> Extract promotion and recording subroutines for DateVariance, TimingDifference, LikelyMiscoding, and 5703-specific handling.</p>
-        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/reporting/exceptionClassifier.ts</code></p>
-        <p><strong>Change type:</strong> Logic, test coverage</p>
-        <p><strong>Suggested acceptance criteria:</strong> Static analysis no longer flags the block for cognitive complexity and existing reconciliation classification tests still pass unchanged.</p>
+        <p><strong>Recommended solution:</strong> Extend the rule trace so promoted exceptions retain both the originating match trace and the final classification trace.</p>
+        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/domain/src/types.ts</code>, <code>apps/web/src/components/ExceptionTable.tsx</code></p>
+        <p><strong>Change type:</strong> logic, data model, UI-reporting, test coverage</p>
+        <p><strong>Suggested acceptance criteria:</strong> Promoted exceptions display both original and final traces in API output, workbook export, and UI rendering.</p>
       </div>
 
       <div class="card">
-        <p><strong>Title:</strong> Add near-miss grouped regression fixtures</p>
-        <p><strong>Problem observed:</strong> Current grouped tests cover success cases but not enough negative boundaries.</p>
-        <p><strong>Why it matters:</strong> Residual grouped logic can over-capture if amount, date, or type filters are loosened later.</p>
+        <p><strong>Title:</strong> Expose full grouped counterpart sets structurally</p>
+        <p><strong>Problem observed:</strong> Grouped categories keep only one structured counterpart even when the issue is inherently multi-row.</p>
+        <p><strong>Why it matters:</strong> Grouped exception review needs explicit member-level traceability, not just concatenated evidence text.</p>
         <p><strong>Severity:</strong> <span class="severity severity-medium">Medium</span></p>
-        <p><strong>Implementation complexity:</strong> Low</p>
-        <p><strong>Recommended solution:</strong> Add fixtures where grouped totals almost balance, dates exceed the grouped window, or transaction kinds conflict and should remain missing-item exceptions.</p>
-        <p><strong>Impacted files/modules:</strong> <code>packages/test-fixtures/src/sampleRows.ts</code>, <code>packages/core/src/reconcile.test.ts</code>, <code>packages/core/src/reporting/exceptionClassifier.test.ts</code></p>
-        <p><strong>Change type:</strong> Test coverage</p>
-        <p><strong>Suggested acceptance criteria:</strong> Negative grouped fixtures do not emit grouped categories and fall through to the correct remaining bucket.</p>
+        <p><strong>Implementation complexity:</strong> Medium</p>
+        <p><strong>Recommended solution:</strong> Add structured counterpart arrays for grouped categories and render the full member set in workbook and web reports.</p>
+        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/domain/src/types.ts</code>, <code>packages/core/src/export/workbookExporter.ts</code>, <code>apps/web/src/components/ExceptionTable.tsx</code></p>
+        <p><strong>Change type:</strong> data model, UI-reporting, documentation, test coverage</p>
+        <p><strong>Suggested acceptance criteria:</strong> Grouped exceptions render all linked counterpart file and line references without relying on evidence text alone.</p>
       </div>
 
       <h3>Near-Term Enhancements</h3>
       <div class="card">
-        <p><strong>Title:</strong> Turn grouped residual logic into a staged residual engine</p>
-        <p><strong>Problem observed:</strong> Grouped categories work, but only after one-to-one matching and only with a capped residual search.</p>
-        <p><strong>Why it matters:</strong> Some valid grouped scenarios will still be consumed or fragmented before grouped analysis can see them.</p>
-        <p><strong>Severity:</strong> <span class="severity severity-high">High</span></p>
-        <p><strong>Implementation complexity:</strong> High</p>
-        <p><strong>Recommended solution:</strong> Preserve the current pairwise matcher for exact and review cases, then introduce an explicit staged residual analyzer that runs grouped searches before final missing fallback with configurable pool size and search bounds.</p>
-        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/matching/engine.ts</code>, <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/domain/src/types.ts</code>, <code>packages/config/src/default-config.ts</code></p>
-        <p><strong>Change type:</strong> Architectural, logic, data model, test coverage</p>
-        <p><strong>Suggested acceptance criteria:</strong> Grouped cases can be traced to a dedicated staged decision family and support configurable search depth without breaking current pairwise regressions.</p>
+        <p><strong>Title:</strong> Make grouped and stale-check policy configurable</p>
+        <p><strong>Problem observed:</strong> Grouped search depth and stale-check age are hard-coded.</p>
+        <p><strong>Why it matters:</strong> These are reconciliation-policy decisions and may vary by account, source, or business cycle.</p>
+        <p><strong>Severity:</strong> <span class="severity severity-medium">Medium</span></p>
+        <p><strong>Implementation complexity:</strong> Low</p>
+        <p><strong>Recommended solution:</strong> Add config for stale outstanding check days, grouped candidate pool size, and grouped maximum match size.</p>
+        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/config/src/default-config.ts</code>, <code>packages/domain/src/types.ts</code>, <code>docs/reconciliation-rules.md</code></p>
+        <p><strong>Change type:</strong> logic, data model, documentation, test coverage</p>
+        <p><strong>Suggested acceptance criteria:</strong> Account overrides can adjust grouped and stale-check policy and the regression suite covers both default and overridden behavior.</p>
       </div>
 
       <div class="card">
-        <p><strong>Title:</strong> Strengthen transaction-type evidence across all residual categories</p>
-        <p><strong>Problem observed:</strong> Transaction-kind inference now exists, but its evidence is strongest in grouped and timing cases and weaker elsewhere.</p>
-        <p><strong>Why it matters:</strong> Consistent transaction-type evidence improves deterministic separation between timing, miscoding, grouped receipts, stale checks, and missing items.</p>
+        <p><strong>Title:</strong> Retire the remaining 5703-specific provenance branch from the general classifier flow</p>
+        <p><strong>Problem observed:</strong> The classifier still contains hard-coded 5703 timing provenance logic.</p>
+        <p><strong>Why it matters:</strong> It weakens the rule-driven and generalizable nature of the exception-classification path.</p>
         <p><strong>Severity:</strong> <span class="severity severity-medium">Medium</span></p>
         <p><strong>Implementation complexity:</strong> Medium</p>
-        <p><strong>Recommended solution:</strong> Make transaction-kind compatibility or conflict a first-class field in rule traces for timing, grouped, stale-check, and miscoding classifications.</p>
-        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/domain/src/types.ts</code>, <code>docs/reconciliation-rules.md</code></p>
-        <p><strong>Change type:</strong> Logic, data model, documentation, test coverage</p>
-        <p><strong>Suggested acceptance criteria:</strong> Each residual exception family explicitly reports type evidence or type conflict in a stable rule-trace structure.</p>
+        <p><strong>Recommended solution:</strong> Isolate the logic behind explicit config or replace it with fixture-backed general rules.</p>
+        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/reporting/summary.ts</code>, <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/core/src/reporting/summary.edge-cases.test.ts</code></p>
+        <p><strong>Change type:</strong> architectural, logic, test coverage, documentation</p>
+        <p><strong>Suggested acceptance criteria:</strong> No filename-or-volume heuristic is required in the normal timing provenance path.</p>
       </div>
 
       <h3>Structural Redesign Items</h3>
       <div class="card">
-        <p><strong>Title:</strong> Retire legacy 5703-only complexity from reporting code</p>
-        <p><strong>Problem observed:</strong> The reporting layer still carries a dedicated 5703 calibration helper and special provenance path.</p>
-        <p><strong>Why it matters:</strong> Legacy special-case logic keeps complexity high and risks future summary or timing drift.</p>
-        <p><strong>Severity:</strong> <span class="severity severity-medium">Medium</span></p>
+        <p><strong>Title:</strong> Promote grouped reasoning into a staged residual engine</p>
+        <p><strong>Problem observed:</strong> Grouped categories are a bounded residual fix after greedy one-to-one matching.</p>
+        <p><strong>Why it matters:</strong> This is the main reason split/combine and deposit grouping remain only partially supported.</p>
+        <p><strong>Severity:</strong> <span class="severity severity-high">High</span></p>
         <p><strong>Implementation complexity:</strong> High</p>
-        <p><strong>Recommended solution:</strong> Convert the remaining 5703-specific behavior into ordinary classifier rules or retire it once parity fixtures cover the same business cases.</p>
-        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/reporting/summary.ts</code>, <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/core/src/reporting/summary.edge-cases.test.ts</code></p>
-        <p><strong>Change type:</strong> Architectural, logic, documentation, test coverage</p>
-        <p><strong>Suggested acceptance criteria:</strong> No special reporting override path remains that can diverge from final classified output, and legacy parity fixtures still pass.</p>
+        <p><strong>Recommended solution:</strong> Preserve pairwise exact matching, then add an explicit staged residual engine for stale checks, miscoding, timing, split/combine, deposit grouping, and only then missing-item fallback.</p>
+        <p><strong>Impacted files/modules:</strong> <code>packages/core/src/matching/engine.ts</code>, <code>packages/core/src/reporting/exceptionClassifier.ts</code>, <code>packages/domain/src/types.ts</code>, <code>docs/architecture.md</code></p>
+        <p><strong>Change type:</strong> architectural, logic, data model, test coverage</p>
+        <p><strong>Suggested acceptance criteria:</strong> Grouped categories are no longer residual-only, search bounds are configurable, and missing-item categories appear only after grouped reasoning is exhausted.</p>
       </div>
 
-      <div class="grid">
-        <div class="card">
-          <h3>Quick Wins</h3>
-          <ul>
-            <li>Add negative grouped fixtures so grouped logic is protected against false positives.</li>
-            <li>Refactor the classifier’s match-result block to reduce complexity without changing behavior.</li>
-            <li>Keep API and workbook parity assertions in the regression suite as categories evolve.</li>
-          </ul>
-        </div>
-        <div class="card">
-          <h3>Medium-Term Refactors</h3>
-          <ul>
-            <li>Elevate grouped and timing residual analysis into explicit staged processing.</li>
-            <li>Expand transaction-type evidence across all residual categories.</li>
-            <li>Reduce remaining 5703-only complexity by moving it into ordinary rule families.</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Strategic Redesign Items</h3>
-        <ul>
-          <li>Move from pairwise-only matching plus residual heuristics to a staged residual decision engine.</li>
-          <li>Make grouped reasoning a first-class capability rather than a residual classifier patch.</li>
-          <li>Collapse legacy special-case reporting logic into general rule-driven reconciliation behavior.</li>
-        </ul>
-      </div>
+      <p><strong>Quick wins:</strong> preserve promotion lineage, expose grouped counterpart arrays, add a UI and API contract test that fails on unknown surfaced categories.</p>
+      <p><strong>Medium-term refactors:</strong> externalize grouped and stale-check policy, remove 5703-specific classifier branching, tighten grouped trace rendering.</p>
+      <p><strong>Strategic redesign items:</strong> staged residual engine, grouped-first residual reasoning, stronger separation between pairwise matching and grouped exception policy.</p>
 
       <h2>Suggested Rule Model</h2>
       <ol>
-        <li>Exclude rows and classify invalid or missing data first.</li>
+        <li>Parse workbook rows and preserve source file, worksheet, and line-number provenance.</li>
+        <li>Normalize dates, signed amounts, tokens, and data-quality issues.</li>
+        <li>Emit Invalid or Missing Data immediately for rows that cannot safely participate in matching.</li>
         <li>Detect same-source duplicates before any cross-source matching.</li>
-        <li>Resolve deterministic one-to-one exact matches.</li>
-        <li>Resolve one-to-one review cases such as reference variance, description variance, amount variance, and ambiguity.</li>
-        <li>Run residual timing analysis on unmatched pools.</li>
-        <li>Run residual grouped split/combine analysis.</li>
-        <li>Run residual grouped deposit analysis.</li>
-        <li>Run likely miscoding analysis on distinctive same-amount near-date contextual conflicts.</li>
-        <li>Run stale outstanding check analysis for aged unmatched QBO check-like disbursements.</li>
-        <li>Fall back to MissingFromQBO and MissingFromBank only after stronger deterministic categories are exhausted.</li>
+        <li>Run exact and deterministic pairwise review matching: reference variance, description variance, date variance, amount mismatch, ambiguous review.</li>
+        <li>Run residual stale outstanding check logic for aged unmatched QBO check-like disbursements.</li>
+        <li>Run residual likely miscoding logic for distinctive same-amount near-date conflicts.</li>
+        <li>Run residual timing-difference logic for same-amount compatible-sign items outside primary tolerance and inside the extended timing window.</li>
+        <li>Run grouped residual split/combine and deposit grouping logic with configurable search bounds and full structured member traces.</li>
+        <li>Assign Missing from QBO and Missing from Bank only after all stronger residual categories are exhausted.</li>
+        <li>Build summaries, charts, workbook reports, and API payloads strictly from the final exception set while preserving original rule lineage for promoted categories.</li>
       </ol>
-      <p class="section-note">
-        The current implementation approximates this decision order already, but grouped support remains
-        bounded because it is residual and size-limited. A future redesign should make this order explicit
-        in a staged engine rather than distributed across pairwise matching and classifier tail logic.
-      </p>
 
       <h2>Testing Recommendations</h2>
       <ul>
-        <li>Add near-miss grouped fixtures where totals almost balance but should not emit grouped categories.</li>
-        <li>Add fixtures where grouped candidates exceed the current three-item grouped-side limit so the bounded behavior is intentional and visible.</li>
-        <li>Add targeted regressions for transaction-kind conflicts between deposit-like, transfer-like, and withdrawal-like residuals.</li>
-        <li>Keep API integration tests asserting parity across exception endpoint output, workbook Error Report counts, and <code>summary.countsByCategory</code>.</li>
-        <li>Add regression fixtures that prove 5703 summary behavior never drifts from final classified detail.</li>
-        <li>Add UI tests verifying grouped evidence and next actions remain visible when grouped categories are present.</li>
+        <li>Keep the combined all-exceptions workbook pair as a release gate proving all categories surface through API and summary totals.</li>
+        <li>Add tests for promotion lineage so Date Variance to Timing Difference and Date Variance to Likely Miscoding preserve both original and final traces.</li>
+        <li>Add workbook and UI tests that assert grouped exceptions render all counterpart members structurally.</li>
+        <li>Add configuration tests for grouped search depth, grouped pool size, and stale-check threshold once those settings become configurable.</li>
+        <li>Add a contract test that fails if a surfaced category falls outside the shared taxonomy.</li>
       </ul>
 
       <h2>Example Improved Output</h2>
@@ -547,72 +493,79 @@
         <thead>
           <tr>
             <th style="width: 12%">Source</th>
-            <th style="width: 17%">File / Line</th>
+            <th style="width: 18%">File / Line</th>
             <th style="width: 18%">Category</th>
-            <th style="width: 11%">Amount</th>
-            <th style="width: 22%">Reason</th>
+            <th style="width: 12%">Amount</th>
+            <th style="width: 20%">Reason</th>
             <th style="width: 20%">Next Action</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>bank</td>
-            <td>bank.xlsx / 18</td>
+            <td>bank.xlsx / 118</td>
             <td>Missing from QBO</td>
             <td>-125.50</td>
-            <td>Bank payment remained unmatched after exact, review, timing, grouped, miscoding, and stale-item analysis.</td>
+            <td>Bank transaction remained unmatched after exact, review, timing, grouped, and miscoding stages.</td>
             <td>Verify whether the transaction was posted to the correct QBO account and period.</td>
-          </tr>
-          <tr>
-            <td>bank + qbo</td>
-            <td>bank.xlsx / 71 and qbo.xlsx / 74</td>
-            <td>Timing Difference</td>
-            <td>-2,400.00</td>
-            <td>Residual same-amount pair remained timing-compatible and posted outside the primary date tolerance but inside the timing window.</td>
-            <td>Carry as timing support and monitor the next reconciliation cycle.</td>
-          </tr>
-          <tr>
-            <td>bank + qbo</td>
-            <td>bank.xlsx / 85 and qbo.xlsx / 91</td>
-            <td>Likely Miscoding</td>
-            <td>-500.00</td>
-            <td>Same-amount near-date pair exists, but narrative or reference context conflicts materially.</td>
-            <td>Review whether the item was posted to the wrong vendor, customer, or account.</td>
-          </tr>
-          <tr>
-            <td>bank + qbo</td>
-            <td>bank.xlsx / 102 and qbo.xlsx / 103-104</td>
-            <td>Likely Split/Combine Issue</td>
-            <td>-300.00</td>
-            <td>One bank withdrawal aligns to two QBO withdrawals whose grouped total balances the bank line within tolerance.</td>
-            <td>Review the grouped counterpart set and document the one-to-many relationship.</td>
-          </tr>
-          <tr>
-            <td>bank + qbo</td>
-            <td>bank.xlsx / 118 and qbo.xlsx / 119-120</td>
-            <td>Deposit Grouping Issue</td>
-            <td>3,200.00</td>
-            <td>One bank deposit aligns to multiple positive QBO receipts with deposit-like transaction kinds and a balanced grouped total.</td>
-            <td>Tie the bank deposit to the receipt batch and retain the deposit support package.</td>
           </tr>
           <tr>
             <td>qbo</td>
             <td>qbo.xlsx / 140</td>
+            <td>Missing from Bank</td>
+            <td>-210.00</td>
+            <td>QBO transaction remained unmatched after exact, review, timing, grouped, and stale-check screening.</td>
+            <td>Inspect the bank statement for omitted, reversed, or delayed posting.</td>
+          </tr>
+          <tr>
+            <td>bank + qbo</td>
+            <td>bank.xlsx / 71, qbo.xlsx / 74</td>
+            <td>Timing Difference</td>
+            <td>-2400.00</td>
+            <td>Same amount and timing-compatible transaction kinds fell outside primary tolerance but inside the timing window.</td>
+            <td>Carry as timing support and monitor the next reconciliation cycle.</td>
+          </tr>
+          <tr>
+            <td>bank + qbo</td>
+            <td>bank.xlsx / 85, qbo.xlsx / 91</td>
+            <td>Likely Miscoding</td>
+            <td>-500.00</td>
+            <td>Same amount and near date, but the narrative and reference context conflict materially.</td>
+            <td>Review whether the transaction was posted to the wrong vendor, customer, or account.</td>
+          </tr>
+          <tr>
+            <td>bank + qbo</td>
+            <td>bank.xlsx / 102, qbo.xlsx / 103-104</td>
+            <td>Likely Split/Combine Issue</td>
+            <td>-300.00</td>
+            <td>One bank line balances to multiple QBO lines, so grouped review fits better than missing fallback.</td>
+            <td>Document the one-to-many relationship and retain grouped support.</td>
+          </tr>
+          <tr>
+            <td>bank + qbo</td>
+            <td>bank.xlsx / 118, qbo.xlsx / 119-120</td>
+            <td>Deposit Grouping Issue</td>
+            <td>3200.00</td>
+            <td>One bank deposit balances to multiple deposit-like QBO entries.</td>
+            <td>Tie the deposit to receipt-batch support and sign off on the grouped member set.</td>
+          </tr>
+          <tr>
+            <td>qbo</td>
+            <td>qbo.xlsx / 155</td>
             <td>Stale Outstanding Check</td>
             <td>-150.00</td>
-            <td>Unmatched QBO check-like disbursement is older than the stale threshold.</td>
-            <td>Determine whether to void, reissue, or keep the item outstanding.</td>
+            <td>Unmatched QBO check-like disbursement aged beyond the stale threshold.</td>
+            <td>Void, reissue, or retain as outstanding based on current check status.</td>
           </tr>
         </tbody>
       </table>
 
       <h2>Closing Assessment</h2>
       <p>
-        The project now satisfies the core goal of turning reconciliation failures into meaningful
-        accountant-facing categories instead of a generic unmatched dump. The current implementation is
-        auditable, test-backed, and materially stronger than the prior review baseline. The next evolution
-        is not to invent more categories, but to make grouped and timing reasoning first-class matching
-        stages so bounded residual heuristics become a general capability.
+        This project has already moved beyond generic unmatched reporting. Its shared taxonomy, final
+        exception summaries, workbook export, API payloads, and web reporting together form a meaningful
+        reconciliation exception-classification system. The most important next step is to improve grouped
+        reasoning and audit lineage, not to broaden the taxonomy further.
       </p>
     </main>
   </body>
