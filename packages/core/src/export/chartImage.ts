@@ -2,6 +2,24 @@ import type { ChartMetricDatum } from '@recon/domain';
 import { deflateSync } from 'node:zlib';
 
 type Rgba = readonly [red: number, green: number, blue: number, alpha?: number];
+type DrawSurface = {
+  pixels: Uint8Array;
+  width: number;
+  height: number;
+};
+type Rectangle = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+type LineSegment = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  thickness?: number;
+};
 
 const crcTable = new Uint32Array(256);
 
@@ -57,13 +75,12 @@ const encodePng = (width: number, height: number, pixels: Uint8Array): Buffer =>
 };
 
 const setPixel = (
-  pixels: Uint8Array,
-  width: number,
-  height: number,
+  surface: DrawSurface,
   x: number,
   y: number,
   color: Rgba,
 ): void => {
+  const { pixels, width, height } = surface;
   if (x < 0 || y < 0 || x >= width || y >= height) {
     return;
   }
@@ -76,42 +93,33 @@ const setPixel = (
 };
 
 const fillRect = (
-  pixels: Uint8Array,
-  width: number,
-  height: number,
-  x: number,
-  y: number,
-  rectWidth: number,
-  rectHeight: number,
+  surface: DrawSurface,
+  rectangle: Rectangle,
   color: Rgba,
 ): void => {
-  const startX = Math.max(0, Math.floor(x));
-  const startY = Math.max(0, Math.floor(y));
-  const endX = Math.min(width, Math.ceil(x + rectWidth));
-  const endY = Math.min(height, Math.ceil(y + rectHeight));
+  const { width, height } = surface;
+  const startX = Math.max(0, Math.floor(rectangle.x));
+  const startY = Math.max(0, Math.floor(rectangle.y));
+  const endX = Math.min(width, Math.ceil(rectangle.x + rectangle.width));
+  const endY = Math.min(height, Math.ceil(rectangle.y + rectangle.height));
 
   for (let row = startY; row < endY; row += 1) {
     for (let column = startX; column < endX; column += 1) {
-      setPixel(pixels, width, height, column, row, color);
+      setPixel(surface, column, row, color);
     }
   }
 };
 
 const drawLine = (
-  pixels: Uint8Array,
-  width: number,
-  height: number,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
+  surface: DrawSurface,
+  line: LineSegment,
   color: Rgba,
-  thickness = 1,
 ): void => {
-  let currentX = Math.round(x1);
-  let currentY = Math.round(y1);
-  const targetX = Math.round(x2);
-  const targetY = Math.round(y2);
+  const thickness = line.thickness ?? 1;
+  let currentX = Math.round(line.x1);
+  let currentY = Math.round(line.y1);
+  const targetX = Math.round(line.x2);
+  const targetY = Math.round(line.y2);
 
   const deltaX = Math.abs(targetX - currentX);
   const stepX = currentX < targetX ? 1 : -1;
@@ -121,13 +129,13 @@ const drawLine = (
 
   while (true) {
     fillRect(
-      pixels,
-      width,
-      height,
-      currentX - Math.floor(thickness / 2),
-      currentY - Math.floor(thickness / 2),
-      thickness,
-      thickness,
+      surface,
+      {
+        x: currentX - Math.floor(thickness / 2),
+        y: currentY - Math.floor(thickness / 2),
+        width: thickness,
+        height: thickness,
+      },
       color,
     );
 
@@ -185,9 +193,10 @@ export const createBarChartPng = (
 
   const data = inputData.length > 0 ? inputData : [{ label: 'No data', value: 0 }];
   const pixels = new Uint8Array(width * height * 4);
+  const surface = { pixels, width, height };
 
-  fillRect(pixels, width, height, 0, 0, width, height, [247, 248, 250, 255]);
-  fillRect(pixels, width, height, 24, 24, width - 48, height - 48, [255, 255, 255, 255]);
+  fillRect(surface, { x: 0, y: 0, width, height }, [247, 248, 250, 255]);
+  fillRect(surface, { x: 24, y: 24, width: width - 48, height: height - 48 }, [255, 255, 255, 255]);
 
   const plotLeft = 92;
   const plotTop = 44;
@@ -197,20 +206,14 @@ export const createBarChartPng = (
 
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = plotTop + Math.round((plotHeight / 4) * tick);
-    drawLine(pixels, width, height, plotLeft, y, plotLeft + plotWidth, y, [220, 226, 232, 255], 1);
+    drawLine(surface, { x1: plotLeft, y1: y, x2: plotLeft + plotWidth, y2: y }, [220, 226, 232, 255]);
   }
 
-  drawLine(pixels, width, height, plotLeft, plotTop, plotLeft, plotBottom, [64, 74, 86, 255], 2);
+  drawLine(surface, { x1: plotLeft, y1: plotTop, x2: plotLeft, y2: plotBottom, thickness: 2 }, [64, 74, 86, 255]);
   drawLine(
-    pixels,
-    width,
-    height,
-    plotLeft,
-    plotBottom,
-    plotLeft + plotWidth,
-    plotBottom,
+    surface,
+    { x1: plotLeft, y1: plotBottom, x2: plotLeft + plotWidth, y2: plotBottom, thickness: 2 },
     [64, 74, 86, 255],
-    2,
   );
 
   const scaleMax = roundUpToNiceNumber(
@@ -226,8 +229,8 @@ export const createBarChartPng = (
     const x = plotLeft + Math.round(index * slotWidth + (slotWidth - barWidth) / 2);
     const y = plotBottom - barHeight;
 
-    fillRect(pixels, width, height, x, y, barWidth, barHeight, barColor);
-    fillRect(pixels, width, height, x, y, barWidth, 5, accentColor);
+    fillRect(surface, { x, y, width: barWidth, height: barHeight }, barColor);
+    fillRect(surface, { x, y, width: barWidth, height: 5 }, accentColor);
   });
 
   return encodePng(width, height, pixels);

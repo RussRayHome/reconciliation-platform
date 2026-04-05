@@ -55,7 +55,8 @@ export const sampleAccountOverrides: AccountOverrideConfig[] = [
     },
     reporting: {
       severityByCategory: {
-        DuplicateTransaction: 'Critical',
+        DuplicateInBank: 'Critical',
+        DuplicateInQBO: 'Critical',
         AmountMismatch: 'Critical',
       },
     },

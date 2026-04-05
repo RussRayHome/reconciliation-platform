@@ -8,22 +8,10 @@ import type {
   ReviewerObservation,
   SummaryMetrics,
 } from '@recon/domain';
+import { errorCategories, errorCategoryDisplayNames } from '@recon/domain';
 
 import ExcelJS from 'exceljs';
 import { createBarChartPng } from './chartImage';
-
-const categoryDisplayName: Record<string, string> = {
-  MissingFromBank: 'Missing from Bank',
-  MissingFromQBO: 'Missing from QBO',
-  AmountMismatch: 'Amount Mismatch',
-  DuplicateTransaction: 'Duplicate Transaction',
-  TimingDifference: 'Timing Difference',
-  CheckNumberMismatch: 'Check Number Mismatch',
-  ReferenceNumberMismatch: 'Reference Number Mismatch',
-  DescriptionMerchantVariance: 'Description/Merchant Variance',
-  InvalidOrMissingData: 'Invalid or Missing Data',
-  AmbiguousMatchRequiringReview: 'Ambiguous Match Requiring Review',
-};
 
 const sourceDisplayName = (source: string): string => {
   if (source === 'bank') {
@@ -116,18 +104,58 @@ const buildNarrativeSummary = (
   const periodText = trimmedPeriod ? ` during ${trimmedPeriod}` : '';
   let statusSentence = `The reconciliation${accountText}${periodText} requires follow-up on a limited set of outstanding exceptions.`;
 
-  if (summary.unmatchedItems === 0 && summary.amountMismatches === 0) {
-    statusSentence = `The reconciliation${accountText}${periodText} reconciles cleanly with no unmatched items or amount mismatches.`;
+  if (
+    summary.missingFromBank === 0 &&
+    summary.missingFromQBO === 0 &&
+    summary.amountMismatches === 0 &&
+    summary.dateVariances === 0 &&
+    summary.timingDifferences === 0 &&
+    summary.duplicates === 0
+  ) {
+    statusSentence = `The reconciliation${accountText}${periodText} reconciles cleanly with no categorized exceptions requiring follow-up.`;
   } else if (summary.timingDifferences > 0) {
-    statusSentence = `The reconciliation${accountText}${periodText} generally reconciles, with most remaining exceptions driven by timing-related differences.`;
+    statusSentence = `The reconciliation${accountText}${periodText} generally reconciles, with a meaningful share of remaining exceptions driven by timing-related differences.`;
   }
 
   const volumeSentence = `${summary.bankRecords} bank transactions and ${summary.qboRecords} QBO transactions were reviewed, producing ${summary.exactMatches} exact matches and ${summary.probableMatches} probable matches.`;
 
-  const unmatchedBankTransactions = summary.missingFromQBO + summary.dataQualityIssues;
-  const exceptionSentence = `Outstanding items include ${unmatchedBankTransactions} unmatched bank transactions totaling ${formatCurrency(summary.unmatchedBankNetAmount)}, ${summary.missingFromBank} unmatched QBO transactions totaling ${formatCurrency(summary.unmatchedQboNetAmount)}, ${summary.bankDuplicates} bank duplicates, ${summary.qboDuplicates} QBO duplicates, and ${summary.dataQualityIssues} data-quality issues.`;
+  const categorySummary = errorCategories
+    .filter((category) => (summary.countsByCategory[category] ?? 0) > 0)
+    .map((category) => `${summary.countsByCategory[category]} ${errorCategoryDisplayNames[category].toLowerCase()}`);
+  const exceptionSentence = categorySummary.length > 0
+    ? `Categorized exceptions include ${categorySummary.join(', ')}.`
+    : 'No categorized exception buckets remain open.';
 
   return `${statusSentence} ${volumeSentence} ${exceptionSentence}`;
+};
+
+const addCategoryBreakdownTable = (
+  worksheet: ExcelJS.Worksheet,
+  summary: SummaryMetrics,
+): void => {
+  const presentCategories = errorCategories.filter(
+    (category) => (summary.countsByCategory[category] ?? 0) > 0 || (summary.amountByCategory[category] ?? 0) > 0,
+  );
+
+  if (presentCategories.length === 0) {
+    return;
+  }
+
+  worksheet.addRow([]);
+  const headingRow = worksheet.addRow(['Exception Category Breakdown']);
+  headingRow.getCell(1).font = { bold: true };
+
+  const headerRow = worksheet.addRow(['Category', 'Count', 'Absolute Dollars']);
+  headerRow.font = { bold: true };
+
+  presentCategories.forEach((category) => {
+    const row = worksheet.addRow([
+      errorCategoryDisplayNames[category],
+      summary.countsByCategory[category] ?? 0,
+      summary.amountByCategory[category] ?? 0,
+    ]);
+    row.getCell(3).numFmt = '$#,##0.00;[Red]-$#,##0.00';
+  });
 };
 
 const addSummaryCharts = (
@@ -142,10 +170,6 @@ const addSummaryCharts = (
     summary.charts.find((chart) => chart.id === 'countByCategory')?.data ?? [];
   const exposureChartData =
     (summary.charts.find((chart) => chart.id === 'exposureByCategory')?.data ?? [])
-      .map((item) => ({
-        label: categoryDisplayName[item.label] ?? item.label,
-        value: item.value,
-      }))
       .filter((item) => item.value > 0);
 
   const resolvedExposureData = exposureChartData.length > 0
@@ -236,24 +260,21 @@ export const exportWorkbook = async ({
     { label: 'Total QBO transactions reviewed', value: summary.qboRecords, numFmt: '#,##0' },
     { label: 'Total exact matches', value: summary.exactMatches, numFmt: '#,##0' },
     { label: 'Total probable matches', value: summary.probableMatches, numFmt: '#,##0' },
-    {
-      label: 'Total unmatched bank transactions',
-      value: summary.missingFromQBO + summary.dataQualityIssues,
-      numFmt: '#,##0',
-    },
-    { label: 'Total unmatched QBO transactions', value: summary.missingFromBank, numFmt: '#,##0' },
+    { label: 'Total items missing in QBO', value: summary.missingFromQBO, numFmt: '#,##0' },
+    { label: 'Total items missing in bank', value: summary.missingFromBank, numFmt: '#,##0' },
     { label: 'Total amount mismatches', value: summary.amountMismatches, numFmt: '#,##0' },
     { label: 'Total duplicates in bank', value: summary.bankDuplicates, numFmt: '#,##0' },
     { label: 'Total duplicates in QBO', value: summary.qboDuplicates, numFmt: '#,##0' },
+    { label: 'Total date variances', value: summary.dateVariances, numFmt: '#,##0' },
     { label: 'Total timing differences', value: summary.timingDifferences, numFmt: '#,##0' },
     { label: 'Total data-quality issues', value: summary.dataQualityIssues, numFmt: '#,##0' },
     {
-      label: 'Net amount of unmatched bank transactions',
+      label: 'Net amount of items missing in QBO',
       value: summary.unmatchedBankNetAmount,
       numFmt: '$#,##0.00;[Red]-$#,##0.00',
     },
     {
-      label: 'Net amount of unmatched QBO transactions',
+      label: 'Net amount of items missing in bank',
       value: summary.unmatchedQboNetAmount,
       numFmt: '$#,##0.00;[Red]-$#,##0.00',
     },
@@ -282,6 +303,8 @@ export const exportWorkbook = async ({
   narrativeBodyRow.height = 54;
   narrativeBodyRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
 
+  addCategoryBreakdownTable(summarySheet, summary);
+
   summarySheet.getColumn(1).font = { bold: true };
   addSummaryCharts(workbook, summarySheet, summary, accountIdentifier);
 
@@ -302,26 +325,36 @@ export const exportWorkbook = async ({
   addHeaderRow(errorReportSheet, [
     'Severity',
     'Category',
+    'Rule',
     'Source',
     'File Name',
     'Line Number',
     'Transaction Date',
     'Amount',
+    'Reason',
     'Message',
-    'Likely Matching Reference',
+    'Evidence',
+    'Next Actions',
+    'Counterpart',
     'Reviewer Notes',
   ]);
   exceptions.forEach((item) => {
     errorReportSheet.addRow([
       item.severity,
-      categoryDisplayName[item.category] ?? item.category,
+      errorCategoryDisplayNames[item.category] ?? item.category,
+      item.ruleTrace?.ruleName ?? '',
       sourceDisplayName(item.source),
       item.spreadsheetFileName,
       item.lineNumber,
       item.transactionDate ?? '',
       item.amount ?? '',
+      item.ruleTrace?.reason ?? '',
       item.errorMessage,
-      item.likelyMatchingReference ?? '',
+      (item.ruleTrace?.evidence ?? []).join(' | '),
+      item.recommendedNextActions.join(' | '),
+      item.ruleTrace?.counterpart?.spreadsheetFileName
+        ? `${sourceDisplayName(item.ruleTrace.counterpart.source ?? '')}: ${item.ruleTrace.counterpart.spreadsheetFileName} / ${item.ruleTrace.counterpart.lineNumber ?? 'N/A'}`
+        : item.likelyMatchingReference ?? '',
       item.reviewerNotes ?? '',
     ]);
   });

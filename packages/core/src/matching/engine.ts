@@ -158,7 +158,9 @@ const createMatchResult = (
   id: randomUUID(),
   disposition,
   confidence: candidate.confidence,
+  ruleId: candidate.evaluations[0]?.ruleId,
   ruleName: candidate.ruleName,
+  reason: candidate.evaluations[0]?.reason ?? candidate.evidence.join(' '),
   score: candidate.score,
   bankTransactionId: candidate.bankTransactionId,
   qboTransactionId: candidate.qboTransactionId,
@@ -297,6 +299,7 @@ const rankCandidates = (
               'Bank-side incoming transfer aligns to a same-month month-end journal entry.',
               'Reviewer confirmation is needed for the month-end transfer booking pattern.',
             ],
+            'TimingDifference',
           ),
         );
         continue;
@@ -373,10 +376,10 @@ const rankCandidates = (
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
         candidates.push(
-          buildCandidate(bankTransaction, qboTransaction, 'Amount + Extended Date Window Match', 0.82, 'TimingDifference', [
+          buildCandidate(bankTransaction, qboTransaction, 'Amount + Extended Date Window Match', 0.82, 'DateVariance', [
             'Amounts agree within configured tolerance.',
-            'Date variance remains within the extended timing-difference window.',
-          ]),
+            'Date variance remains outside the primary tolerance but inside the extended review window.',
+          ], 'DateVariance'),
         );
         continue;
       }
@@ -470,6 +473,9 @@ export const reconcileMatches = (
 
     if (candidate.confidence === 'Exact') {
       disposition = 'ExactMatch';
+    } else if (candidate.confidence === 'DateVariance') {
+      disposition = 'DateVariance';
+      exceptionCategory = 'DateVariance';
     } else if (candidate.confidence === 'TimingDifference') {
       disposition = 'TimingDifference';
       exceptionCategory = 'TimingDifference';

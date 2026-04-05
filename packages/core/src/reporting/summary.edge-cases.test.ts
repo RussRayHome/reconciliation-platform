@@ -1,5 +1,5 @@
 import type { ExceptionItem, MatchResult, NormalizedTransaction } from '@recon/domain';
-import { build5703CalibratedSummary, buildSummaryMetrics, is5703Workbook } from './summary';
+import { buildSummaryMetrics, is5703Workbook } from './summary';
 import { describe, expect, it } from 'vitest';
 
 import { randomUUID } from 'node:crypto';
@@ -50,6 +50,7 @@ const buildException = (overrides: Partial<ExceptionItem>): ExceptionItem => ({
   transactionDate: overrides.transactionDate,
   amount: overrides.amount ?? 0,
   errorMessage: overrides.errorMessage ?? 'test',
+  recommendedNextActions: overrides.recommendedNextActions ?? [],
   likelyMatchingReference: overrides.likelyMatchingReference,
   reviewerNotes: overrides.reviewerNotes,
   matchConfidence: overrides.matchConfidence,
@@ -190,9 +191,9 @@ describe('Summary Edge Cases', () => {
         buildException({ category: 'MissingFromQBO', source: 'bank', amount: 100 }),
         buildException({ category: 'MissingFromBank', source: 'qbo', amount: 100 }),
         buildException({ category: 'AmountMismatch', source: 'bank', amount: 50 }),
-        buildException({ category: 'TimingDifference', source: 'bank', amount: 75 }),
+        buildException({ category: 'DateVariance', source: 'bank', amount: 75 }),
         buildException({ category: 'InvalidOrMissingData', source: 'bank', amount: 25 }),
-        buildException({ category: 'DuplicateTransaction', source: 'bank', amount: 150 }),
+        buildException({ category: 'DuplicateInBank', source: 'bank', amount: 150 }),
       ];
 
       const summary = buildSummaryMetrics(transactions, [], exceptions);
@@ -200,7 +201,7 @@ describe('Summary Edge Cases', () => {
       expect(summary.missingFromQBO).toBe(1);
       expect(summary.missingFromBank).toBe(1);
       expect(summary.amountMismatches).toBeGreaterThanOrEqual(0);
-      expect(summary.timingDifferences).toBeGreaterThanOrEqual(0);
+      expect(summary.dateVariances).toBeGreaterThanOrEqual(0);
     });
 
     it('handles empty exception list', () => {
@@ -287,8 +288,8 @@ describe('Summary Edge Cases', () => {
     });
   });
 
-  describe('build5703CalibratedSummary', () => {
-    it('calculates 5703-specific probabilities with month-end transfers', () => {
+  describe('buildSummaryMetrics - 5703 parity', () => {
+    it('keeps summary totals anchored to final exceptions and match results even for 5703 workbooks', () => {
       const transactions: NormalizedTransaction[] = Array.from({ length: 1001 }, (_, i) => {
         if (i === 0) {
           return buildTransaction({
@@ -300,6 +301,7 @@ describe('Summary Edge Cases', () => {
             amount: 50000,
           });
         }
+
         if (i === 1) {
           return buildTransaction({
             id: 'qbo-journal',
@@ -312,6 +314,7 @@ describe('Summary Edge Cases', () => {
             normalizedComparisonTokens: ['money', 'transfers'],
           });
         }
+
         return buildTransaction({
           id: `filler-${i}`,
           spreadsheetFileName: '5703-data.xlsx',
@@ -320,35 +323,11 @@ describe('Summary Edge Cases', () => {
         });
       });
 
-      const summary = build5703CalibratedSummary(transactions);
+      const summary = buildSummaryMetrics(transactions, [], []);
 
-      expect(summary).toBeDefined();
-      expect(summary.probableMatches).toBeDefined();
-    });
-
-    it('ignores duplicate candidates for 5703 matching', () => {
-      const transactions: NormalizedTransaction[] = Array.from({ length: 1001 }, (_, i) => {
-        if (i === 0) {
-          return buildTransaction({
-            id: 'bank-transfer',
-            source: 'bank',
-            spreadsheetFileName: '5703-data.xlsx',
-            transactionDate: '2025-01-28',
-            amount: 50000,
-            normalizedComparisonTokens: ['transfer'],
-          });
-        }
-        return buildTransaction({
-          id: `filler-${i}`,
-          spreadsheetFileName: '5703-data.xlsx',
-          source: i % 2 === 0 ? 'bank' : 'qbo',
-          amount: Math.floor(Math.random() * 10000),
-        });
-      });
-
-      const summary = build5703CalibratedSummary(transactions);
-
-      expect(summary).toBeDefined();
+      expect(summary.exactMatches).toBe(0);
+      expect(summary.probableMatches).toBe(0);
+      expect(summary.timingDifferences).toBe(0);
     });
   });
 

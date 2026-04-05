@@ -93,7 +93,7 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.disposition).toBe('ExactMatch');
   });
 
-  it('classifies same-amount extended-window pairs as timing differences', () => {
+  it('classifies same-amount extended-window pairs as date variances', () => {
     const bank = buildTransaction({
       id: 'bank-timing',
       source: 'bank',
@@ -116,6 +116,7 @@ describe('reconcileMatches', () => {
     const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
-    expect(result.matchResults[0]?.disposition).toBe('TimingDifference');
+    expect(result.matchResults[0]?.disposition).toBe('DateVariance');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('DateVariance');
   });
 });

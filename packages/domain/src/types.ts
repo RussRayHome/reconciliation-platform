@@ -127,7 +127,9 @@ export interface MatchResult {
   id: string;
   disposition: MatchDisposition;
   confidence: MatchConfidence;
+  ruleId?: string;
   ruleName: string;
+  reason?: string;
   score: number;
   bankTransactionId?: string;
   qboTransactionId?: string;
@@ -137,6 +139,21 @@ export interface MatchResult {
   likelyMatchingReference?: string;
   exceptionCategory?: ErrorCategory;
   reviewerNotes?: string;
+}
+
+export interface CounterpartTrace {
+  source?: SourceSystem;
+  spreadsheetFileName?: string;
+  lineNumber?: number;
+  transactionId?: string;
+}
+
+export interface ExceptionRuleTrace {
+  ruleId: string;
+  ruleName: string;
+  reason: string;
+  evidence: string[];
+  counterpart?: CounterpartTrace;
 }
 
 export interface ExceptionItem {
@@ -150,6 +167,8 @@ export interface ExceptionItem {
   transactionDate?: string;
   amount: number | null;
   errorMessage: string;
+  ruleTrace?: ExceptionRuleTrace;
+  recommendedNextActions: string[];
   likelyMatchingReference?: string;
   reviewerNotes?: string;
   matchConfidence?: MatchConfidence;
@@ -178,6 +197,7 @@ export interface SummaryMetrics {
   duplicates: number;
   bankDuplicates: number;
   qboDuplicates: number;
+  dateVariances: number;
   timingDifferences: number;
   dataQualityIssues: number;
   amountMismatches: number;
