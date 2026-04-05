@@ -57,6 +57,8 @@ The current suite covers:
 - beginning-balance exclusion
 - duplicate detection
 - data-quality flagging
+- grouped split/combine residual classification
+- grouped deposit residual classification
 - summary generation
 - export workbook creation
 - API round-trip behavior
@@ -85,7 +87,6 @@ Use it as a quick repository-health snapshot, not as a replacement for targeted 
 Recommended next regression additions:
 
 - account-specific overrides by account/year
-- grouped or split transactions
 - check-number mismatch classification
 - reference-number mismatch classification
 - persistence-backed reviewer workflow

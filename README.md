@@ -97,7 +97,9 @@ Coverage is summarized as `S/B/F/L` and security results are summarized by sever
 
 The repository includes workbook comparison helpers under `scripts/`, including `workbook-parity.py` and `compare-attached-workbooks.py`.
 
-These utilities are useful for golden-standard comparisons, but they currently assume locally edited workbook paths. Update or parameterize the input paths before relying on them for a new comparison run.
+These utilities are useful for golden-standard comparisons and now accept explicit workbook paths. They still assume specific workbook sheet names and column layouts, so validate the expected format before relying on their output.
+
+See `scripts/README.md` for the current script inventory, supported commands, and guidance on which files are reusable versus ad hoc.
 
 ## Documentation
 
@@ -108,6 +110,9 @@ These utilities are useful for golden-standard comparisons, but they currently a
 - `docs/sample-config.md`
 - `docs/api.md`
 - `docs/class-method-reference.md`
+- `scripts/README.md`
+- `CHANGELOG.md`
+- `RELEASE.md`
 
 ## Class and Method Documentation
 
@@ -115,4 +120,9 @@ Complete class and method documentation, including method inputs, outputs, and b
 
 ## Current Persistence Model
 
-The API uses in-memory storage for reconciliation runs. The repository interface is isolated so SQLite, Prisma, or another persistence layer can be added later without reworking the reconciliation engine.
+The API stores reconciliation runs in memory during process lifetime and now persists the latest completed run to `test-results/latest-reconciliation-run.json` for restart-safe report recovery. The repository interface remains isolated so SQLite, Prisma, or another persistence layer can be added later without reworking the reconciliation engine.
+
+## Release Tracking
+
+- `CHANGELOG.md` records noteworthy repository changes and documentation-facing release notes.
+- `RELEASE.md` defines how to prepare release notes, validation evidence, and rollback metadata for future releases.

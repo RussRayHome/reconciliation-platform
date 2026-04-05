@@ -65,13 +65,19 @@ Response includes:
 - normalized transactions
 - match results
 - probable matches
-- exceptions
+- exceptions with category, severity, category-specific recommended next actions, and a nested `ruleTrace` object containing rule metadata, evidence, and counterpart traceability when available
 - summary metrics
 - reviewer observations
 - workbook metadata
 - audit events
 
 ## Fetch Run
+
+### `GET /api/reconciliation/latest`
+
+Returns the most recently stored reconciliation run payload without the raw workbook binary.
+
+Returns `404` when no completed run has been stored yet.
 
 ### `GET /api/reconciliation/:id`
 
@@ -87,7 +93,7 @@ Returns `SummaryMetrics` only.
 
 ### `GET /api/reconciliation/:id/exceptions`
 
-Returns the typed exception list.
+Returns the typed exception list, including `recommendedNextActions` plus a nested `ruleTrace` object with `ruleId`, `ruleName`, `reason`, `evidence`, and counterpart source references when those were available during classification.
 
 ## Download Workbook
 

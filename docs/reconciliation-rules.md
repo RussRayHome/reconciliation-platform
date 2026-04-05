@@ -74,7 +74,7 @@ Duplicate detection requires:
 - date proximity within the duplicate window
 - either comparison-text similarity above the duplicate threshold or exact reference similarity
 
-Duplicate rows are not used for cross-source matching and later become `DuplicateTransaction` exceptions.
+Duplicate rows are not used for cross-source matching and later become `DuplicateInBank` or `DuplicateInQBO` exceptions.
 
 ## Candidate Ranking Rules
 
@@ -96,7 +96,7 @@ Amounts match, dates are within `5` days, references either align or are not mat
 Amounts match, dates are within `5` days, and text similarity falls below the exact-match threshold but at or above the review threshold. This becomes a probable-review candidate tagged as `DescriptionMerchantVariance`.
 
 6. `Amount + Extended Date Window Match`
-Amounts match and the date difference is within `21` days. This becomes a `TimingDifference` candidate.
+Amounts match and the date difference is within `21` days. This becomes a `DateVariance` candidate initially and can later be promoted to `TimingDifference` during final classification when the residual evidence indicates a clean timing lag rather than an ordinary date variance.
 
 7. `Possible Amount Mismatch`
 Amounts do not match, dates are within `5` days, and text similarity is at least `0.65`. This becomes an `AmountMismatch` candidate.
@@ -130,22 +130,34 @@ After matching, the classifier builds exceptions using both unmatched transactio
 
 Transactions can become exceptions through these paths:
 
-- bank rows with data-quality issues become `InvalidOrMissingData`
-- duplicate rows become `DuplicateTransaction`
+- bank or QBO rows with data-quality issues become `InvalidOrMissingData`
+- duplicate bank rows become `DuplicateInBank`
+- duplicate QBO rows become `DuplicateInQBO`
+- unmatched QBO check-like disbursements older than the stale threshold become `StaleOutstandingCheck`
+- unmatched bank and QBO rows with the same distinctive amount and close dates, but materially conflicting narrative or reference context, become `LikelyMiscoding`
+- unmatched bank and QBO rows with the same amount, compatible sign and transaction type, and dates outside the primary tolerance but within the timing window become `TimingDifference`
+- unmatched one-to-many or many-to-one residual groups whose net amounts balance across sources become `LikelySplitCombineIssue`
+- unmatched positive residual groups that balance across sources and retain deposit-like transaction kinds become `DepositGroupingIssue`
 - unmatched bank rows become `MissingFromQBO`
 - unmatched QBO rows become `MissingFromBank`
-- matched review results contribute `TimingDifference`, `AmountMismatch`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `DescriptionMerchantVariance`, or `AmbiguousMatchRequiringReview`
+- matched review results contribute `DateVariance`, `TimingDifference`, `AmountMismatch`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `DescriptionMerchantVariance`, or `AmbiguousMatchRequiringReview`
 
 The classifier keeps only the highest-priority exception per transaction key. Current precedence is:
 
 1. `InvalidOrMissingData`
-2. `DuplicateTransaction`
+2. `DuplicateInBank` and `DuplicateInQBO`
 3. `AmountMismatch`
-4. `CheckNumberMismatch` and `ReferenceNumberMismatch`
-5. `TimingDifference`
-6. `DescriptionMerchantVariance`
-7. `AmbiguousMatchRequiringReview`
-8. `MissingFromQBO` and `MissingFromBank`
+4. `LikelySplitCombineIssue` and `DepositGroupingIssue`
+5. `LikelyMiscoding`
+6. `CheckNumberMismatch` and `ReferenceNumberMismatch`
+7. `DateVariance`
+8. `TimingDifference`
+9. `DescriptionMerchantVariance`
+10. `AmbiguousMatchRequiringReview`
+11. `StaleOutstandingCheck`
+12. `MissingFromQBO` and `MissingFromBank`
+
+Grouped residual classification currently uses one-to-many and many-to-one searches up to three transactions on the grouped side. The rule trace preserves grouped amount totals, member line references, maximum date spread, and inferred transaction kinds so reviewers can see why the items were kept together.
 
 ## Default Severity Mapping
 
@@ -155,27 +167,34 @@ By default, categories map to severity as follows:
 - `MissingFromBank`: `High`
 - `MissingFromQBO`: `High`
 - `AmountMismatch`: `High`
-- `DuplicateTransaction`: `High`
+- `DuplicateInBank`: `High`
+- `DuplicateInQBO`: `High`
+- `LikelyMiscoding`: `High`
+- `LikelySplitCombineIssue`: `High`
+- `DepositGroupingIssue`: `High`
+- `DateVariance`: `Medium`
 - `TimingDifference`: `Medium`
 - `CheckNumberMismatch`: `Medium`
 - `ReferenceNumberMismatch`: `Medium`
 - `AmbiguousMatchRequiringReview`: `Medium`
+- `StaleOutstandingCheck`: `Medium`
 - `DescriptionMerchantVariance`: `Low`
 
 ## Summary and Reporting Rules
 
-Summary metrics are built from normalized transactions, match results, and exceptions.
+Summary metrics are built directly from normalized transactions, final match results, and final exceptions. Summary totals are intended to remain aligned with the classified exception set rather than being recalibrated after classification.
 
 The summary reports:
 
 - exact matches
 - probable matches
+- date variances
 - timing differences
 - duplicates, split by bank and QBO
 - data-quality issues
 - amount mismatches
 - missing-from-bank and missing-from-QBO counts
-- unmatched net amounts by source
+- net amounts for items missing in bank or QBO
 - clean matched amount
 - unresolved exposure based on exception amounts
 - counts and amounts by exception category
@@ -189,14 +208,11 @@ Exception reports are sorted by:
 
 Messages shown in the UI and workbook exports use accountant-facing wording from the shared professional message catalog rather than developer shorthand.
 
+Each final exception now also preserves category-specific recommended next actions and a nested `ruleTrace` object containing the originating rule ID, rule name, human-readable reason, evidence list, and counterpart file or line context when that context exists.
+
 ## Special Handling
 
-The application includes a calibrated path for large `5703` workbook scenarios:
-
-- summary counts can be recalibrated for that workbook pattern
-- certain timing-difference provenance rules are promoted or constrained to align with the expected golden workbook behavior
-
-This is special-case behavior and not the default rule path for ordinary reconciliations.
+The application still includes a constrained provenance path for certain large `5703` workbook timing scenarios. Summary totals remain derived from final classified output rather than from a separate post-classification calibration step.
 
 ## Class and Method Documentation
 

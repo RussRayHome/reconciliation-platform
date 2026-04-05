@@ -87,7 +87,7 @@ The developer-status endpoint is intentionally operational rather than domain-fa
 
 Most reconciliation behavior is driven by the shared default configuration and optional account overrides.
 
-There is also a calibrated path for large `5703` workbook scenarios in summary and timing-difference reporting. That logic is isolated inside the core reporting layer rather than spread across the web or API layers.
+There is also a constrained provenance path for certain large `5703` workbook timing scenarios. Summary generation now stays anchored to final classified output instead of relying on a separate calibration path, and the remaining special handling is isolated inside the core reporting layer rather than spread across the web or API layers.
 
 ## Extensibility
 

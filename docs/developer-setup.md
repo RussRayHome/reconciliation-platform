@@ -33,6 +33,10 @@ The developer dashboard is intended to stay local by default:
 ## Useful Commands
 
 ```bash
+npm run harness:start
+npm run harness:restart
+npm run harness:stop
+npm run harness:status
 npm run typecheck
 npm run lint
 npm run test
@@ -41,6 +45,43 @@ npm run coverage
 npm run build
 npm run security:scan
 ```
+
+## Runtime Harness
+
+Use the runtime harness commands when you want a deterministic local API + web startup on the expected ports with a single entrypoint.
+
+```bash
+npm run harness:start
+```
+
+The harness start command:
+
+- starts the API on port `4000`
+- starts the web app on port `4173`
+- writes API runtime logs to `test-results/runtime-api.log`
+- fails fast if either expected port is already occupied
+
+If a prior harness run or another local process is still holding either port, stop it with:
+
+```bash
+npm run harness:stop
+```
+
+To force a clean stop-then-start cycle in one command, run:
+
+```bash
+npm run harness:restart
+```
+
+To inspect whether the expected harness ports are free before starting, run:
+
+```bash
+npm run harness:status
+```
+
+These commands should be run from the repository root.
+
+If you open the parent workspace instead of the repository folder directly, the bundled VS Code tasks `harness:start`, `harness:restart`, `harness:stop`, and `harness:status` already target the nested `reconciliation-platform` root for you.
 
 ## Quality Workflow
 
