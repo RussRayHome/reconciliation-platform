@@ -219,6 +219,12 @@ describe('classifyExceptions', () => {
     expect(miscodingItems.every((item) => item.ruleTrace?.ruleId === 'likely-miscoding')).toBe(true);
     expect(output.exceptions.some((item) => item.category === 'DateVariance')).toBe(false);
     expect(
+      miscodingItems.every((item) => item.priorRuleTraces?.[0]?.ruleId === 'amount-extended-date-window-match'),
+    ).toBe(true);
+    expect(
+      miscodingItems.every((item) => item.priorRuleTraces?.[0]?.ruleName === 'Amount + Extended Date Window Match'),
+    ).toBe(true);
+    expect(
       miscodingItems.every(
         (item) => item.ruleTrace?.counterpart?.spreadsheetFileName === 'bank.xlsx' || item.ruleTrace?.counterpart?.spreadsheetFileName === 'qbo.xlsx',
       ),
@@ -268,6 +274,65 @@ describe('classifyExceptions', () => {
       ]),
     );
     expect(missing?.ruleTrace?.ruleId).toBe('missing-from-qbo');
+  });
+
+  it('preserves full grouped counterpart arrays for residual split-combine classifications', () => {
+    const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
+    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const bankTransaction = buildTransaction({
+      id: 'bank-grouped',
+      source: 'bank',
+      sourceFileId: bankFile.id,
+      spreadsheetFileName: bankFile.fileName,
+      lineNumber: 21,
+      transactionDate: '2025-03-10',
+      transactionType: 'Expense',
+      amount: -300,
+      description: 'Vendor batch payment',
+      normalizedComparisonTokens: ['VENDOR', 'BATCH', 'PAYMENT'],
+    });
+    const qboTransactionOne = buildTransaction({
+      id: 'qbo-grouped-1',
+      source: 'qbo',
+      sourceFileId: qboFile.id,
+      spreadsheetFileName: qboFile.fileName,
+      lineNumber: 31,
+      transactionDate: '2025-03-10',
+      transactionType: 'Expense',
+      amount: -100,
+      description: 'Vendor batch payment part 1',
+      normalizedComparisonTokens: ['VENDOR', 'BATCH', 'PAYMENT'],
+    });
+    const qboTransactionTwo = buildTransaction({
+      id: 'qbo-grouped-2',
+      source: 'qbo',
+      sourceFileId: qboFile.id,
+      spreadsheetFileName: qboFile.fileName,
+      lineNumber: 32,
+      transactionDate: '2025-03-11',
+      transactionType: 'Expense',
+      amount: -200,
+      description: 'Vendor batch payment part 2',
+      normalizedComparisonTokens: ['VENDOR', 'BATCH', 'PAYMENT'],
+    });
+
+    const output = classifyExceptions({
+      runId: 'run-grouped',
+      sourceFiles: [bankFile, qboFile],
+      normalizedTransactions: [bankTransaction, qboTransactionOne, qboTransactionTwo],
+      matchResults: [],
+      unmatchedBankTransactionIds: new Set<string>(['bank-grouped']),
+      unmatchedQboTransactionIds: new Set<string>(['qbo-grouped-1', 'qbo-grouped-2']),
+      duplicateTransactionIds: new Set<string>(),
+      reporting: defaultReconciliationConfig.reporting,
+      matching: defaultReconciliationConfig.matching,
+      reconciliationFrequency: 'Monthly',
+    });
+
+    const bankGroupedException = output.exceptions.find((item) => item.id && item.source === 'bank' && item.category === 'LikelySplitCombineIssue');
+
+    expect(bankGroupedException?.ruleTrace?.counterparts).toHaveLength(2);
+    expect(bankGroupedException?.ruleTrace?.counterparts?.map((trace) => trace.lineNumber)).toEqual([31, 32]);
   });
 
   it('classifies unmatched same-amount residuals as timing differences before missing-item fallback', () => {

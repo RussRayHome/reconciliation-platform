@@ -320,7 +320,12 @@ export function DocsOverview({
       return;
     }
 
-    targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const prefersReducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    targetSection.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+    });
   }, [activeDocumentId, activeSectionAnchorId, parsedBlocks]);
 
   const documentsByCategory = useMemo(

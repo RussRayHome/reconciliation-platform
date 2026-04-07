@@ -3,8 +3,14 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     coverage: {
+      all: true,
       provider: 'v8',
-      reporter: ['text', 'html'],
+      reporter: ['text', 'html', 'json-summary'],
+      include: [
+        'apps/api/src/**/*.{ts,tsx}',
+        'apps/web/src/**/*.{ts,tsx}',
+        'packages/*/src/**/*.{ts,tsx}',
+      ],
       exclude: [
         '**/*.config.*',
         '**/dist/**',
@@ -15,6 +21,12 @@ export default defineConfig({
         'packages/domain/src/types.ts',
         'scripts/**',
       ],
+      thresholds: {
+        statements: 40,
+        branches: 30,
+        functions: 40,
+        lines: 40,
+      },
     },
     projects: [
       {

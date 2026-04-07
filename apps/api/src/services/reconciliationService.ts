@@ -1,11 +1,20 @@
 import {
+  buildSummaryMetrics,
+  classifyExceptions,
+  exportWorkbook,
+  normalizeTransactions,
+  reconcileMatches,
+  parseWorkbook,
+} from '@recon/core';
+import {
   defaultReconciliationConfig,
   resolveReconciliationConfig,
   sampleAccountOverrides,
 } from '@recon/config';
-import { parseWorkbook, runReconciliation } from '@recon/core';
 
-import type { ReconciliationRun } from '@recon/domain';
+import type { PostgresReconciliationLifecycleStore } from '@recon/persistence';
+
+import type { AuditEvent, ReconciliationRun } from '@recon/domain';
 import pino from 'pino';
 import { randomUUID } from 'node:crypto';
 
@@ -29,6 +38,9 @@ interface UploadedFile {
  */
 export interface ExecuteReconciliationInput {
   correlationId: string;
+  runId?: string;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+  sourceFileIds?: Partial<Record<'bank' | 'qbo', string>>;
   bankFile: UploadedFile;
   qboFile: UploadedFile;
   accountIdentifier?: string;
@@ -45,6 +57,9 @@ export interface ExecuteReconciliationInput {
  */
 export const executeReconciliation = async ({
   correlationId,
+  runId: providedRunId,
+  lifecycleStore,
+  sourceFileIds,
   bankFile,
   qboFile,
   accountIdentifier,
@@ -68,7 +83,7 @@ export const executeReconciliation = async ({
     qboHeaderRow: config.qbo.headerRow,
   });
 
-  const runId = randomUUID();
+  const runId = providedRunId ?? randomUUID();
   log.debug({ action: 'service.run.id.assigned', runId });
 
   // ── 2. Parallel workbook parsing ──────────────────────────────────────────
@@ -81,6 +96,7 @@ export const executeReconciliation = async ({
     [bankParsed, qboParsed] = await Promise.all([
       parseWorkbook({
         source: 'bank',
+        sourceFileId: sourceFileIds?.bank,
         fileName: bankFile.originalname,
         mimeType: bankFile.mimetype,
         sizeBytes: bankFile.size,
@@ -89,6 +105,7 @@ export const executeReconciliation = async ({
       }),
       parseWorkbook({
         source: 'qbo',
+        sourceFileId: sourceFileIds?.qbo,
         fileName: qboFile.originalname,
         mimeType: qboFile.mimetype,
         sizeBytes: qboFile.size,
@@ -110,6 +127,13 @@ export const executeReconciliation = async ({
     qboWorksheet: qboParsed.sourceFile.worksheetName,
   });
 
+  const sourceFiles = [bankParsed.sourceFile, qboParsed.sourceFile] as const;
+  const rawRows = [...bankParsed.rawRows, ...qboParsed.rawRows];
+
+  if (lifecycleStore) {
+    await lifecycleStore.persistParsedRows(runId, [...sourceFiles], rawRows);
+  }
+
   // Log first few raw rows at debug level for traceability
   if (process.env.DEBUG_RECONCILIATION === 'true') {
     log.debug({ action: 'service.parse.bank.sample', rows: bankParsed.rawRows.slice(0, 5).map(r => ({ line: r.lineNumber, raw: r.rawValues })) });
@@ -120,17 +144,116 @@ export const executeReconciliation = async ({
   const reconStart = Date.now();
   log.debug({ action: 'service.reconciliation.pipeline.start', totalRawRows: bankParsed.rawRows.length + qboParsed.rawRows.length });
 
-  let output: Awaited<ReturnType<typeof runReconciliation>>;
+  let auditEvents: AuditEvent[] = [
+    {
+      timestamp: new Date().toISOString(),
+      action: 'reconciliation.run.started',
+      details: {
+        runId,
+        correlationId,
+        sourceFileCount: sourceFiles.length,
+      },
+    },
+  ];
+
+  const appendAuditEvent = (
+    action: AuditEvent['action'],
+    details: AuditEvent['details'],
+  ): void => {
+    auditEvents = [
+      ...auditEvents,
+      {
+        timestamp: new Date().toISOString(),
+        action,
+        details,
+      },
+    ];
+  };
+
+  let normalizedTransactions: ReturnType<typeof normalizeTransactions>;
+  let matching: ReturnType<typeof reconcileMatches>;
+  let exceptionOutput: ReturnType<typeof classifyExceptions>;
+  let summary: ReturnType<typeof buildSummaryMetrics>;
+  let outputWorkbook: Awaited<ReturnType<typeof exportWorkbook>>;
+
   try {
-    output = await runReconciliation({
+    normalizedTransactions = normalizeTransactions(runId, rawRows, config);
+    appendAuditEvent('reconciliation.normalize.completed', {
+      transactionCount: normalizedTransactions.length,
+    });
+
+    if (lifecycleStore) {
+      await lifecycleStore.persistNormalizedRows(runId, normalizedTransactions);
+    }
+
+    matching = reconcileMatches(normalizedTransactions, config.matching);
+    appendAuditEvent('reconciliation.match.completed', {
+      matchResultCount: matching.matchResults.length,
+      groupedMatchResultCount: matching.groupedMatchResults.length,
+      probableMatchCount: matching.probableMatches.length,
+    });
+
+    if (lifecycleStore) {
+      await lifecycleStore.persistMatchingArtifacts({
+        jobId: runId,
+        matchResults: matching.matchResults,
+        probableMatches: matching.probableMatches,
+        groupedMatchResults: matching.groupedMatchResults,
+      });
+    }
+
+    exceptionOutput = classifyExceptions({
+      runId,
+      sourceFiles: [...sourceFiles],
+      normalizedTransactions,
+      matchResults: matching.matchResults,
+      unmatchedBankTransactionIds: matching.unmatchedBankTransactionIds,
+      unmatchedQboTransactionIds: matching.unmatchedQboTransactionIds,
+      duplicateTransactionIds: matching.duplicateTransactionIds,
+      reporting: config.reporting,
+      matching: config.matching,
+      reconciliationFrequency,
+    });
+    appendAuditEvent('reconciliation.classify.completed', {
+      exceptionCount: exceptionOutput.exceptions.length,
+    });
+
+    summary = buildSummaryMetrics(
+      normalizedTransactions,
+      matching.matchResults,
+      exceptionOutput.exceptions,
+    );
+
+    if (lifecycleStore) {
+      await lifecycleStore.persistReviewArtifacts({
+        jobId: runId,
+        exceptions: exceptionOutput.exceptions,
+        reviewerObservations: exceptionOutput.reviewerObservations,
+        summary,
+      });
+    }
+
+    outputWorkbook = await exportWorkbook({
+      runId,
+      accountIdentifier,
+      periodLabel,
+      config,
+      summary,
+      exceptions: exceptionOutput.exceptions,
+      probableMatches: matching.probableMatches,
+      reviewerObservations: exceptionOutput.reviewerObservations,
+      normalizedTransactions,
+    });
+    appendAuditEvent('reconciliation.export.completed', {
+      workbookFileName: outputWorkbook.fileName,
+      tabCount: outputWorkbook.tabNames.length,
+    });
+
+    appendAuditEvent('reconciliation.run.completed', {
       runId,
       correlationId,
-      sourceFiles: [bankParsed.sourceFile, qboParsed.sourceFile],
-      rawRows: [...bankParsed.rawRows, ...qboParsed.rawRows],
-      config,
-      accountIdentifier,
-      reconciliationFrequency,
-      periodLabel,
+      exactMatches: summary.exactMatches,
+      unresolvedExposure: summary.unresolvedExposure,
     });
   } catch (reconError) {
     log.error({ action: 'service.reconciliation.pipeline.error', err: reconError instanceof Error ? { message: reconError.message, stack: reconError.stack } : reconError });
@@ -140,19 +263,29 @@ export const executeReconciliation = async ({
   log.info({
     action: 'service.reconciliation.pipeline.completed',
     durationMs: Date.now() - reconStart,
-    normalizedTransactions: output.normalizedTransactions.length,
-    matchResults: output.matchResults.length,
-    probableMatches: output.probableMatches.length,
-    exceptions: output.exceptions.length,
-    exactMatches: output.summary.exactMatches,
-    timingDifferences: output.summary.timingDifferences,
-    dataQualityIssues: output.summary.dataQualityIssues,
-    missingFromBank: output.summary.missingFromBank,
-    missingFromQBO: output.summary.missingFromQBO,
-    duplicates: output.summary.duplicates,
+    normalizedTransactions: normalizedTransactions.length,
+    matchResults: matching.matchResults.length,
+    groupedMatchResults: matching.groupedMatchResults.length,
+    probableMatches: matching.probableMatches.length,
+    exceptions: exceptionOutput.exceptions.length,
+    exactMatches: summary.exactMatches,
+    timingDifferences: summary.timingDifferences,
+    dataQualityIssues: summary.dataQualityIssues,
+    missingFromBank: summary.missingFromBank,
+    missingFromQBO: summary.missingFromQBO,
+    duplicates: summary.duplicates,
   });
 
   log.info({ action: 'service.reconciliation.done', runId, totalDurationMs: Date.now() - t0 });
+
+  if (lifecycleStore) {
+    await lifecycleStore.persistExportAndFinalize({
+      jobId: runId,
+      outputWorkbook,
+      completedAt: new Date().toISOString(),
+      auditEvents,
+    });
+  }
 
   return {
     id: runId,
@@ -163,15 +296,17 @@ export const executeReconciliation = async ({
     status: 'Completed',
     startedAt: new Date(t0).toISOString(),
     completedAt: new Date().toISOString(),
-    sourceFiles: [bankParsed.sourceFile, qboParsed.sourceFile],
-    rawRows: [...bankParsed.rawRows, ...qboParsed.rawRows],
-    normalizedTransactions: output.normalizedTransactions,
-    matchResults: output.matchResults,
-    probableMatches: output.probableMatches,
-    exceptions: output.exceptions,
-    summary: output.summary,
-    reviewerObservations: output.reviewerObservations,
-    outputWorkbook: output.outputWorkbook,
-    auditEvents: output.auditEvents,
+    sourceFiles: [...sourceFiles],
+    rawRows,
+    normalizedTransactions,
+    matchResults: matching.matchResults,
+    groupedMatchResults: matching.groupedMatchResults,
+    probableMatches: matching.probableMatches,
+    exceptions: exceptionOutput.exceptions,
+    summary,
+    reviewerObservations: exceptionOutput.reviewerObservations,
+    reviewerDecisions: [],
+    outputWorkbook,
+    auditEvents,
   };
 };

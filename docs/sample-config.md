@@ -28,10 +28,13 @@ The reconciliation engine is configuration-driven. Default values live in `packa
 - `amountTolerance`
 - `dateToleranceDays`
 - `timingDifferenceDays`
+- `staleOutstandingCheckDays`
 - `textSimilarityThreshold`
 - `probableTextSimilarityThreshold`
 - `referenceSimilarityThreshold`
 - `distinctiveAmountMaxOccurrences`
+- `groupedCandidatePoolSize`
+- `groupedMatchMaxSize`
 - `duplicateDateWindowDays`
 - `duplicateSimilarityThreshold`
 - `amountMismatchTextSimilarityThreshold`
@@ -54,6 +57,9 @@ export const sampleAccountOverrides = [
     matching: {
       dateToleranceDays: 2,
       timingDifferenceDays: 5,
+      staleOutstandingCheckDays: 30,
+      groupedCandidatePoolSize: 8,
+      groupedMatchMaxSize: 4,
     },
   },
 ];
@@ -63,9 +69,7 @@ export const sampleAccountOverrides = [
 
 - Keep parser settings account-specific when source exports differ by institution.
 - Tighten timing windows for payroll or controlled disbursement accounts.
+- Increase grouped search bounds only when grouped deposit or split/combine scenarios are common enough to justify the added search cost.
 - Increase duplicate sensitivity only when duplicate false positives are operationally acceptable.
 - Do not loosen probable-match thresholds without accountant review.
-
-## Class and Method Documentation
-
-Configuration method behavior is documented in `docs/class-method-reference.md`, including inputs, outputs, and before/after state objects for `resolveReconciliationConfig`.
+- Keep stale-check aging explicit per account when operational policy differs across check-heavy and receipt-heavy ledgers.

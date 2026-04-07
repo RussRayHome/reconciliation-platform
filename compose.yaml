@@ -1,0 +1,152 @@
+name: reconciliation-platform
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-api-environment: &api-environment
+  NODE_ENV: production
+  PORT: ${PORT:-4000}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+  RECON_PERSISTENCE_BACKEND: ${RECON_PERSISTENCE_BACKEND:-postgres}
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  PG_POOL_MAX: ${PG_POOL_MAX:-10}
+  PG_IDLE_TIMEOUT_MS: ${PG_IDLE_TIMEOUT_MS:-30000}
+  PG_STATEMENT_TIMEOUT_MS: ${PG_STATEMENT_TIMEOUT_MS:-60000}
+  ENABLE_DEVELOPER_DIAGNOSTICS: ${ENABLE_DEVELOPER_DIAGNOSTICS:-false}
+  RECONCILIATION_RUN_STORE_PATH: ${RECONCILIATION_RUN_STORE_PATH:-/var/lib/reconciliation/latest-reconciliation-run.json}
+
+services:
+  postgres:
+    build:
+      context: ./
+      dockerfile: Dockerfile.postgres
+    environment:
+      LANG: en_US.UTF-8
+      LANGUAGE: en_US:en
+      LC_ALL: en_US.UTF-8
+      POSTGRES_DB: ${POSTGRES_DB:-reconciliation_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-recon_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    restart: unless-stopped
+    expose:
+      - "5432"
+    volumes:
+      - recon-postgres-data:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-recon_app} -d ${POSTGRES_DB:-reconciliation_platform}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
+
+  pgweb:
+    image: sosedoff/pgweb
+    environment:
+      PGWEB_DATABASE_URL: postgres://recon_app:change-local-password@postgres:5432/reconciliation_platform?sslmode=disable
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+    networks:
+      - default
+      - data
+    restart: unless-stopped
+    logging: *default-logging
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *api-environment
+      RUN_DB_MIGRATIONS_ON_BOOT: "true"
+    command: ["node", "apps/api/dist/migrate.cjs"]
+    restart: "no"
+    networks:
+      - data
+    logging: *default-logging
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *api-environment
+      RUN_DB_MIGRATIONS_ON_BOOT: ${RUN_DB_MIGRATIONS_ON_BOOT:-false}
+    expose:
+      - "4000"
+    volumes:
+      - recon-app-state:/var/lib/reconciliation
+    networks:
+      - app
+      - data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4000/api/health'').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${PUBLIC_WEB_PORT:-4173}:8080"
+    networks:
+      - edge
+      - app
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+volumes:
+  recon-postgres-data:
+  recon-app-state:
+
+networks:
+  edge:
+    driver: bridge
+  app:
+    driver: bridge
+    internal: true
+  data:
+    driver: bridge
+    internal: true

@@ -15,7 +15,6 @@ import {
   type ReviewerObservation,
 } from '@recon/domain';
 import { currencyEquals, dateDifferenceDays, tokenSimilarity } from '../matching/similarity';
-import { is5703Workbook } from './summary';
 
 const severityRank: Record<string, number> = {
   Critical: 0,
@@ -43,9 +42,13 @@ const categoryPrecedence: Record<ExceptionItem['category'], number> = {
   MissingFromBank: 11,
 };
 
-const STALE_OUTSTANDING_CHECK_DAYS = 45;
-const GROUPED_MATCH_MAX_GROUP_SIZE = 3;
-const GROUPED_CANDIDATE_POOL_SIZE = 6;
+const advisoryReviewCategoriesExcludedFromResidualStages = new Set<ExceptionItem['category']>([
+  'AmountMismatch',
+  'CheckNumberMismatch',
+  'ReferenceNumberMismatch',
+  'DescriptionMerchantVariance',
+  'AmbiguousMatchRequiringReview',
+]);
 
 interface MiscodingCandidate {
   bankTransaction: NormalizedTransaction;
@@ -386,7 +389,7 @@ const collectGroupedCounterpartPool = (
 
       return Math.abs(anchorTransaction.amount - left.amount) - Math.abs(anchorTransaction.amount - right.amount);
     })
-    .slice(0, GROUPED_CANDIDATE_POOL_SIZE);
+    .slice(0, matching.groupedCandidatePoolSize);
 
 const findGroupedResidualCandidates = (
   bankTransactions: NormalizedTransaction[],
@@ -403,7 +406,7 @@ const findGroupedResidualCandidates = (
 
   for (const bankTransaction of bankResiduals) {
     const counterpartPool = collectGroupedCounterpartPool(bankTransaction, qboResiduals, matching);
-    const combinations = generateTransactionCombinations(counterpartPool, 2, GROUPED_MATCH_MAX_GROUP_SIZE);
+    const combinations = generateTransactionCombinations(counterpartPool, 2, matching.groupedMatchMaxSize);
 
     for (const combination of combinations) {
       const candidate = buildGroupedResidualCandidate([bankTransaction], combination, matching);
@@ -416,7 +419,7 @@ const findGroupedResidualCandidates = (
 
   for (const qboTransaction of qboResiduals) {
     const counterpartPool = collectGroupedCounterpartPool(qboTransaction, bankResiduals, matching);
-    const combinations = generateTransactionCombinations(counterpartPool, 2, GROUPED_MATCH_MAX_GROUP_SIZE);
+    const combinations = generateTransactionCombinations(counterpartPool, 2, matching.groupedMatchMaxSize);
 
     for (const combination of combinations) {
       const candidate = buildGroupedResidualCandidate(combination, [qboTransaction], matching);
@@ -569,9 +572,13 @@ interface MatchResultClassification {
   resultCategory: ExceptionItem['category'];
   matchedMiscodingCandidate?: MiscodingCandidate;
   matchedTimingDifferenceCandidate?: TimingDifferenceCandidate;
-  promotedTimingDifference: boolean;
-  is5703TimingReportPair: boolean;
   relatedTransactionIds: string[];
+  sourceTrace: {
+    ruleId: string | undefined;
+    ruleName: string;
+    reason: string | undefined;
+    evidence: string[];
+  };
   derivedTrace: {
     ruleId: string | undefined;
     ruleName: string;
@@ -587,36 +594,14 @@ const resolveMatchResultCategory = (
     qboTransaction?: NormalizedTransaction;
     matching: MatchingConfig;
     miscodingThresholds: MiscodingThresholds;
-    use5703TimingProvenance: boolean;
   },
 ): {
   resultCategory?: ExceptionItem['category'];
   matchedMiscodingCandidate?: MiscodingCandidate;
   matchedTimingDifferenceCandidate?: TimingDifferenceCandidate;
-  promotedTimingDifference: boolean;
-  is5703TimingReportPair: boolean;
 } => {
-  const {
-    result,
-    bankTransaction,
-    qboTransaction,
-    matching,
-    miscodingThresholds,
-    use5703TimingProvenance,
-  } = params;
-
-  const is5703TimingReportPair =
-    use5703TimingProvenance &&
-    bankTransaction !== undefined &&
-    GOLDEN_5703_TIMING_BANK_LINES.has(bankTransaction.lineNumber) &&
-    (result.disposition === 'TimingDifference' || result.disposition === 'ExactMatch');
-  const promotedTimingDifference = is5703TimingReportPair && result.disposition === 'ExactMatch';
-  let resultCategory: ExceptionItem['category'] | undefined =
-    promotedTimingDifference ? 'TimingDifference' : result.exceptionCategory;
-
-  if (!resultCategory && is5703TimingReportPair && result.disposition === 'TimingDifference') {
-    resultCategory = 'TimingDifference';
-  }
+  const { result, bankTransaction, qboTransaction, matching, miscodingThresholds } = params;
+  let resultCategory: ExceptionItem['category'] | undefined = result.exceptionCategory;
 
   const matchedMiscodingCandidate =
     resultCategory === 'DateVariance' &&
@@ -655,8 +640,6 @@ const resolveMatchResultCategory = (
     resultCategory,
     matchedMiscodingCandidate,
     matchedTimingDifferenceCandidate,
-    promotedTimingDifference,
-    is5703TimingReportPair,
   };
 };
 
@@ -666,10 +649,9 @@ const buildMatchResultClassification = (
     transactionById: Map<string, NormalizedTransaction>;
     matching: MatchingConfig;
     miscodingThresholds: MiscodingThresholds;
-    use5703TimingProvenance: boolean;
   },
 ): MatchResultClassification | undefined => {
-  const { result, transactionById, matching, miscodingThresholds, use5703TimingProvenance } = params;
+  const { result, transactionById, matching, miscodingThresholds } = params;
   const bankTransaction = result.bankTransactionId ? transactionById.get(result.bankTransactionId) : undefined;
   const qboTransaction = result.qboTransactionId ? transactionById.get(result.qboTransactionId) : undefined;
   const categoryResolution = resolveMatchResultCategory({
@@ -678,30 +660,13 @@ const buildMatchResultClassification = (
     qboTransaction,
     matching,
     miscodingThresholds,
-    use5703TimingProvenance,
   });
 
   if (!categoryResolution.resultCategory) {
     return undefined;
   }
 
-  if (
-    use5703TimingProvenance &&
-    result.disposition === 'TimingDifference' &&
-    !categoryResolution.is5703TimingReportPair
-  ) {
-    return undefined;
-  }
-
   if (!bankTransaction && !qboTransaction) {
-    return undefined;
-  }
-
-  if (
-    categoryResolution.resultCategory === 'TimingDifference' &&
-    categoryResolution.promotedTimingDifference &&
-    (!bankTransaction || !qboTransaction)
-  ) {
     return undefined;
   }
 
@@ -711,9 +676,13 @@ const buildMatchResultClassification = (
     resultCategory: categoryResolution.resultCategory,
     matchedMiscodingCandidate: categoryResolution.matchedMiscodingCandidate,
     matchedTimingDifferenceCandidate: categoryResolution.matchedTimingDifferenceCandidate,
-    promotedTimingDifference: categoryResolution.promotedTimingDifference,
-    is5703TimingReportPair: categoryResolution.is5703TimingReportPair,
     relatedTransactionIds: [result.bankTransactionId, result.qboTransactionId].filter(Boolean) as string[],
+    sourceTrace: {
+      ruleId: result.ruleId,
+      ruleName: result.ruleName,
+      reason: result.reason,
+      evidence: result.evidence,
+    },
     derivedTrace: buildDerivedMatchTrace(
       result,
       categoryResolution.matchedMiscodingCandidate,
@@ -722,28 +691,8 @@ const buildMatchResultClassification = (
   };
 };
 
-const resolveCanonicalQboTransaction = (
-  bankTransaction: NormalizedTransaction,
-  qboTransaction: NormalizedTransaction,
-  use5703TimingProvenance: boolean,
-  transactionBySourceAndLine: Map<string, NormalizedTransaction>,
-): NormalizedTransaction => {
-  if (!use5703TimingProvenance) {
-    return qboTransaction;
-  }
-
-  const canonicalQboLine = GOLDEN_5703_TIMING_QBO_LINE_BY_BANK_LINE[bankTransaction.lineNumber];
-  if (canonicalQboLine === undefined) {
-    return qboTransaction;
-  }
-
-  return transactionBySourceAndLine.get(`qbo:${canonicalQboLine}`) ?? qboTransaction;
-};
-
 const buildMatchResultTargets = (
   classification: MatchResultClassification,
-  use5703TimingProvenance: boolean,
-  transactionBySourceAndLine: Map<string, NormalizedTransaction>,
 ): Array<{ target: NormalizedTransaction; counterpart?: NormalizedTransaction }> => {
   const { bankTransaction, qboTransaction, resultCategory } = classification;
 
@@ -752,16 +701,9 @@ const buildMatchResultTargets = (
     bankTransaction &&
     qboTransaction
   ) {
-    const resolvedQboTransaction = resolveCanonicalQboTransaction(
-      bankTransaction,
-      qboTransaction,
-      use5703TimingProvenance,
-      transactionBySourceAndLine,
-    );
-
     return [
-      { target: bankTransaction, counterpart: resolvedQboTransaction },
-      { target: resolvedQboTransaction, counterpart: bankTransaction },
+      { target: bankTransaction, counterpart: qboTransaction },
+      { target: qboTransaction, counterpart: bankTransaction },
     ];
   }
 
@@ -871,27 +813,6 @@ const findLikelyMiscodingCandidates = (
   return candidates;
 };
 
-const GOLDEN_5703_TIMING_BANK_LINES = new Set([
-  2, 12, 13, 16, 38, 43, 50, 54, 60, 61, 62, 63, 64, 73, 74, 76, 79, 99, 95, 97, 98,
-  100, 108, 113, 116, 134, 135, 136, 137, 141, 147, 153, 150, 151, 160, 166, 174,
-  179, 181, 182, 183, 188, 193, 199, 205, 206, 210, 218, 226, 225, 231, 244, 245,
-  250, 256, 270, 271, 285, 293, 294, 296, 297, 300, 301, 305, 306, 308, 309, 311,
-  312, 313, 323, 338, 339, 346, 350, 351, 359, 361, 362, 371, 369, 370, 372, 375,
-  379, 380, 385, 386, 390, 397, 407, 412, 413, 421, 422, 423, 425, 426, 434, 436,
-  439, 443, 449, 448, 450, 456, 457, 471, 472, 483, 487, 494, 496, 499, 504, 505,
-  512, 517, 518, 524, 525, 529, 533, 534, 535, 536, 537, 543, 551, 564, 567, 568,
-  569, 576, 580, 589, 593, 590, 597, 603, 604, 610, 612, 616, 617, 618, 620, 628,
-  629, 630, 631, 634, 641, 644, 650, 651, 654, 659, 663, 670, 669, 672, 679, 685,
-  696, 699, 705, 707, 710, 712, 718, 731, 732, 740, 741, 742, 744, 745, 759, 767,
-  764, 766, 768, 772, 776, 779, 780, 791, 794, 801, 802, 803, 810, 811, 817, 820,
-  821, 827, 829, 830, 835, 840, 841, 853, 858, 859, 865, 875, 876, 886, 889, 891,
-]);
-
-const GOLDEN_5703_TIMING_QBO_LINE_BY_BANK_LINE: Record<number, number> = {
-  390: 384,
-  685: 677,
-};
-
 const buildObservation = (
   runId: string,
   title: string,
@@ -920,6 +841,7 @@ const createException = (
     likelyMatchingReference?: string;
     matchConfidence?: ExceptionItem['matchConfidence'];
     ruleTrace?: ExceptionRuleTrace;
+    priorRuleTraces?: ExceptionItem['priorRuleTraces'];
     customMessage?: string;
   },
 ): ExceptionItem => ({
@@ -934,6 +856,7 @@ const createException = (
   amount: params.transaction.amount,
   errorMessage: params.customMessage ?? professionalErrorMessages[params.category],
   ruleTrace: params.ruleTrace,
+  priorRuleTraces: params.priorRuleTraces,
   recommendedNextActions: recommendedNextActionsByCategory[params.category],
   likelyMatchingReference: params.likelyMatchingReference,
   matchConfidence: params.matchConfidence,
@@ -957,19 +880,76 @@ const buildCounterpartTrace = (
   };
 };
 
+const buildCounterpartTraces = (
+  counterparts: Array<NormalizedTransaction | undefined>,
+): CounterpartTrace[] => {
+  const traces = counterparts
+    .map((counterpart) => buildCounterpartTrace(counterpart, counterpart?.id))
+    .filter((trace): trace is CounterpartTrace => trace !== undefined);
+
+  return traces.filter(
+    (trace, index) =>
+      traces.findIndex(
+        (candidate) =>
+          candidate.transactionId === trace.transactionId &&
+          candidate.source === trace.source &&
+          candidate.spreadsheetFileName === trace.spreadsheetFileName &&
+          candidate.lineNumber === trace.lineNumber,
+      ) === index,
+  );
+};
+
 const buildExceptionRuleTrace = (
   ruleId: string,
   ruleName: string,
   reason: string,
   evidence: string[],
   counterpart?: CounterpartTrace,
+  counterparts?: CounterpartTrace[],
 ): ExceptionRuleTrace => ({
   ruleId,
   ruleName,
   reason,
   evidence,
   counterpart,
+  counterparts:
+    counterparts?.length || !counterpart
+      ? counterparts
+      : [counterpart],
 });
+
+const buildPriorRuleTraces = (
+  sourceTrace: MatchResultClassification['sourceTrace'],
+  derivedTrace: MatchResultClassification['derivedTrace'],
+  counterpart?: CounterpartTrace,
+  counterparts?: CounterpartTrace[],
+): ExceptionRuleTrace[] | undefined => {
+  if (!sourceTrace.ruleId || !sourceTrace.reason) {
+    return undefined;
+  }
+
+  const isSameTrace =
+    sourceTrace.ruleId === derivedTrace.ruleId &&
+    sourceTrace.ruleName === derivedTrace.ruleName &&
+    sourceTrace.reason === derivedTrace.reason &&
+    sourceTrace.evidence.length === derivedTrace.evidence.length &&
+    sourceTrace.evidence.every((entry, index) => entry === derivedTrace.evidence[index]);
+
+  if (isSameTrace) {
+    return undefined;
+  }
+
+  return [
+    buildExceptionRuleTrace(
+      sourceTrace.ruleId,
+      sourceTrace.ruleName,
+      sourceTrace.reason,
+      sourceTrace.evidence,
+      counterpart,
+      counterparts,
+    ),
+  ];
+};
 
 type UpsertTransactionException = (
   transaction: NormalizedTransaction,
@@ -980,6 +960,7 @@ interface ResidualStageParams {
   runId: string;
   reporting: ReportingConfig;
   matching: MatchingConfig;
+  matchResults: MatchResult[];
   transactionById: Map<string, NormalizedTransaction>;
   remainingUnmatchedBank: Set<string>;
   remainingUnmatchedQbo: Set<string>;
@@ -1003,6 +984,40 @@ const getTransactionsByIds = (
   transactionById: Map<string, NormalizedTransaction>,
 ): NormalizedTransaction[] =>
   [...transactionIds].map((transactionId) => transactionById.get(transactionId)).filter(Boolean) as NormalizedTransaction[];
+
+const findMatchResultByPair = (
+  matchResults: MatchResult[],
+  bankTransactionId: string,
+  qboTransactionId: string,
+): MatchResult | undefined =>
+  matchResults.find(
+    (result) =>
+      result.bankTransactionId === bankTransactionId &&
+      result.qboTransactionId === qboTransactionId,
+  );
+
+const buildPriorRuleTracesFromMatchResult = (
+  result: MatchResult | undefined,
+  derivedTrace: MatchResultClassification['derivedTrace'],
+  counterpart?: CounterpartTrace,
+  counterparts?: CounterpartTrace[],
+): ExceptionRuleTrace[] | undefined => {
+  if (!result) {
+    return undefined;
+  }
+
+  return buildPriorRuleTraces(
+    {
+      ruleId: result.ruleId,
+      ruleName: result.ruleName,
+      reason: result.reason,
+      evidence: result.evidence,
+    },
+    derivedTrace,
+    counterpart,
+    counterparts,
+  );
+};
 
 const buildReconciliationAnchorDate = (
   normalizedTransactions: NormalizedTransaction[],
@@ -1050,7 +1065,7 @@ const classifyStaleOutstandingChecksStage = (
     }
 
     const ageInDays = Math.floor((reconciliationAnchorDate.getTime() - transactionDate.getTime()) / 86400000);
-    if (ageInDays < STALE_OUTSTANDING_CHECK_DAYS) {
+    if (ageInDays < params.matching.staleOutstandingCheckDays) {
       return;
     }
 
@@ -1164,20 +1179,25 @@ const classifyTimingStage = (
   staleOutstandingQboIds: Set<string>,
   miscodingBankIds: Set<string>,
   miscodingQboIds: Set<string>,
+  groupedBankIds: Set<string>,
+  groupedQboIds: Set<string>,
 ): {
   timingBankIds: Set<string>;
   timingQboIds: Set<string>;
 } => {
-  const { runId, reporting, matching, transactionById, remainingUnmatchedBank, remainingUnmatchedQbo, upsertTransactionException } = params;
+  const { runId, reporting, matching, matchResults, transactionById, remainingUnmatchedBank, remainingUnmatchedQbo, upsertTransactionException } = params;
   const residualTimingCandidates = findResidualTimingDifferenceCandidates(
     getTransactionsByIds(
-      [...remainingUnmatchedBank].filter((transactionId) => !miscodingBankIds.has(transactionId)),
+      [...remainingUnmatchedBank]
+        .filter((transactionId) => !miscodingBankIds.has(transactionId))
+        .filter((transactionId) => !groupedBankIds.has(transactionId)),
       transactionById,
     ),
     getTransactionsByIds(
       [...remainingUnmatchedQbo]
         .filter((transactionId) => !staleOutstandingQboIds.has(transactionId))
-        .filter((transactionId) => !miscodingQboIds.has(transactionId)),
+        .filter((transactionId) => !miscodingQboIds.has(transactionId))
+        .filter((transactionId) => !groupedQboIds.has(transactionId)),
       transactionById,
     ),
     matching,
@@ -1196,6 +1216,20 @@ const classifyTimingStage = (
       `Narrative similarity score is ${candidate.textSimilarity.toFixed(2)} and reference similarity score is ${candidate.referenceSimilarity.toFixed(2)}.`,
       `Transaction kinds remain timing-compatible: bank=${inferTransactionKind(candidate.bankTransaction)}, qbo=${inferTransactionKind(candidate.qboTransaction)}.`,
     ];
+    const qboCounterpartTrace = buildCounterpartTrace(candidate.qboTransaction, candidate.qboTransaction.id);
+    const bankCounterpartTrace = buildCounterpartTrace(candidate.bankTransaction, candidate.bankTransaction.id);
+    const derivedTrace = {
+      ruleId: 'residual-timing-difference',
+      ruleName: 'Residual Timing Difference',
+      reason:
+        'A same-amount, timing-compatible transaction remained in the residual pool within the extended timing window.',
+      evidence: sharedEvidence,
+    };
+    const sourceMatchResult = findMatchResultByPair(
+      matchResults,
+      candidate.bankTransaction.id,
+      candidate.qboTransaction.id,
+    );
 
     upsertTransactionException(candidate.bankTransaction, () =>
       createException({
@@ -1206,12 +1240,13 @@ const classifyTimingStage = (
         relatedTransactionIds: [candidate.bankTransaction.id, candidate.qboTransaction.id],
         likelyMatchingReference: candidate.qboTransaction.id,
         matchConfidence: 'TimingDifference',
+        priorRuleTraces: buildPriorRuleTracesFromMatchResult(sourceMatchResult, derivedTrace, qboCounterpartTrace),
         ruleTrace: buildExceptionRuleTrace(
           'residual-timing-difference',
           'Residual Timing Difference',
           'A same-amount, timing-compatible QBO transaction remains unmatched within the extended timing window.',
           sharedEvidence,
-          buildCounterpartTrace(candidate.qboTransaction, candidate.qboTransaction.id),
+          qboCounterpartTrace,
         ),
       }),
     );
@@ -1225,12 +1260,13 @@ const classifyTimingStage = (
         relatedTransactionIds: [candidate.bankTransaction.id, candidate.qboTransaction.id],
         likelyMatchingReference: candidate.bankTransaction.id,
         matchConfidence: 'TimingDifference',
+        priorRuleTraces: buildPriorRuleTracesFromMatchResult(sourceMatchResult, derivedTrace, bankCounterpartTrace),
         ruleTrace: buildExceptionRuleTrace(
           'residual-timing-difference',
           'Residual Timing Difference',
           'A same-amount, timing-compatible bank transaction remains unmatched within the extended timing window.',
           sharedEvidence,
-          buildCounterpartTrace(candidate.bankTransaction, candidate.bankTransaction.id),
+          bankCounterpartTrace,
         ),
       }),
     );
@@ -1293,6 +1329,7 @@ const classifyGroupedStage = (
       counterparts: Array<NormalizedTransaction & { amount: number }>,
     ): void => {
       const primaryCounterpart = counterparts[0];
+      const counterpartTraces = buildCounterpartTraces(counterparts);
 
       upsertTransactionException(target, () =>
         createException({
@@ -1309,6 +1346,7 @@ const classifyGroupedStage = (
             candidate.reason,
             candidate.evidence,
             buildCounterpartTrace(primaryCounterpart, primaryCounterpart?.id),
+            counterpartTraces,
           ),
         }),
       );
@@ -1399,19 +1437,21 @@ const classifyMissingFallbackStage = (
 const classifyResidualStages = (params: ResidualStageParams): ResidualStageState => {
   const staleOutstandingQboIds = classifyStaleOutstandingChecksStage(params);
   const miscodingStage = classifyMiscodingStage(params, staleOutstandingQboIds);
+  const groupedStage = classifyGroupedStage(params, {
+    staleOutstandingQboIds,
+    miscodingBankIds: miscodingStage.miscodingBankIds,
+    miscodingQboIds: miscodingStage.miscodingQboIds,
+    timingBankIds: new Set<string>(),
+    timingQboIds: new Set<string>(),
+  });
   const timingStage = classifyTimingStage(
     params,
     staleOutstandingQboIds,
     miscodingStage.miscodingBankIds,
     miscodingStage.miscodingQboIds,
+    groupedStage.groupedBankIds,
+    groupedStage.groupedQboIds,
   );
-  const groupedStage = classifyGroupedStage(params, {
-    staleOutstandingQboIds,
-    miscodingBankIds: miscodingStage.miscodingBankIds,
-    miscodingQboIds: miscodingStage.miscodingQboIds,
-    timingBankIds: timingStage.timingBankIds,
-    timingQboIds: timingStage.timingQboIds,
-  });
 
   const stageState: ResidualStageState = {
     staleOutstandingQboIds,
@@ -1459,13 +1499,9 @@ export const classifyExceptions = ({
   reconciliationFrequency,
 }: ExceptionClassifierInput): ExceptionClassifierOutput => {
   const transactionById = new Map(normalizedTransactions.map((transaction) => [transaction.id, transaction]));
-  const transactionBySourceAndLine = new Map(
-    normalizedTransactions.map((transaction) => [`${transaction.source}:${transaction.lineNumber}`, transaction]),
-  );
   const exceptions: ExceptionItem[] = [];
   const reviewerObservations: ReviewerObservation[] = [];
   const exceptionIndexByTransactionKey = new Map<string, number>();
-  const use5703TimingProvenance = is5703Workbook(normalizedTransactions);
 
   const transactionKey = (transaction: NormalizedTransaction): string =>
     `${transaction.sourceFileId}:${transaction.lineNumber}:${transaction.source}`;
@@ -1545,12 +1581,38 @@ export const classifyExceptions = ({
     }
   });
 
-  const remainingUnmatchedBank = new Set(unmatchedBankTransactionIds);
-  const remainingUnmatchedQbo = new Set(unmatchedQboTransactionIds);
+  const advisoryProtectedBankIds = new Set(
+    matchResults
+      .filter(
+        (result) =>
+          result.bankTransactionId &&
+          result.exceptionCategory &&
+          advisoryReviewCategoriesExcludedFromResidualStages.has(result.exceptionCategory),
+      )
+      .map((result) => result.bankTransactionId as string),
+  );
+  const advisoryProtectedQboIds = new Set(
+    matchResults
+      .filter(
+        (result) =>
+          result.qboTransactionId &&
+          result.exceptionCategory &&
+          advisoryReviewCategoriesExcludedFromResidualStages.has(result.exceptionCategory),
+      )
+      .map((result) => result.qboTransactionId as string),
+  );
+
+  const remainingUnmatchedBank = new Set(
+    [...unmatchedBankTransactionIds].filter((transactionId) => !advisoryProtectedBankIds.has(transactionId)),
+  );
+  const remainingUnmatchedQbo = new Set(
+    [...unmatchedQboTransactionIds].filter((transactionId) => !advisoryProtectedQboIds.has(transactionId)),
+  );
   const residualStageState = classifyResidualStages({
     runId,
     reporting,
     matching,
+    matchResults,
     transactionById,
     remainingUnmatchedBank,
     remainingUnmatchedQbo,
@@ -1564,18 +1626,16 @@ export const classifyExceptions = ({
       transactionById,
       matching,
       miscodingThresholds: residualStageState.miscodingThresholds,
-      use5703TimingProvenance,
     });
 
     if (!classification) {
       return;
     }
 
-    buildMatchResultTargets(
-      classification,
-      use5703TimingProvenance,
-      transactionBySourceAndLine,
-    ).forEach(({ target, counterpart }) => {
+    buildMatchResultTargets(classification).forEach(({ target, counterpart }) => {
+      const primaryCounterpart = buildCounterpartTrace(counterpart, counterpart?.id);
+      const counterpartTraces = primaryCounterpart ? [primaryCounterpart] : undefined;
+
       upsertTransactionException(target, () =>
         createException({
           runId,
@@ -1585,13 +1645,20 @@ export const classifyExceptions = ({
           relatedTransactionIds: classification.relatedTransactionIds,
           likelyMatchingReference: counterpart?.id,
           matchConfidence: result.confidence,
+          priorRuleTraces: buildPriorRuleTraces(
+            classification.sourceTrace,
+            classification.derivedTrace,
+            primaryCounterpart,
+            counterpartTraces,
+          ),
           ruleTrace: classification.derivedTrace.ruleId && classification.derivedTrace.reason
             ? buildExceptionRuleTrace(
                 classification.derivedTrace.ruleId,
                 classification.derivedTrace.ruleName,
                 classification.derivedTrace.reason,
                 classification.derivedTrace.evidence,
-                buildCounterpartTrace(counterpart, counterpart?.id),
+                primaryCounterpart,
+                counterpartTraces,
               )
             : undefined,
         }),

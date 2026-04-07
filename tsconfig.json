@@ -9,6 +9,7 @@
     "packages/**/*.ts",
     "packages/**/*.tsx",
     "scripts/**/*.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "vitest.postgres.config.ts"
   ]
 }

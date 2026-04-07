@@ -1,0 +1,1030 @@
+import type {
+  ExceptionItem,
+  GroupedMatchResult,
+  MatchResult,
+  NormalizedTransaction,
+  OutputWorkbook,
+  RawTransactionRow,
+  ReconciliationFrequency,
+  ReviewerDecision,
+  ReviewerObservation,
+  SourceFile,
+  SummaryMetrics,
+} from '@recon/domain';
+import { createHash, randomUUID } from 'node:crypto';
+import type { Pool, PoolClient } from 'pg';
+
+import {
+  assertValidJobTransition,
+  type ReconciliationJobState,
+  type ReconciliationSourceFormat,
+} from './stateMachine';
+
+type PersistedSourceFileRegistration = {
+  id: string;
+  sourceSystem: 'bank' | 'qbo';
+  sourceFormat: ReconciliationSourceFormat;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  storageUri?: string;
+  uploadedAt: string;
+};
+
+export interface CreateReconciliationJobInput {
+  jobId: string;
+  correlationId: string;
+  startedAt: string;
+  rulepackVersion: string;
+  accountIdentifier?: string;
+  periodLabel?: string;
+  reconciliationFrequency?: ReconciliationFrequency;
+  inputFingerprint?: string;
+  sourceFiles: PersistedSourceFileRegistration[];
+}
+
+export interface PersistMatchingArtifactsInput {
+  jobId: string;
+  matchResults: MatchResult[];
+  probableMatches: MatchResult[];
+  groupedMatchResults: GroupedMatchResult[];
+}
+
+export interface PersistReviewArtifactsInput {
+  jobId: string;
+  exceptions: ExceptionItem[];
+  reviewerObservations: ReviewerObservation[];
+  summary: SummaryMetrics;
+}
+
+export interface PersistExportArtifactsInput {
+  jobId: string;
+  outputWorkbook: OutputWorkbook;
+  completedAt: string;
+  auditEvents: Array<{
+    timestamp: string;
+    action: string;
+    details: Record<string, string | number | boolean | null>;
+  }>;
+}
+
+export interface MarkJobFailedInput {
+  jobId: string;
+  failedAt: string;
+  errorMessage: string;
+  errorCode?: string;
+  nextState?: Extract<ReconciliationJobState, 'FAILED' | 'RETRY_PENDING'>;
+}
+
+type RuleResultRecord = {
+  id: string;
+  targetKind: 'MATCH_RESULT' | 'MATCH_GROUP' | 'EXCEPTION_ITEM';
+  targetId: string;
+  ruleId: string;
+  ruleName: string;
+  passed: boolean;
+  score: number;
+  reason: string;
+  evidence: string[];
+  candidateTransactionId?: string;
+  evaluationOrder: number;
+};
+
+const DEFAULT_BATCH_SIZE = 500;
+
+const chunk = <T>(items: readonly T[], size: number): T[][] => {
+  const batches: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+
+  return batches;
+};
+
+const buildInsertStatement = (
+  tableName: string,
+  columns: readonly string[],
+  rows: ReadonlyArray<readonly unknown[]>,
+  suffix = '',
+): { text: string; values: unknown[] } => {
+  const values: unknown[] = [];
+  const valueSql = rows
+    .map((row) => {
+      const placeholders = row.map((value) => {
+        values.push(value);
+        return `$${values.length}`;
+      });
+
+      return `(${placeholders.join(', ')})`;
+    })
+    .join(', ');
+
+  return {
+    text: `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES ${valueSql}${suffix}`,
+    values,
+  };
+};
+
+const hashJson = (value: unknown): string =>
+  createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+export const computeSha256Hex = (value: Uint8Array | Buffer | string): string =>
+  createHash('sha256').update(value).digest('hex');
+
+const withTransaction = async <T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+const lockJob = async (client: PoolClient, jobId: string): Promise<void> => {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [jobId]);
+};
+
+const getCurrentState = async (client: PoolClient, jobId: string): Promise<ReconciliationJobState> => {
+  const result = await client.query<{ current_state: ReconciliationJobState }>(
+    'SELECT current_state FROM reconciliation_job WHERE id = $1 FOR UPDATE',
+    [jobId],
+  );
+
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new Error(`reconciliation_job not found: ${jobId}`);
+  }
+
+  return row.current_state;
+};
+
+const insertAuditEvent = async (
+  client: PoolClient,
+  jobId: string,
+  eventType: string,
+  details: Record<string, unknown>,
+  fromState?: ReconciliationJobState,
+  toState?: ReconciliationJobState,
+): Promise<void> => {
+  await client.query(
+    `INSERT INTO reconciliation_audit_event
+      (job_id, event_type, from_state, to_state, details_json)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [jobId, eventType, fromState ?? null, toState ?? null, JSON.stringify(details)],
+  );
+};
+
+const transitionJobState = async (
+  client: PoolClient,
+  jobId: string,
+  nextState: ReconciliationJobState,
+  details: Record<string, unknown>,
+): Promise<void> => {
+  const currentState = await getCurrentState(client, jobId);
+  assertValidJobTransition(currentState, nextState);
+
+  await client.query(
+    `UPDATE reconciliation_job
+        SET current_state = $2,
+            record_version = record_version + 1,
+            updated_at = NOW(),
+            completed_at = CASE WHEN $2 = 'FINALIZED' THEN COALESCE(completed_at, NOW()) ELSE completed_at END
+      WHERE id = $1`,
+    [jobId, nextState],
+  );
+  await insertAuditEvent(client, jobId, 'job.state.transitioned', details, currentState, nextState);
+};
+
+const upsertSourceFileDetails = async (client: PoolClient, sourceFiles: SourceFile[]): Promise<void> => {
+  for (const sourceFile of sourceFiles) {
+    await client.query(
+      `UPDATE reconciliation_source_file
+          SET worksheet_name = $2,
+              header_row = $3,
+              transaction_start_row = $4,
+              excluded_row_numbers = $5::jsonb,
+              imported_row_count = $6,
+              updated_at = NOW()
+        WHERE id = $1`,
+      [
+        sourceFile.id,
+        sourceFile.worksheetName,
+        sourceFile.headerRow,
+        sourceFile.transactionStartRow,
+        JSON.stringify(sourceFile.excludedRowNumbers),
+        0,
+      ],
+    );
+  }
+};
+
+const buildRuleResultsFromMatches = (
+  matchResults: MatchResult[],
+  probableMatches: MatchResult[],
+  groupedMatchResults: GroupedMatchResult[],
+): RuleResultRecord[] => {
+  const pairwise = [...matchResults, ...probableMatches].map((result, index) => ({
+    id: randomUUID(),
+    targetKind: 'MATCH_RESULT' as const,
+    targetId: result.id,
+    ruleId: result.ruleId ?? result.ruleName.toLowerCase().replaceAll(/\s+/g, '-'),
+    ruleName: result.ruleName,
+    passed: true,
+    score: result.score,
+    reason: result.reason ?? result.evidence.join(' '),
+    evidence: result.evidence,
+    candidateTransactionId: result.qboTransactionId,
+    evaluationOrder: index,
+  }));
+
+  const grouped = groupedMatchResults.map((result, index) => ({
+    id: randomUUID(),
+    targetKind: 'MATCH_GROUP' as const,
+    targetId: result.id,
+    ruleId: result.ruleId,
+    ruleName: result.ruleName,
+    passed: true,
+    score: result.score,
+    reason: result.reason,
+    evidence: result.evidence,
+    candidateTransactionId: result.qboTransactionIds[0],
+    evaluationOrder: index,
+  }));
+
+  return [...pairwise, ...grouped];
+};
+
+const buildRuleResultsFromExceptions = (exceptions: ExceptionItem[]): RuleResultRecord[] =>
+  exceptions.flatMap((exception) => {
+    const traces = [exception.ruleTrace, ...(exception.priorRuleTraces ?? [])].filter(
+      (trace): trace is NonNullable<ExceptionItem['ruleTrace']> => Boolean(trace),
+    );
+
+    return traces.map((trace, index) => ({
+      id: randomUUID(),
+      targetKind: 'EXCEPTION_ITEM' as const,
+      targetId: exception.id,
+      ruleId: trace.ruleId,
+      ruleName: trace.ruleName,
+      passed: index === 0,
+      score: index === 0 ? 1 : 0.5,
+      reason: trace.reason,
+      evidence: trace.evidence,
+      candidateTransactionId: trace.counterpart?.transactionId,
+      evaluationOrder: index,
+    }));
+  });
+
+const toNullableDate = (value?: string): string | null => value ?? null;
+
+export class PostgresReconciliationLifecycleStore {
+  constructor(
+    private readonly pool: Pool,
+    private readonly options: {
+      rawRowBatchSize?: number;
+      canonicalRowBatchSize?: number;
+      resultBatchSize?: number;
+      rulepackVersion?: string;
+    } = {},
+  ) {}
+
+  async createJob(input: CreateReconciliationJobInput): Promise<void> {
+    await withTransaction(this.pool, async (client) => {
+      await client.query(
+        `INSERT INTO reconciliation_job
+          (id, correlation_id, account_identifier, period_label, reconciliation_frequency, current_state, input_fingerprint, rulepack_version, started_at)
+         VALUES ($1, $2, $3, $4, $5, 'CREATED', $6, $7, $8)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          input.jobId,
+          input.correlationId,
+          input.accountIdentifier ?? null,
+          input.periodLabel ?? null,
+          input.reconciliationFrequency ?? null,
+          input.inputFingerprint ?? null,
+          input.rulepackVersion,
+          input.startedAt,
+        ],
+      );
+
+      const sourceFileRows = input.sourceFiles.map((sourceFile) => [
+        sourceFile.id,
+        input.jobId,
+        sourceFile.sourceSystem,
+        sourceFile.sourceFormat,
+        sourceFile.fileName,
+        sourceFile.mimeType,
+        sourceFile.sizeBytes,
+        sourceFile.sha256,
+        sourceFile.storageUri ?? null,
+        sourceFile.uploadedAt,
+      ] as const);
+
+      const insertSourceFiles = buildInsertStatement(
+        'reconciliation_source_file',
+        [
+          'id',
+          'job_id',
+          'source_system',
+          'source_format',
+          'file_name',
+          'mime_type',
+          'size_bytes',
+          'sha256',
+          'storage_uri',
+          'uploaded_at',
+        ],
+        sourceFileRows,
+        ' ON CONFLICT (job_id, source_system) DO UPDATE SET sha256 = EXCLUDED.sha256, storage_uri = EXCLUDED.storage_uri, updated_at = NOW()',
+      );
+      await client.query(insertSourceFiles.text, insertSourceFiles.values);
+      await transitionJobState(client, input.jobId, 'FILE_REGISTERED', {
+        sourceFileCount: input.sourceFiles.length,
+        inputFingerprint: input.inputFingerprint ?? null,
+      });
+    });
+  }
+
+  async persistParsedRows(jobId: string, sourceFiles: SourceFile[], rawRows: RawTransactionRow[]): Promise<void> {
+    const rawRowBatchSize = this.options.rawRowBatchSize ?? DEFAULT_BATCH_SIZE;
+
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, jobId);
+      await transitionJobState(client, jobId, 'IMPORTING', { rawRowCount: rawRows.length });
+      await upsertSourceFileDetails(client, sourceFiles);
+
+      for (const sourceFile of sourceFiles) {
+        const rowsForSource = rawRows.filter((row) => row.sourceFileId === sourceFile.id);
+        const batches = chunk(rowsForSource, rawRowBatchSize);
+
+        await client.query(
+          'UPDATE reconciliation_source_file SET imported_row_count = $2, updated_at = NOW() WHERE id = $1',
+          [sourceFile.id, rowsForSource.length],
+        );
+
+        for (const [batchIndex, batchRows] of batches.entries()) {
+          const batchId = randomUUID();
+          await client.query(
+            `INSERT INTO reconciliation_import_batch
+              (id, job_id, source_file_id, batch_number, state, row_start_number, row_end_number, row_count, started_at, completed_at)
+             VALUES ($1, $2, $3, $4, 'IMPORTED', $5, $6, $7, NOW(), NOW())`,
+            [
+              batchId,
+              jobId,
+              sourceFile.id,
+              batchIndex + 1,
+              batchRows[0]?.lineNumber ?? 0,
+              batchRows.at(-1)?.lineNumber ?? 0,
+              batchRows.length,
+            ],
+          );
+
+          const rawRowValues = batchRows.map((row) => [
+            row.id,
+            jobId,
+            row.sourceFileId,
+            batchId,
+            row.source,
+            row.lineNumber,
+            hashJson(row.rawValues),
+            JSON.stringify(row.rawValues),
+            row.transactionDateRaw ?? null,
+            row.postingDateRaw ?? null,
+            row.transactionTypeRaw ?? null,
+            row.checkNumberRaw ?? null,
+            row.serialNumberRaw ?? null,
+            row.referenceNumberRaw ?? null,
+            row.descriptionRaw ?? null,
+            row.merchantNameRaw ?? null,
+            row.payeeNameRaw ?? null,
+            row.amountRaw ?? null,
+            row.debitRaw ?? null,
+            row.creditRaw ?? null,
+            row.runningBalanceRaw ?? null,
+            row.excluded,
+            row.exclusionReason ?? null,
+            JSON.stringify(row.parsingIssues),
+          ] as const);
+
+          if (rawRowValues.length > 0) {
+            const rawRowInsert = buildInsertStatement(
+              'reconciliation_raw_row',
+              [
+                'id',
+                'job_id',
+                'source_file_id',
+                'import_batch_id',
+                'source_system',
+                'line_number',
+                'row_hash',
+                'raw_values_json',
+                'transaction_date_raw',
+                'posting_date_raw',
+                'transaction_type_raw',
+                'check_number_raw',
+                'serial_number_raw',
+                'reference_number_raw',
+                'description_raw',
+                'merchant_name_raw',
+                'payee_name_raw',
+                'amount_raw',
+                'debit_raw',
+                'credit_raw',
+                'running_balance_raw',
+                'excluded',
+                'exclusion_reason',
+                'parsing_issues_json',
+              ],
+              rawRowValues,
+            );
+            await client.query(rawRowInsert.text, rawRowInsert.values);
+          }
+        }
+      }
+
+      await transitionJobState(client, jobId, 'IMPORTED', { rawRowCount: rawRows.length });
+    });
+  }
+
+  async persistNormalizedRows(jobId: string, normalizedTransactions: NormalizedTransaction[]): Promise<void> {
+    const canonicalRowBatchSize = this.options.canonicalRowBatchSize ?? DEFAULT_BATCH_SIZE;
+
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, jobId);
+      await transitionJobState(client, jobId, 'NORMALIZING', {
+        normalizedRowCount: normalizedTransactions.length,
+      });
+
+      for (const batch of chunk(normalizedTransactions, canonicalRowBatchSize)) {
+        const rows = batch.map((transaction) => [
+          transaction.id,
+          jobId,
+          transaction.rawRowId,
+          transaction.sourceFileId,
+          transaction.source,
+          transaction.spreadsheetFileName,
+          transaction.worksheetName,
+          transaction.lineNumber,
+          toNullableDate(transaction.transactionDate),
+          toNullableDate(transaction.postingDate),
+          transaction.transactionType ?? null,
+          transaction.checkNumber ?? null,
+          transaction.serialNumber ?? null,
+          transaction.referenceNumber ?? null,
+          transaction.description ?? null,
+          transaction.merchantName ?? null,
+          transaction.payeeName ?? null,
+          transaction.amount,
+          transaction.debit,
+          transaction.credit,
+          transaction.runningBalance,
+          transaction.normalizedComparisonText,
+          transaction.normalizedComparisonTokens,
+          transaction.normalizedReferenceTokens,
+          JSON.stringify(transaction.rawSourceValues),
+          JSON.stringify(transaction.dataQualityIssues),
+          transaction.isExcluded,
+          transaction.exclusionReason ?? null,
+          transaction.isZeroAmount,
+          transaction.contextFingerprint,
+          transaction.accountIdentifier ?? null,
+          transaction.reviewerNotes ?? null,
+        ] as const);
+
+        const insert = buildInsertStatement(
+          'reconciliation_canonical_row',
+          [
+            'id',
+            'job_id',
+            'raw_row_id',
+            'source_file_id',
+            'source_system',
+            'spreadsheet_file_name',
+            'worksheet_name',
+            'line_number',
+            'transaction_date',
+            'posting_date',
+            'transaction_type',
+            'check_number',
+            'serial_number',
+            'reference_number',
+            'description',
+            'merchant_name',
+            'payee_name',
+            'amount',
+            'debit',
+            'credit',
+            'running_balance',
+            'normalized_comparison_text',
+            'normalized_comparison_tokens',
+            'normalized_reference_tokens',
+            'raw_source_values_json',
+            'data_quality_issues_json',
+            'is_excluded',
+            'exclusion_reason',
+            'is_zero_amount',
+            'context_fingerprint',
+            'account_identifier',
+            'reviewer_notes',
+          ],
+          rows,
+        );
+        await client.query(insert.text, insert.values);
+      }
+
+      await transitionJobState(client, jobId, 'NORMALIZED', {
+        normalizedRowCount: normalizedTransactions.length,
+      });
+    });
+  }
+
+  async persistMatchingArtifacts(input: PersistMatchingArtifactsInput): Promise<void> {
+    const resultBatchSize = this.options.resultBatchSize ?? DEFAULT_BATCH_SIZE;
+
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, input.jobId);
+      await transitionJobState(client, input.jobId, 'MATCHING', {
+        pairwiseMatchCount: input.matchResults.length,
+        probableMatchCount: input.probableMatches.length,
+        groupedMatchCount: input.groupedMatchResults.length,
+      });
+
+      if (input.groupedMatchResults.length > 0) {
+        const groupRows = input.groupedMatchResults.map((result) => [
+          result.id,
+          input.jobId,
+          result.disposition,
+          result.confidence,
+          result.category ?? null,
+          result.bankTransactionIds,
+          result.qboTransactionIds,
+          JSON.stringify(result.bankMembers),
+          JSON.stringify(result.qboMembers),
+          result.totalAmount,
+          result.dateDifferenceDays ?? null,
+          result.score,
+          result.ruleId,
+          result.ruleName,
+          result.reason,
+          JSON.stringify(result.evidence),
+        ] as const);
+
+        const insertGroups = buildInsertStatement(
+          'reconciliation_match_group',
+          [
+            'id',
+            'job_id',
+            'disposition',
+            'confidence',
+            'category',
+            'bank_transaction_ids',
+            'qbo_transaction_ids',
+            'bank_members_json',
+            'qbo_members_json',
+            'total_amount',
+            'date_difference_days',
+            'score',
+            'rule_id',
+            'rule_name',
+            'reason',
+            'evidence_json',
+          ],
+          groupRows,
+        );
+        await client.query(insertGroups.text, insertGroups.values);
+      }
+
+      const pairwiseRows = [
+        ...input.matchResults.map((result) => ({ result, bucket: 'MATCH' as const })),
+        ...input.probableMatches.map((result) => ({ result, bucket: 'PROBABLE' as const })),
+      ];
+
+      for (const batch of chunk(pairwiseRows, resultBatchSize)) {
+        const values = batch.map(({ result, bucket }) => [
+          result.id,
+          input.jobId,
+          bucket,
+          result.bankTransactionId ?? null,
+          result.qboTransactionId ?? null,
+          result.disposition,
+          result.confidence,
+          result.ruleId ?? null,
+          result.ruleName,
+          result.reason ?? null,
+          result.score,
+          result.amountDifference,
+          result.dateDifferenceDays ?? null,
+          JSON.stringify(result.evidence),
+          result.likelyMatchingReference ?? null,
+          result.exceptionCategory ?? null,
+        ] as const);
+
+        const insert = buildInsertStatement(
+          'reconciliation_match_result',
+          [
+            'id',
+            'job_id',
+            'result_bucket',
+            'bank_transaction_id',
+            'qbo_transaction_id',
+            'disposition',
+            'confidence',
+            'rule_id',
+            'rule_name',
+            'reason',
+            'score',
+            'amount_difference',
+            'date_difference_days',
+            'evidence_json',
+            'likely_matching_reference',
+            'exception_category',
+          ],
+          values,
+        );
+        await client.query(insert.text, insert.values);
+      }
+
+      const ruleResults = buildRuleResultsFromMatches(
+        input.matchResults,
+        input.probableMatches,
+        input.groupedMatchResults,
+      );
+      if (ruleResults.length > 0) {
+        const ruleRows = ruleResults.map((ruleResult) => [
+          ruleResult.id,
+          input.jobId,
+          ruleResult.targetKind,
+          ruleResult.targetId,
+          ruleResult.ruleId,
+          ruleResult.ruleName,
+          ruleResult.passed,
+          ruleResult.score,
+          ruleResult.reason,
+          JSON.stringify(ruleResult.evidence),
+          ruleResult.candidateTransactionId ?? null,
+          ruleResult.evaluationOrder,
+        ] as const);
+
+        const insertRules = buildInsertStatement(
+          'reconciliation_rule_result',
+          [
+            'id',
+            'job_id',
+            'target_kind',
+            'target_id',
+            'rule_id',
+            'rule_name',
+            'passed',
+            'score',
+            'reason',
+            'evidence_json',
+            'candidate_transaction_id',
+            'evaluation_order',
+          ],
+          ruleRows,
+        );
+        await client.query(insertRules.text, insertRules.values);
+      }
+
+      await transitionJobState(client, input.jobId, 'MATCHED', {
+        pairwiseMatchCount: input.matchResults.length,
+        probableMatchCount: input.probableMatches.length,
+        groupedMatchCount: input.groupedMatchResults.length,
+      });
+    });
+  }
+
+  async persistReviewArtifacts(input: PersistReviewArtifactsInput): Promise<void> {
+    const resultBatchSize = this.options.resultBatchSize ?? DEFAULT_BATCH_SIZE;
+
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, input.jobId);
+      await transitionJobState(client, input.jobId, 'EXCEPTIONS_IDENTIFIED', {
+        exceptionCount: input.exceptions.length,
+      });
+
+      for (const batch of chunk(input.exceptions, resultBatchSize)) {
+        const values = batch.map((exception) => [
+          exception.id,
+          input.jobId,
+          exception.relatedTransactionIds[0] ?? null,
+          exception.category,
+          exception.severity,
+          exception.source,
+          exception.spreadsheetFileName,
+          exception.lineNumber,
+          toNullableDate(exception.transactionDate),
+          exception.amount,
+          exception.errorMessage,
+          exception.ruleTrace ? JSON.stringify(exception.ruleTrace) : null,
+          JSON.stringify(exception.priorRuleTraces ?? []),
+          exception.recommendedNextActions,
+          exception.likelyMatchingReference ?? null,
+          exception.reviewerNotes ?? null,
+          exception.matchConfidence ?? null,
+          exception.normalizedComparisonTokens,
+          exception.relatedTransactionIds,
+        ] as const);
+
+        const insert = buildInsertStatement(
+          'reconciliation_exception',
+          [
+            'id',
+            'job_id',
+            'canonical_row_id',
+            'category',
+            'severity',
+            'source_system',
+            'spreadsheet_file_name',
+            'line_number',
+            'transaction_date',
+            'amount',
+            'error_message',
+            'rule_trace_json',
+            'prior_rule_traces_json',
+            'recommended_next_actions',
+            'likely_matching_reference',
+            'reviewer_notes',
+            'match_confidence',
+            'normalized_comparison_tokens',
+            'related_transaction_ids',
+          ],
+          values,
+        );
+        await client.query(insert.text, insert.values);
+      }
+
+      if (input.reviewerObservations.length > 0) {
+        const observationRows = input.reviewerObservations.map((observation) => [
+          observation.id,
+          input.jobId,
+          observation.category,
+          observation.title,
+          observation.message,
+          observation.severity,
+          observation.relatedTransactionIds,
+          observation.createdAt,
+        ] as const);
+        const insertObservations = buildInsertStatement(
+          'reconciliation_review_observation',
+          [
+            'id',
+            'job_id',
+            'category',
+            'title',
+            'message',
+            'severity',
+            'related_transaction_ids',
+            'created_at',
+          ],
+          observationRows,
+        );
+        await client.query(insertObservations.text, insertObservations.values);
+      }
+
+      const ruleResults = buildRuleResultsFromExceptions(input.exceptions);
+      if (ruleResults.length > 0) {
+        const ruleRows = ruleResults.map((ruleResult) => [
+          ruleResult.id,
+          input.jobId,
+          ruleResult.targetKind,
+          ruleResult.targetId,
+          ruleResult.ruleId,
+          ruleResult.ruleName,
+          ruleResult.passed,
+          ruleResult.score,
+          ruleResult.reason,
+          JSON.stringify(ruleResult.evidence),
+          ruleResult.candidateTransactionId ?? null,
+          ruleResult.evaluationOrder,
+        ] as const);
+        const insertRules = buildInsertStatement(
+          'reconciliation_rule_result',
+          [
+            'id',
+            'job_id',
+            'target_kind',
+            'target_id',
+            'rule_id',
+            'rule_name',
+            'passed',
+            'score',
+            'reason',
+            'evidence_json',
+            'candidate_transaction_id',
+            'evaluation_order',
+          ],
+          ruleRows,
+        );
+        await client.query(insertRules.text, insertRules.values);
+      }
+
+      await client.query(
+        `INSERT INTO reconciliation_job_summary (
+            job_id,
+            total_records_reviewed,
+            bank_records,
+            qbo_records,
+            exact_matches,
+            probable_matches,
+            unmatched_items,
+            duplicates,
+            bank_duplicates,
+            qbo_duplicates,
+            date_variances,
+            timing_differences,
+            data_quality_issues,
+            amount_mismatches,
+            missing_from_bank,
+            missing_from_qbo,
+            unmatched_bank_net_amount,
+            unmatched_qbo_net_amount,
+            clean_matched_amount,
+            unresolved_exposure,
+            counts_by_category_json,
+            amount_by_category_json,
+            charts_json,
+            updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19,
+            $20, $21::jsonb, $22::jsonb, $23::jsonb, NOW()
+          )
+          ON CONFLICT (job_id) DO UPDATE SET
+            total_records_reviewed = EXCLUDED.total_records_reviewed,
+            bank_records = EXCLUDED.bank_records,
+            qbo_records = EXCLUDED.qbo_records,
+            exact_matches = EXCLUDED.exact_matches,
+            probable_matches = EXCLUDED.probable_matches,
+            unmatched_items = EXCLUDED.unmatched_items,
+            duplicates = EXCLUDED.duplicates,
+            bank_duplicates = EXCLUDED.bank_duplicates,
+            qbo_duplicates = EXCLUDED.qbo_duplicates,
+            date_variances = EXCLUDED.date_variances,
+            timing_differences = EXCLUDED.timing_differences,
+            data_quality_issues = EXCLUDED.data_quality_issues,
+            amount_mismatches = EXCLUDED.amount_mismatches,
+            missing_from_bank = EXCLUDED.missing_from_bank,
+            missing_from_qbo = EXCLUDED.missing_from_qbo,
+            unmatched_bank_net_amount = EXCLUDED.unmatched_bank_net_amount,
+            unmatched_qbo_net_amount = EXCLUDED.unmatched_qbo_net_amount,
+            clean_matched_amount = EXCLUDED.clean_matched_amount,
+            unresolved_exposure = EXCLUDED.unresolved_exposure,
+            counts_by_category_json = EXCLUDED.counts_by_category_json,
+            amount_by_category_json = EXCLUDED.amount_by_category_json,
+            charts_json = EXCLUDED.charts_json,
+            updated_at = NOW()`,
+        [
+          input.jobId,
+          input.summary.totalRecordsReviewed,
+          input.summary.bankRecords,
+          input.summary.qboRecords,
+          input.summary.exactMatches,
+          input.summary.probableMatches,
+          input.summary.unmatchedItems,
+          input.summary.duplicates,
+          input.summary.bankDuplicates,
+          input.summary.qboDuplicates,
+          input.summary.dateVariances,
+          input.summary.timingDifferences,
+          input.summary.dataQualityIssues,
+          input.summary.amountMismatches,
+          input.summary.missingFromBank,
+          input.summary.missingFromQBO,
+          input.summary.unmatchedBankNetAmount,
+          input.summary.unmatchedQboNetAmount,
+          input.summary.cleanMatchedAmount,
+          input.summary.unresolvedExposure,
+          JSON.stringify(input.summary.countsByCategory),
+          JSON.stringify(input.summary.amountByCategory),
+          JSON.stringify(input.summary.charts),
+        ],
+      );
+
+      await transitionJobState(client, input.jobId, 'REVIEW_READY', {
+        exceptionCount: input.exceptions.length,
+        observationCount: input.reviewerObservations.length,
+      });
+    });
+  }
+
+  async persistExportAndFinalize(input: PersistExportArtifactsInput): Promise<void> {
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, input.jobId);
+
+      await client.query(
+        `INSERT INTO reconciliation_export
+          (id, job_id, export_type, state, file_name, checksum_sha256, byte_size, tab_names_json, generated_at)
+         VALUES ($1, $2, 'workbook', 'READY', $3, $4, $5, $6::jsonb, $7)
+         ON CONFLICT (job_id, export_type) DO UPDATE SET
+           state = EXCLUDED.state,
+           file_name = EXCLUDED.file_name,
+           checksum_sha256 = EXCLUDED.checksum_sha256,
+           byte_size = EXCLUDED.byte_size,
+           tab_names_json = EXCLUDED.tab_names_json,
+           generated_at = EXCLUDED.generated_at`,
+        [
+          randomUUID(),
+          input.jobId,
+          input.outputWorkbook.fileName,
+          computeSha256Hex(input.outputWorkbook.binary),
+          input.outputWorkbook.binary.byteLength,
+          JSON.stringify(input.outputWorkbook.tabNames),
+          input.outputWorkbook.generatedAt,
+        ],
+      );
+
+      for (const auditEvent of input.auditEvents) {
+        await insertAuditEvent(client, input.jobId, auditEvent.action, auditEvent.details);
+      }
+
+      await client.query(
+        'UPDATE reconciliation_job SET completed_at = $2, updated_at = NOW() WHERE id = $1',
+        [input.jobId, input.completedAt],
+      );
+      await transitionJobState(client, input.jobId, 'FINALIZED', {
+        exportFileName: input.outputWorkbook.fileName,
+        exportByteSize: input.outputWorkbook.binary.byteLength,
+      });
+    });
+  }
+
+  async persistReviewerDecision(decision: ReviewerDecision): Promise<void> {
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, decision.runId);
+      await client.query(
+        `INSERT INTO reconciliation_review_decision
+          (id, job_id, target_type, target_id, outcome, final_category, notes, reviewer_id, reviewer_name, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (job_id, target_type, target_id) DO UPDATE SET
+           outcome = EXCLUDED.outcome,
+           final_category = EXCLUDED.final_category,
+           notes = EXCLUDED.notes,
+           reviewer_id = EXCLUDED.reviewer_id,
+           reviewer_name = EXCLUDED.reviewer_name,
+           updated_at = EXCLUDED.updated_at,
+           record_version = reconciliation_review_decision.record_version + 1`,
+        [
+          decision.id,
+          decision.runId,
+          decision.targetType,
+          decision.targetId,
+          decision.outcome,
+          decision.finalCategory ?? null,
+          decision.notes ?? null,
+          decision.reviewerId ?? null,
+          decision.reviewerName ?? null,
+          decision.createdAt,
+          decision.updatedAt,
+        ],
+      );
+
+      await insertAuditEvent(client, decision.runId, 'review.decision.persisted', {
+        targetType: decision.targetType,
+        targetId: decision.targetId,
+        outcome: decision.outcome,
+      });
+    });
+  }
+
+  async markFailed(input: MarkJobFailedInput): Promise<void> {
+    const nextState = input.nextState ?? 'FAILED';
+
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, input.jobId);
+      const currentState = await getCurrentState(client, input.jobId);
+      assertValidJobTransition(currentState, nextState);
+
+      await client.query(
+        `UPDATE reconciliation_job
+            SET current_state = $2,
+                failure_code = $3,
+                failure_message = $4,
+                updated_at = NOW(),
+                completed_at = COALESCE(completed_at, $5),
+                retry_count = CASE WHEN $2 = 'RETRY_PENDING' THEN retry_count + 1 ELSE retry_count END,
+                record_version = record_version + 1
+          WHERE id = $1`,
+        [input.jobId, nextState, input.errorCode ?? null, input.errorMessage, input.failedAt],
+      );
+      await insertAuditEvent(
+        client,
+        input.jobId,
+        'job.failed',
+        { errorCode: input.errorCode ?? null, errorMessage: input.errorMessage },
+        currentState,
+        nextState,
+      );
+    });
+  }
+}

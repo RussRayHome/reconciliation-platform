@@ -51,9 +51,12 @@ The default engine thresholds are:
 - amount tolerance: `0.01`
 - primary date tolerance: `5` days
 - timing-difference window: `21` days
+- stale outstanding check threshold: `45` days
 - text similarity threshold for exact matches: `0.70`
 - text similarity threshold for probable matches: `0.62`
 - reference similarity threshold: `0.90`
+- grouped candidate pool size: `6`
+- grouped maximum grouped-side size: `3`
 - duplicate date window: `3` days
 - duplicate similarity threshold: `0.78`
 - amount-mismatch text similarity threshold: `0.65`
@@ -105,13 +108,13 @@ If none of the rules apply, the transactions stay unmatched.
 
 ## Match Resolution Rules
 
-The engine uses one-to-one greedy matching after candidate ranking:
+The engine consumes exact matches and keeps non-exact one-to-one review results advisory:
 
-- once a bank or QBO transaction is consumed by a selected candidate, it cannot be matched again
+- once a bank or QBO transaction is consumed by an exact candidate, it cannot be matched again
 - exact candidates become `ExactMatch`
-- probable candidates become `ProbableMatch`
-- timing candidates become `TimingDifference`
-- amount-mismatch candidates become `AmountMismatch`
+- non-exact one-to-one candidates stay in `matchResults` and the probable-review queue, but they do not remove transactions from the residual classification pool
+- grouped residual candidates are reserved before ambiguous or other advisory one-to-one review results are recorded
+- amount mismatch, reference variance, description variance, and ambiguous review results are protected from downstream residual-stage reclassification
 
 Ambiguous review handling is applied before finalizing a candidate when all of the following are true:
 
@@ -157,7 +160,7 @@ The classifier keeps only the highest-priority exception per transaction key. Cu
 11. `StaleOutstandingCheck`
 12. `MissingFromQBO` and `MissingFromBank`
 
-Grouped residual classification currently uses one-to-many and many-to-one searches up to three transactions on the grouped side. The rule trace preserves grouped amount totals, member line references, maximum date spread, and inferred transaction kinds so reviewers can see why the items were kept together.
+Grouped residual classification uses configurable one-to-many and many-to-one search bounds. The rule trace preserves grouped amount totals, member line references, maximum date spread, inferred transaction kinds, and all linked counterpart rows so reviewers can see why the items were kept together.
 
 ## Default Severity Mapping
 
@@ -209,10 +212,6 @@ Exception reports are sorted by:
 Messages shown in the UI and workbook exports use accountant-facing wording from the shared professional message catalog rather than developer shorthand.
 
 Each final exception now also preserves category-specific recommended next actions and a nested `ruleTrace` object containing the originating rule ID, rule name, human-readable reason, evidence list, and counterpart file or line context when that context exists.
-
-## Special Handling
-
-The application still includes a constrained provenance path for certain large `5703` workbook timing scenarios. Summary totals remain derived from final classified output rather than from a separate post-classification calibration step.
 
 ## Class and Method Documentation
 

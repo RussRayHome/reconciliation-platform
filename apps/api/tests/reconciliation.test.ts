@@ -9,11 +9,15 @@ import {
   nonStandardHeaderQboRows,
 } from '@recon/test-fixtures';
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
 
 import ExcelJS from 'exceljs';
+import { FileBackedRunRepository } from '../src/services/runRepository';
 import { createApp } from '../src/app';
 import { errorCategoryDisplayNames } from '@recon/domain';
+import path from 'node:path';
 import request from 'supertest';
+import { tmpdir } from 'node:os';
 
 const parseBinaryBody = (
   response: NodeJS.ReadableStream,
@@ -48,16 +52,24 @@ describe('reconciliation API', () => {
     const runPayload = runResponse.body as {
       id: string;
       summary: { totalRecordsReviewed: number };
+      groupedMatchResults?: unknown[];
     };
 
     expect(runPayload.id).toBeTypeOf('string');
     expect(runPayload.summary.totalRecordsReviewed).toBeGreaterThan(0);
+    expect(Array.isArray(runPayload.groupedMatchResults)).toBe(true);
+    expect((runResponse.body as Record<string, unknown>).rawRows).toBeUndefined();
+    expect((runResponse.body as Record<string, unknown>).normalizedTransactions).toBeUndefined();
+    expect((runResponse.body as Record<string, unknown>).matchResults).toBeUndefined();
+    expect((runResponse.body as Record<string, unknown>).auditEvents).toBeUndefined();
 
     const { id } = runPayload;
 
     const latestResponse = await request(app).get('/api/reconciliation/latest').expect(200);
     const latestPayload = latestResponse.body as { id: string };
     expect(latestPayload.id).toBe(id);
+    expect((latestResponse.body as Record<string, unknown>).rawRows).toBeUndefined();
+    expect((latestResponse.body as Record<string, unknown>).normalizedTransactions).toBeUndefined();
 
     const summaryResponse = await request(app).get(`/api/reconciliation/${id}/summary`).expect(200);
     const summaryPayload = summaryResponse.body as {
@@ -109,10 +121,17 @@ describe('reconciliation API', () => {
       expect.arrayContaining(['Total exact matches', 'Total probable matches', 'Total timing differences']),
     );
 
-    const categoryColumnValues = errorReportSheet
-      ?.getColumn(2)
-      .values
-      .filter((value) => typeof value === 'string') as string[];
+    const categoryColumnRawValues = errorReportSheet?.getColumn(2).values;
+    const categoryColumnValues = Array.isArray(categoryColumnRawValues)
+      ? categoryColumnRawValues.filter((value): value is string => typeof value === 'string')
+      : [];
+
+    const headerRowRawValues = errorReportSheet?.getRow(1).values;
+    const headerRowValues = Array.isArray(headerRowRawValues)
+      ? headerRowRawValues.filter((value): value is string => typeof value === 'string')
+      : [];
+
+    expect(headerRowValues).toEqual(expect.arrayContaining(['Counterparts', 'Rule Lineage']));
 
     const nonHeaderCategories = categoryColumnValues.filter((value) => value !== 'Category');
     expect(nonHeaderCategories.some((value) => value.includes(' '))).toBe(true);
@@ -189,7 +208,15 @@ describe('reconciliation API', () => {
     const runPayload = runResponse.body as {
       id: string;
       summary: { countsByCategory: Record<string, number> };
+      groupedMatchResults: Array<{ category?: string }>;
     };
+
+    expect(runPayload.groupedMatchResults.length).toBeGreaterThan(0);
+    expect(
+      runPayload.groupedMatchResults.some(
+        (item) => item.category === 'DepositGroupingIssue' || item.category === 'LikelySplitCombineIssue',
+      ),
+    ).toBe(true);
 
     const exceptionsResponse = await request(app)
       .get(`/api/reconciliation/${runPayload.id}/exceptions`)
@@ -205,6 +232,49 @@ describe('reconciliation API', () => {
       expect(exceptionCounts[category]).toBeGreaterThan(0);
       expect(runPayload.summary.countsByCategory[category]).toBe(exceptionCounts[category]);
     });
+  });
+
+  it('supports paginated exception responses when limit and offset are provided', async () => {
+    const app = createApp();
+    const [bankBuffer, qboBuffer] = await Promise.all([
+      createAllExceptionsBankWorkbook(),
+      createAllExceptionsQboWorkbook(),
+    ]);
+
+    const runResponse = await request(app)
+      .post('/api/reconciliation/run')
+      .field('accountIdentifier', 'OPERATING-001')
+      .field('periodLabel', 'Paginated Exceptions')
+      .attach('bankFile', bankBuffer, {
+        filename: 'sample-all-exceptions-bank.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .attach('qboFile', qboBuffer, {
+        filename: 'sample-all-exceptions-qbo.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+
+    const runPayload = runResponse.body as { id: string; exceptions: Array<{ id: string }> };
+
+    const pagedResponse = await request(app)
+      .get(`/api/reconciliation/${runPayload.id}/exceptions?limit=5&offset=3`)
+      .expect(200);
+
+    const pagedPayload = pagedResponse.body as {
+      items: Array<{ id: string }>;
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+
+    expect(pagedPayload.total).toBe(runPayload.exceptions.length);
+    expect(pagedPayload.limit).toBe(5);
+    expect(pagedPayload.offset).toBe(3);
+    expect(pagedPayload.items).toHaveLength(5);
+    expect(pagedPayload.items[0]?.id).toBe(runPayload.exceptions[3]?.id);
+    expect(pagedPayload.hasMore).toBe(true);
   });
 
   it('accepts browser uploads when the workbook MIME type is application/octet-stream', async () => {
@@ -270,5 +340,136 @@ describe('reconciliation API', () => {
     const payload = response.body as { message: string };
 
     expect(payload.message).toContain('No completed reconciliation run found');
+  });
+
+  it('persists reviewer decisions and exposes them through the run and reviewer-decision endpoints', async () => {
+    const snapshotDirectory = mkdtempSync(path.join(tmpdir(), 'reconciliation-reviewer-decisions-'));
+
+    try {
+      const repositoryFilePath = path.join(snapshotDirectory, 'latest-run.json');
+      const firstApp = createApp(new FileBackedRunRepository(repositoryFilePath));
+      const [bankBuffer, qboBuffer] = await Promise.all([
+        createSampleBankWorkbook(),
+        createSampleQboWorkbook(),
+      ]);
+
+      const runResponse = await request(firstApp)
+        .post('/api/reconciliation/run')
+        .attach('bankFile', bankBuffer, {
+          filename: 'bank.xlsx',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        })
+        .attach('qboFile', qboBuffer, {
+          filename: 'qbo.xlsx',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        })
+        .expect(201);
+
+      const runPayload = runResponse.body as {
+        id: string;
+        probableMatches: Array<{ id: string; disposition: string }>;
+        reviewerDecisions: unknown[];
+      };
+
+      expect(runPayload.reviewerDecisions).toEqual([]);
+
+      const probableTarget = runPayload.probableMatches.find(
+        (item) => item.disposition === 'ProbableMatch' || item.disposition === 'AmbiguousReview',
+      );
+      expect(probableTarget).toBeDefined();
+
+      const decisionResponse = await request(firstApp)
+        .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
+        .send({
+          targetType: probableTarget?.disposition === 'AmbiguousReview' ? 'AmbiguousReview' : 'ProbableMatch',
+          targetId: probableTarget?.id,
+          outcome: 'ApprovedMatch',
+          notes: 'Approved after source document review.',
+          reviewerName: 'Controller',
+        })
+        .expect(201);
+
+      const savedDecision = decisionResponse.body as {
+        runId: string;
+        targetId: string;
+        outcome: string;
+        reviewerName?: string;
+      };
+
+      expect(savedDecision.runId).toBe(runPayload.id);
+      expect(savedDecision.targetId).toBe(probableTarget?.id);
+      expect(savedDecision.outcome).toBe('ApprovedMatch');
+      expect(savedDecision.reviewerName).toBe('Controller');
+
+      const reviewerDecisionList = await request(firstApp)
+        .get(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
+        .expect(200);
+      const reviewerDecisionsPayload = reviewerDecisionList.body as Array<{ targetId: string }>;
+      expect(reviewerDecisionsPayload).toHaveLength(1);
+      expect(reviewerDecisionsPayload[0]?.targetId).toBe(probableTarget?.id);
+
+      const restartedApp = createApp(new FileBackedRunRepository(repositoryFilePath));
+      const runAfterRestart = await request(restartedApp)
+        .get(`/api/reconciliation/${runPayload.id}`)
+        .expect(200);
+      const hydratedRun = runAfterRestart.body as {
+        reviewerDecisions: Array<{ targetId: string; outcome: string }>;
+      };
+
+      expect(hydratedRun.reviewerDecisions).toHaveLength(1);
+      expect(hydratedRun.reviewerDecisions[0]?.targetId).toBe(probableTarget?.id);
+      expect(hydratedRun.reviewerDecisions[0]?.outcome).toBe('ApprovedMatch');
+    } finally {
+      rmSync(snapshotDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects invalid reviewer decision payloads', async () => {
+    const app = createApp();
+    const [bankBuffer, qboBuffer] = await Promise.all([
+      createSampleBankWorkbook(),
+      createSampleQboWorkbook(),
+    ]);
+
+    const runResponse = await request(app)
+      .post('/api/reconciliation/run')
+      .attach('bankFile', bankBuffer, {
+        filename: 'bank.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .attach('qboFile', qboBuffer, {
+        filename: 'qbo.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+
+    const runPayload = runResponse.body as {
+      id: string;
+      exceptions: Array<{ id: string }>;
+    };
+
+    const invalidOutcomeResponse = await request(app)
+      .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
+      .send({
+        targetType: 'ExceptionItem',
+        targetId: runPayload.exceptions[0]?.id,
+        outcome: 'ApprovedMatch',
+      })
+      .expect(400);
+
+    const invalidOutcomePayload = invalidOutcomeResponse.body as { message: string };
+    expect(invalidOutcomePayload.message).toContain('not valid for the specified target type');
+
+    const missingCategoryResponse = await request(app)
+      .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
+      .send({
+        targetType: 'ExceptionItem',
+        targetId: runPayload.exceptions[0]?.id,
+        outcome: 'ReclassifiedException',
+      })
+      .expect(400);
+
+    const missingCategoryPayload = missingCategoryResponse.body as { message: string };
+    expect(missingCategoryPayload.message).toContain('finalCategory is required');
   });
 });

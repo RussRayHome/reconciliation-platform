@@ -22,6 +22,8 @@
       "@recon/core/*": ["./packages/core/src/*"],
       "@recon/config": ["./packages/config/src/index.ts"],
       "@recon/config/*": ["./packages/config/src/*"],
+      "@recon/persistence": ["./packages/persistence/src/index.ts"],
+      "@recon/persistence/*": ["./packages/persistence/src/*"],
       "@recon/ui": ["./packages/ui/src/index.ts"],
       "@recon/ui/*": ["./packages/ui/src/*"],
       "@recon/test-fixtures": ["./packages/test-fixtures/src/index.ts"],

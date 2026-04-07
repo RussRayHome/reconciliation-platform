@@ -18,6 +18,55 @@ The root `dev` script starts both apps together:
 - API on port `4000`
 - Web on port `5173`
 
+## Docker Desktop
+
+Docker Desktop is supported for a production-like local stack with an NGINX gateway, an internal API service, and an internal PostgreSQL service.
+
+Prerequisites:
+
+- Docker Desktop running locally
+- port `4173` available
+
+Commands:
+
+```bash
+cp .env.docker.example .env.docker
+npm run docker:deploy
+```
+
+Containerized local URLs:
+
+- Reconciliation UI: `http://127.0.0.1:4173`
+- API health through the gateway: `http://127.0.0.1:4173/api/health`
+- PostgreSQL stays internal to Docker Compose
+
+To stop the stack:
+
+```bash
+npm run docker:cleanup
+```
+
+To inspect logs:
+
+```bash
+npm run docker:logs
+```
+
+To rerun schema migrations without restarting the full stack:
+
+```bash
+npm run docker:migrate
+```
+
+To validate the local deployment:
+
+```bash
+npm run docker:validate-env
+npm run docker:health
+```
+
+To target a non-default Docker env file, set `DOCKER_ENV_FILE=./path/to/file` before running any `docker:*` runbook or `ops:*` helper. `DOCKER_COMPOSE_ENV_FILE` is still accepted as a compatibility alias.
+
 Useful local URLs:
 
 - Reconciliation UI: `http://127.0.0.1:5173`
@@ -37,14 +86,68 @@ npm run harness:start
 npm run harness:restart
 npm run harness:stop
 npm run harness:status
+npm run runtime:status
+npm run ops:web:start
+npm run ops:web:stop
+npm run ops:db:start
+npm run ops:db:stop
+npm run ops:docker:stop
+npm run ops:docker:restart
+npm run ops:startup
+npm run ops:shutdown
+npm run docker:validate-env
+npm run docker:build
+npm run docker:migrate
+npm run docker:health
+npm run docker:deploy
+npm run docker:redeploy
+npm run docker:smoke
+npm run docker:cleanup
+npm run docker:up
+npm run docker:down
+npm run docker:logs
 npm run typecheck
 npm run lint
 npm run test
+npm run test:postgres
 npm run test:e2e
 npm run coverage
 npm run build
 npm run security:scan
+npm run compare:workbooks -- --mode parity --baseline ./baseline.xlsx --candidate ./candidate.xlsx
 ```
+
+## Local Docker Operations
+
+Use the operations scripts when you want narrower control than `docker:up` and `docker:down`.
+
+```bash
+npm run ops:web:start
+npm run ops:web:stop
+npm run ops:db:start
+npm run ops:db:stop
+npm run ops:docker:stop
+npm run ops:docker:restart
+npm run ops:startup
+npm run ops:shutdown
+```
+
+Behavior:
+
+- `ops:web:start` starts the `web` compose service and its required dependencies
+- `ops:web:stop` stops only the `web` compose service
+- `ops:db:start` starts only the PostgreSQL compose service
+- `ops:db:stop` stops only the PostgreSQL compose service
+- `ops:docker:stop` quits Docker Desktop on macOS
+- `ops:docker:restart` restarts Docker Desktop on macOS and waits until `docker info` succeeds
+- `ops:startup` starts Docker Desktop if needed, then starts `postgres`, `api`, and `web`
+- `ops:shutdown` stops `web`, `api`, and `postgres`, then quits Docker Desktop
+
+These commands are implemented through a single typed entrypoint in `scripts/docker-ops.ts`.
+
+For the production-like deployment path, prefer the runbooks in `scripts/ops/` and the topology summary in `docs/local-docker-platform.md`.
+
+Use `docker:up` and `docker:down` only when you want direct raw Compose behavior. The supported operational path is `docker:deploy`, `docker:health`, and `docker:cleanup`.
 
 ## Runtime Harness
 
@@ -77,6 +180,12 @@ To inspect whether the expected harness ports are free before starting, run:
 
 ```bash
 npm run harness:status
+```
+
+To see whether the current web runtime is Vite or the containerized Nginx path, run:
+
+```bash
+npm run runtime:status
 ```
 
 These commands should be run from the repository root.
@@ -126,6 +235,11 @@ Copy values from `.env.example` as needed.
 - `LOG_LEVEL`: Pino log level
 - `DEBUG_RECONCILIATION`: optional debug switch for future deeper tracing
 - `MAX_UPLOAD_MB`: upload cap for source files
+- `RECON_PERSISTENCE_BACKEND`: set to `postgres` to force-enable PostgreSQL persistence
+- `DATABASE_URL`: PostgreSQL connection string for lifecycle persistence
+- `PG_POOL_MAX`: PostgreSQL pool max connections
+- `PG_IDLE_TIMEOUT_MS`: PostgreSQL idle timeout in milliseconds
+- `PG_STATEMENT_TIMEOUT_MS`: PostgreSQL statement timeout in milliseconds
 - `DEV_STATUS_CACHE_TTL_MS`: cache TTL for the developer status endpoint in milliseconds
 - `DEV_STATUS_HISTORY_LIMIT`: number of recent developer-status snapshots to retain in memory
 - `ENABLE_DEVELOPER_DIAGNOSTICS`: set to `true` to expose `/api/developer/*` outside the default local/dev behavior; set to `false` to force-disable it
@@ -167,9 +281,19 @@ The current web flow expects:
 
 After submission, the UI renders summary metrics, charts, probable match review, exception reporting, and workbook download links.
 
+When PostgreSQL persistence is enabled, the API also records reconciliation lifecycle state, source-file registrations, imported rows, normalized rows, match artifacts, exceptions, summary metrics, exports, and reviewer decisions in PostgreSQL.
+
 ## Golden-Standard Comparison Scripts
 
 The workbook comparison helpers in `scripts/workbook-parity.py` and `scripts/compare-attached-workbooks.py` are available for manual parity checks.
+
+The preferred entrypoint is now the unified CLI:
+
+```bash
+npm run compare:workbooks -- --mode parity --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
+npm run compare:workbooks -- --mode row --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
+npm run compare:workbooks -- --mode second-pass --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
+```
 
 They currently use hard-coded workbook paths and should be updated for your local files before running them.
 

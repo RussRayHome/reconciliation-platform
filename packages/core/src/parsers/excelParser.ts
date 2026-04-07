@@ -186,6 +186,7 @@ const isBeginningBalanceRow = (
 
 export interface ParseWorkbookInput {
   source: SourceSystem;
+  sourceFileId?: string;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -200,6 +201,7 @@ export interface ParsedWorkbook {
 
 export const parseWorkbook = async ({
   source,
+  sourceFileId,
   fileName,
   mimeType,
   sizeBytes,
@@ -232,7 +234,7 @@ export const parseWorkbook = async ({
   const columnIndexes = getColumnIndexes(headerRow, config);
 
   const sourceFile: SourceFile = {
-    id: randomUUID(),
+    id: sourceFileId ?? randomUUID(),
     source,
     fileName,
     mimeType,

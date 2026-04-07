@@ -34,6 +34,7 @@ import { describe, expect, it } from 'vitest';
 
 import ExcelJS from 'exceljs';
 import { defaultReconciliationConfig } from '@recon/config';
+import type { ReconciliationConfig } from '@recon/domain';
 import { errorCategories } from '@recon/domain';
 import { parseWorkbook } from './parsers/excelParser';
 import { randomUUID } from 'node:crypto';
@@ -80,8 +81,10 @@ const buildRunFromRows = async (
   qboRows: Array<Array<string | number>>,
   options?: {
     reconciliationFrequency?: 'Monthly' | 'Annual';
+    config?: ReconciliationConfig;
   },
 ) => {
+  const config = options?.config ?? defaultReconciliationConfig;
   const [bankBuffer, qboBuffer] = await Promise.all([
     createWorkbookFromRows(bankRows),
     createWorkbookFromRows(qboRows),
@@ -94,7 +97,7 @@ const buildRunFromRows = async (
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       sizeBytes: bankBuffer.length,
       buffer: bankBuffer,
-      config: defaultReconciliationConfig.bank,
+      config: config.bank,
     }),
     parseWorkbook({
       source: 'qbo',
@@ -102,7 +105,7 @@ const buildRunFromRows = async (
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       sizeBytes: qboBuffer.length,
       buffer: qboBuffer,
-      config: defaultReconciliationConfig.qbo,
+      config: config.qbo,
     }),
   ]);
 
@@ -111,7 +114,7 @@ const buildRunFromRows = async (
     correlationId: 'edge-case-correlation',
     sourceFiles: [bankParsed.sourceFile, qboParsed.sourceFile],
     rawRows: [...bankParsed.rawRows, ...qboParsed.rawRows],
-    config: defaultReconciliationConfig,
+    config,
     accountIdentifier: 'OPERATING-001',
     reconciliationFrequency: options?.reconciliationFrequency,
     periodLabel: 'Edge Case Period',
@@ -185,6 +188,49 @@ describe('runReconciliation', () => {
     expect(output.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(2);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
+  });
+
+  it('lets grouped residual classification outrank advisory one-to-one review matches', async () => {
+    const output = await buildRunFromRows(
+      [
+        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-10-01', 'CARD SETTLEMENT BATCH', '', '', '300.00', '5300.00'],
+      ],
+      [
+        ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+        ['2025-10-01', 'Deposit', '', 'Customer A', 'Card settlement alpha', '100.00'],
+        ['2025-10-02', 'Deposit', '', 'Customer B', 'Card settlement beta', '200.00'],
+        ['2025-10-08', 'Deposit', '', 'Customer C', 'Card settlement batch', '300.00'],
+      ],
+    );
+
+    expect(output.exceptions.filter((item) => item.category === 'DepositGroupingIssue')).toHaveLength(3);
+    expect(output.exceptions.some((item) => item.category === 'AmbiguousMatchRequiringReview')).toBe(false);
+    expect(output.probableMatches.some((item) => item.exceptionCategory === 'AmbiguousMatchRequiringReview')).toBe(false);
+  });
+
+  it('prefers the closest grouped batch when overlapping grouped candidates compete for the same qbo transactions', async () => {
+    const output = await buildRunFromRows(
+      [
+        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-10-01', 'CARD SETTLEMENT CLOSE BATCH', '', '', '300.00', '5300.00'],
+        ['2025-10-03', 'CARD SETTLEMENT LATE BATCH', '', '', '300.00', '5600.00'],
+      ],
+      [
+        ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+        ['2025-10-01', 'Deposit', '', 'Customer A', 'Card settlement alpha', '100.00'],
+        ['2025-10-02', 'Deposit', '', 'Customer B', 'Card settlement beta', '200.00'],
+      ],
+    );
+
+    const groupedItems = output.exceptions.filter((item) => item.category === 'DepositGroupingIssue');
+
+    expect(groupedItems).toHaveLength(3);
+    expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual')).toBe(true);
+    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 2)).toBe(true);
+    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 3)).toBe(false);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(1);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(0);
   });
 
   it('excludes QBO beginning balance rows and creates workbook tabs', async () => {
@@ -295,7 +341,8 @@ describe('runReconciliation', () => {
     const timingItems = output.exceptions.filter((item) => item.category === 'TimingDifference');
 
     expect(timingItems).toHaveLength(2);
-    expect(timingItems.every((item) => item.ruleTrace?.ruleId === 'timing-difference-reclassification')).toBe(true);
+    expect(timingItems.every((item) => item.ruleTrace?.ruleId === 'residual-timing-difference')).toBe(true);
+    expect(timingItems.every((item) => item.priorRuleTraces?.[0]?.ruleName === 'Amount + Extended Date Window Match')).toBe(true);
     expect(output.matchResults.some((item) => item.disposition === 'DateVariance')).toBe(true);
     expect(output.summary.timingDifferences).toBe(1);
     expect(output.summary.dateVariances).toBe(0);
@@ -311,6 +358,9 @@ describe('runReconciliation', () => {
     expect(groupedItems).toHaveLength(3);
     expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-split-combine-residual')).toBe(true);
     expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=withdrawal')))).toBe(true);
+    expect(groupedItems.some((item) => (item.ruleTrace?.counterparts?.length ?? 0) > 1)).toBe(true);
+    expect(output.groupedMatchResults).toHaveLength(1);
+    expect(output.groupedMatchResults[0]?.category).toBe('LikelySplitCombineIssue');
     expect(output.summary.countsByCategory.LikelySplitCombineIssue).toBe(3);
     expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
@@ -324,6 +374,9 @@ describe('runReconciliation', () => {
     expect(groupedItems).toHaveLength(3);
     expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual')).toBe(true);
     expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=deposit')))).toBe(true);
+    expect(groupedItems.some((item) => (item.ruleTrace?.counterparts?.length ?? 0) > 1)).toBe(true);
+    expect(output.groupedMatchResults).toHaveLength(1);
+    expect(output.groupedMatchResults[0]?.category).toBe('DepositGroupingIssue');
     expect(output.summary.countsByCategory.DepositGroupingIssue).toBe(3);
     expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
@@ -343,6 +396,23 @@ describe('runReconciliation', () => {
     expect(output.exceptions.some((item) => item.category === 'DepositGroupingIssue')).toBe(false);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(4);
+  });
+
+  it('lets account-level grouped overrides classify larger grouped residual sets', async () => {
+    const output = await buildRunFromRows(depositGroupingOversizedBankFixture, depositGroupingOversizedQboFixture, {
+      config: {
+        ...defaultReconciliationConfig,
+        matching: {
+          ...defaultReconciliationConfig.matching,
+          groupedCandidatePoolSize: 8,
+          groupedMatchMaxSize: 4,
+        },
+      },
+    });
+
+    expect(output.exceptions.filter((item) => item.category === 'DepositGroupingIssue')).toHaveLength(5);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('preserves date variance when extended-window matches are not timing-compatible', async () => {
@@ -449,6 +519,33 @@ describe('runReconciliation', () => {
     expect(staleCheck?.ruleTrace?.ruleId).toBe('stale-outstanding-check');
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
     expect(output.summary.countsByCategory.StaleOutstandingCheck).toBe(1);
+  });
+
+  it('lets account-level stale-check overrides shorten aging policy', async () => {
+    const bankRows = [
+      ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+      ['2025-02-15', 'STATEMENT ANCHOR DEPOSIT', '', '', '900.00', '900.00'],
+    ] as Array<Array<string | number>>;
+    const qboRows = [
+      ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+      ['2025-01-10', 'Check', '1201', 'Vendor', 'Older but not default-stale check', '-900.00'],
+    ] as Array<Array<string | number>>;
+
+    const defaultOutput = await buildRunFromRows(bankRows, qboRows);
+    const overrideOutput = await buildRunFromRows(bankRows, qboRows, {
+      config: {
+        ...defaultReconciliationConfig,
+        matching: {
+          ...defaultReconciliationConfig.matching,
+          staleOutstandingCheckDays: 30,
+        },
+      },
+    });
+
+    expect(defaultOutput.exceptions.some((item) => item.category === 'StaleOutstandingCheck')).toBe(false);
+    expect(defaultOutput.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(1);
+    expect(overrideOutput.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
+    expect(overrideOutput.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('classifies likely miscoding when same-amount near-date transactions conflict on context', async () => {

@@ -23,11 +23,6 @@ const countExceptionCases = (
       .map((item) => buildExceptionCaseKey(item)),
   ).size;
 
-export const is5703Workbook = (transactions: NormalizedTransaction[]): boolean => {
-  const fileNames = transactions.map((transaction) => transaction.spreadsheetFileName.toLowerCase());
-  return fileNames.some((name) => name.includes('5703')) && transactions.length > 1000;
-};
-
 export const buildSummaryMetrics = (
   normalizedTransactions: NormalizedTransaction[],
   matchResults: MatchResult[],

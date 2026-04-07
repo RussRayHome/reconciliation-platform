@@ -30,6 +30,7 @@ npm run harness:start
 npm run harness:restart
 npm run harness:stop
 npm run harness:status
+npm run runtime:status
 ```
 
 What it does:
@@ -51,6 +52,19 @@ Notes:
 
 - Run these commands from the repository root.
 - The web server uses a fixed-port contract and now fails fast instead of silently hopping to another port.
+
+### `runtime-status.ts`
+
+Purpose:
+
+- Reports whether the active web runtime is Vite or the containerized Nginx path.
+- Shows whether the API is running as a local Node process or as a Docker Compose container.
+
+How to run:
+
+```bash
+npm run runtime:status
+```
 
 ### `generate-fixtures.ts`
 
@@ -76,6 +90,92 @@ When to use it:
 Notes:
 
 - This is the preferred way to regenerate sample workbooks. Do not hand-edit the generated files and assume they remain canonical.
+
+### `docker-ops.ts`
+
+Purpose:
+
+- Provide a single typed command surface for service-level Docker Compose operations and Docker Desktop lifecycle control on macOS.
+- Keep Docker behavior consolidated in one implementation path instead of several thin wrappers.
+
+How to run:
+
+```bash
+npm run ops:web:start
+npm run ops:web:stop
+npm run ops:db:start
+npm run ops:db:stop
+npm run ops:docker:stop
+npm run ops:docker:restart
+npm run ops:startup
+npm run ops:shutdown
+```
+
+Examples:
+
+- `tsx scripts/docker-ops.ts web start`
+- `tsx scripts/docker-ops.ts web stop`
+- `tsx scripts/docker-ops.ts db start`
+- `tsx scripts/docker-ops.ts db stop`
+- `tsx scripts/docker-ops.ts docker stop`
+- `tsx scripts/docker-ops.ts docker restart`
+- `tsx scripts/docker-ops.ts stack start`
+- `tsx scripts/docker-ops.ts stack stop`
+
+Notes:
+
+- The helper resolves the repository-local `compose.yaml` automatically, so it does not require you to `cd` into the repo root first.
+- If `.env.docker` exists, it is passed to `docker compose` automatically.
+- Set `DOCKER_ENV_FILE=./path/to/file` to use a different env file across the typed helpers and shell/PowerShell runbooks. `DOCKER_COMPOSE_ENV_FILE` remains supported as a legacy alias.
+- Docker Desktop start/stop automation is implemented for macOS only.
+- Starting `web` may also start `api` and `postgres` because of the compose dependency chain.
+
+### `docker-runtime.ts`
+
+Purpose:
+
+- Shared Docker Compose and Docker Desktop helper used by `docker-ops.ts` and `docker-smoke-test.ts`.
+- Centralizes Compose file resolution, Docker readiness checks, and macOS Docker Desktop automation.
+
+## Production-Like Docker Runbooks
+
+The `scripts/ops/` directory contains Bash and PowerShell entrypoints for the hardened local deployment flow.
+
+### `ops/deploy.*`
+
+Purpose:
+
+- Start PostgreSQL, run the dedicated migration service, then start the internal API and public NGINX gateway.
+
+### `ops/redeploy.*`
+
+Purpose:
+
+- Perform a clean cleanup followed by a fresh deploy.
+
+### `ops/run-migrations.*`
+
+Purpose:
+
+- Execute only the dedicated migration container.
+
+### `ops/health-check.*`
+
+Purpose:
+
+- Verify `/healthz`, `/api/health`, and PostgreSQL readiness for the containerized stack.
+
+### `ops/cleanup.*`
+
+Purpose:
+
+- Stop the local production-like stack, with optional volume pruning.
+
+### `ops/validate-env.*`
+
+Purpose:
+
+- Validate the Docker environment file before deployment.
 
 ### `analyze-reconciliation.ts`
 
@@ -126,7 +226,27 @@ Notes:
 
 ## Workbook Diagnostics
 
-These Python scripts are lightweight CLI diagnostics for workbook parity analysis. They are parameterized now, but they still assume specific workbook sheet names and column layouts.
+These Python scripts are lightweight CLI diagnostics for workbook parity analysis. They now share a common helper module and can also be run through the unified CLI.
+
+### `workbook-compare.py`
+
+Purpose:
+
+- Unified entrypoint for workbook parity, row-level comparison, and second-pass diagnostics.
+
+How to run:
+
+```bash
+npm run compare:workbooks -- --mode parity --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
+npm run compare:workbooks -- --mode row --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
+npm run compare:workbooks -- --mode second-pass --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
+```
+
+### `workbook_compare_tools.py`
+
+Purpose:
+
+- Shared workbook parsing, normalization, and comparison helpers used by the unified CLI and compatibility wrappers.
 
 ### `workbook-parity.py`
 
@@ -150,6 +270,7 @@ Use status:
 
 - Reusable for manual parity checks when the compared workbooks follow the expected layout.
 - Validate the expected sheet layout before relying on the results.
+- Backed by the shared `workbook_compare_tools.py` helper.
 
 ### `compare-attached-workbooks.py`
 
@@ -171,8 +292,8 @@ Current limitations:
 
 Use status:
 
-- Reference/debugging aid only.
-- Safe reuse requires replacing hard-coded paths and revalidating the column mapping assumptions.
+- Compatibility wrapper around the unified workbook comparison logic.
+- Safe reuse still requires revalidating the column mapping assumptions.
 
 ### `second-pass-diagnostics.py`
 
@@ -194,8 +315,8 @@ Current limitations:
 
 Use status:
 
-- Reference/debugging aid only.
-- Should be treated as investigation history unless deliberately cleaned up and parameterized.
+- Compatibility wrapper around the shared second-pass comparison logic.
+- Still tailored to the known Error Report layouts.
 
 ### `docs/archive/second-pass-report.txt`
 
@@ -227,6 +348,6 @@ What it is not:
 
 If this directory is being hardened for long-term team use, the next sensible changes are:
 
-1. Add a shared helper module if more workbook-comparison scripts are added.
-2. Rename ad hoc diagnostics to make their temporary status obvious.
-3. Add a short owner/intent header to any script expected to remain in the repo.
+1. Rename ad hoc diagnostics to make their temporary status obvious.
+2. Add a short owner/intent header to any script expected to remain in the repo.
+3. Add a small automated smoke test around `workbook-compare.py` if it becomes part of the regular workflow.

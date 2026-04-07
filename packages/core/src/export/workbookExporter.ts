@@ -85,13 +85,41 @@ const addChartDataTable = (
   });
 };
 
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+const getCounterpartTraces = (item: ExceptionItem) =>
+  item.ruleTrace?.counterparts?.length || !item.ruleTrace?.counterpart
+    ? (item.ruleTrace?.counterparts ?? [])
+    : [item.ruleTrace.counterpart];
+
+const formatCounterparts = (item: ExceptionItem): string => {
+  const counterparts = getCounterpartTraces(item);
+
+  if (counterparts.length === 0) {
+    return item.likelyMatchingReference ?? '';
+  }
+
+  return counterparts
+    .map((counterpart) =>
+      counterpart.spreadsheetFileName
+        ? `${sourceDisplayName(counterpart.source ?? '')}: ${counterpart.spreadsheetFileName} / ${counterpart.lineNumber ?? 'N/A'}`
+        : counterpart.transactionId ?? 'N/A',
+    )
+    .join(' | ');
+};
+
+const formatRuleLineage = (item: ExceptionItem): string => {
+  const lineage = [...(item.priorRuleTraces ?? []), ...(item.ruleTrace ? [item.ruleTrace] : [])];
+
+  if (lineage.length === 0) {
+    return '';
+  }
+
+  return lineage
+    .map((trace, index) => {
+      const label = index === lineage.length - 1 ? 'Final' : 'Prior';
+      return `${label}: ${trace.ruleName} (${trace.ruleId})`;
+    })
+    .join(' | ');
+};
 
 const buildNarrativeSummary = (
   summary: SummaryMetrics,
@@ -124,7 +152,7 @@ const buildNarrativeSummary = (
     .map((category) => `${summary.countsByCategory[category]} ${errorCategoryDisplayNames[category].toLowerCase()}`);
   const exceptionSentence = categorySummary.length > 0
     ? `Categorized exceptions include ${categorySummary.join(', ')}.`
-    : 'No categorized exception buckets remain open.';
+    : 'No classified follow-up categories remain open.';
 
   return `${statusSentence} ${volumeSentence} ${exceptionSentence}`;
 };
@@ -174,13 +202,13 @@ const addSummaryCharts = (
 
   const resolvedExposureData = exposureChartData.length > 0
     ? exposureChartData
-    : [{ label: 'No unreconciled exposure', value: 0 }];
+    : [{ label: 'No classified exception exposure', value: 0 }];
 
   worksheet.getCell('D2').value = `${accountLabel} Reconciliation Summary by Category`;
   worksheet.getCell('D2').font = { bold: true, size: 16 };
   worksheet.mergeCells('D2:K2');
 
-  worksheet.getCell('D29').value = `${accountLabel} Unreconciled Dollar Exposure`;
+  worksheet.getCell('D29').value = `${accountLabel} Categorized Exception Dollar Exposure`;
   worksheet.getCell('D29').font = { bold: true, size: 16 };
   worksheet.mergeCells('D29:J29');
 
@@ -279,7 +307,7 @@ export const exportWorkbook = async ({
       numFmt: '$#,##0.00;[Red]-$#,##0.00',
     },
     {
-      label: 'Unresolved Exposure',
+      label: 'Categorized Exception Exposure',
       value: summary.unresolvedExposure,
       numFmt: '$#,##0.00;[Red]-$#,##0.00',
     },
@@ -335,7 +363,8 @@ export const exportWorkbook = async ({
     'Message',
     'Evidence',
     'Next Actions',
-    'Counterpart',
+    'Counterparts',
+    'Rule Lineage',
     'Reviewer Notes',
   ]);
   exceptions.forEach((item) => {
@@ -352,9 +381,8 @@ export const exportWorkbook = async ({
       item.errorMessage,
       (item.ruleTrace?.evidence ?? []).join(' | '),
       item.recommendedNextActions.join(' | '),
-      item.ruleTrace?.counterpart?.spreadsheetFileName
-        ? `${sourceDisplayName(item.ruleTrace.counterpart.source ?? '')}: ${item.ruleTrace.counterpart.spreadsheetFileName} / ${item.ruleTrace.counterpart.lineNumber ?? 'N/A'}`
-        : item.likelyMatchingReference ?? '',
+      formatCounterparts(item),
+      formatRuleLineage(item),
       item.reviewerNotes ?? '',
     ]);
   });

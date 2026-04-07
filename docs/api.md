@@ -64,10 +64,12 @@ Response includes:
 - source file metadata
 - normalized transactions
 - match results
+- grouped match results
 - probable matches
-- exceptions with category, severity, category-specific recommended next actions, and a nested `ruleTrace` object containing rule metadata, evidence, and counterpart traceability when available
+- exceptions with category, severity, category-specific recommended next actions, optional `priorRuleTraces`, and a nested `ruleTrace` object containing rule metadata, evidence, counterpart traceability, and grouped counterpart arrays when available
 - summary metrics
 - reviewer observations
+- reviewer decisions
 - workbook metadata
 - audit events
 
@@ -83,6 +85,9 @@ Returns `404` when no completed run has been stored yet.
 
 Returns the stored run payload without the raw workbook binary.
 
+The run payload includes any persisted `reviewerDecisions` attached to probable-match, ambiguous-review, or exception targets.
+It now also includes additive `groupedMatchResults` emitted by the matcher for balanced grouped candidates, even while grouped exception classification remains on the compatibility path.
+
 ## Fetch Summary
 
 ### `GET /api/reconciliation/:id/summary`
@@ -93,7 +98,34 @@ Returns `SummaryMetrics` only.
 
 ### `GET /api/reconciliation/:id/exceptions`
 
-Returns the typed exception list, including `recommendedNextActions` plus a nested `ruleTrace` object with `ruleId`, `ruleName`, `reason`, `evidence`, and counterpart source references when those were available during classification.
+Returns the typed exception list, including `recommendedNextActions`, optional `priorRuleTraces`, plus a nested `ruleTrace` object with `ruleId`, `ruleName`, `reason`, `evidence`, primary counterpart source references, and grouped `counterparts` when those were available during classification.
+
+## Reviewer Decisions
+
+### `GET /api/reconciliation/:id/reviewer-decisions`
+
+Returns the persisted reviewer decisions for the specified run.
+
+### `POST /api/reconciliation/:id/reviewer-decisions`
+
+Persists or updates a reviewer decision for a single review target on the specified run.
+
+Request body:
+
+- `targetType`: `ProbableMatch`, `AmbiguousReview`, or `ExceptionItem`
+- `targetId`: target identifier within the run
+- `outcome`: `ApprovedMatch`, `RejectedMatch`, `ConfirmedException`, or `ReclassifiedException`
+- `finalCategory`: required when `outcome` is `ReclassifiedException`
+- `notes`: optional reviewer rationale
+- `reviewerId`: optional reviewer identifier
+- `reviewerName`: optional reviewer display name
+
+Validation rules:
+
+- target must exist on the run
+- probable and ambiguous targets accept only `ApprovedMatch` or `RejectedMatch`
+- exception targets accept only `ConfirmedException` or `ReclassifiedException`
+- `finalCategory` must be a valid exception category when reclassifying
 
 ## Download Workbook
 

@@ -141,6 +141,34 @@ export interface MatchResult {
   reviewerNotes?: string;
 }
 
+export type GroupedMatchDisposition = 'GroupedExactMatch' | 'GroupedReviewMatch';
+
+export interface GroupedMatchMember {
+  transactionId: string;
+  source: SourceSystem;
+  spreadsheetFileName: string;
+  lineNumber: number;
+  amount: number;
+}
+
+export interface GroupedMatchResult {
+  id: string;
+  disposition: GroupedMatchDisposition;
+  confidence: MatchConfidence;
+  category?: 'DepositGroupingIssue' | 'LikelySplitCombineIssue';
+  bankTransactionIds: string[];
+  qboTransactionIds: string[];
+  bankMembers: GroupedMatchMember[];
+  qboMembers: GroupedMatchMember[];
+  totalAmount: number;
+  dateDifferenceDays: number | null;
+  score: number;
+  ruleId: string;
+  ruleName: string;
+  reason: string;
+  evidence: string[];
+}
+
 export interface CounterpartTrace {
   source?: SourceSystem;
   spreadsheetFileName?: string;
@@ -154,6 +182,7 @@ export interface ExceptionRuleTrace {
   reason: string;
   evidence: string[];
   counterpart?: CounterpartTrace;
+  counterparts?: CounterpartTrace[];
 }
 
 export interface ExceptionItem {
@@ -168,6 +197,7 @@ export interface ExceptionItem {
   amount: number | null;
   errorMessage: string;
   ruleTrace?: ExceptionRuleTrace;
+  priorRuleTraces?: ExceptionRuleTrace[];
   recommendedNextActions: string[];
   likelyMatchingReference?: string;
   reviewerNotes?: string;
@@ -219,6 +249,8 @@ export interface OutputWorkbook {
   binary: Uint8Array;
 }
 
+export type OutputWorkbookManifest = Omit<OutputWorkbook, 'binary'>;
+
 export interface ReviewerObservation {
   id: string;
   runId: string;
@@ -228,6 +260,31 @@ export interface ReviewerObservation {
   severity: SeverityLevel;
   createdAt: string;
   relatedTransactionIds: string[];
+}
+
+export type ReviewerDecisionTargetType =
+  | 'ProbableMatch'
+  | 'AmbiguousReview'
+  | 'ExceptionItem';
+
+export type ReviewerDecisionOutcome =
+  | 'ApprovedMatch'
+  | 'RejectedMatch'
+  | 'ConfirmedException'
+  | 'ReclassifiedException';
+
+export interface ReviewerDecision {
+  id: string;
+  runId: string;
+  targetType: ReviewerDecisionTargetType;
+  targetId: string;
+  outcome: ReviewerDecisionOutcome;
+  finalCategory?: ErrorCategory;
+  notes?: string;
+  reviewerId?: string;
+  reviewerName?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type ReconciliationFrequency = 'Monthly' | 'Annual';
@@ -251,12 +308,33 @@ export interface ReconciliationRun {
   rawRows: RawTransactionRow[];
   normalizedTransactions: NormalizedTransaction[];
   matchResults: MatchResult[];
+  groupedMatchResults: GroupedMatchResult[];
   probableMatches: MatchResult[];
   exceptions: ExceptionItem[];
   summary: SummaryMetrics;
   reviewerObservations: ReviewerObservation[];
+  reviewerDecisions: ReviewerDecision[];
   outputWorkbook?: OutputWorkbook;
   auditEvents: AuditEvent[];
+}
+
+export interface ReconciliationRunReport {
+  id: string;
+  correlationId: string;
+  accountIdentifier?: string;
+  periodLabel?: string;
+  reconciliationFrequency?: ReconciliationFrequency;
+  status: ReconciliationRunStatus;
+  startedAt: string;
+  completedAt?: string;
+  sourceFiles: SourceFile[];
+  groupedMatchResults: GroupedMatchResult[];
+  probableMatches: MatchResult[];
+  exceptions: ExceptionItem[];
+  summary: SummaryMetrics;
+  reviewerObservations: ReviewerObservation[];
+  reviewerDecisions: ReviewerDecision[];
+  outputWorkbook?: OutputWorkbookManifest;
 }
 
 export type ColumnAliasMap = Record<BusinessField, string[]>;
@@ -284,10 +362,13 @@ export interface MatchingConfig {
   amountTolerance: number;
   dateToleranceDays: number;
   timingDifferenceDays: number;
+  staleOutstandingCheckDays: number;
   textSimilarityThreshold: number;
   probableTextSimilarityThreshold: number;
   referenceSimilarityThreshold: number;
   distinctiveAmountMaxOccurrences: number;
+  groupedCandidatePoolSize: number;
+  groupedMatchMaxSize: number;
   duplicateDateWindowDays: number;
   duplicateSimilarityThreshold: number;
   amountMismatchTextSimilarityThreshold: number;
@@ -336,10 +417,12 @@ export interface ReconciliationInput {
 export interface ReconciliationOutput {
   normalizedTransactions: NormalizedTransaction[];
   matchResults: MatchResult[];
+  groupedMatchResults: GroupedMatchResult[];
   probableMatches: MatchResult[];
   exceptions: ExceptionItem[];
   summary: SummaryMetrics;
   reviewerObservations: ReviewerObservation[];
+  reviewerDecisions: ReviewerDecision[];
   outputWorkbook: OutputWorkbook;
   auditEvents: AuditEvent[];
 }

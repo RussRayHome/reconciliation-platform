@@ -1,5 +1,5 @@
 import type { ExceptionItem, MatchResult, NormalizedTransaction } from '@recon/domain';
-import { buildSummaryMetrics, is5703Workbook } from './summary';
+import { buildSummaryMetrics } from './summary';
 import { describe, expect, it } from 'vitest';
 
 import { randomUUID } from 'node:crypto';
@@ -75,48 +75,6 @@ const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => 
 });
 
 describe('Summary Edge Cases', () => {
-  describe('is5703Workbook', () => {
-    it('detects 5703 account by filename and transaction count threshold', () => {
-      const tx: NormalizedTransaction[] = Array.from({ length: 1001 }, (_, i) =>
-        buildTransaction({
-          id: `tx-${i}`,
-          spreadsheetFileName: '5703-account-data.xlsx',
-          source: i % 2 === 0 ? 'bank' : 'qbo',
-        })
-      );
-
-      expect(is5703Workbook(tx)).toBe(true);
-    });
-
-    it('rejects 5703 filename if transaction count is below threshold', () => {
-      const tx: NormalizedTransaction[] = Array.from({ length: 999 }, (_, i) =>
-        buildTransaction({
-          id: `tx-${i}`,
-          spreadsheetFileName: '5703-data.xlsx',
-          source: i % 2 === 0 ? 'bank' : 'qbo',
-        })
-      );
-
-      expect(is5703Workbook(tx)).toBe(false);
-    });
-
-    it('rejects empty transaction list', () => {
-      expect(is5703Workbook([])).toBe(false);
-    });
-
-    it('case-insensitive filename matching', () => {
-      const tx: NormalizedTransaction[] = Array.from({ length: 1001 }, (_, i) =>
-        buildTransaction({
-          id: `tx-${i}`,
-          spreadsheetFileName: 'ACCOUNT-5703.xlsx',
-          source: i % 2 === 0 ? 'bank' : 'qbo',
-        })
-      );
-
-      expect(is5703Workbook(tx)).toBe(true);
-    });
-  });
-
   describe('buildSummaryMetrics - edge cases with excluded transactions', () => {
     it('excludes transactions marked as excluded from totals', () => {
       const transactions: NormalizedTransaction[] = [
@@ -288,46 +246,56 @@ describe('Summary Edge Cases', () => {
     });
   });
 
-  describe('buildSummaryMetrics - 5703 parity', () => {
-    it('keeps summary totals anchored to final exceptions and match results even for 5703 workbooks', () => {
-      const transactions: NormalizedTransaction[] = Array.from({ length: 1001 }, (_, i) => {
-        if (i === 0) {
-          return buildTransaction({
-            id: 'bank-transfer',
-            source: 'bank',
-            spreadsheetFileName: '5703-data.xlsx',
-            description: 'ONLINE FROM ****1061 - TRUIST ONLINE TRANSFER',
-            transactionDate: '2025-01-28',
-            amount: 50000,
-          });
-        }
+  describe('buildSummaryMetrics - classification parity', () => {
+    it('keeps summary totals anchored to final exceptions and match results regardless of workbook naming', () => {
+      const transactions: NormalizedTransaction[] = [
+        buildTransaction({
+          id: 'bank-transfer',
+          source: 'bank',
+          spreadsheetFileName: 'large-operating-workbook.xlsx',
+          description: 'ONLINE FROM ****1061 - TRUIST ONLINE TRANSFER',
+          transactionDate: '2025-01-28',
+          amount: 50000,
+        }),
+        buildTransaction({
+          id: 'qbo-journal',
+          source: 'qbo',
+          spreadsheetFileName: 'large-operating-workbook.xlsx',
+          description: 'Money Transfers',
+          transactionDate: '2025-01-31',
+          transactionType: 'Journal Entry',
+          amount: 50000,
+          normalizedComparisonTokens: ['money', 'transfers'],
+        }),
+      ];
+      const matchResults: MatchResult[] = [
+        buildMatchResult({
+          bankTransactionId: 'bank-transfer',
+          qboTransactionId: 'qbo-journal',
+          disposition: 'ProbableMatch',
+          confidence: 'Probable',
+        }),
+      ];
+      const exceptions: ExceptionItem[] = [
+        buildException({
+          category: 'TimingDifference',
+          source: 'bank',
+          amount: 50000,
+          relatedTransactionIds: ['bank-transfer', 'qbo-journal'],
+        }),
+        buildException({
+          category: 'TimingDifference',
+          source: 'qbo',
+          amount: 50000,
+          relatedTransactionIds: ['bank-transfer', 'qbo-journal'],
+        }),
+      ];
 
-        if (i === 1) {
-          return buildTransaction({
-            id: 'qbo-journal',
-            source: 'qbo',
-            spreadsheetFileName: '5703-data.xlsx',
-            description: 'Money Transfers',
-            transactionDate: '2025-01-31',
-            transactionType: 'Journal Entry',
-            amount: 50000,
-            normalizedComparisonTokens: ['money', 'transfers'],
-          });
-        }
+      const summary = buildSummaryMetrics(transactions, matchResults, exceptions);
 
-        return buildTransaction({
-          id: `filler-${i}`,
-          spreadsheetFileName: '5703-data.xlsx',
-          source: i % 2 === 0 ? 'bank' : 'qbo',
-          amount: Math.floor(Math.random() * 10000),
-        });
-      });
-
-      const summary = buildSummaryMetrics(transactions, [], []);
-
+      expect(summary.probableMatches).toBe(1);
+      expect(summary.timingDifferences).toBe(1);
       expect(summary.exactMatches).toBe(0);
-      expect(summary.probableMatches).toBe(0);
-      expect(summary.timingDifferences).toBe(0);
     });
   });
 

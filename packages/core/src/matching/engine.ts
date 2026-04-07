@@ -1,4 +1,5 @@
 import type {
+  GroupedMatchResult,
   MatchCandidate,
   MatchDisposition,
   MatchResult,
@@ -6,6 +7,10 @@ import type {
   NormalizedTransaction,
 } from '@recon/domain';
 import { amountDifference, currencyEquals, dateDifferenceDays, tokenSimilarity } from './similarity';
+import {
+  reserveGroupedTransactionIds,
+  type GroupedReservationCandidate,
+} from './groupedReservations';
 
 import { randomUUID } from 'node:crypto';
 
@@ -169,6 +174,37 @@ const createMatchResult = (
   evidence: candidate.evidence,
   likelyMatchingReference: candidate.qboTransactionId,
   exceptionCategory,
+});
+
+const buildGroupedMatchMembers = (
+  transactions: Array<NormalizedTransaction & { amount: number }>,
+): GroupedMatchResult['bankMembers'] =>
+  transactions.map((transaction) => ({
+    transactionId: transaction.id,
+    source: transaction.source,
+    spreadsheetFileName: transaction.spreadsheetFileName,
+    lineNumber: transaction.lineNumber,
+    amount: transaction.amount,
+  }));
+
+const createGroupedMatchResult = (
+  candidate: GroupedReservationCandidate,
+): GroupedMatchResult => ({
+  id: randomUUID(),
+  disposition: 'GroupedReviewMatch',
+  confidence: 'Probable',
+  category: candidate.category,
+  bankTransactionIds: candidate.bankTransactionIds,
+  qboTransactionIds: candidate.qboTransactionIds,
+  bankMembers: buildGroupedMatchMembers(candidate.bankTransactions),
+  qboMembers: buildGroupedMatchMembers(candidate.qboTransactions),
+  totalAmount: candidate.bankTransactions.reduce((total, transaction) => total + transaction.amount, 0),
+  dateDifferenceDays: candidate.dateDifferenceDays,
+  score: candidate.score,
+  ruleId: candidate.ruleId,
+  ruleName: candidate.ruleName,
+  reason: candidate.reason,
+  evidence: candidate.evidence,
 });
 
 const detectDuplicates = (
@@ -405,6 +441,7 @@ const rankCandidates = (
 
 export interface MatchEngineResult {
   matchResults: MatchResult[];
+  groupedMatchResults: GroupedMatchResult[];
   probableMatches: MatchResult[];
   unmatchedBankTransactionIds: Set<string>;
   unmatchedQboTransactionIds: Set<string>;
@@ -432,15 +469,23 @@ export const reconcileMatches = (
   const remainingQbo = qboTransactions.filter((transaction) => !duplicateIds.has(transaction.id));
 
   const candidates = rankCandidates(remainingBank, remainingQbo, config);
-  const matchedBank = new Set<string>();
-  const matchedQbo = new Set<string>();
+  const exactMatchedBank = new Set<string>();
+  const exactMatchedQbo = new Set<string>();
+  const reviewedBank = new Set<string>();
+  const reviewedQbo = new Set<string>();
+  const groupedReservations = reserveGroupedTransactionIds(remainingBank, remainingQbo, config);
   const matchResults: MatchResult[] = [];
+  const groupedMatchResults = groupedReservations.selectedCandidates.map(createGroupedMatchResult);
   const probableMatches: MatchResult[] = [];
 
   for (const candidate of candidates) {
-    if (matchedBank.has(candidate.bankTransactionId) || matchedQbo.has(candidate.qboTransactionId)) {
+    if (exactMatchedBank.has(candidate.bankTransactionId) || exactMatchedQbo.has(candidate.qboTransactionId)) {
       continue;
     }
+
+    const isGroupedReserved =
+      groupedReservations.reservedBankTransactionIds.has(candidate.bankTransactionId) ||
+      groupedReservations.reservedQboTransactionIds.has(candidate.qboTransactionId);
 
     const siblingCandidates = candidates.filter(
       (item) =>
@@ -456,6 +501,14 @@ export const reconcileMatches = (
       candidate.score < 0.95 &&
       candidate.referenceSimilarity < config.referenceSimilarityThreshold
     ) {
+      if (
+        isGroupedReserved ||
+        reviewedBank.has(candidate.bankTransactionId) ||
+        reviewedQbo.has(candidate.qboTransactionId)
+      ) {
+        continue;
+      }
+
       const ambiguousResult = createMatchResult(
         candidate,
         'AmbiguousReview',
@@ -463,8 +516,8 @@ export const reconcileMatches = (
       );
       probableMatches.push(ambiguousResult);
       matchResults.push(ambiguousResult);
-      matchedBank.add(candidate.bankTransactionId);
-      matchedQbo.add(candidate.qboTransactionId);
+      reviewedBank.add(candidate.bankTransactionId);
+      reviewedQbo.add(candidate.qboTransactionId);
       continue;
     }
 
@@ -485,22 +538,38 @@ export const reconcileMatches = (
     }
 
     const result = createMatchResult(candidate, disposition, exceptionCategory);
+    if (disposition === 'ExactMatch') {
+      matchResults.push(result);
+      exactMatchedBank.add(candidate.bankTransactionId);
+      exactMatchedQbo.add(candidate.qboTransactionId);
+      continue;
+    }
+
+    if (
+      isGroupedReserved ||
+      reviewedBank.has(candidate.bankTransactionId) ||
+      reviewedQbo.has(candidate.qboTransactionId)
+    ) {
+      continue;
+    }
+
     if (disposition === 'ProbableMatch') {
       probableMatches.push(result);
     }
     matchResults.push(result);
-    matchedBank.add(candidate.bankTransactionId);
-    matchedQbo.add(candidate.qboTransactionId);
+    reviewedBank.add(candidate.bankTransactionId);
+    reviewedQbo.add(candidate.qboTransactionId);
   }
 
   return {
     matchResults,
+    groupedMatchResults,
     probableMatches,
     unmatchedBankTransactionIds: new Set(
-      remainingBank.filter((transaction) => !matchedBank.has(transaction.id)).map((transaction) => transaction.id),
+      remainingBank.filter((transaction) => !exactMatchedBank.has(transaction.id)).map((transaction) => transaction.id),
     ),
     unmatchedQboTransactionIds: new Set(
-      remainingQbo.filter((transaction) => !matchedQbo.has(transaction.id)).map((transaction) => transaction.id),
+      remainingQbo.filter((transaction) => !exactMatchedQbo.has(transaction.id)).map((transaction) => transaction.id),
     ),
     duplicateTransactionIds: duplicateIds,
   };

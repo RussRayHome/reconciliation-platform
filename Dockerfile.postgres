@@ -1,0 +1,11 @@
+FROM postgres:16.13-alpine
+
+RUN apk add --no-cache \
+    musl-locales \
+    musl-locales-lang
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+CMD ["postgres"]

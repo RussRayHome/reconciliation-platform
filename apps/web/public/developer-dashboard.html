@@ -223,6 +223,12 @@
         color: #102a43;
       }
 
+      .coverage-metric-helper {
+        margin: 4px 0 0;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
       .coverage-metric-box.cov-green .coverage-metric-value {
         color: #18794e;
       }
@@ -579,7 +585,30 @@
       };
 
       const getCoverageMetricBoxes = (check) => {
-        if (check?.name !== 'Coverage' || !Array.isArray(check?.highlights)) {
+        if (check?.name !== 'Coverage') {
+          return [];
+        }
+
+        if (Array.isArray(check?.coverageBenchmarks) && check.coverageBenchmarks.length > 0) {
+          return check.coverageBenchmarks
+            .map((metric) => {
+              const value = Number.parseFloat(metric.value);
+              const threshold = Number.parseFloat(metric.threshold);
+              const meetsThreshold = typeof metric.meetsThreshold === 'boolean'
+                ? metric.meetsThreshold
+                : Number.isFinite(value) && Number.isFinite(threshold) && value >= threshold;
+
+              return {
+                label: metric.label,
+                value: `${metric.value}%`,
+                helper: `Target ${metric.threshold}% | ${meetsThreshold ? 'Pass' : 'Below target'}`,
+                colorClass: meetsThreshold ? 'cov-green' : 'cov-red',
+              };
+            })
+            .filter(Boolean);
+        }
+
+        if (!Array.isArray(check?.highlights)) {
           return [];
         }
 
@@ -606,15 +635,19 @@
 
             const pct = Number.parseFloat(metricValue);
             let colorClass = 'cov-red';
+            let helper = 'Low';
             if (pct >= 90) {
               colorClass = 'cov-green';
+              helper = 'Strong';
             } else if (pct >= 80) {
               colorClass = 'cov-amber';
+              helper = 'Watch';
             }
 
             return {
               label: metricLabel,
               value: metricValue,
+              helper,
               colorClass,
             };
           })
@@ -832,6 +865,7 @@
                    (metric) => `<div class="coverage-metric-box ${escapeHtml(metric.colorClass)}">
                      <p class="coverage-metric-label">${escapeHtml(metric.label)}</p>
                      <p class="coverage-metric-value">${escapeHtml(metric.value)}</p>
+                     ${metric.helper ? `<p class="coverage-metric-helper">${escapeHtml(metric.helper)}</p>` : ''}
                    </div>`,
                  )
                  .join('')}</div>`

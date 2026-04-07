@@ -24,8 +24,11 @@ export const sampleAccountOverrides: AccountOverrideConfig[] = [
     matching: {
       dateToleranceDays: 5,
       timingDifferenceDays: 21,
+      staleOutstandingCheckDays: 45,
       textSimilarityThreshold: 0.12,
       probableTextSimilarityThreshold: 0.65,
+      groupedCandidatePoolSize: 8,
+      groupedMatchMaxSize: 4,
       duplicateDateWindowDays: -1,
       duplicateSimilarityThreshold: 1,
     },
@@ -43,7 +46,10 @@ export const sampleAccountOverrides: AccountOverrideConfig[] = [
     matching: {
       dateToleranceDays: 5,
       timingDifferenceDays: 21,
+      staleOutstandingCheckDays: 45,
       probableTextSimilarityThreshold: 0.5,
+      groupedCandidatePoolSize: 6,
+      groupedMatchMaxSize: 3,
     },
   },
   {
@@ -51,6 +57,9 @@ export const sampleAccountOverrides: AccountOverrideConfig[] = [
     matching: {
       dateToleranceDays: 1,
       timingDifferenceDays: 3,
+      staleOutstandingCheckDays: 30,
+      groupedCandidatePoolSize: 4,
+      groupedMatchMaxSize: 2,
       duplicateDateWindowDays: 1,
     },
     reporting: {

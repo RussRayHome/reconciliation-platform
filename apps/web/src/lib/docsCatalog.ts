@@ -3,6 +3,7 @@ import architectureDoc from '../../../../docs/architecture.md?raw';
 import changelogDoc from '../../../../CHANGELOG.md?raw';
 import classMethodReferenceDoc from '../../../../docs/class-method-reference.md?raw';
 import developerSetupDoc from '../../../../docs/developer-setup.md?raw';
+import localDockerPlatformDoc from '../../../../docs/local-docker-platform.md?raw';
 import projectReadmeDoc from '../../../../README.md?raw';
 import reconciliationRulesDoc from '../../../../docs/reconciliation-rules.md?raw';
 import releaseDoc from '../../../../RELEASE.md?raw';
@@ -60,6 +61,16 @@ export const projectDocuments: ProjectDocument[] = [
     audience: 'Developers onboarding to the repo',
     pathLabel: 'docs/developer-setup.md',
     content: developerSetupDoc,
+  },
+  {
+    id: 'local-docker-platform',
+    title: 'Local Docker Platform',
+    category: 'Operations',
+    summary:
+      'Describes the hardened Docker Desktop topology, migration flow, health checks, and cleanup path.',
+    audience: 'Engineers operating the local production-like stack',
+    pathLabel: 'docs/local-docker-platform.md',
+    content: localDockerPlatformDoc,
   },
   {
     id: 'reconciliation-rules',

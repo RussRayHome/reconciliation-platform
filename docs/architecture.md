@@ -25,7 +25,7 @@ The business engine.
 
 - `parsers/`: workbook ingestion and dynamic column detection
 - `normalization/`: dates, amounts, references, text tokens, and fingerprints
-- `matching/`: duplicate detection, candidate scoring, layered reconciliation rules, and ambiguous-review handling
+- `matching/`: duplicate detection, candidate scoring, exact-match consumption, grouped reservation, and advisory review handling
 - `reporting/`: exception classification, reviewer observations, summary metrics, and chart data
 - `export/`: audit-ready workbook creation
 
@@ -36,7 +36,8 @@ The HTTP boundary.
 - Validates file uploads and accepted file types
 - Creates correlation IDs and structured logs
 - Resolves run configuration and calls shared reconciliation services
-- Stores runs in an in-memory repository
+- Persists lifecycle state to PostgreSQL when configured
+- Maintains a compatibility latest-run snapshot for restart-safe local reporting
 - Exposes health, reconciliation, summary, exception, workbook download, and developer-status endpoints
 - Caches developer-status results and keeps a short in-memory history of recent check runs
 
@@ -59,9 +60,9 @@ The runtime flow is:
 1. The browser uploads bank and QBO workbooks and collects run metadata such as account identifier, reconciliation frequency, and reconciliation label.
 2. The API validates upload type and size, creates a correlation ID, and resolves configuration from shared defaults plus account overrides.
 3. The parser ingests both workbooks in parallel and preserves row lineage.
-4. The core pipeline normalizes transactions, detects duplicates, generates candidate matches, classifies exceptions, builds summary metrics, and produces reviewer observations.
+4. The core pipeline normalizes transactions, detects duplicates, consumes exact matches, reserves grouped residual candidates, emits advisory non-exact review suggestions, classifies residual exceptions in stages, builds summary metrics, and produces reviewer observations.
 5. The exporter creates a multi-sheet workbook containing summary, charts, exception reporting, probable-match review, and normalized transaction views.
-6. The API stores the completed run in memory and returns structured JSON to the UI.
+6. The API persists lifecycle data durably when PostgreSQL is enabled and returns a lean report read model to the UI.
 
 The current user flow supports both `Monthly` and `Annual` reconciliation runs. Monthly runs use a month selector tied to the current year, while annual runs select from prior completed years.
 
@@ -87,15 +88,18 @@ The developer-status endpoint is intentionally operational rather than domain-fa
 
 Most reconciliation behavior is driven by the shared default configuration and optional account overrides.
 
-There is also a constrained provenance path for certain large `5703` workbook timing scenarios. Summary generation now stays anchored to final classified output instead of relying on a separate calibration path, and the remaining special handling is isolated inside the core reporting layer rather than spread across the web or API layers.
+The matcher-classifier handoff is intentionally staged. Exact matches are consumed inside the matcher. Non-exact one-to-one suggestions remain advisory, and grouped, timing, miscoding, stale, and missing classifications are finalized in the reporting layer against the residual pool.
+
+Grouped matching is currently still transitional rather than first-class. The matcher reserves grouped candidates to protect them from one-to-one advisory consumption, while the classifier re-derives grouped residual relationships as exception outputs. The planned target state is documented in `docs/first-class-grouped-matching.md`.
 
 ## Extensibility
 
 The current design supports future work without architectural churn:
 
 - `.csv` parsing alongside `.xlsx`
-- persistence for run history and reviewer decisions
+- PostgreSQL-backed read models for run history, summaries, exceptions, and reviewer decisions
 - reviewer approval workflows for probable matches
+- first-class grouped match results and grouped review workflows
 - account-specific rule packs
 - scheduled or batch reconciliation automation
 - parameterized golden-standard workbook comparison tooling

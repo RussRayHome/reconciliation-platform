@@ -44,6 +44,7 @@ export const runReconciliation = async (
   const matching = reconcileMatches(normalizedTransactions, input.config.matching);
   appendAuditEvent('reconciliation.match.completed', {
     matchResultCount: matching.matchResults.length,
+    groupedMatchResultCount: matching.groupedMatchResults.length,
     probableMatchCount: matching.probableMatches.length,
   });
 
@@ -95,10 +96,12 @@ export const runReconciliation = async (
   return {
     normalizedTransactions,
     matchResults: matching.matchResults,
+    groupedMatchResults: matching.groupedMatchResults,
     probableMatches: matching.probableMatches,
     exceptions: exceptionOutput.exceptions,
     summary,
     reviewerObservations: exceptionOutput.reviewerObservations,
+    reviewerDecisions: [],
     outputWorkbook,
     auditEvents,
   };

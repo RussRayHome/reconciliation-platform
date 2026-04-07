@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:test": "tsx src/index.ts",
-    "build": "tsup src/index.ts --format esm --out-dir dist",
+    "build": "tsup --config tsup.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@recon/config": "0.1.0",
     "@recon/core": "0.1.0",
     "@recon/domain": "0.1.0",
+    "@recon/persistence": "0.1.0",
     "cors": "^2.8.5",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",

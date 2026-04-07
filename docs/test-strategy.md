@@ -11,7 +11,7 @@ The tests are intended to protect accounting logic, workbook ingestion behavior,
 Located in shared packages and focused on deterministic business logic.
 
 - normalization of text, dates, and signed amounts
-- duplicate and reconciliation outcomes from fixture data
+- duplicate detection and classified reconciliation outcomes from fixture data
 - workbook export smoke coverage
 - performance smoke for a representative local workload
 
@@ -57,9 +57,18 @@ The current suite covers:
 - beginning-balance exclusion
 - duplicate detection
 - data-quality flagging
+- amount mismatch classification
+- date variance and timing-difference classification
+- stale outstanding check classification
+- likely miscoding classification
+- check-number and reference-number variance classification
+- ambiguous review classification
 - grouped split/combine residual classification
 - grouped deposit residual classification
+- grouped override behavior for larger residual pools
 - summary generation
+- exception category breakdown and counts-by-category alignment
+- rule trace, grouped counterpart, and lineage surfacing through export and API payloads
 - export workbook creation
 - API round-trip behavior
 - browser upload smoke path
@@ -86,9 +95,8 @@ Use it as a quick repository-health snapshot, not as a replacement for targeted 
 
 Recommended next regression additions:
 
-- account-specific overrides by account/year
-- check-number mismatch classification
-- reference-number mismatch classification
+- denser grouped-settlement competition scenarios where grouping, timing, miscoding, and advisory review suggestions overlap
+- reviewer-decision persistence once reviewed-state workflow is added
 - persistence-backed reviewer workflow
 
 ## Class and Method Documentation Coverage

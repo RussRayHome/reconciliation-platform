@@ -1,4 +1,4 @@
-import type { OutputWorkbook, ReconciliationRun } from '@recon/domain';
+import type { OutputWorkbook, ReconciliationRun, ReviewerDecision } from '@recon/domain';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -6,23 +6,48 @@ export interface RunRepository {
   save(run: ReconciliationRun): ReconciliationRun;
   findById(id: string): ReconciliationRun | undefined;
   findLatest(): ReconciliationRun | undefined;
+  saveReviewerDecision(runId: string, decision: ReviewerDecision): ReviewerDecision;
+  listReviewerDecisions(runId: string): ReviewerDecision[];
 }
 
 type PersistedOutputWorkbook = Omit<OutputWorkbook, 'binary'> & {
   binaryBase64: string;
 };
 
-type PersistedReconciliationRun = Omit<ReconciliationRun, 'outputWorkbook'> & {
+type PersistedReconciliationRun = Omit<
+  ReconciliationRun,
+  'rawRows' | 'normalizedTransactions' | 'matchResults' | 'auditEvents' | 'outputWorkbook'
+> & {
   outputWorkbook?: PersistedOutputWorkbook;
 };
 
 type RunRepositorySnapshot = {
-  version: 1;
+  version: 1 | 2;
   latestRun: PersistedReconciliationRun | null;
 };
 
-const serializeRun = (run: ReconciliationRun): PersistedReconciliationRun => ({
+const normalizeRun = (run: ReconciliationRun): ReconciliationRun => ({
   ...run,
+  groupedMatchResults: run.groupedMatchResults ?? [],
+  reviewerDecisions: run.reviewerDecisions ?? [],
+});
+
+const serializeRun = (run: ReconciliationRun): PersistedReconciliationRun => ({
+  id: run.id,
+  correlationId: run.correlationId,
+  accountIdentifier: run.accountIdentifier,
+  periodLabel: run.periodLabel,
+  reconciliationFrequency: run.reconciliationFrequency,
+  status: run.status,
+  startedAt: run.startedAt,
+  completedAt: run.completedAt,
+  sourceFiles: run.sourceFiles,
+  groupedMatchResults: run.groupedMatchResults ?? [],
+  probableMatches: run.probableMatches,
+  exceptions: run.exceptions,
+  summary: run.summary,
+  reviewerObservations: run.reviewerObservations,
+  reviewerDecisions: run.reviewerDecisions ?? [],
   outputWorkbook: run.outputWorkbook
     ? {
         fileName: run.outputWorkbook.fileName,
@@ -33,17 +58,22 @@ const serializeRun = (run: ReconciliationRun): PersistedReconciliationRun => ({
     : undefined,
 });
 
-const deserializeRun = (run: PersistedReconciliationRun): ReconciliationRun => ({
-  ...run,
-  outputWorkbook: run.outputWorkbook
-    ? {
-        fileName: run.outputWorkbook.fileName,
-        generatedAt: run.outputWorkbook.generatedAt,
-        tabNames: run.outputWorkbook.tabNames,
-        binary: Uint8Array.from(Buffer.from(run.outputWorkbook.binaryBase64, 'base64')),
-      }
-    : undefined,
-});
+const deserializeRun = (run: PersistedReconciliationRun): ReconciliationRun =>
+  normalizeRun({
+    ...run,
+    rawRows: [],
+    normalizedTransactions: [],
+    matchResults: [],
+    auditEvents: [],
+    outputWorkbook: run.outputWorkbook
+      ? {
+          fileName: run.outputWorkbook.fileName,
+          generatedAt: run.outputWorkbook.generatedAt,
+          tabNames: run.outputWorkbook.tabNames,
+          binary: Uint8Array.from(Buffer.from(run.outputWorkbook.binaryBase64, 'base64')),
+        }
+      : undefined,
+  });
 
 /**
  * Stores completed reconciliation runs in process memory for local development
@@ -63,9 +93,10 @@ export class InMemoryRunRepository implements RunRepository {
    * @returns The same run object after it has been stored.
    */
   save(run: ReconciliationRun): ReconciliationRun {
-    this.runs.set(run.id, run);
-    this.latestRunId = run.id;
-    return run;
+    const normalizedRun = normalizeRun(run);
+    this.runs.set(normalizedRun.id, normalizedRun);
+    this.latestRunId = normalizedRun.id;
+    return normalizedRun;
   }
 
   /**
@@ -89,6 +120,42 @@ export class InMemoryRunRepository implements RunRepository {
     }
 
     return this.runs.get(this.latestRunId);
+  }
+
+  saveReviewerDecision(runId: string, decision: ReviewerDecision): ReviewerDecision {
+    const run = this.findById(runId);
+
+    if (!run) {
+      throw new Error(`Reconciliation run not found: ${runId}`);
+    }
+
+    const existingDecision = run.reviewerDecisions.find(
+      (item) => item.targetType === decision.targetType && item.targetId === decision.targetId,
+    );
+    const nextDecision = existingDecision
+      ? {
+          ...decision,
+          id: existingDecision.id,
+          createdAt: existingDecision.createdAt,
+        }
+      : decision;
+
+    const nextRun: ReconciliationRun = {
+      ...run,
+      reviewerDecisions: [
+        ...run.reviewerDecisions.filter(
+          (item) => !(item.targetType === nextDecision.targetType && item.targetId === nextDecision.targetId),
+        ),
+        nextDecision,
+      ],
+    };
+
+    this.save(nextRun);
+    return nextDecision;
+  }
+
+  listReviewerDecisions(runId: string): ReviewerDecision[] {
+    return this.findById(runId)?.reviewerDecisions ?? [];
   }
 }
 
@@ -150,7 +217,7 @@ export class FileBackedRunRepository extends InMemoryRunRepository {
     mkdirSync(directoryPath, { recursive: true });
 
     const snapshot: RunRepositorySnapshot = {
-      version: 1,
+      version: 2,
       latestRun: serializeRun(run),
     };
 

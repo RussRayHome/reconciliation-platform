@@ -1,9 +1,6 @@
-import type { OutputWorkbook, ReconciliationRun } from '@recon/domain';
+import type { ReconciliationRunReport } from '@recon/domain';
 
-export interface ReconciliationRunResponse
-  extends Omit<ReconciliationRun, 'outputWorkbook'> {
-  outputWorkbook?: Omit<OutputWorkbook, 'binary'>;
-}
+export type ReconciliationRunResponse = ReconciliationRunReport;
 
 export interface RunReconciliationPayload {
   bankFile: File;

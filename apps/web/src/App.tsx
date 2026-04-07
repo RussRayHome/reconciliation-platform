@@ -1,11 +1,15 @@
 import './styles.css';
+import '@recon/ui/styles.css';
 
 import {
   type ChangeEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type SetStateAction,
 } from 'react';
 import { errorCategories, errorCategoryDisplayNames } from '@recon/domain';
@@ -55,7 +59,7 @@ type CategorySummaryRow = {
   amount: number;
 };
 
-const LAST_SUCCESSFUL_RUN_STORAGE_KEY = 'reconciliation-platform:last-successful-run';
+const LAST_SUCCESSFUL_RUN_STORAGE_KEY = 'reconciliation-platform:latest-report-run';
 
 const monthsWithinYear = [
   'January',
@@ -435,6 +439,8 @@ function ReconciliationApp({
   const [activeReport, setActiveReport] = useState<ReportView>('run-summary');
   const [persistedRun, setPersistedRun] = useState<RunData | undefined>(() => loadPersistedRun());
   const [hasAttemptedBackendReportHydration, setHasAttemptedBackendReportHydration] = useState(false);
+  const [isHydratingLatestBackendReport, setIsHydratingLatestBackendReport] = useState(false);
+  const [latestBackendReportError, setLatestBackendReportError] = useState<string | null>(null);
   const [periodLabel, setPeriodLabel] = useState(
     buildDefaultPeriodLabel('Monthly', defaultMonth, annualYear, currentYear),
   );
@@ -466,6 +472,8 @@ function ReconciliationApp({
       persistRun(run);
       setActiveTab('exceptions');
       setActiveReport('run-summary');
+      setLatestBackendReportError(null);
+      setIsHydratingLatestBackendReport(false);
     }
   }, [run]);
 
@@ -475,13 +483,21 @@ function ReconciliationApp({
     }
 
     setHasAttemptedBackendReportHydration(true);
+    setIsHydratingLatestBackendReport(true);
+    setLatestBackendReportError(null);
     void getLatestReconciliationRunRequest()
       .then((latestRun) => {
         setPersistedRun(latestRun);
         persistRun(latestRun);
+        setLatestBackendReportError(null);
       })
-      .catch(() => {
-        // Leave the empty state in place when the backend has no stored run.
+      .catch((error: unknown) => {
+        setLatestBackendReportError(
+          error instanceof Error ? error.message : 'Unable to load the latest reconciliation run.',
+        );
+      })
+      .finally(() => {
+        setIsHydratingLatestBackendReport(false);
       });
   };
 
@@ -593,7 +609,7 @@ function ReconciliationApp({
       return;
     }
 
-    void reconciliation.mutateAsync({
+    reconciliation.mutate({
       bankFile,
       qboFile,
       accountIdentifier,
@@ -677,6 +693,8 @@ function ReconciliationApp({
             <ReportsSection
               run={reportRun}
               activeReport={activeReport}
+              isHydrating={isHydratingLatestBackendReport}
+              loadError={latestBackendReportError}
               onSelectReport={setActiveReport}
               onExportJson={() => {
                 if (!reportRun) {
@@ -787,57 +805,78 @@ function TabNavigation({
   reportCount: number;
   onSelectTab: (tab: AppTab) => void;
 }>) {
+  const tabs: Array<{ id: AppTab; label: string; description: string }> = [
+    { id: 'upload', label: 'Upload', description: 'Source files and run controls' },
+    { id: 'rules', label: 'Rules', description: `${rulesCatalog.length} documented rules` },
+    { id: 'exceptions', label: 'Exceptions', description: `${exceptionCount} current items` },
+    { id: 'reports', label: 'Reports', description: `${reportCount} available views` },
+  ];
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
+
+  const focusAndSelectTab = (index: number): void => {
+    const boundedIndex = (index + tabs.length) % tabs.length;
+    const nextTab = tabs[boundedIndex];
+
+    if (!nextTab) {
+      return;
+    }
+
+    onSelectTab(nextTab.id);
+    tabRefs.current[boundedIndex]?.focus();
+  };
+
+  const handleTabKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ): void => {
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        event.preventDefault();
+        focusAndSelectTab(index + 1);
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        event.preventDefault();
+        focusAndSelectTab(index - 1);
+        break;
+      case 'Home':
+        event.preventDefault();
+        focusAndSelectTab(0);
+        break;
+      case 'End':
+        event.preventDefault();
+        focusAndSelectTab(tabs.length - 1);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <section className="tab-shell" aria-label="Application sections">
-      <div className="tab-list" role="tablist" aria-label="Application tabs">
-        <button
-          type="button"
-          role="tab"
-          id="tab-upload"
-          className={activeTab === 'upload' ? 'tab-button tab-button--active' : 'tab-button'}
-          aria-selected={activeTab === 'upload'}
-          aria-controls="tab-panel-upload"
-          onClick={() => onSelectTab('upload')}
-        >
-          <span>Upload</span>
-          <small>Source files and run controls</small>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-rules"
-          className={activeTab === 'rules' ? 'tab-button tab-button--active' : 'tab-button'}
-          aria-selected={activeTab === 'rules'}
-          aria-controls="tab-panel-rules"
-          onClick={() => onSelectTab('rules')}
-        >
-          <span>Rules</span>
-          <small>{rulesCatalog.length} documented rules</small>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-exceptions"
-          className={activeTab === 'exceptions' ? 'tab-button tab-button--active' : 'tab-button'}
-          aria-selected={activeTab === 'exceptions'}
-          aria-controls="tab-panel-exceptions"
-          onClick={() => onSelectTab('exceptions')}
-        >
-          <span>Exceptions</span>
-          <small>{exceptionCount} current items</small>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-reports"
-          className={activeTab === 'reports' ? 'tab-button tab-button--active' : 'tab-button'}
-          aria-selected={activeTab === 'reports'}
-          aria-controls="tab-panel-reports"
-          onClick={() => onSelectTab('reports')}
-        >
-          <span>Reports</span>
-          <small>{reportCount} available views</small>
-        </button>
+      <div className="tab-list" role="tablist" aria-label="Application tabs" aria-orientation="horizontal">
+        {tabs.map((tab, index) => (
+          <button
+            key={tab.id}
+            ref={(element) => {
+              tabRefs.current[index] = element;
+            }}
+            type="button"
+            role="tab"
+            id={`tab-${tab.id}`}
+            className={activeTab === tab.id ? 'tab-button tab-button--active' : 'tab-button'}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`tab-panel-${tab.id}`}
+            tabIndex={activeIndex === index ? 0 : -1}
+            onClick={() => onSelectTab(tab.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            <span>{tab.label}</span>
+            <small>{tab.description}</small>
+          </button>
+        ))}
       </div>
     </section>
   );
@@ -910,10 +949,10 @@ function SummaryReportContent({
           helper="Malformed or zero-amount rows"
         />
         <StatCard
-          label="Unresolved exposure"
+          label="Exception exposure"
           value={run.summary.unresolvedExposure.toFixed(2)}
           tone="critical"
-          helper="Absolute exception dollars"
+          helper="Absolute dollars across classified exceptions"
         />
       </section>
       <div className="summary-badges">
@@ -1045,11 +1084,11 @@ function ExportArtifactsContent({
         <h3>{`${run.id}.json`}</h3>
         <p>
           Structured reconciliation output including summary metrics, probable
-          matches, exceptions, and audit events.
+          matches, grouped review artifacts, exceptions, and reviewer decisions.
         </p>
         <div className="rule-card__meta">
           <span>Includes</span>
-          <strong>Summary, exceptions, matches, audit trail</strong>
+          <strong>Summary, grouped matches, exceptions, reviewer decisions</strong>
         </div>
         <button
           type="button"
@@ -1066,12 +1105,16 @@ function ExportArtifactsContent({
 function ReportsSection({
   run,
   activeReport,
+  isHydrating,
+  loadError,
   onSelectReport,
   onDownloadWorkbook,
   onExportJson,
 }: Readonly<{
   run: RunData | undefined;
   activeReport: ReportView;
+  isHydrating: boolean;
+  loadError: string | null;
   onSelectReport: (report: ReportView) => void;
   onDownloadWorkbook: () => void;
   onExportJson: () => void;
@@ -1083,6 +1126,62 @@ function ReportsSection({
   };
   const selectedReport =
     reportCatalog.find((report) => report.id === activeReport) ?? defaultReport;
+  let reportContent: ReactNode;
+
+  if (run) {
+    reportContent = (
+      <>
+        {activeReport === 'run-summary' ? <SummaryReportContent run={run} /> : null}
+        {activeReport === 'probable-match-review' ? (
+          <ProbableMatchesContent probableMatches={run.probableMatches} />
+        ) : null}
+        {activeReport === 'exception-report' ? (
+          <ExceptionReportContent
+            run={run}
+            onDownloadWorkbook={onDownloadWorkbook}
+            onExportJson={onExportJson}
+          />
+        ) : null}
+        {activeReport === 'export-artifacts' ? (
+          <ExportArtifactsContent
+            run={run}
+            onDownloadWorkbook={onDownloadWorkbook}
+            onExportJson={onExportJson}
+          />
+        ) : null}
+      </>
+    );
+  } else if (isHydrating) {
+    reportContent = (
+      <div className="empty-state-card" role="status" aria-live="polite">
+        <span className="eyebrow">Loading latest run</span>
+        <h3>Loading report output</h3>
+        <p>
+          Retrieving the most recent reconciliation run from the backend so
+          the selected report can render with saved data.
+        </p>
+      </div>
+    );
+  } else if (loadError) {
+    reportContent = (
+      <div className="empty-state-card" role="alert">
+        <span className="eyebrow">Unable to load reports</span>
+        <h3>Latest report output could not be loaded</h3>
+        <p>{loadError}</p>
+      </div>
+    );
+  } else {
+    reportContent = (
+      <div className="empty-state-card">
+        <span className="eyebrow">Awaiting run</span>
+        <h3>No report output yet</h3>
+        <p>
+          Run a reconciliation from the Upload tab, then select a report to
+          display the generated results here.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <section id="tab-panel-reports" role="tabpanel" aria-labelledby="tab-reports">
@@ -1109,44 +1208,13 @@ function ReportsSection({
             ))}
           </nav>
 
-          <section className="reports-display" aria-live="polite">
+          <section className="reports-display" aria-live="polite" aria-busy={isHydrating}>
             <div className="reports-display__header">
               <span className="eyebrow">Selected report</span>
               <h3>{selectedReport.name}</h3>
               <p>{selectedReport.description}</p>
             </div>
-
-            {run ? (
-              <>
-                {activeReport === 'run-summary' ? <SummaryReportContent run={run} /> : null}
-                {activeReport === 'probable-match-review' ? (
-                  <ProbableMatchesContent probableMatches={run.probableMatches} />
-                ) : null}
-                {activeReport === 'exception-report' ? (
-                  <ExceptionReportContent
-                    run={run}
-                    onDownloadWorkbook={onDownloadWorkbook}
-                    onExportJson={onExportJson}
-                  />
-                ) : null}
-                {activeReport === 'export-artifacts' ? (
-                  <ExportArtifactsContent
-                    run={run}
-                    onDownloadWorkbook={onDownloadWorkbook}
-                    onExportJson={onExportJson}
-                  />
-                ) : null}
-              </>
-            ) : (
-              <div className="empty-state-card">
-                <span className="eyebrow">Awaiting run</span>
-                <h3>No report output yet</h3>
-                <p>
-                  Run a reconciliation from the Upload tab, then select a report to
-                  display the generated results here.
-                </p>
-              </div>
-            )}
+            {reportContent}
           </section>
         </div>
       </SectionCard>
@@ -1269,6 +1337,7 @@ function SourceUploadSection({
         <form
           id="source-upload-form"
           className="upload-form"
+          aria-busy={reconciliation.isPending}
           onSubmit={handleSubmit}
         >
         <HelpedFileField
@@ -1376,13 +1445,19 @@ function SourceUploadSection({
           ) : null}
         </div>
 
+        {reconciliation.isPending ? (
+          <p className="status-banner" role="status" aria-live="polite">
+            Reconciliation is running. Parsing, matching, and report generation are in progress.
+          </p>
+        ) : null}
+
         {isLabelMissing ? (
           <p id={reconciliationLabelErrorId} className="error-banner" role="alert">
             Reconciliation label is required before running.
           </p>
         ) : null}
         {reconciliation.error ? (
-          <p className="error-banner">{reconciliation.error.message}</p>
+          <p className="error-banner" role="alert">{reconciliation.error.message}</p>
         ) : null}
         </form>
       </SectionCard>
@@ -1536,10 +1611,10 @@ function RunResultsSection({
           helper="Malformed or zero-amount rows"
         />
         <StatCard
-          label="Unresolved exposure"
+          label="Exception exposure"
           value={run.summary.unresolvedExposure.toFixed(2)}
           tone="critical"
-          helper="Absolute exception dollars"
+          helper="Absolute dollars across classified exceptions"
         />
       </section>
 

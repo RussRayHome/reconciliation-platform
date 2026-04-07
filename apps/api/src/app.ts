@@ -1,3 +1,18 @@
+import type {
+  ErrorCategory,
+  ReconciliationRun,
+  ReconciliationRunReport,
+  ReviewerDecision,
+  ReviewerDecisionOutcome,
+  ReviewerDecisionTargetType,
+} from '@recon/domain';
+import {
+  computeSha256Hex,
+  type PaginatedExceptionsResult,
+  type PostgresReconciliationLifecycleStore,
+  type PostgresReconciliationReadModelStore,
+} from '@recon/persistence';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   getRuntimeSummary,
   listExceptions,
@@ -10,21 +25,21 @@ import {
 } from './services/runtimeDiagnostics';
 
 import { InMemoryRunRepository } from './services/runRepository';
-import type { ReconciliationRun } from '@recon/domain';
 import cors from 'cors';
+import { errorCategories } from '@recon/domain';
 import { execFile } from 'node:child_process';
 import { executeReconciliation } from './services/reconciliationService';
 import express from 'express';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
 import multer from 'multer';
-import path from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import pinoHttp from 'pino-http';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { randomUUID } from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const gitExecutable = 'git';
 
 const reconciliationFrequencies = new Set(['Monthly', 'Annual'] as const);
@@ -39,12 +54,307 @@ type UploadFileMap = {
   qboFile?: Express.Multer.File[];
 };
 
+type ReviewerDecisionRequestBody = {
+  targetType?: unknown;
+  targetId?: unknown;
+  outcome?: unknown;
+  finalCategory?: unknown;
+  notes?: unknown;
+  reviewerId?: unknown;
+  reviewerName?: unknown;
+};
+
+type ReconciliationRequestInput = {
+  accountIdentifier?: string;
+  periodLabel?: string;
+  reconciliationFrequency?: 'Monthly' | 'Annual';
+};
+
+type ReconciliationUploadFiles = {
+  bankFile: Express.Multer.File;
+  qboFile: Express.Multer.File;
+};
+
+type LifecycleRegistrationContext = {
+  runId: string;
+  bankSourceFileId: string;
+  qboSourceFileId: string;
+};
+
+type ReconciliationWorkflowResult = ReconciliationRequestInput & {
+  persistenceJobId: string;
+  run: ReconciliationRun;
+};
+
+const reviewerDecisionTargetTypes = new Set<ReviewerDecisionTargetType>([
+  'ProbableMatch',
+  'AmbiguousReview',
+  'ExceptionItem',
+]);
+
+const reviewerDecisionOutcomes = new Set<ReviewerDecisionOutcome>([
+  'ApprovedMatch',
+  'RejectedMatch',
+  'ConfirmedException',
+  'ReclassifiedException',
+]);
+
+const isErrorCategory = (value: unknown): value is ErrorCategory =>
+  typeof value === 'string' && errorCategories.includes(value as ErrorCategory);
+
+const findDecisionTarget = (
+  run: Pick<ReconciliationRunReport, 'exceptions' | 'probableMatches'>,
+  targetType: ReviewerDecisionTargetType,
+  targetId: string,
+): boolean => {
+  if (targetType === 'ExceptionItem') {
+    return run.exceptions.some((item) => item.id === targetId);
+  }
+
+  return run.probableMatches.some(
+    (item) =>
+      item.id === targetId &&
+      ((targetType === 'ProbableMatch' && item.disposition === 'ProbableMatch') ||
+        (targetType === 'AmbiguousReview' && item.disposition === 'AmbiguousReview')),
+  );
+};
+
+const isOutcomeAllowedForTarget = (
+  targetType: ReviewerDecisionTargetType,
+  outcome: ReviewerDecisionOutcome,
+): boolean => {
+  if (targetType === 'ExceptionItem') {
+    return outcome === 'ConfirmedException' || outcome === 'ReclassifiedException';
+  }
+
+  return outcome === 'ApprovedMatch' || outcome === 'RejectedMatch';
+};
+
+const cleanOptionalText = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
 const resolveCorrelationId = (value: unknown): string => {
   if (typeof value === 'string' || typeof value === 'number') {
     return String(value);
   }
 
   return randomUUID();
+};
+
+const resolveSourceFormat = (fileName: string): 'xlsx' | 'csv' =>
+  fileName.toLowerCase().endsWith('.csv') ? 'csv' : 'xlsx';
+
+const buildInputFingerprint = (input: {
+  accountIdentifier?: string;
+  reconciliationFrequency?: 'Monthly' | 'Annual';
+  periodLabel?: string;
+  bankSha256: string;
+  qboSha256: string;
+}): string =>
+  createHash('sha256')
+    .update(
+      JSON.stringify({
+        accountIdentifier: input.accountIdentifier ?? null,
+        reconciliationFrequency: input.reconciliationFrequency ?? null,
+        periodLabel: input.periodLabel ?? null,
+        bankSha256: input.bankSha256,
+        qboSha256: input.qboSha256,
+      }),
+    )
+    .digest('hex');
+
+const getUploadedReconciliationFiles = (files: UploadFileMap): ReconciliationUploadFiles | null => {
+  const bankFile = files.bankFile?.[0];
+  const qboFile = files.qboFile?.[0];
+
+  if (!bankFile || !qboFile) {
+    return null;
+  }
+
+  return { bankFile, qboFile };
+};
+
+const parseReconciliationRequestInput = (
+  body: Record<string, unknown>,
+): ReconciliationRequestInput => ({
+  accountIdentifier:
+    typeof body.accountIdentifier === 'string' ? body.accountIdentifier : undefined,
+  periodLabel: typeof body.periodLabel === 'string' ? body.periodLabel : undefined,
+  reconciliationFrequency:
+    typeof body.reconciliationFrequency === 'string' &&
+    reconciliationFrequencies.has(body.reconciliationFrequency as 'Monthly' | 'Annual')
+      ? (body.reconciliationFrequency as 'Monthly' | 'Annual')
+      : undefined,
+});
+
+const registerLifecycleJob = async (
+  lifecycleStore: PostgresReconciliationLifecycleStore | undefined,
+  correlationId: string,
+  input: ReconciliationRequestInput,
+  files: ReconciliationUploadFiles,
+): Promise<LifecycleRegistrationContext> => {
+  const runId = randomUUID();
+  const bankSourceFileId = randomUUID();
+  const qboSourceFileId = randomUUID();
+
+  if (!lifecycleStore) {
+    return { runId, bankSourceFileId, qboSourceFileId };
+  }
+
+  const startedAt = new Date().toISOString();
+  const bankSha256 = computeSha256Hex(files.bankFile.buffer);
+  const qboSha256 = computeSha256Hex(files.qboFile.buffer);
+
+  await lifecycleStore.createJob({
+    jobId: runId,
+    correlationId,
+    startedAt,
+    rulepackVersion: '2026-04-06',
+    accountIdentifier: input.accountIdentifier,
+    periodLabel: input.periodLabel,
+    reconciliationFrequency: input.reconciliationFrequency,
+    inputFingerprint: buildInputFingerprint({
+      accountIdentifier: input.accountIdentifier,
+      reconciliationFrequency: input.reconciliationFrequency,
+      periodLabel: input.periodLabel,
+      bankSha256,
+      qboSha256,
+    }),
+    sourceFiles: [
+      {
+        id: bankSourceFileId,
+        sourceSystem: 'bank',
+        sourceFormat: resolveSourceFormat(files.bankFile.originalname),
+        fileName: files.bankFile.originalname,
+        mimeType: files.bankFile.mimetype,
+        sizeBytes: files.bankFile.size,
+        sha256: bankSha256,
+        uploadedAt: startedAt,
+      },
+      {
+        id: qboSourceFileId,
+        sourceSystem: 'qbo',
+        sourceFormat: resolveSourceFormat(files.qboFile.originalname),
+        fileName: files.qboFile.originalname,
+        mimeType: files.qboFile.mimetype,
+        sizeBytes: files.qboFile.size,
+        sha256: qboSha256,
+        uploadedAt: startedAt,
+      },
+    ],
+  });
+
+  return { runId, bankSourceFileId, qboSourceFileId };
+};
+
+const runReconciliationWorkflow = async (input: {
+  body: Record<string, unknown>;
+  files: ReconciliationUploadFiles;
+  requestId: unknown;
+  requestLog: express.Request['log'];
+  repository: InMemoryRunRepository;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+}): Promise<ReconciliationWorkflowResult> => {
+  const { accountIdentifier, periodLabel, reconciliationFrequency } =
+    parseReconciliationRequestInput(input.body);
+  const correlationId = resolveCorrelationId(input.requestId);
+  const lifecycleContext = await registerLifecycleJob(
+    input.lifecycleStore,
+    correlationId,
+    {
+      accountIdentifier,
+      periodLabel,
+      reconciliationFrequency,
+    },
+    input.files,
+  );
+
+  input.requestLog.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
+
+  const run = await executeReconciliation({
+    correlationId,
+    runId: lifecycleContext.runId,
+    lifecycleStore: input.lifecycleStore,
+    sourceFileIds: {
+      bank: lifecycleContext.bankSourceFileId,
+      qbo: lifecycleContext.qboSourceFileId,
+    },
+    bankFile: input.files.bankFile,
+    qboFile: input.files.qboFile,
+    accountIdentifier,
+    reconciliationFrequency,
+    periodLabel,
+  });
+
+  input.repository.save(run);
+  input.requestLog.info({
+    action: 'reconciliation.run.completed',
+    runId: run.id,
+    exceptions: run.exceptions.length,
+  });
+
+  return {
+    accountIdentifier,
+    periodLabel,
+    reconciliationFrequency,
+    persistenceJobId: lifecycleContext.runId,
+    run,
+  };
+};
+
+const recordSuccessfulReconciliationRun = (input: {
+  requestId: unknown;
+  started: number;
+  result: ReconciliationWorkflowResult;
+}): void => {
+  recordReconciliationRun({
+    timestamp: new Date().toISOString(),
+    status: 'Succeeded',
+    correlationId: resolveCorrelationId(input.requestId),
+    runId: input.result.run.id,
+    accountIdentifier: input.result.accountIdentifier,
+    reconciliationFrequency: input.result.reconciliationFrequency,
+    periodLabel: input.result.periodLabel,
+    durationMs: Date.now() - input.started,
+    exceptionCount: input.result.run.exceptions.length,
+  });
+};
+
+const handleFailedReconciliationRun = async (input: {
+  requestId: unknown;
+  requestBody: Record<string, unknown>;
+  started: number;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+  persistenceJobId?: string;
+  error: unknown;
+}): Promise<void> => {
+  if (input.lifecycleStore && input.persistenceJobId) {
+    await input.lifecycleStore.markFailed({
+      jobId: input.persistenceJobId,
+      failedAt: new Date().toISOString(),
+      errorMessage:
+        input.error instanceof Error ? input.error.message : 'Unexpected reconciliation failure',
+    }).catch(() => undefined);
+  }
+
+  const requestInput = parseReconciliationRequestInput(input.requestBody);
+  recordReconciliationRun({
+    timestamp: new Date().toISOString(),
+    status: 'Failed',
+    correlationId: resolveCorrelationId(input.requestId),
+    accountIdentifier: requestInput.accountIdentifier,
+    reconciliationFrequency: requestInput.reconciliationFrequency,
+    periodLabel: requestInput.periodLabel,
+    durationMs: Date.now() - input.started,
+    failureReason:
+      input.error instanceof Error ? input.error.message : 'Unexpected reconciliation failure',
+  });
 };
 
 const createUploadMiddleware = (maxUploadMb: number) =>
@@ -63,8 +373,22 @@ const createUploadMiddleware = (maxUploadMb: number) =>
     },
   });
 
-const sanitizeRun = (run: ReconciliationRun) => ({
-  ...run,
+const sanitizeRun = (run: ReconciliationRun): ReconciliationRunReport => ({
+  id: run.id,
+  correlationId: run.correlationId,
+  accountIdentifier: run.accountIdentifier,
+  periodLabel: run.periodLabel,
+  reconciliationFrequency: run.reconciliationFrequency,
+  status: run.status,
+  startedAt: run.startedAt,
+  completedAt: run.completedAt,
+  sourceFiles: run.sourceFiles,
+  groupedMatchResults: run.groupedMatchResults,
+  probableMatches: run.probableMatches,
+  exceptions: run.exceptions,
+  summary: run.summary,
+  reviewerObservations: run.reviewerObservations,
+  reviewerDecisions: run.reviewerDecisions,
   outputWorkbook: run.outputWorkbook
     ? {
         fileName: run.outputWorkbook.fileName,
@@ -93,6 +417,15 @@ const parseLimit = (value: unknown, defaultValue: number, max = 50): number => {
   }
 
   return Math.min(Math.trunc(parsed), max);
+};
+
+const parseOffset = (value: unknown, defaultValue = 0): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return defaultValue;
+  }
+
+  return Math.trunc(parsed);
 };
 
 const isDeveloperDiagnosticsPath = (value: string): boolean =>
@@ -185,6 +518,7 @@ type DeveloperCheck = {
   passedCount?: number;
   failedCount?: number;
   totalCount?: number;
+  coverageBenchmarks?: CoverageBenchmark[];
 };
 
 type TestBreakdown = {
@@ -318,6 +652,50 @@ type CoverageMetrics = {
   lines: string;
 };
 
+const coverageSummaryPath = join(repoRoot, 'coverage', 'coverage-summary.json');
+
+const readCoverageSummaryMetrics = (): CoverageMetrics | null => {
+  if (!existsSync(coverageSummaryPath)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(readFileSync(coverageSummaryPath, 'utf8')) as {
+      total?: {
+        statements?: { pct?: number };
+        branches?: { pct?: number };
+        functions?: { pct?: number };
+        lines?: { pct?: number };
+      };
+    };
+    const total = payload.total;
+
+    if (!total) {
+      return null;
+    }
+
+    const metrics = {
+      statements: total.statements?.pct,
+      branches: total.branches?.pct,
+      functions: total.functions?.pct,
+      lines: total.lines?.pct,
+    };
+
+    if (Object.values(metrics).some((value) => typeof value !== 'number' || Number.isNaN(value))) {
+      return null;
+    }
+
+    return {
+      statements: String(metrics.statements),
+      branches: String(metrics.branches),
+      functions: String(metrics.functions),
+      lines: String(metrics.lines),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const parseCoverageMetrics = (output: string): CoverageMetrics | null => {
   const clean = stripAnsi(output);
   const allFilesMatch = /All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/i.exec(
@@ -337,7 +715,7 @@ const parseCoverageMetrics = (output: string): CoverageMetrics | null => {
 };
 
 const summarizeCoverageOutput = (stdout: string): string => {
-  const metrics = parseCoverageMetrics(stdout);
+  const metrics = parseCoverageMetrics(stdout) ?? readCoverageSummaryMetrics();
   if (!metrics) {
     return 'Coverage run completed';
   }
@@ -345,8 +723,25 @@ const summarizeCoverageOutput = (stdout: string): string => {
   return `Coverage S/B/F/L: S ${metrics.statements}% | B ${metrics.branches}% | F ${metrics.functions}% | L ${metrics.lines}%`;
 };
 
+type CoverageBenchmarkKey = 'S' | 'B' | 'F' | 'L';
+
+type CoverageBenchmark = {
+  key: CoverageBenchmarkKey;
+  label: string;
+  value: string;
+  threshold: string;
+  meetsThreshold: boolean;
+};
+
+const coverageThresholds: Record<CoverageBenchmarkKey, number> = {
+  S: 40,
+  B: 30,
+  F: 40,
+  L: 40,
+};
+
 const parseCoverageHighlights = (output: string): string[] => {
-  const metrics = parseCoverageMetrics(output);
+  const metrics = parseCoverageMetrics(output) ?? readCoverageSummaryMetrics();
   if (!metrics) {
     return [];
   }
@@ -357,6 +752,33 @@ const parseCoverageHighlights = (output: string): string[] => {
     `F: ${metrics.functions}%`,
     `L: ${metrics.lines}%`,
   ];
+};
+
+const buildCoverageBenchmarks = (output: string): CoverageBenchmark[] | undefined => {
+  const metrics = parseCoverageMetrics(output) ?? readCoverageSummaryMetrics();
+  if (!metrics) {
+    return undefined;
+  }
+
+  const items: Array<{ key: CoverageBenchmarkKey; label: string; value: string }> = [
+    { key: 'S', label: 'Statements', value: metrics.statements },
+    { key: 'B', label: 'Branches', value: metrics.branches },
+    { key: 'F', label: 'Functions', value: metrics.functions },
+    { key: 'L', label: 'Lines', value: metrics.lines },
+  ];
+
+  return items.map((item) => {
+    const threshold = coverageThresholds[item.key];
+    const score = Number.parseFloat(item.value);
+
+    return {
+      key: item.key,
+      label: item.label,
+      value: item.value,
+      threshold: String(threshold),
+      meetsThreshold: Number.isFinite(score) && score >= threshold,
+    };
+  });
 };
 
 const parseAuditSummary = (output: string): string => {
@@ -601,7 +1023,17 @@ const collectDeveloperStatus = async (): Promise<DeveloperStatusPayload> => {
     ),
     runDeveloperCheck('Static analysis (lint)', ['run', 'lint'], (stdout) => summarizeLintOutput(stdout), undefined, 240000, () => ({ areaLabel: 'Smells' })),
     runDeveloperCheck('Static analysis (typecheck)', ['run', 'typecheck'], () => summarizeTypecheckOutput(), undefined, 240000, () => ({ areaLabel: 'Types' })),
-    runDeveloperCheck('Coverage', ['run', 'coverage'], (stdout) => summarizeCoverageOutput(stdout), parseCoverageHighlights, 420000, () => ({ areaLabel: 'Coverage' })),
+    runDeveloperCheck(
+      'Coverage',
+      ['run', 'coverage'],
+      (stdout) => summarizeCoverageOutput(stdout),
+      parseCoverageHighlights,
+      420000,
+      (output) => ({
+        areaLabel: 'Coverage',
+        coverageBenchmarks: buildCoverageBenchmarks(output),
+      }),
+    ),
     runDeveloperCheck('Security vulnerabilities', ['audit', '--json'], (stdout, stderr) => parseAuditSummary(stdout || stderr), parseSecurityHighlights, 300000, () => ({ areaLabel: 'Security' })),
   ]);
 
@@ -671,11 +1103,16 @@ const getDeveloperStatus = async (
  * retrieve completed reconciliation runs.
  * @returns Configured Express application instance.
  */
-export const createApp = (repository = new InMemoryRunRepository()) => {
+export const createApp = (
+  repository = new InMemoryRunRepository(),
+  lifecycleStore?: PostgresReconciliationLifecycleStore,
+  readModelStore?: PostgresReconciliationReadModelStore,
+) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
   const developerDiagnosticsEnabled = isDeveloperDiagnosticsEnabled();
 
+  app.set('trust proxy', true);
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
   app.use(
@@ -729,6 +1166,94 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
 
     next();
   });
+
+  const loadLatestRunReport = async (): Promise<ReconciliationRunReport | undefined> => {
+    const persistedRun = readModelStore
+      ? await readModelStore.findLatestRunReport()
+      : undefined;
+
+    if (persistedRun) {
+      return persistedRun;
+    }
+
+    const run = repository.findLatest();
+    return run ? sanitizeRun(run) : undefined;
+  };
+
+  const loadRunReport = async (runId: string): Promise<ReconciliationRunReport | undefined> => {
+    const persistedRun = readModelStore
+      ? await readModelStore.findRunReportById(runId)
+      : undefined;
+
+    if (persistedRun) {
+      return persistedRun;
+    }
+
+    const run = repository.findById(runId);
+    return run ? sanitizeRun(run) : undefined;
+  };
+
+  const loadRunSummary = async (runId: string) => {
+    const persistedSummary = readModelStore
+      ? await readModelStore.findRunSummaryById(runId)
+      : undefined;
+
+    if (persistedSummary) {
+      return persistedSummary;
+    }
+
+    return repository.findById(runId)?.summary;
+  };
+
+  const loadRunExceptions = async (runId: string) => {
+    if (readModelStore) {
+      return readModelStore.listRunExceptions(runId);
+    }
+
+    return repository.findById(runId)?.exceptions;
+  };
+
+  const loadRunExceptionPage = async (
+    runId: string,
+    limit: number,
+    offset: number,
+  ): Promise<PaginatedExceptionsResult | undefined> => {
+    if (readModelStore) {
+      const run = await readModelStore.findRunReportById(runId);
+      if (!run) {
+        return undefined;
+      }
+
+      return readModelStore.listRunExceptionsPage(runId, limit, offset);
+    }
+
+    const exceptions = repository.findById(runId)?.exceptions;
+    if (!exceptions) {
+      return undefined;
+    }
+
+    const items = exceptions.slice(offset, offset + limit);
+    return {
+      items,
+      total: exceptions.length,
+      limit,
+      offset,
+      hasMore: offset + items.length < exceptions.length,
+    };
+  };
+
+  const loadReviewerDecisions = async (runId: string) => {
+    if (readModelStore) {
+      const run = await readModelStore.findRunReportById(runId);
+      if (!run) {
+        return undefined;
+      }
+
+      return readModelStore.listReviewerDecisions(runId);
+    }
+
+    return repository.listReviewerDecisions(runId);
+  };
 
   app.get('/api/health', (_request, response) => {
     response.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -801,12 +1326,11 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
     ]),
     async (request, response, next) => {
       const started = Date.now();
+      let persistenceJobId: string | undefined;
       try {
-        const files = (request.files ?? {}) as UploadFileMap;
-        const bankFile = files?.bankFile?.[0];
-        const qboFile = files?.qboFile?.[0];
+        const files = getUploadedReconciliationFiles((request.files ?? {}) as UploadFileMap);
 
-        if (!bankFile || !qboFile) {
+        if (!files) {
           response.status(400).json({
             message: 'Both bankFile and qboFile must be provided as .xlsx uploads.',
           });
@@ -814,111 +1338,191 @@ export const createApp = (repository = new InMemoryRunRepository()) => {
         }
 
         const body = (request.body ?? {}) as Record<string, unknown>;
-        const accountIdentifier = typeof body.accountIdentifier === 'string'
-          ? body.accountIdentifier
-          : undefined;
-        const periodLabel = typeof body.periodLabel === 'string' ? body.periodLabel : undefined;
-        const reconciliationFrequency =
-          typeof body.reconciliationFrequency === 'string' &&
-          reconciliationFrequencies.has(body.reconciliationFrequency as 'Monthly' | 'Annual')
-            ? (body.reconciliationFrequency as 'Monthly' | 'Annual')
-            : undefined;
-        const correlationId = resolveCorrelationId(request.id);
+        const workflowResult = await runReconciliationWorkflow({
+          body,
+          files,
+          requestId: request.id,
+          requestLog: request.log,
+          repository,
+          lifecycleStore,
+        });
+        persistenceJobId = workflowResult.persistenceJobId;
 
-        request.log.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
-
-        const run = await executeReconciliation({
-          correlationId,
-          bankFile,
-          qboFile,
-          accountIdentifier,
-          reconciliationFrequency,
-          periodLabel,
+        recordSuccessfulReconciliationRun({
+          requestId: request.id,
+          started,
+          result: workflowResult,
         });
 
-        repository.save(run);
-        request.log.info({
-          action: 'reconciliation.run.completed',
-          runId: run.id,
-          exceptions: run.exceptions.length,
-        });
-
-        recordReconciliationRun({
-          timestamp: new Date().toISOString(),
-          status: 'Succeeded',
-          correlationId,
-          runId: run.id,
-          accountIdentifier,
-          reconciliationFrequency,
-          periodLabel,
-          durationMs: Date.now() - started,
-          exceptionCount: run.exceptions.length,
-        });
-
-        response.status(201).json(sanitizeRun(run));
+        response.status(201).json(sanitizeRun(workflowResult.run));
       } catch (error) {
         const requestBody = (request.body ?? {}) as Record<string, unknown>;
-        recordReconciliationRun({
-          timestamp: new Date().toISOString(),
-          status: 'Failed',
-          correlationId: resolveCorrelationId(request.id),
-          accountIdentifier: typeof requestBody.accountIdentifier === 'string'
-            ? requestBody.accountIdentifier
-            : undefined,
-          reconciliationFrequency:
-            typeof requestBody.reconciliationFrequency === 'string' &&
-            reconciliationFrequencies.has(requestBody.reconciliationFrequency as 'Monthly' | 'Annual')
-              ? (requestBody.reconciliationFrequency as 'Monthly' | 'Annual')
-              : undefined,
-          periodLabel: typeof requestBody.periodLabel === 'string'
-            ? requestBody.periodLabel
-            : undefined,
-          durationMs: Date.now() - started,
-          failureReason: error instanceof Error ? error.message : 'Unexpected reconciliation failure',
+        await handleFailedReconciliationRun({
+          requestId: request.id,
+          requestBody,
+          started,
+          lifecycleStore,
+          persistenceJobId,
+          error,
         });
         next(error);
       }
     },
   );
 
-  app.get('/api/reconciliation/latest', (_request, response) => {
-    const run = repository.findLatest();
-    if (!run) {
-      response.status(404).json({ message: 'No completed reconciliation run found.' });
-      return;
-    }
+  app.get('/api/reconciliation/latest', async (_request, response, next) => {
+    try {
+      const run = await loadLatestRunReport();
+      if (!run) {
+        response.status(404).json({ message: 'No completed reconciliation run found.' });
+        return;
+      }
 
-    response.json(sanitizeRun(run));
+      response.json(run);
+    } catch (error) {
+      next(error);
+    }
   });
 
-  app.get('/api/reconciliation/:id', (request, response) => {
-    const run = repository.findById(request.params.id);
-    if (!run) {
-      response.status(404).json({ message: 'Reconciliation run not found.' });
-      return;
-    }
+  app.get('/api/reconciliation/:id', async (request, response, next) => {
+    try {
+      const run = await loadRunReport(request.params.id);
+      if (!run) {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
 
-    response.json(sanitizeRun(run));
+      response.json(run);
+    } catch (error) {
+      next(error);
+    }
   });
 
-  app.get('/api/reconciliation/:id/summary', (request, response) => {
-    const run = repository.findById(request.params.id);
-    if (!run) {
-      response.status(404).json({ message: 'Reconciliation run not found.' });
-      return;
-    }
+  app.get('/api/reconciliation/:id/summary', async (request, response, next) => {
+    try {
+      const summary = await loadRunSummary(request.params.id);
+      if (!summary) {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
 
-    response.json(run.summary);
+      response.json(summary);
+    } catch (error) {
+      next(error);
+    }
   });
 
-  app.get('/api/reconciliation/:id/exceptions', (request, response) => {
-    const run = repository.findById(request.params.id);
-    if (!run) {
-      response.status(404).json({ message: 'Reconciliation run not found.' });
-      return;
-    }
+  app.get('/api/reconciliation/:id/exceptions', async (request, response, next) => {
+    try {
+      const limitRequested = request.query.limit !== undefined;
+      const offsetRequested = request.query.offset !== undefined;
 
-    response.json(run.exceptions);
+      if (limitRequested || offsetRequested) {
+        const limit = parseLimit(request.query.limit, 50, 200);
+        const offset = parseOffset(request.query.offset, 0);
+        const page = await loadRunExceptionPage(request.params.id, limit, offset);
+
+        if (!page) {
+          response.status(404).json({ message: 'Reconciliation run not found.' });
+          return;
+        }
+
+        response.json(page);
+        return;
+      }
+
+      const exceptions = await loadRunExceptions(request.params.id);
+      if (!exceptions) {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+
+      response.json(exceptions);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/reconciliation/:id/reviewer-decisions', async (request, response, next) => {
+    try {
+      const decisions = await loadReviewerDecisions(request.params.id);
+      if (!decisions) {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+
+      response.json(decisions);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/reconciliation/:id/reviewer-decisions', async (request, response, next) => {
+    try {
+      const run = await loadRunReport(request.params.id);
+      if (!run) {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+
+      const body = (request.body ?? {}) as ReviewerDecisionRequestBody;
+      if (typeof body.targetType !== 'string' || !reviewerDecisionTargetTypes.has(body.targetType as ReviewerDecisionTargetType)) {
+        response.status(400).json({ message: 'A valid reviewer decision targetType is required.' });
+        return;
+      }
+
+      if (typeof body.targetId !== 'string' || body.targetId.trim().length === 0) {
+        response.status(400).json({ message: 'A reviewer decision targetId is required.' });
+        return;
+      }
+
+      if (typeof body.outcome !== 'string' || !reviewerDecisionOutcomes.has(body.outcome as ReviewerDecisionOutcome)) {
+        response.status(400).json({ message: 'A valid reviewer decision outcome is required.' });
+        return;
+      }
+
+      const targetType = body.targetType as ReviewerDecisionTargetType;
+      const targetId = body.targetId.trim();
+      const outcome = body.outcome as ReviewerDecisionOutcome;
+
+      if (!findDecisionTarget(run, targetType, targetId)) {
+        response.status(400).json({ message: 'Reviewer decision target was not found on this reconciliation run.' });
+        return;
+      }
+
+      if (!isOutcomeAllowedForTarget(targetType, outcome)) {
+        response.status(400).json({ message: 'Reviewer decision outcome is not valid for the specified target type.' });
+        return;
+      }
+
+      if (outcome === 'ReclassifiedException' && !isErrorCategory(body.finalCategory)) {
+        response.status(400).json({ message: 'A valid finalCategory is required when reclassifying an exception.' });
+        return;
+      }
+
+      const timestamp = new Date().toISOString();
+      const decision: ReviewerDecision = {
+        id: randomUUID(),
+        runId: run.id,
+        targetType,
+        targetId,
+        outcome,
+        finalCategory: isErrorCategory(body.finalCategory) ? body.finalCategory : undefined,
+        notes: cleanOptionalText(body.notes),
+        reviewerId: cleanOptionalText(body.reviewerId),
+        reviewerName: cleanOptionalText(body.reviewerName),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      const savedDecision = repository.saveReviewerDecision(run.id, decision);
+      if (lifecycleStore) {
+        await lifecycleStore.persistReviewerDecision(savedDecision);
+      }
+      response.status(201).json(savedDecision);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get('/api/reconciliation/:id/export/workbook', (request, response) => {

@@ -1,21 +1,36 @@
 // @vitest-environment jsdom
 
+import type * as ApiModule from './lib/api';
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import App from './App';
+import userEvent from '@testing-library/user-event';
 
 const mockedApiState = vi.hoisted(() => ({
   latestRunResponse: null as unknown,
+  latestRunError: null as Error | null,
+  latestRunPromise: null as Promise<unknown> | null,
 }));
 
 vi.mock('./lib/api', async () => {
-  const actual = await vi.importActual<typeof import('./lib/api')>('./lib/api');
+  const actual = await vi.importActual<typeof ApiModule>('./lib/api');
 
   return {
     ...actual,
     getLatestReconciliationRunRequest: vi.fn(async () => {
+      if (mockedApiState.latestRunPromise) {
+        return (await mockedApiState.latestRunPromise) as Awaited<
+          ReturnType<typeof actual.getLatestReconciliationRunRequest>
+        >;
+      }
+
+      if (mockedApiState.latestRunError) {
+        throw mockedApiState.latestRunError;
+      }
+
       if (!mockedApiState.latestRunResponse) {
         throw new Error('No latest reconciliation run available in test state.');
       }
@@ -116,6 +131,32 @@ const createRunResponse = () => ({
       lineNumber: 8,
       amount: 250,
       errorMessage: 'Likely split/combine issue',
+      ruleTrace: {
+        ruleId: 'grouped-split-combine-residual',
+        ruleName: 'Grouped Split/Combine Residual',
+        reason: 'Residual unmatched transactions form a one-to-many relationship that the one-to-one matcher cannot settle cleanly.',
+        evidence: ['Grouped total balances across sources.'],
+        counterpart: {
+          source: 'qbo',
+          spreadsheetFileName: 'qbo.xlsx',
+          lineNumber: 4,
+          transactionId: 'qbo-4',
+        },
+        counterparts: [
+          {
+            source: 'qbo',
+            spreadsheetFileName: 'qbo.xlsx',
+            lineNumber: 4,
+            transactionId: 'qbo-4',
+          },
+          {
+            source: 'qbo',
+            spreadsheetFileName: 'qbo.xlsx',
+            lineNumber: 5,
+            transactionId: 'qbo-5',
+          },
+        ],
+      },
       recommendedNextActions: [
         'Review nearby transactions for one-to-many or many-to-one combinations that sum to the same net activity.',
       ],
@@ -131,11 +172,88 @@ const createRunResponse = () => ({
       lineNumber: 12,
       amount: 410,
       errorMessage: 'Deposit grouping issue',
+      ruleTrace: {
+        ruleId: 'grouped-deposit-residual',
+        ruleName: 'Grouped Deposit Residual',
+        reason: 'Residual unmatched deposits form a grouped receipt pattern rather than independent missing items.',
+        evidence: ['Grouped deposit total balances across sources.'],
+        counterpart: {
+          source: 'bank',
+          spreadsheetFileName: 'bank.xlsx',
+          lineNumber: 12,
+          transactionId: 'bank-12',
+        },
+        counterparts: [
+          {
+            source: 'bank',
+            spreadsheetFileName: 'bank.xlsx',
+            lineNumber: 12,
+            transactionId: 'bank-12',
+          },
+        ],
+      },
       recommendedNextActions: [
         'Compare the bank deposit to underlying receipts or batch detail to confirm whether multiple book entries roll into one deposit.',
       ],
       normalizedComparisonTokens: ['BATCH', 'DEPOSIT'],
       relatedTransactionIds: ['bank-12', 'qbo-8', 'qbo-9'],
+    },
+    {
+      id: 'exception-4',
+      category: 'TimingDifference',
+      severity: 'Medium',
+      source: 'bank',
+      spreadsheetFileName: 'bank.xlsx',
+      lineNumber: 18,
+      amount: -2400,
+      errorMessage: 'Timing difference',
+      ruleTrace: {
+        ruleId: 'timing-difference-reclassification',
+        ruleName: 'Timing Difference Reclassification',
+        reason: 'A same-amount, timing-compatible counterpart exists outside the primary date tolerance but within the timing-difference window.',
+        evidence: ['Same amount paired within the extended timing window.'],
+        counterpart: {
+          source: 'qbo',
+          spreadsheetFileName: 'qbo.xlsx',
+          lineNumber: 21,
+          transactionId: 'qbo-21',
+        },
+        counterparts: [
+          {
+            source: 'qbo',
+            spreadsheetFileName: 'qbo.xlsx',
+            lineNumber: 21,
+            transactionId: 'qbo-21',
+          },
+        ],
+      },
+      priorRuleTraces: [
+        {
+          ruleId: 'amount-extended-date-window-match',
+          ruleName: 'Amount + Extended Date Window Match',
+          reason: 'Original date variance classification',
+          evidence: ['Amounts agree within configured tolerance.'],
+          counterpart: {
+            source: 'qbo',
+            spreadsheetFileName: 'qbo.xlsx',
+            lineNumber: 21,
+            transactionId: 'qbo-21',
+          },
+          counterparts: [
+            {
+              source: 'qbo',
+              spreadsheetFileName: 'qbo.xlsx',
+              lineNumber: 21,
+              transactionId: 'qbo-21',
+            },
+          ],
+        },
+      ],
+      recommendedNextActions: [
+        'Carry as timing support and monitor the next reconciliation cycle.',
+      ],
+      normalizedComparisonTokens: ['PAYROLL', 'APRIL'],
+      relatedTransactionIds: ['bank-18', 'qbo-21'],
     },
   ],
   summary: {
@@ -162,11 +280,13 @@ const createRunResponse = () => ({
       MissingFromQBO: 1,
       LikelySplitCombineIssue: 1,
       DepositGroupingIssue: 1,
+      TimingDifference: 1,
     },
     amountByCategory: {
       MissingFromQBO: 125.5,
       LikelySplitCombineIssue: 250,
       DepositGroupingIssue: 410,
+      TimingDifference: 2400,
     },
     charts: [
       { id: 'countByCategory', title: 'Counts', data: [] },
@@ -194,8 +314,22 @@ afterEach(() => {
   vi.restoreAllMocks();
   storage.clear();
   mockedApiState.latestRunResponse = null;
+  mockedApiState.latestRunError = null;
+  mockedApiState.latestRunPromise = null;
   globalThis.history.replaceState({}, '', '/');
 });
+
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+};
 
 describe('App', () => {
   it('renders the documentation hub on the docs route', () => {
@@ -216,6 +350,27 @@ describe('App', () => {
     expect(screen.getByRole('tab', { name: /Exceptions/i })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByRole('tab', { name: /Reports/i })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByText('Source Upload')).toBeInTheDocument();
+  });
+
+  it('supports arrow-key navigation across the top-level tabs', async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const uploadTab = screen.getByRole('tab', { name: /Upload/i });
+    uploadTab.focus();
+
+    await user.keyboard('{ArrowRight}');
+
+    const rulesTab = screen.getByRole('tab', { name: /Rules/i });
+    expect(rulesTab).toHaveFocus();
+    expect(rulesTab).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{End}');
+
+    const reportsTab = screen.getByRole('tab', { name: /Reports/i });
+    expect(reportsTab).toHaveFocus();
+    expect(reportsTab).toHaveAttribute('aria-selected', 'true');
   });
 
   it('shows the reports browser and swaps displayed results when a report link is clicked', async () => {
@@ -251,6 +406,12 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /Exception Report/i }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/QBO qbo.xlsx \/ 4 \| QBO qbo.xlsx \/ 5/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        /Prior: Amount \+ Extended Date Window Match \| Final: Timing Difference Reclassification/i,
+      ).length,
+    ).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /Export Artifacts/i }));
 
@@ -260,7 +421,7 @@ describe('App', () => {
 
   it('hydrates the Reports tab from the last successful persisted run after remount', () => {
     globalThis.localStorage.setItem(
-      'reconciliation-platform:last-successful-run',
+      'reconciliation-platform:latest-report-run',
       JSON.stringify(createRunResponse()),
     );
 
@@ -268,9 +429,11 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
 
-    expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
-    expect(screen.queryByText('No report output yet')).toBeNull();
+    return waitFor(() => {
+      expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
+      expect(screen.queryByText('No report output yet')).toBeNull();
+    });
   });
 
   it('hydrates the Reports tab from the backend latest-run endpoint when storage is empty', async () => {
@@ -286,6 +449,37 @@ describe('App', () => {
 
     expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
     expect(screen.queryByText('No report output yet')).toBeNull();
+  });
+
+  it('shows a loading state while hydrating the latest backend report', async () => {
+    const deferred = createDeferred<ReturnType<typeof createRunResponse>>();
+    mockedApiState.latestRunPromise = deferred.promise;
+
+    renderApp();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading report output');
+
+    deferred.resolve(createRunResponse());
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('shows an alert when latest-run hydration fails', async () => {
+    mockedApiState.latestRunError = new Error('Backend unavailable.');
+
+    renderApp();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Backend unavailable.');
+    });
+
+    expect(screen.getByText('Latest report output could not be loaded')).toBeInTheDocument();
   });
 
   it('shows the rules catalog with last-change metadata when the Rules tab is selected', () => {
@@ -439,6 +633,27 @@ describe('App', () => {
       expect(screen.getAllByText('Missing from QBO').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Likely Split/Combine Issue').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Deposit Grouping Issue').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('announces mutation errors when reconciliation submission fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'Upload failed.' }), { status: 500 }),
+    );
+
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Upload failed.');
     });
   });
 

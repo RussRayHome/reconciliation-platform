@@ -119,4 +119,45 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.disposition).toBe('DateVariance');
     expect(result.matchResults[0]?.exceptionCategory).toBe('DateVariance');
   });
+
+  it('emits grouped review match results for balanced one-to-many grouped candidates', () => {
+    const bank = buildTransaction({
+      id: 'bank-grouped',
+      source: 'bank',
+      lineNumber: 10,
+      transactionDate: '2025-04-01',
+      transactionType: 'Deposit',
+      description: 'CARD SETTLEMENT BATCH',
+      amount: 300,
+    });
+    const qboAlpha = buildTransaction({
+      id: 'qbo-grouped-alpha',
+      source: 'qbo',
+      lineNumber: 20,
+      transactionDate: '2025-04-01',
+      transactionType: 'Deposit',
+      description: 'Card receipt alpha',
+      amount: 100,
+    });
+    const qboBeta = buildTransaction({
+      id: 'qbo-grouped-beta',
+      source: 'qbo',
+      lineNumber: 21,
+      transactionDate: '2025-04-02',
+      transactionType: 'Deposit',
+      description: 'Card receipt beta',
+      amount: 200,
+    });
+
+    const result = reconcileMatches([bank, qboAlpha, qboBeta], defaultReconciliationConfig.matching);
+
+    expect(result.groupedMatchResults).toHaveLength(1);
+    expect(result.groupedMatchResults[0]?.disposition).toBe('GroupedReviewMatch');
+    expect(result.groupedMatchResults[0]?.category).toBe('DepositGroupingIssue');
+    expect(result.groupedMatchResults[0]?.bankTransactionIds).toEqual(['bank-grouped']);
+    expect(result.groupedMatchResults[0]?.qboTransactionIds).toEqual([
+      'qbo-grouped-alpha',
+      'qbo-grouped-beta',
+    ]);
+  });
 });
