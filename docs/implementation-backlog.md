@@ -121,3 +121,23 @@ This backlog converts the current compliance review into concrete implementation
   - Raise thresholds progressively and add per-project minimums for API and persistence layers.
 - Affected files:
   - [vitest.config.ts](vitest.config.ts)
+
+## FIXME Reminders
+
+Use this format for production gating items:
+
+- `FIXME(prod-gate): <summary> | owner=<name-or-team> | tracking=<ticket-or-link> | exit=<clear-remediation-criteria>`
+
+### 10. FIXME(prod-gate): Remove temporary npm-audit exception for ExcelJS and UUID
+
+- Problem: Developer Dashboard currently reports two moderate vulnerabilities from `exceljs@4.4.0` pulling `uuid@8.3.2` (GHSA-w5hq-g745-h8pq).
+- Temporary decision: allow this risk during local development only while core feature work is in flight.
+- Exit criteria:
+  - Upgrade to a dependency path that no longer includes the vulnerable UUID range, or replace the workbook library path if needed.
+  - Re-run dashboard and workspace audit checks; security scan should no longer report these two findings.
+  - Remove this FIXME entry once the dependency risk is remediated.
+- Affected files:
+  - [apps/api/package.json](apps/api/package.json)
+  - [packages/core/package.json](packages/core/package.json)
+  - [packages/test-fixtures/package.json](packages/test-fixtures/package.json)
+  - [package-lock.json](package-lock.json)

@@ -120,6 +120,261 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.exceptionCategory).toBe('DateVariance');
   });
 
+  it('produces a probable match with CheckNumberMismatch when check numbers differ but amounts and text align', () => {
+    const bank = buildTransaction({
+      id: 'bank-check-var',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-02-10',
+      amount: -500,
+      checkNumber: '1001',
+      normalizedComparisonTokens: ['VENDOR', 'SUPPLIES'],
+      normalizedReferenceTokens: ['1001'],
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-check-var',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-02-10',
+      amount: -500,
+      normalizedComparisonTokens: ['VENDOR', 'SUPPLIES'],
+      normalizedReferenceTokens: ['1002'],
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('CheckNumberMismatch');
+  });
+
+  it('produces a ReferenceNumberMismatch category when reference (not check) numbers differ', () => {
+    const bank = buildTransaction({
+      id: 'bank-ref-var',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-02-12',
+      amount: -750,
+      referenceNumber: 'REF-001',
+      normalizedComparisonTokens: ['OFFICE', 'DEPOT'],
+      normalizedReferenceTokens: ['REF', '001'],
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-ref-var',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-02-12',
+      amount: -750,
+      referenceNumber: 'REF-002',
+      normalizedComparisonTokens: ['OFFICE', 'DEPOT'],
+      normalizedReferenceTokens: ['REF', '002'],
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('ReferenceNumberMismatch');
+  });
+
+  it('produces DescriptionMerchantVariance when text similarity falls in the grey zone between thresholds', () => {
+    // textSimilarity(['ACME', 'OFFICE'], ['ACME', 'OFFICE', 'SUPPLY', 'DEPOT']) = 2*2/(2+4) = 0.667
+    // falls in [reviewSimilarityThreshold(0.4), textSimilarityThreshold(0.7))
+    const bank = buildTransaction({
+      id: 'bank-desc-var',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-03-05',
+      amount: -300,
+      normalizedComparisonTokens: ['ACME', 'OFFICE'],
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-desc-var',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-03-06',
+      amount: -300,
+      normalizedComparisonTokens: ['ACME', 'OFFICE', 'SUPPLY', 'DEPOT'],
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('DescriptionMerchantVariance');
+  });
+
+  it('produces AmountMismatch when description aligns but recorded amounts differ beyond tolerance', () => {
+    // textSimilarity(['OFFICE', 'DEPOT'], ['OFFICE', 'DEPOT', 'SUPPLIES']) = 2*2/(2+3) = 0.8 >= 0.65
+    const bank = buildTransaction({
+      id: 'bank-amt-mismatch',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-03-10',
+      amount: -100,
+      normalizedComparisonTokens: ['OFFICE', 'DEPOT'],
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-amt-mismatch',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-03-10',
+      amount: -150,
+      normalizedComparisonTokens: ['OFFICE', 'DEPOT', 'SUPPLIES'],
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('AmountMismatch');
+  });
+
+  it('flags a bank transaction as AmbiguousReview when two QBO candidates score equally well', () => {
+    // bank has 1 token; each QBO has 2 tokens with 1 shared → textSimilarity = 2/3 ≈ 0.667
+    // 0.667 is in [reviewSimilarityThreshold(0.4), textSimilarityThreshold(0.7)) → Rule 5 fires
+    // both candidates score 0.72 (< 0.95), within 0.1 of each other → AmbiguousReview
+    const bank = buildTransaction({
+      id: 'bank-ambig',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-01-10',
+      amount: -100,
+      normalizedComparisonTokens: ['ACME'],
+    });
+    const qbo1 = buildTransaction({
+      id: 'qbo-ambig-1',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-01-10',
+      amount: -100,
+      normalizedComparisonTokens: ['ACME', 'OFFICE'],
+    });
+    const qbo2 = buildTransaction({
+      id: 'qbo-ambig-2',
+      source: 'qbo',
+      lineNumber: 3,
+      transactionDate: '2025-01-10',
+      amount: -100,
+      normalizedComparisonTokens: ['ACME', 'SUPPLY'],
+    });
+
+    const result = reconcileMatches([bank, qbo1, qbo2], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.disposition).toBe('AmbiguousReview');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('AmbiguousMatchRequiringReview');
+    expect(result.probableMatches).toHaveLength(1);
+  });
+
+  it('detects duplicate bank transactions and excludes the later-line duplicate from matching', () => {
+    const bank1 = buildTransaction({
+      id: 'bank-dup-1',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-03-01',
+      amount: -200,
+      normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
+    });
+    const bank2 = buildTransaction({
+      id: 'bank-dup-2',
+      source: 'bank',
+      lineNumber: 2,
+      transactionDate: '2025-03-01',
+      amount: -200,
+      normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-original',
+      source: 'qbo',
+      lineNumber: 1,
+      transactionDate: '2025-03-01',
+      amount: -200,
+      normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
+    });
+
+    const result = reconcileMatches([bank1, bank2, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.duplicateTransactionIds.size).toBe(1);
+    expect(result.duplicateTransactionIds.has('bank-dup-2')).toBe(true);
+    expect(result.matchResults.some((r) => r.bankTransactionId === 'bank-dup-1')).toBe(true);
+    expect(result.matchResults.some((r) => r.bankTransactionId === 'bank-dup-2')).toBe(false);
+  });
+
+  it('detects duplicates via exact reference number match even when descriptions differ', () => {
+    const bank1 = buildTransaction({
+      id: 'bank-ref-dup-1',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-03-01',
+      amount: -500,
+      normalizedComparisonTokens: ['ALPHA', 'CORP'],
+      normalizedReferenceTokens: ['REF', '999'],
+    });
+    const bank2 = buildTransaction({
+      id: 'bank-ref-dup-2',
+      source: 'bank',
+      lineNumber: 2,
+      transactionDate: '2025-03-02',
+      amount: -500,
+      normalizedComparisonTokens: ['BETA', 'INC'],
+      normalizedReferenceTokens: ['REF', '999'],
+    });
+
+    const result = reconcileMatches([bank1, bank2], defaultReconciliationConfig.matching);
+
+    expect(result.duplicateTransactionIds.has('bank-ref-dup-2')).toBe(true);
+  });
+
+  it('omits excluded transactions from match results and unmatched sets', () => {
+    const bank = buildTransaction({
+      id: 'bank-excl',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-01-01',
+      amount: -100,
+      normalizedComparisonTokens: ['ACME'],
+      isExcluded: true,
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-active',
+      source: 'qbo',
+      lineNumber: 1,
+      transactionDate: '2025-01-01',
+      amount: -100,
+      normalizedComparisonTokens: ['ACME'],
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(0);
+    expect(result.unmatchedBankTransactionIds.has('bank-excl')).toBe(false);
+    expect(result.unmatchedQboTransactionIds.has('qbo-active')).toBe(true);
+  });
+
+  it('omits transactions with data quality issues from matching candidates', () => {
+    const bank = buildTransaction({
+      id: 'bank-dq',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-01-01',
+      amount: -100,
+      dataQualityIssues: ['Amount is missing or malformed.'],
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-clean',
+      source: 'qbo',
+      lineNumber: 1,
+      transactionDate: '2025-01-01',
+      amount: -100,
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(0);
+    expect(result.unmatchedQboTransactionIds.has('qbo-clean')).toBe(true);
+  });
+
   it('emits grouped review match results for balanced one-to-many grouped candidates', () => {
     const bank = buildTransaction({
       id: 'bank-grouped',

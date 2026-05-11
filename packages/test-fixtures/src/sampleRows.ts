@@ -266,7 +266,15 @@ const buildWorkbookBuffer = async (rows: Array<Array<string | number>>): Promise
     return Buffer.from(buffer);
   }
 
-  return Buffer.from(buffer as ArrayBuffer);
+  if (buffer instanceof ArrayBuffer) {
+    return Buffer.from(buffer);
+  }
+
+  if (ArrayBuffer.isView(buffer)) {
+    return Buffer.from(buffer);
+  }
+
+  throw new TypeError('Unsupported workbook buffer type from exceljs writeBuffer().');
 };
 
 export const createSampleBankWorkbook = () => buildWorkbookBuffer(sampleBankRows);

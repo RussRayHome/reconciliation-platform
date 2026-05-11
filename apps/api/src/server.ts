@@ -6,6 +6,8 @@ import {
   loadPostgresPersistenceConfigFromEnv,
   runPostgresMigrations,
 } from '@recon/persistence';
+import type { Server as HttpServer } from 'node:http';
+import type { Pool } from 'pg';
 
 import { FileBackedRunRepository } from './services/runRepository';
 import { createApp } from './app';
@@ -15,7 +17,8 @@ import path from 'node:path';
 import pino from 'pino';
 
 const repoRoot = process.cwd();
-const persistedRunPath = process.env.RECONCILIATION_RUN_STORE_PATH ??
+const persistedRunPath =
+  process.env.RECONCILIATION_RUN_STORE_PATH ??
   path.join(repoRoot, 'test-results', 'latest-reconciliation-run.json');
 
 const shouldRunMigrationsOnBoot = (): boolean => {
@@ -35,9 +38,22 @@ export type ServerRuntime = {
   app: ReturnType<typeof createApp>;
   port: number;
   logger: pino.Logger;
+  postgresPool?: Pool;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   readModelStore?: PostgresReconciliationReadModelStore;
 };
+
+const closeHttpServer = async (server: HttpServer): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    server.close((error?: Error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
 
 /**
  * Starts the Express API server with environment-aware logging and runtime
@@ -78,6 +94,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
 
   let lifecycleStore: PostgresReconciliationLifecycleStore | undefined;
   let readModelStore: PostgresReconciliationReadModelStore | undefined;
+  let postgresPool: Pool | undefined;
   if (isPostgresPersistenceEnabled()) {
     const postgresConfig = loadPostgresPersistenceConfigFromEnv();
 
@@ -86,11 +103,15 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
     }
 
     const pool = createPostgresPool(postgresConfig);
+    postgresPool = pool;
     if (shouldRunMigrationsOnBoot()) {
       await runPostgresMigrations(pool);
     } else {
       logger.info(
-        { action: 'persistence.postgres.migrations.skipped', reason: 'RUN_DB_MIGRATIONS_ON_BOOT=false' },
+        {
+          action: 'persistence.postgres.migrations.skipped',
+          reason: 'RUN_DB_MIGRATIONS_ON_BOOT=false',
+        },
         'Skipping PostgreSQL migrations during API startup',
       );
     }
@@ -111,6 +132,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
     app,
     port,
     logger,
+    postgresPool,
     lifecycleStore,
     readModelStore,
   };
@@ -119,11 +141,66 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
 export const startServer = async (): Promise<void> => {
   const runtime = await createServerRuntime();
 
-  runtime.app.listen(runtime.port, '0.0.0.0', () => {
+  const server = runtime.app.listen(runtime.port, '0.0.0.0', () => {
     markServerStarted();
     runtime.logger.info(
-      { port: runtime.port, logFile: process.env.LOG_FILE ?? null, level: process.env.LOG_LEVEL ?? 'info' },
+      {
+        port: runtime.port,
+        logFile: process.env.LOG_FILE ?? null,
+        level: process.env.LOG_LEVEL ?? 'info',
+      },
       'Reconciliation API listening',
     );
+  });
+
+  let shuttingDown = false;
+
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    if (shuttingDown) {
+      runtime.logger.warn({ signal }, 'Shutdown already in progress');
+      return;
+    }
+
+    shuttingDown = true;
+    runtime.logger.info({ signal }, 'Received shutdown signal');
+
+    const shutdownTimeout = setTimeout(() => {
+      runtime.logger.error({ signal, timeoutMs: 40000 }, 'Graceful shutdown timed out');
+      process.exit(1);
+    }, 40000);
+    shutdownTimeout.unref();
+
+    try {
+      if (typeof server.closeIdleConnections === 'function') {
+        server.closeIdleConnections();
+      }
+
+      await closeHttpServer(server);
+
+      if (runtime.postgresPool) {
+        await runtime.postgresPool.end();
+      }
+
+      clearTimeout(shutdownTimeout);
+      runtime.logger.info({ signal }, 'Graceful shutdown completed');
+      process.exit(0);
+    } catch (error: unknown) {
+      clearTimeout(shutdownTimeout);
+      runtime.logger.error({ err: error, signal }, 'Graceful shutdown failed');
+      process.exit(1);
+    }
+  };
+
+  process.once('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+
+  process.once('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+
+  server.on('error', (error: Error) => {
+    runtime.logger.error({ err: error }, 'API server listener error');
+    process.exit(1);
   });
 };

@@ -10,6 +10,12 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 
 - Targeted TSDoc on the main backend entry points to improve near-code maintainability.
 - Release documentation artifacts through `CHANGELOG.md` and `RELEASE.md`.
+- Stage PostgreSQL pgAudit enablement for test-stage deployments, including dedicated stage DB preflight command support (`docker:db:preflight:test-stage`).
+
+### Stage Operations
+
+- Stage DB preflight now records pgAudit as enabled while temporarily allowlisting unresolved upstream base-image CVEs for non-blocking WARN status.
+- Release gating docs now include a production follow-up marker to remove temporary DB allowlist entries once upstream fixes are available.
 
 ## [2026-04-03]
 

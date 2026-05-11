@@ -1,0 +1,74 @@
+-- =============================================================================
+-- PRODUCTION ENVIRONMENT ONLY
+-- This script is intentionally excluded from the automated deployment pipeline.
+-- Run manually by a DBA after the production database is provisioned.
+--
+-- Creates 'prod_rray_admin': a database administrator and superuser for
+-- production DBA operations, schema management, and incident response.
+--
+-- Privileges granted: SUPERUSER, CREATEDB, CREATEROLE, all object privileges
+--
+-- BEFORE RUNNING:
+--   Replace the placeholder password below with a strong, unique credential.
+--   Store the production password in AWS Secrets Manager — never in source code.
+--   Restrict network access to this account; prefer using it only from a bastion
+--   host or AWS Systems Manager Session Manager, not from application code.
+--
+-- How to run (AWS RDS / direct psql):
+--   psql -h <rds-endpoint> -p 5432 -U <rds-admin-user> -d reconciliation_platform \
+--       -v pwd="'<strong-password>'" \
+--       -f scripts/db/production/create-user-prod-rray-admin.sql
+-- =============================================================================
+
+\echo 'Creating production admin user: prod_rray_admin (superuser + DB admin)'
+
+-- Set the password here or pass it in via -v pwd="'<value>'" from the shell.
+-- Replace CHANGE_ME_SECURE_PASSWORD before running.
+\set user_password 'CHANGE_ME_SECURE_PASSWORD'
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'prod_rray_admin') THEN
+    CREATE ROLE prod_rray_admin
+      LOGIN
+      SUPERUSER
+      CREATEDB
+      CREATEROLE
+      REPLICATION
+      PASSWORD :'user_password';
+    RAISE NOTICE 'Role prod_rray_admin created.';
+  ELSE
+    ALTER ROLE prod_rray_admin
+      LOGIN
+      SUPERUSER
+      CREATEDB
+      CREATEROLE
+      REPLICATION
+      PASSWORD :'user_password';
+    RAISE NOTICE 'Role prod_rray_admin already exists — attributes updated.';
+  END IF;
+END;
+$$;
+
+-- Full database ownership
+GRANT ALL PRIVILEGES ON DATABASE reconciliation_platform TO prod_rray_admin;
+
+-- Full access to all current objects in the public schema
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO prod_rray_admin;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO prod_rray_admin;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO prod_rray_admin;
+GRANT ALL PRIVILEGES ON ALL PROCEDURES IN SCHEMA public TO prod_rray_admin;
+GRANT ALL PRIVILEGES ON SCHEMA public TO prod_rray_admin;
+
+-- Propagate full grants to objects created in future by the application role
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT ALL PRIVILEGES ON TABLES TO prod_rray_admin;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT ALL PRIVILEGES ON SEQUENCES TO prod_rray_admin;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT ALL PRIVILEGES ON FUNCTIONS TO prod_rray_admin;
+
+\echo 'Done. prod_rray_admin has full DBA and superuser privileges.'
+\echo 'Reminder: restrict network access and rotate this password regularly.'

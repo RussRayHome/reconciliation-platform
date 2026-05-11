@@ -2,13 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE_INPUT="${DOCKER_ENV_FILE:-${DOCKER_COMPOSE_ENV_FILE:-$ROOT_DIR/.env.docker}}"
+ENV_FILE_INPUT="${DOCKER_ENV_FILE:-${DOCKER_COMPOSE_ENV_FILE:-$ROOT_DIR/.env.docker.dev}}"
 if [[ "$ENV_FILE_INPUT" = /* ]]; then
   ENV_FILE="$ENV_FILE_INPUT"
 else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
-FALLBACK_FILE="$ROOT_DIR/.env.docker.example"
+FALLBACK_FILE="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.example}"
 
 if [[ -f "$ENV_FILE" ]]; then
   SOURCE_FILE="$ENV_FILE"
@@ -26,7 +26,7 @@ set -a
 source "$SOURCE_FILE"
 set +a
 
-required_vars=(PUBLIC_WEB_PORT POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_URL)
+required_vars=(PUBLIC_WEB_PORT POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD)
 for name in "${required_vars[@]}"; do
   value="${!name:-}"
   if [[ -z "$value" ]]; then
@@ -34,6 +34,14 @@ for name in "${required_vars[@]}"; do
     exit 1
   fi
 done
+
+database_url="${DATABASE_URL:-${API_DATABASE_URL:-}}"
+if [[ -z "$database_url" ]]; then
+  echo "Missing required variable: DATABASE_URL or API_DATABASE_URL" >&2
+  exit 1
+fi
+
+export DATABASE_URL="$database_url"
 
 if [[ "$SOURCE_FILE" == "$FALLBACK_FILE" ]]; then
   echo "Using example Docker environment values from $FALLBACK_FILE"

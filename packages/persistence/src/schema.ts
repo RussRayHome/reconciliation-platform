@@ -436,4 +436,18 @@ export const postgresMigrations: readonly SqlMigration[] = [
         ON reconciliation_review_observation (job_id, created_at ASC, id ASC);
     `,
   },
+  {
+    version: 4,
+    name: 'enable_pgaudit_extension_when_preloaded',
+    sql: `
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pgaudit')
+          AND POSITION('pgaudit' IN current_setting('shared_preload_libraries', true)) > 0 THEN
+          CREATE EXTENSION IF NOT EXISTS pgaudit;
+        END IF;
+      END
+      $$;
+    `,
+  },
 ];

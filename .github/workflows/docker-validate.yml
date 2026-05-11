@@ -7,6 +7,46 @@ on:
       - main
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit and integration tests
+        run: npm run test
+
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security scan
+        run: npm run security:scan
+
   docker-validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -37,3 +77,44 @@ jobs:
         env:
           DOCKER_ENV_FILE: .env.docker.example
         run: npm run docker:smoke
+
+  zap-web-stage:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Stage stack
+        run: npm run docker:deploy:test-stage
+
+      - name: Run OWASP ZAP baseline scan (Stage web)
+        run: npm run security:scan:zap:web:test-stage
+
+      - name: Run OWASP ZAP baseline scan (Stage API)
+        run: npm run security:scan:zap:api:test-stage
+
+      - name: Upload OWASP ZAP artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-stage-report
+          path: |
+            test-results/security/zap-web-stage
+            test-results/security/zap-api-stage
+          if-no-files-found: warn
+
+      - name: Cleanup Stage stack
+        if: always()
+        run: npm run docker:cleanup:test-stage

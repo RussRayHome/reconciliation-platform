@@ -1,117 +1,203 @@
 # Architecture
 
-## Goals
+This document explains how the reconciliation platform is structured, how data flows through it, and where to make changes safely.
 
-The platform is designed for repeatable finance operations work rather than a one-off data-cleaning script. The architecture prioritizes auditability, explicit rule evaluation, maintainability, and clean separation between the UI, HTTP boundary, and reconciliation engine.
+## 1. System context
 
-It is also designed to support two parallel operator needs:
+The platform reconciles two accounting data sources:
 
-- an analyst-facing reconciliation workflow for reviewing a single run
-- a developer-facing health workflow for validating repository quality gates from one place
+- bank workbook export
+- QuickBooks Online workbook export
 
-## Layers
+It produces:
 
-### `packages/domain`
+- summary metrics
+- probable match review queue
+- categorized exceptions with rule trace
+- workbook export for downstream accounting workflows
 
-Canonical contracts for transactions, runs, matches, exceptions, summaries, workbook outputs, reviewer observations, and configuration. This package is the shared language of the system.
+## 2. Runtime modes
 
-### `packages/config`
+The same codebase supports two main runtime shapes.
 
-Default parsing and matching configuration plus account-level override support. This layer keeps header mapping, exclusion logic, tolerances, and severity rules out of route handlers and UI code.
+### Local development mode
 
-### `packages/core`
+- Web app served by Vite (`apps/web`)
+- API served by Node/Express (`apps/api`)
+- Optional PostgreSQL depending on env configuration
 
-The business engine.
+### Production-like Docker mode
 
-- `parsers/`: workbook ingestion and dynamic column detection
-- `normalization/`: dates, amounts, references, text tokens, and fingerprints
-- `matching/`: duplicate detection, candidate scoring, exact-match consumption, grouped reservation, and advisory review handling
-- `reporting/`: exception classification, reviewer observations, summary metrics, and chart data
-- `export/`: audit-ready workbook creation
+- Public NGINX gateway (`web`)
+- Internal Express API (`api`)
+- Internal PostgreSQL (`postgres`)
+- One-shot migration service (`migrate`) that runs before API startup
 
-### `apps/api`
+## 3. High-level component architecture
 
-The HTTP boundary.
+```text
+[Web UI: apps/web]
+        |
+        | HTTP /api/*
+        v
+[API: apps/api]
+        |
+        | uses
+        v
+[Core pipeline: packages/core]
+        |
+        | persists (when enabled)
+        v
+[Persistence: packages/persistence -> PostgreSQL]
 
-- Validates file uploads and accepted file types
-- Creates correlation IDs and structured logs
-- Resolves run configuration and calls shared reconciliation services
-- Persists lifecycle state to PostgreSQL when configured
-- Maintains a compatibility latest-run snapshot for restart-safe local reporting
-- Exposes health, reconciliation, summary, exception, workbook download, and developer-status endpoints
-- Caches developer-status results and keeps a short in-memory history of recent check runs
+Shared contracts: packages/domain
+Runtime/default configuration: packages/config
+Shared fixtures: packages/test-fixtures
+```
+
+## 4. Package responsibilities
 
 ### `apps/web`
 
-The local analyst and reviewer interface.
+- Upload workflow for source files
+- Run metadata capture (account, frequency, period label)
+- Rendering for summary, probable matches, grouped artifacts, exceptions, and reviewer decisions
+- Workbook export trigger via API
+- Optional developer dashboard surface
 
-- Uploads source files
-- Captures account identifier, reconciliation frequency, and period labeling context
-- Renders summary metrics and charts
-- Surfaces probable matches separately from hard exceptions
-- Provides workbook and JSON export actions
+### `apps/api`
 
-The web app also ships a standalone developer dashboard that reads from the API developer-status endpoint and summarizes repository health checks, coverage, security results, cache state, and recent failing areas.
+- Multipart upload handling and validation
+- Reconciliation workflow orchestration
+- Read endpoints for latest/by-id report, summary, exceptions, reviewer decisions
+- Reviewer decision validation + persistence
+- Developer diagnostics endpoints
+- Health and workbook export endpoints
 
-## Reconciliation Runtime Flow
+### `packages/core`
 
-The runtime flow is:
+- Workbook parse and row lineage capture
+- Normalization and text/token processing
+- Candidate generation and reconciliation matching
+- Exception classification and severity mapping
+- Summary/chart generation
+- Workbook export assembly
 
-1. The browser uploads bank and QBO workbooks and collects run metadata such as account identifier, reconciliation frequency, and reconciliation label.
-2. The API validates upload type and size, creates a correlation ID, and resolves configuration from shared defaults plus account overrides.
-3. The parser ingests both workbooks in parallel and preserves row lineage.
-4. The core pipeline normalizes transactions, detects duplicates, consumes exact matches, reserves grouped residual candidates, emits advisory non-exact review suggestions, classifies residual exceptions in stages, builds summary metrics, and produces reviewer observations.
-5. The exporter creates a multi-sheet workbook containing summary, charts, exception reporting, probable-match review, and normalized transaction views.
-6. The API persists lifecycle data durably when PostgreSQL is enabled and returns a lean report read model to the UI.
+### `packages/persistence`
 
-The current user flow supports both `Monthly` and `Annual` reconciliation runs. Monthly runs use a month selector tied to the current year, while annual runs select from prior completed years.
+- PostgreSQL migrations
+- Lifecycle write model store
+- Read model projections for run report, summary, exceptions, and reviewer decisions
+- Connection/pool configuration via environment
 
-## Trust Boundaries
+### `packages/domain`
 
-1. Browser to API: untrusted file input, validated by type/extension and request limits.
-2. API to core: typed input only, no direct browser concerns.
-3. Core to export: workbook generation only from normalized and classified data, not raw arbitrary user macros or scripts.
-4. Developer dashboard to API: repository-health execution stays on the server side; the browser only receives summarized check results and stored history.
+- Shared type system (`ReconciliationRunReport`, `SummaryMetrics`, `ExceptionItem`, `ReviewerDecision`, etc.)
 
-## Observability
+### `packages/config`
 
-- Pino HTTP logging with correlation ID propagation
-- Service-level reconciliation logging outside the HTTP route layer
-- Audit events emitted by the reconciliation pipeline for major stages
-- Developer-status snapshots covering unit tests, integration tests, e2e tests, lint, typecheck, coverage, and security audit
-- Recent developer-status history including failing check names
-- Summary metrics available through both HTTP and workbook export
+- Default reconciliation behavior
+- Account-specific override examples
 
-The developer-status endpoint is intentionally operational rather than domain-facing. It exists to reduce the gap between code changes and repository-health visibility during local development.
+## 5. End-to-end data flow
 
-## Special-Case Behavior
+1. **Submission**
+   - Web posts multipart form data (`bankFile`, `qboFile`) to `POST /api/reconciliation/run`.
 
-Most reconciliation behavior is driven by the shared default configuration and optional account overrides.
+2. **Input processing**
+   - API validates files and request metadata.
+   - Core parser loads workbook rows and source lineage.
 
-The matcher-classifier handoff is intentionally staged. Exact matches are consumed inside the matcher. Non-exact one-to-one suggestions remain advisory, and grouped, timing, miscoding, stale, and missing classifications are finalized in the reporting layer against the residual pool.
+3. **Normalization and matching**
+   - Core normalizes text/date/amount/reference fields.
+   - Matching computes exact/probable/grouped/variance outcomes.
 
-Grouped matching is currently still transitional rather than first-class. The matcher reserves grouped candidates to protect them from one-to-one advisory consumption, while the classifier re-derives grouped residual relationships as exception outputs. The planned target state is documented in `docs/first-class-grouped-matching.md`.
+4. **Exception classification**
+   - Residual and matched-review outcomes are categorized into accountant-facing exceptions.
 
-## Extensibility
+5. **Summary and export artifacts**
+   - Summary metrics and chart series are produced.
+   - Workbook export binary and manifest metadata are produced.
 
-The current design supports future work without architectural churn:
+6. **Persistence and read model**
+   - If PostgreSQL is enabled, lifecycle and read model records are persisted.
+   - API returns a sanitized `ReconciliationRunReport` payload.
 
-- `.csv` parsing alongside `.xlsx`
-- PostgreSQL-backed read models for run history, summaries, exceptions, and reviewer decisions
-- reviewer approval workflows for probable matches
-- first-class grouped match results and grouped review workflows
-- account-specific rule packs
-- scheduled or batch reconciliation automation
-- parameterized golden-standard workbook comparison tooling
-- richer entity resolution for merchants and payees
+7. **Review lifecycle**
+   - Reviewer decisions are submitted through `POST /api/reconciliation/:id/reviewer-decisions`.
+   - Decisions are validated against target type and allowed outcome combinations.
 
-## Class and Method Documentation
+## 6. Data ownership and storage
 
-Class and method documentation is centralized in `docs/class-method-reference.md` and includes:
+## Durable storage
 
-- explicit method inputs
-- explicit method outputs
-- state object before method execution
-- state object after method execution
+When `RECON_PERSISTENCE_BACKEND=postgres` and DB connectivity are configured:
 
-Use this reference as the execution-level companion to this architecture document.
+- lifecycle stages and audit events are durable
+- read-model queries power run report, summary, exceptions, and decisions
+
+## Compatibility snapshot
+
+API still keeps a file-backed latest-run snapshot (`RECONCILIATION_RUN_STORE_PATH`) for restart compatibility and local run continuity.
+
+## 7. API architecture notes
+
+- Express app sets `trust proxy` to support gateway forwarding.
+- Correlation IDs are propagated in response headers.
+- Diagnostics middleware tracks failed requests and exceptions.
+- Developer endpoints are policy-gated by environment.
+
+See `docs/api.md` for full contract details.
+
+## 8. Diagnostics and quality architecture
+
+## Runtime diagnostics
+
+- request failure tracking
+- exception tracking
+- recent reconciliation run outcomes
+- git context for local runtime visibility
+
+## Developer status diagnostics
+
+`GET /api/developer/status` executes and aggregates:
+
+- `test:unit`
+- `test:integration`
+- `test:e2e`
+- `test:postgres`
+- `lint`
+- `typecheck`
+- `coverage`
+- `security:scan`
+
+Results are cached with configurable TTL/history settings.
+
+## 9. Deployment safety architecture
+
+Deployment-related guardrails are intentionally externalized to scripts:
+
+- `scripts/ops/preflight-build-checks.sh`
+- `scripts/ops/predeploy-stack-checks.sh`
+- `scripts/ops/db-preflight-checks.sh`
+
+This keeps operational risk checks explicit and repeatable outside the request path.
+
+## 10. Change impact guide
+
+When changing these areas, expect these follow-up updates:
+
+- matching/classification logic -> update `docs/reconciliation-rules.md` and tests
+- endpoint contracts -> update `docs/api.md` and integration tests
+- persistence schema/stores -> update `docs/postgresql-persistence-architecture.md` and DB tests
+- deployment behavior/scripts -> update `docs/local-docker-platform.md` and preflight checks
+- setup workflows -> update `docs/developer-setup.md`
+
+## 11. Related references
+
+- `docs/api.md`
+- `docs/reconciliation-rules.md`
+- `docs/postgresql-persistence-architecture.md`
+- `docs/local-docker-platform.md`
+- `docs/test-strategy.md`
+- `docs/class-method-reference.md`

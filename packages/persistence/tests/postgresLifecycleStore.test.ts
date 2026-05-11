@@ -44,7 +44,12 @@ const buildSourceFile = (id: string, source: 'bank' | 'qbo'): SourceFile => ({
   uploadedAt: new Date().toISOString(),
 });
 
-const buildRawRow = (id: string, sourceFileId: string, source: 'bank' | 'qbo', lineNumber: number): RawTransactionRow => ({
+const buildRawRow = (
+  id: string,
+  sourceFileId: string,
+  source: 'bank' | 'qbo',
+  lineNumber: number,
+): RawTransactionRow => ({
   id,
   sourceFileId,
   source,
@@ -183,7 +188,10 @@ const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore)
     inputFingerprint: 'fingerprint-review-ready',
   });
 
-  const sourceFiles = [buildSourceFile(bankSourceFileId, 'bank'), buildSourceFile(qboSourceFileId, 'qbo')];
+  const sourceFiles = [
+    buildSourceFile(bankSourceFileId, 'bank'),
+    buildSourceFile(qboSourceFileId, 'qbo'),
+  ];
   const rawRows = [
     buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
     buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
@@ -227,6 +235,30 @@ const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore)
   return { jobId, probableMatchId: probableMatch.id };
 };
 
+type QueryCounterClient = {
+  query: (...args: unknown[]) => Promise<unknown>;
+};
+
+const countQueriesDuring = async <T>(
+  client: QueryCounterClient,
+  action: () => Promise<T>,
+): Promise<{ result: T; queryCount: number }> => {
+  let queryCount = 0;
+  const originalQuery = client.query.bind(client);
+
+  client.query = async (...args: unknown[]) => {
+    queryCount += 1;
+    return originalQuery(...args);
+  };
+
+  try {
+    const result = await action();
+    return { result, queryCount };
+  } finally {
+    client.query = originalQuery;
+  }
+};
+
 describePostgres('PostgresReconciliationLifecycleStore', () => {
   beforeAll(async () => {
     try {
@@ -262,7 +294,9 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
       return;
     }
 
-    await pool.query('TRUNCATE reconciliation_audit_event, reconciliation_review_decision, reconciliation_export, reconciliation_job_summary, reconciliation_review_observation, reconciliation_exception, reconciliation_rule_result, reconciliation_match_result, reconciliation_match_group, reconciliation_canonical_row, reconciliation_raw_row, reconciliation_import_batch, reconciliation_source_file, reconciliation_job RESTART IDENTITY CASCADE');
+    await pool.query(
+      'TRUNCATE reconciliation_audit_event, reconciliation_review_decision, reconciliation_export, reconciliation_job_summary, reconciliation_review_observation, reconciliation_exception, reconciliation_rule_result, reconciliation_match_result, reconciliation_match_group, reconciliation_canonical_row, reconciliation_raw_row, reconciliation_import_batch, reconciliation_source_file, reconciliation_job RESTART IDENTITY CASCADE',
+    );
   });
 
   it('installs the phase 2 report and review indexes used by the PostgreSQL read model', async () => {
@@ -346,7 +380,10 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
       ],
     });
 
-    const sourceFiles = [buildSourceFile(bankSourceFileId, 'bank'), buildSourceFile(qboSourceFileId, 'qbo')];
+    const sourceFiles = [
+      buildSourceFile(bankSourceFileId, 'bank'),
+      buildSourceFile(qboSourceFileId, 'qbo'),
+    ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 3),
@@ -508,16 +545,46 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
     expect(stateResult.rows[0]?.current_state).toBe('FINALIZED');
 
     const counts = await Promise.all([
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_source_file WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_import_batch WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_raw_row WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_canonical_row WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_match_result WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_match_group WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_exception WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_rule_result WHERE job_id = $1', [jobId]),
-      pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM reconciliation_review_decision WHERE job_id = $1', [jobId]),
-      pool.query<{ checksum_sha256: string }>('SELECT checksum_sha256 FROM reconciliation_export WHERE job_id = $1', [jobId]),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_source_file WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_import_batch WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_raw_row WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_canonical_row WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_match_result WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_match_group WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_exception WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_rule_result WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM reconciliation_review_decision WHERE job_id = $1',
+        [jobId],
+      ),
+      pool.query<{ checksum_sha256: string }>(
+        'SELECT checksum_sha256 FROM reconciliation_export WHERE job_id = $1',
+        [jobId],
+      ),
     ]);
 
     expect(counts[0].rows[0]?.count).toBe(2);
@@ -597,6 +664,69 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
     expect(rawRowCount.rows[0]?.count).toBe(0);
   });
 
+  it('serializes concurrent import writes for the same job and prevents duplicate persistence', async () => {
+    if (startupError) {
+      return;
+    }
+
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+      correlationId: 'corr-concurrent-import',
+      inputFingerprint: 'fingerprint-concurrent-import',
+    });
+
+    const sourceFiles = [
+      buildSourceFile(bankSourceFileId, 'bank'),
+      buildSourceFile(qboSourceFileId, 'qbo'),
+    ];
+    const firstAttemptRows = [
+      buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
+      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+    ];
+    const secondAttemptRows = [
+      buildRawRow(randomUUID(), bankSourceFileId, 'bank', 3),
+      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 3),
+    ];
+
+    const outcomes = await Promise.allSettled([
+      store.persistParsedRows(jobId, sourceFiles, firstAttemptRows),
+      store.persistParsedRows(jobId, sourceFiles, secondAttemptRows),
+    ]);
+
+    const fulfilledCount = outcomes.filter((outcome) => outcome.status === 'fulfilled').length;
+    const rejectedOutcomes = outcomes.filter((outcome) => outcome.status === 'rejected');
+    const rejectedMessages = rejectedOutcomes.map((outcome) =>
+      outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+    );
+
+    expect(fulfilledCount).toBe(1);
+    expect(rejectedOutcomes).toHaveLength(1);
+    expect(
+      rejectedMessages.some((message) => message.includes('Invalid reconciliation_job transition')),
+    ).toBe(true);
+
+    const stateResult = await pool.query<{ current_state: string }>(
+      'SELECT current_state FROM reconciliation_job WHERE id = $1',
+      [jobId],
+    );
+    const rawRowResult = await pool.query<{ line_number: number }>(
+      'SELECT line_number FROM reconciliation_raw_row WHERE job_id = $1 ORDER BY line_number ASC',
+      [jobId],
+    );
+    const importBatchCount = await pool.query<{ count: number }>(
+      'SELECT COUNT(*)::int AS count FROM reconciliation_import_batch WHERE job_id = $1',
+      [jobId],
+    );
+
+    expect(stateResult.rows[0]?.current_state).toBe('IMPORTED');
+    expect(rawRowResult.rows).toHaveLength(2);
+    expect(importBatchCount.rows[0]?.count).toBe(2);
+
+    const persistedLines = rawRowResult.rows.map((row) => row.line_number);
+    expect(new Set(persistedLines).size).toBe(1);
+    expect([2, 3]).toContain(persistedLines[0]);
+  });
+
   it('upserts reviewer decisions in place, increments record version, and leaves a single durable row', async () => {
     if (startupError) {
       return;
@@ -662,7 +792,9 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
     expect(decisionRows.rows[0]?.notes).toBe('Rejected after follow-up.');
     expect(decisionRows.rows[0]?.reviewer_name).toBe('Controller Two');
     expect(decisionRows.rows[0]?.record_version).toBe(2);
-    expect(new Date(String(decisionRows.rows[0]?.updated_at)).toISOString()).toContain(updatedAt.slice(0, 19));
+    expect(new Date(String(decisionRows.rows[0]?.updated_at)).toISOString()).toContain(
+      updatedAt.slice(0, 19),
+    );
     expect(auditRows.rows[0]?.count).toBe(2);
 
     const readModelStore = new PostgresReconciliationReadModelStore(pool);
@@ -721,9 +853,13 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
     expect(jobRows.rows[0]?.retry_count).toBe(1);
     expect(jobRows.rows[0]?.failure_code).toBe('PARSE_FAILURE');
     expect(jobRows.rows[0]?.failure_message).toBe('Workbook header mapping failed.');
-    expect(new Date(String(jobRows.rows[0]?.completed_at)).toISOString()).toContain('2026-04-07T15:00:00');
+    expect(new Date(String(jobRows.rows[0]?.completed_at)).toISOString()).toContain(
+      '2026-04-07T15:00:00',
+    );
     expect(rawRowCount.rows[0]?.count).toBe(0);
-    expect(auditRows.rows.some((row) => row.event_type === 'job.failed' && row.count === 1)).toBe(true);
+    expect(auditRows.rows.some((row) => row.event_type === 'job.failed' && row.count === 1)).toBe(
+      true,
+    );
   });
 
   it('rejects invalid failure transitions and leaves finalized jobs unchanged', async () => {
@@ -776,7 +912,9 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
     expect(jobRows.rows[0]?.retry_count).toBe(0);
     expect(jobRows.rows[0]?.failure_code).toBeNull();
     expect(jobRows.rows[0]?.failure_message).toBeNull();
-    expect(new Date(String(jobRows.rows[0]?.completed_at)).toISOString()).toContain('2026-04-07T14:00:00');
+    expect(new Date(String(jobRows.rows[0]?.completed_at)).toISOString()).toContain(
+      '2026-04-07T14:00:00',
+    );
     expect(failedAuditCount.rows[0]?.count).toBe(0);
   });
 
@@ -791,7 +929,10 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
       inputFingerprint: 'fingerprint-orphan-match',
     });
 
-    const sourceFiles = [buildSourceFile(bankSourceFileId, 'bank'), buildSourceFile(qboSourceFileId, 'qbo')];
+    const sourceFiles = [
+      buildSourceFile(bankSourceFileId, 'bank'),
+      buildSourceFile(qboSourceFileId, 'qbo'),
+    ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
@@ -845,6 +986,75 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
     expect(ruleResultCount.rows[0]?.count).toBe(0);
   });
 
+  it('persists a probable match only once when it is also present in matchResults', async () => {
+    if (startupError) {
+      return;
+    }
+
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+      correlationId: 'corr-duplicate-probable-match',
+      inputFingerprint: 'fingerprint-duplicate-probable-match',
+    });
+
+    const sourceFiles = [
+      buildSourceFile(bankSourceFileId, 'bank'),
+      buildSourceFile(qboSourceFileId, 'qbo'),
+    ];
+    const rawRows = [
+      buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
+      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+    ];
+    await store.persistParsedRows(jobId, sourceFiles, rawRows);
+
+    const canonicalRows = rawRows.map((row) =>
+      buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
+    );
+    await store.persistNormalizedRows(jobId, canonicalRows);
+
+    const probableMatch: MatchResult = {
+      id: randomUUID(),
+      disposition: 'ProbableMatch',
+      confidence: 'Probable',
+      ruleId: 'amount-date-reference-variance',
+      ruleName: 'Amount + Date + Text with Reference Variance',
+      reason: 'Needs review',
+      score: 0.78,
+      bankTransactionId: canonicalRows[0]?.id,
+      qboTransactionId: canonicalRows[1]?.id,
+      dateDifferenceDays: 1,
+      amountDifference: 0,
+      evidence: ['Reference mismatch'],
+      exceptionCategory: 'ReferenceNumberMismatch',
+    };
+
+    await store.persistMatchingArtifacts({
+      jobId,
+      matchResults: [probableMatch],
+      probableMatches: [probableMatch],
+      groupedMatchResults: [],
+    });
+
+    const persistedMatches = await pool.query<{
+      id: string;
+      result_bucket: string;
+      disposition: string;
+    }>(
+      `SELECT id::text, result_bucket, disposition
+         FROM reconciliation_match_result
+        WHERE job_id = $1`,
+      [jobId],
+    );
+
+    expect(persistedMatches.rows).toEqual([
+      {
+        id: probableMatch.id,
+        result_bucket: 'PROBABLE',
+        disposition: 'ProbableMatch',
+      },
+    ]);
+  });
+
   it('rejects review artifacts whose rule lineage points at non-existent canonical rows and rolls the transaction back', async () => {
     if (startupError) {
       return;
@@ -856,7 +1066,10 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
       inputFingerprint: 'fingerprint-orphan-review',
     });
 
-    const sourceFiles = [buildSourceFile(bankSourceFileId, 'bank'), buildSourceFile(qboSourceFileId, 'qbo')];
+    const sourceFiles = [
+      buildSourceFile(bankSourceFileId, 'bank'),
+      buildSourceFile(qboSourceFileId, 'qbo'),
+    ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
@@ -933,5 +1146,85 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
     expect(exceptionCount.rows[0]?.count).toBe(0);
     expect(summaryCount.rows[0]?.count).toBe(0);
     expect(ruleResultCount.rows[0]?.count).toBe(0);
+  });
+
+  it('keeps read-model query counts bounded for large exception sets', async () => {
+    if (startupError) {
+      return;
+    }
+
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+      correlationId: 'corr-query-budget',
+      inputFingerprint: 'fingerprint-query-budget',
+    });
+
+    const sourceFiles = [
+      buildSourceFile(bankSourceFileId, 'bank'),
+      buildSourceFile(qboSourceFileId, 'qbo'),
+    ];
+    const rawRows = [
+      buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
+      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+    ];
+    await store.persistParsedRows(jobId, sourceFiles, rawRows);
+
+    const canonicalRows = rawRows.map((row) =>
+      buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
+    );
+    await store.persistNormalizedRows(jobId, canonicalRows);
+
+    await store.persistMatchingArtifacts({
+      jobId,
+      matchResults: [],
+      probableMatches: [],
+      groupedMatchResults: [],
+    });
+
+    const exceptions: ExceptionItem[] = Array.from({ length: 20 }, (_, index) => ({
+      id: randomUUID(),
+      runId: jobId,
+      category: 'MissingFromQBO',
+      severity: 'High',
+      source: 'bank',
+      spreadsheetFileName: 'bank.xlsx',
+      lineNumber: index + 2,
+      transactionDate: '2025-01-01',
+      amount: 10 + index,
+      errorMessage: `Synthetic exception ${index + 1}`,
+      ruleTrace: {
+        ruleId: 'residual-missing-from-qbo',
+        ruleName: 'Missing from QBO',
+        reason: 'Synthetic query-budget scenario',
+        evidence: ['Synthetic fixture row'],
+      },
+      recommendedNextActions: ['Review source and ledger values.'],
+      normalizedComparisonTokens: [`ROW-${index + 1}`],
+      relatedTransactionIds: [canonicalRows[0]?.id ?? ''],
+    }));
+
+    await store.persistReviewArtifacts({
+      jobId,
+      exceptions,
+      reviewerObservations: [],
+      summary: buildSummary(),
+    });
+
+    const readModelStore = new PostgresReconciliationReadModelStore(pool);
+
+    const pageLookup = await countQueriesDuring(pool as unknown as QueryCounterClient, () =>
+      readModelStore.listRunExceptionsPage(jobId, 20, 0),
+    );
+
+    expect(pageLookup.result.items).toHaveLength(exceptions.length);
+    expect(pageLookup.result.total).toBe(exceptions.length);
+    expect(pageLookup.queryCount).toBeLessThanOrEqual(2);
+
+    const reportLookup = await countQueriesDuring(pool as unknown as QueryCounterClient, () =>
+      readModelStore.findRunReportById(jobId),
+    );
+
+    expect(reportLookup.result?.exceptions).toHaveLength(exceptions.length);
+    expect(reportLookup.queryCount).toBeLessThanOrEqual(9);
   });
 });

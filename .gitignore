@@ -3,6 +3,9 @@ node_modules
 .env
 .env.local
 .env.docker
+.env.docker.dev
+.env.docker.stage
+.env.docker.test-stage
 coverage
 dist
 playwright-report

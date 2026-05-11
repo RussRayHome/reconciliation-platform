@@ -1,0 +1,63 @@
+-- =============================================================================
+-- DEV AND STAGE ENVIRONMENTS ONLY
+-- DO NOT RUN IN PRODUCTION.
+--
+-- Creates the 'rray' database user with superuser and database-admin privileges.
+-- Idempotent: safe to run multiple times.
+--
+-- How to run (dev):
+--   bash scripts/db/run-users.sh dev
+--
+-- How to run (stage):
+--   bash scripts/db/run-users.sh stage
+--
+-- Or manually via psql:
+--   psql -h <host> -p <port> -U <admin-user> -d reconciliation_platform \
+--       -f scripts/db/dev-stage/create-users.sql
+-- =============================================================================
+
+\echo 'Creating dev/stage user: rray'
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rray') THEN
+    CREATE ROLE rray
+      LOGIN
+      SUPERUSER
+      CREATEDB
+      CREATEROLE
+      PASSWORD 'P@ssw0rd';
+    RAISE NOTICE 'Role rray created.';
+  ELSE
+    ALTER ROLE rray
+      LOGIN
+      SUPERUSER
+      CREATEDB
+      CREATEROLE
+      PASSWORD 'P@ssw0rd';
+    RAISE NOTICE 'Role rray already exists — attributes updated.';
+  END IF;
+END;
+$$;
+
+-- Full database access
+GRANT ALL PRIVILEGES ON DATABASE reconciliation_platform TO rray;
+
+-- Full access to all current objects in the public schema
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO rray;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO rray;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO rray;
+GRANT ALL PRIVILEGES ON ALL PROCEDURES IN SCHEMA public TO rray;
+GRANT ALL PRIVILEGES ON SCHEMA public TO rray;
+
+-- Full access to objects created in future by the application role
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT ALL PRIVILEGES ON TABLES TO rray;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT ALL PRIVILEGES ON SEQUENCES TO rray;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT ALL PRIVILEGES ON FUNCTIONS TO rray;
+
+\echo 'Done. User rray is configured for dev/stage.'

@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
-$ConfiguredEnvFile = if ($env:DOCKER_ENV_FILE) { $env:DOCKER_ENV_FILE } elseif ($env:DOCKER_COMPOSE_ENV_FILE) { $env:DOCKER_COMPOSE_ENV_FILE } else { '.env.docker' }
+$ConfiguredEnvFile = if ($env:DOCKER_ENV_FILE) { $env:DOCKER_ENV_FILE } elseif ($env:DOCKER_COMPOSE_ENV_FILE) { $env:DOCKER_COMPOSE_ENV_FILE } else { '.env.docker.dev' }
 $EnvFile = if ([System.IO.Path]::IsPathRooted($ConfiguredEnvFile)) { $ConfiguredEnvFile } else { Join-Path $RootDir $ConfiguredEnvFile }
-$FallbackFile = Join-Path $RootDir '.env.docker.example'
+$FallbackFile = Join-Path $RootDir '.env.docker.dev.example'
 $SourceFile = if (Test-Path $EnvFile) { $EnvFile } else { $FallbackFile }
 $ComposeArgs = @('-f', (Join-Path $RootDir 'compose.yaml'))
 

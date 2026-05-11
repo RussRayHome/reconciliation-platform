@@ -1,218 +1,250 @@
 # Reconciliation Rules
 
-## Rule Scope
+This document defines the reconciliation behavior currently implemented across parsing, normalization, matching, exception classification, summary generation, and reviewer-facing outputs.
 
-These rules describe the behavior currently implemented by the application in normalization, matching, exception classification, and summary generation.
+## 1. Scope and source of truth
 
-The reconciliation flow is:
+This reference is intentionally implementation-driven.
 
-1. Parse the uploaded bank and QBO workbooks.
-2. Normalize rows into a shared transaction model.
-3. Exclude rows that should not participate in matching.
-4. Detect duplicates within each source.
-5. Rank bank-to-QBO candidate pairs.
-6. Promote candidates into exact matches, probable matches, timing differences, amount mismatches, or ambiguous-review items.
-7. Classify remaining transactions and matched exceptions into accountant-facing exception categories.
+- Pipeline orchestration: `packages/core/src/reconcile.ts`
+- Matching engine and grouped reservation logic: `packages/core/src/matching/engine.ts`, `packages/core/src/matching/groupedReservations.ts`
+- Exception and observation classification: `packages/core/src/reporting/exceptionClassifier.ts`
+- Default configuration and severity mapping: `packages/config/src/default-config.ts`
+- Shared enums, message catalog, and output types: `packages/domain/src/enums.ts`, `packages/domain/src/messages.ts`, `packages/domain/src/types.ts`
 
-## Ingestion Assumptions
+## 2. End-to-end rule pipeline
 
-- Default header row is `1`.
-- Default transaction start row is `2`.
-- Bank files default to `debitCreditColumns` sign handling.
-- QBO files default to `signedAmount` sign handling.
-- QBO beginning-balance rows are excluded by default when configured patterns such as `BEGINNING BALANCE` or `OPENING BALANCE` are found.
-- Original spreadsheet file name, worksheet name, line number, and raw source values are preserved through normalization, matching, reporting, and export.
+The application executes reconciliation in this order:
 
-## Normalization Rules
+1. Parse bank and QBO workbooks into raw rows.
+2. Normalize rows into a shared transaction shape.
+3. Run duplicate detection and one-to-one candidate ranking.
+4. Reserve grouped residual candidates.
+5. Produce exact and advisory match results.
+6. Classify unmatched and advisory outcomes into exception categories.
+7. Build summary metrics.
+8. Generate workbook export.
+9. Emit audit events and reviewer observations.
 
-The normalizer standardizes data while keeping the original row lineage.
+## 3. Ingestion and normalization assumptions
 
-Normalized fields include:
+### Workbook parsing
 
-- transaction date and posting date
-- signed amount, debit, and credit
-- check, serial, and reference values
-- description, merchant, and payee text
-- comparison text and token sets used by the matcher
+- The first worksheet is used.
+- Default header row is `1`; transaction start row is `2`.
+- Column mapping is alias-based with fuzzy header matching.
+- Rows configured in `excludedRows` are marked excluded.
+- QBO beginning-balance patterns (`BEGINNING BALANCE`, `OPENING BALANCE` by default) are excluded when enabled.
+- Source lineage is preserved: file name, worksheet, source file id, and spreadsheet line number.
 
-The normalizer also applies these rules:
+### Normalization
 
-- Excel serial dates are converted to ISO dates.
-- Parentheses, trailing minus signs, and `CR` or `DR` suffixes are interpreted when parsing amounts.
-- Text normalization uppercases values, strips punctuation, collapses whitespace, and removes configured stop words.
-- Reference token normalization keeps stop-word removal off so check and reference values are preserved more literally.
-- A transaction is marked with data-quality issues when amount is missing, amount is malformed, transaction date is missing, transaction date is malformed, or a zero amount is encountered while zero-amount rows are disallowed.
-- Rows already marked as excluded during parsing remain excluded from matching.
+- Amount parsing supports currency symbols, commas, parentheses negatives, trailing minus, and `CR`/`DR` suffixes.
+- Date parsing supports standard date strings and Excel serial values.
+- Signed amount behavior depends on source config (`signedAmount` vs `debitCreditColumns`).
+- Comparison tokens use text normalization and stop-word removal.
+- Reference tokens keep stop-word removal disabled so reference/check context remains literal.
 
-## Default Matching Configuration
+### Data quality and exclusion behavior
 
-The default engine thresholds are:
+A row is marked with data-quality issues when any of the following applies:
 
-- amount tolerance: `0.01`
-- primary date tolerance: `5` days
-- timing-difference window: `21` days
-- stale outstanding check threshold: `45` days
-- text similarity threshold for exact matches: `0.70`
-- text similarity threshold for probable matches: `0.62`
-- reference similarity threshold: `0.90`
-- grouped candidate pool size: `6`
-- grouped maximum grouped-side size: `3`
-- duplicate date window: `3` days
-- duplicate similarity threshold: `0.78`
-- amount-mismatch text similarity threshold: `0.65`
+- amount is missing or malformed
+- transaction date is missing or malformed
+- amount is zero while `allowZeroAmount` is disabled
+- parser issues are present
 
-Account-specific overrides can change these settings.
+Rows marked excluded or with data-quality issues are not eligible for matching.
 
-## Pre-Match Filtering
+## 4. Default configuration values
 
-The matcher only considers active transactions:
+The default matching and reporting profile is defined in `packages/config/src/default-config.ts`.
 
-- excluded rows are removed
-- rows with data-quality issues are removed from candidate matching
-- duplicate rows are identified within bank and QBO separately before cross-source matching
+| Setting                                   | Default   |
+|-------------------------------------------|-----------|
+| amount tolerance                          | `0.01`    |
+| primary date tolerance                    | `5` days  |
+| timing-difference window                  | `21` days |
+| stale outstanding check threshold         | `45` days |
+| exact text similarity threshold           | `0.70`    |
+| probable text similarity threshold        | `0.62`    |
+| reference similarity threshold            | `0.90`    |
+| distinctive amount max occurrences        | `1`       |
+| grouped candidate pool size               | `6`       |
+| grouped match max size                    | `3`       |
+| duplicate date window                     | `3` days  |
+| duplicate similarity threshold            | `0.78`    |
+| amount-mismatch text similarity threshold | `0.65`    |
 
-Duplicate detection requires:
+Account-specific overrides can change source parsing options, matching thresholds, and severity mapping.
+
+## 5. Matching engine behavior
+
+### Pre-match filtering and duplicate detection
+
+The matcher starts from active transactions only:
+
+- `isExcluded === false`
+- `dataQualityIssues.length === 0`
+
+Duplicate detection runs inside each source independently (bank and QBO) and requires:
 
 - same amount within tolerance
-- date proximity within the duplicate window
-- either comparison-text similarity above the duplicate threshold or exact reference similarity
+- date difference within duplicate window
+- either description similarity above threshold or exact reference similarity
 
-Duplicate rows are not used for cross-source matching and later become `DuplicateInBank` or `DuplicateInQBO` exceptions.
+Duplicate rows are removed from cross-source matching and later classified as `DuplicateInBank` or `DuplicateInQBO`.
 
-## Candidate Ranking Rules
+### One-to-one candidate ranking order
 
-Candidate pairs are generated for remaining bank and QBO transactions and sorted by descending score. The engine applies these rules in order.
+For each remaining bank/QBO pair, the engine evaluates rules in this order:
 
-1. `Reference + Amount Match`
-Amounts match and reference similarity is at least `0.90`.
+1. `Reference + Amount Match` -> exact candidate
+2. `Month-End Transfer Review Match` -> probable timing-review candidate
+3. `Amount + Date + Text with Reference Variance` -> probable review candidate (`CheckNumberMismatch` or `ReferenceNumberMismatch`)
+4. `Amount + Date + Text Match` -> exact candidate (includes low-context exact shortcut)
+5. `Amount + Date with Description Variance` -> probable review candidate (`DescriptionMerchantVariance`)
+6. `Amount + Extended Date Window Match` -> date-variance candidate
+7. `Possible Amount Mismatch` -> amount-mismatch candidate
 
-2. `Month-End Transfer Review Match`
-Amounts match, date drift is between `3` and `31` days, the bank description includes `online from`, the QBO transaction type is `Journal Entry`, and the QBO description includes `money transfers` at month end in the same month and year. This becomes a probable-review candidate.
+If no rule applies, the pair remains unmatched.
 
-3. `Amount + Date + Text with Reference Variance`
-Amounts match, dates are within `5` days, text similarity meets the exact-match text threshold, reference similarity is below `0.90`, and at least one side has a check or reference value. This becomes a probable-review candidate and is tagged as either `CheckNumberMismatch` or `ReferenceNumberMismatch`.
+### Amount-driven mode
 
-4. `Amount + Date + Text Match`
-Amounts match, dates are within `5` days, references either align or are not materially present, and text similarity meets the exact-match threshold. A low-context exact match is also allowed when text similarity is `0`, the amount is unique on both sides, and the QBO side has very short comparison context.
+When `textSimilarityThreshold <= 0.12`, the matcher enters an amount-driven mode. In this mode:
 
-5. `Amount + Date with Description Variance`
-Amounts match, dates are within `5` days, and text similarity falls below the exact-match threshold but at or above the review threshold. This becomes a probable-review candidate tagged as `DescriptionMerchantVariance`.
+- some narrative-heavy review rules are bypassed
+- ambiguous-review detection is suppressed
 
-6. `Amount + Extended Date Window Match`
-Amounts match and the date difference is within `21` days. This becomes a `DateVariance` candidate initially and can later be promoted to `TimingDifference` during final classification when the residual evidence indicates a clean timing lag rather than an ordinary date variance.
+This mode is used by selected account override profiles.
 
-7. `Possible Amount Mismatch`
-Amounts do not match, dates are within `5` days, and text similarity is at least `0.65`. This becomes an `AmountMismatch` candidate.
+### Ambiguous review handling
 
-If none of the rules apply, the transactions stay unmatched.
+A candidate is converted to `AmbiguousReview` with category `AmbiguousMatchRequiringReview` when:
 
-## Match Resolution Rules
+- multiple close alternatives exist (within `0.1` score of the top candidate)
+- candidate score is below `0.95`
+- reference similarity is below the configured threshold
+- amount-driven mode is not active
 
-The engine consumes exact matches and keeps non-exact one-to-one review results advisory:
+### Grouped reservation behavior
 
-- once a bank or QBO transaction is consumed by an exact candidate, it cannot be matched again
-- exact candidates become `ExactMatch`
-- non-exact one-to-one candidates stay in `matchResults` and the probable-review queue, but they do not remove transactions from the residual classification pool
-- grouped residual candidates are reserved before ambiguous or other advisory one-to-one review results are recorded
-- amount mismatch, reference variance, description variance, and ambiguous review results are protected from downstream residual-stage reclassification
+Before finalizing advisory one-to-one results, the engine reserves grouped candidates:
 
-Ambiguous review handling is applied before finalizing a candidate when all of the following are true:
+- one-to-many and many-to-one combinations are evaluated
+- combinations must balance amounts within tolerance
+- sign and transaction-kind compatibility must hold
+- maximum cross-source date spread must fit the timing window
 
-- more than one close alternative exists within `0.1` of the top score
-- the candidate score is below `0.95`
-- reference similarity is below the configured reference threshold
-- the matcher is not in the amount-driven mode used for very low text-similarity thresholds
+Selected grouped candidates are emitted as `groupedMatchResults` and their member ids are reserved so lower-confidence one-to-one candidates do not consume them.
 
-In that case the result is recorded as `AmbiguousReview` with exception category `AmbiguousMatchRequiringReview`.
+### Match result consumption rules
 
-Probable and ambiguous results are retained in the dedicated probable-match review queue rather than treated as clean exact matches.
+- Exact matches consume both sides and are removed from unmatched pools.
+- Advisory/probable one-to-one results are retained for review but do not count as clean exact matches.
+- Unmatched sets are built after exact consumption only, then refined by classifier stage logic.
 
-## Exception Classification Rules
+## 6. Exception classification behavior
 
-After matching, the classifier builds exceptions using both unmatched transactions and matched results that still require review.
+Classification combines unmatched transactions, duplicate flags, and advisory match results.
 
-Transactions can become exceptions through these paths:
+### Stage order
 
-- bank or QBO rows with data-quality issues become `InvalidOrMissingData`
-- duplicate bank rows become `DuplicateInBank`
-- duplicate QBO rows become `DuplicateInQBO`
-- unmatched QBO check-like disbursements older than the stale threshold become `StaleOutstandingCheck`
-- unmatched bank and QBO rows with the same distinctive amount and close dates, but materially conflicting narrative or reference context, become `LikelyMiscoding`
-- unmatched bank and QBO rows with the same amount, compatible sign and transaction type, and dates outside the primary tolerance but within the timing window become `TimingDifference`
-- unmatched one-to-many or many-to-one residual groups whose net amounts balance across sources become `LikelySplitCombineIssue`
-- unmatched positive residual groups that balance across sources and retain deposit-like transaction kinds become `DepositGroupingIssue`
-- unmatched bank rows become `MissingFromQBO`
-- unmatched QBO rows become `MissingFromBank`
-- matched review results contribute `DateVariance`, `TimingDifference`, `AmountMismatch`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `DescriptionMerchantVariance`, or `AmbiguousMatchRequiringReview`
+Residual staging currently executes in this order:
 
-The classifier keeps only the highest-priority exception per transaction key. Current precedence is:
+1. stale outstanding check detection
+2. likely miscoding detection
+3. grouped residual detection
+4. timing difference detection
+5. missing-item fallback (`MissingFromQBO` / `MissingFromBank`)
+
+### Advisory-protected categories
+
+Transactions tied to these advisory categories are removed from residual missing-stage fallback:
+
+- `AmountMismatch`
+- `CheckNumberMismatch`
+- `ReferenceNumberMismatch`
+- `DescriptionMerchantVariance`
+- `AmbiguousMatchRequiringReview`
+
+### Category generation highlights
+
+- `InvalidOrMissingData`: data-quality issue rows.
+- `DuplicateInBank` / `DuplicateInQBO`: same-source duplicates.
+- `StaleOutstandingCheck`: unmatched, check-like, negative QBO items older than stale threshold.
+- `LikelyMiscoding`: distinctive same-amount near-date pairs with strong narrative/reference conflict.
+- `LikelySplitCombineIssue` / `DepositGroupingIssue`: balanced residual grouped sets.
+- `TimingDifference`: residual timing-compatible same-amount pairs in the extended window.
+- `MissingFromQBO` / `MissingFromBank`: final unmatched fallback.
+- Match-result-derived categories: `DateVariance`, `TimingDifference`, `AmountMismatch`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `DescriptionMerchantVariance`, `AmbiguousMatchRequiringReview`.
+
+For `DateVariance` match results, classifier post-processing can upgrade category to `LikelyMiscoding` or `TimingDifference` when evidence supports the stronger interpretation.
+
+### Category precedence
+
+When more than one category could apply to the same transaction key, precedence is:
 
 1. `InvalidOrMissingData`
-2. `DuplicateInBank` and `DuplicateInQBO`
+2. `DuplicateInBank`, `DuplicateInQBO`
 3. `AmountMismatch`
-4. `LikelySplitCombineIssue` and `DepositGroupingIssue`
+4. `LikelySplitCombineIssue`, `DepositGroupingIssue`
 5. `LikelyMiscoding`
-6. `CheckNumberMismatch` and `ReferenceNumberMismatch`
+6. `CheckNumberMismatch`, `ReferenceNumberMismatch`
 7. `DateVariance`
 8. `TimingDifference`
 9. `DescriptionMerchantVariance`
 10. `AmbiguousMatchRequiringReview`
 11. `StaleOutstandingCheck`
-12. `MissingFromQBO` and `MissingFromBank`
+12. `MissingFromQBO`, `MissingFromBank`
 
-Grouped residual classification uses configurable one-to-many and many-to-one search bounds. The rule trace preserves grouped amount totals, member line references, maximum date spread, inferred transaction kinds, and all linked counterpart rows so reviewers can see why the items were kept together.
+## 7. Severity, messaging, and sort order
 
-## Default Severity Mapping
+Default severity mapping is supplied by `reporting.severityByCategory` in config.
 
-By default, categories map to severity as follows:
+Default severity groups:
 
-- `InvalidOrMissingData`: `Critical`
-- `MissingFromBank`: `High`
-- `MissingFromQBO`: `High`
-- `AmountMismatch`: `High`
-- `DuplicateInBank`: `High`
-- `DuplicateInQBO`: `High`
-- `LikelyMiscoding`: `High`
-- `LikelySplitCombineIssue`: `High`
-- `DepositGroupingIssue`: `High`
-- `DateVariance`: `Medium`
-- `TimingDifference`: `Medium`
-- `CheckNumberMismatch`: `Medium`
-- `ReferenceNumberMismatch`: `Medium`
-- `AmbiguousMatchRequiringReview`: `Medium`
-- `StaleOutstandingCheck`: `Medium`
-- `DescriptionMerchantVariance`: `Low`
+- `Critical`: `InvalidOrMissingData`
+- `High`: missing items, duplicates, amount mismatch, grouped categories, likely miscoding
+- `Medium`: date/timing/reference/check/ambiguous/stale-outstanding
+- `Low`: `DescriptionMerchantVariance`
 
-## Summary and Reporting Rules
+User-facing exception text and recommended follow-up actions are sourced from:
 
-Summary metrics are built directly from normalized transactions, final match results, and final exceptions. Summary totals are intended to remain aligned with the classified exception set rather than being recalibrated after classification.
+- `professionalErrorMessages`
+- `recommendedNextActionsByCategory`
 
-The summary reports:
-
-- exact matches
-- probable matches
-- date variances
-- timing differences
-- duplicates, split by bank and QBO
-- data-quality issues
-- amount mismatches
-- missing-from-bank and missing-from-QBO counts
-- net amounts for items missing in bank or QBO
-- clean matched amount
-- unresolved exposure based on exception amounts
-- counts and amounts by exception category
-
-Exception reports are sorted by:
+Exceptions are sorted by:
 
 1. severity
 2. source
 3. transaction date
 4. line number
 
-Messages shown in the UI and workbook exports use accountant-facing wording from the shared professional message catalog rather than developer shorthand.
+## 8. Summary and reviewer outputs
 
-Each final exception now also preserves category-specific recommended next actions and a nested `ruleTrace` object containing the originating rule ID, rule name, human-readable reason, evidence list, and counterpart file or line context when that context exists.
+Summary metrics are built from normalized transactions, match results, and final exceptions. The summary includes:
 
-## Class and Method Documentation
+- exact/probable/date-variance/timing counts
+- duplicate and data-quality counts
+- amount mismatch and missing-item counts
+- clean matched amount and unresolved exposure
+- counts and amounts by exception category
 
-Implementation-level method references, including inputs, outputs, and before or after state objects, are maintained in `docs/class-method-reference.md`.
+Reviewer observations are also generated for:
+
+- exception-report creation
+- timing-difference detection
+- annual mode month-coverage gaps by source file
+
+## 9. Change management guidance
+
+When rule behavior changes, update these artifacts together:
+
+1. matching/classification implementation and tests in `packages/core`
+2. config defaults and overrides in `packages/config`
+3. shared category/messages/types in `packages/domain`
+4. API contract docs in `docs/api.md`
+5. test strategy and fixtures in `docs/test-strategy.md` and `packages/test-fixtures`
+
+Implementation-level class and method details are maintained in `docs/class-method-reference.md`.

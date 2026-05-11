@@ -21,7 +21,7 @@ const parseNumber = (value: string | undefined): number | null => {
 
   const isParenthesesNegative = /^\(.*\)$/.test(trimmed);
   const hasTrailingMinus = /-$/.test(trimmed);
-  const directionMatch = trimmed.match(/\b(CR|DR)\b$/i);
+  const directionMatch = /\b(CR|DR)\b$/i.exec(trimmed);
 
   const unsigned = trimmed
     .replaceAll(/[,$\s]/g, '')
@@ -38,11 +38,11 @@ const parseNumber = (value: string | undefined): number | null => {
     return null;
   }
 
-  const directionalSign = directionMatch
-    ? directionMatch[1]?.toUpperCase() === 'DR'
-      ? -1
-      : 1
-    : 1;
+  const directionToken = directionMatch?.[1]?.toUpperCase();
+  let directionalSign = 1;
+  if (directionToken === 'DR') {
+    directionalSign = -1;
+  }
   const explicitNumericSign = parsed < 0 ? -1 : 1;
   const numericSign = isParenthesesNegative || hasTrailingMinus ? -1 : explicitNumericSign;
 
@@ -78,11 +78,11 @@ const computeSignedAmount = (
   const parsedAmount = parseNumber(row.amountRaw);
   const debit = parseNumber(row.debitRaw);
   const credit = parseNumber(row.creditRaw);
+  const hasDebitOrCredit = credit !== null || debit !== null;
+  const amountFromDebitCredit = hasDebitOrCredit ? (credit ?? 0) - Math.abs(debit ?? 0) : null;
 
   if (sourceConfig.amountSignConvention === 'signedAmount') {
-    const amount =
-      parsedAmount ??
-      (credit !== null || debit !== null ? (credit ?? 0) - Math.abs(debit ?? 0) : null);
+    const amount = parsedAmount ?? amountFromDebitCredit;
 
     return {
       amount,
@@ -91,9 +91,7 @@ const computeSignedAmount = (
     };
   }
 
-  const amount =
-    parsedAmount ??
-    (credit !== null || debit !== null ? (credit ?? 0) - Math.abs(debit ?? 0) : null);
+  const amount = parsedAmount ?? amountFromDebitCredit;
 
   return {
     amount,

@@ -604,8 +604,11 @@ export class PostgresReconciliationLifecycleStore {
         await client.query(insertGroups.text, insertGroups.values);
       }
 
+      const probableMatchIds = new Set(input.probableMatches.map((result) => result.id));
       const pairwiseRows = [
-        ...input.matchResults.map((result) => ({ result, bucket: 'MATCH' as const })),
+        ...input.matchResults
+          .filter((result) => !probableMatchIds.has(result.id))
+          .map((result) => ({ result, bucket: 'MATCH' as const })),
         ...input.probableMatches.map((result) => ({ result, bucket: 'PROBABLE' as const })),
       ];
 

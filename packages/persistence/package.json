@@ -12,7 +12,7 @@
   "dependencies": {
     "@recon/domain": "0.1.0",
     "pg": "^8.16.3",
-    "zod": "^3.24.3"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/pg": "^8.15.5"

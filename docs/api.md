@@ -1,158 +1,359 @@
 # API Reference
 
-## Health
+This document describes the HTTP contract exposed by the reconciliation API in `apps/api`.
 
-### `GET /api/health`
+## Base URLs
 
-Returns service status and timestamp.
+Local development:
 
-## Developer Status
+- `http://localhost:4000`
 
-### `GET /api/developer/status`
+Docker gateway path:
 
-Runs or returns a cached repository-health snapshot for the developer dashboard.
+- `http://127.0.0.1:4173/api/*`
+
+## Common behavior
+
+### Correlation ID
+
+Each response includes `x-correlation-id`.
+
+- If the request provides `x-correlation-id`, that value is reused.
+- Otherwise the API generates a UUID.
+
+### Content types
+
+- JSON endpoints use `application/json`.
+- Workbook download uses Excel binary content type.
+
+### Error shape
+
+Most errors return:
+
+```json
+{
+  "message": "..."
+}
+```
+
+## Endpoint summary
+
+| Method | Path                                         | Purpose                                    |
+|--------|----------------------------------------------|--------------------------------------------|
+| GET    | `/api/health`                                | Liveness check                             |
+| GET    | `/api/developer/status`                      | Aggregate quality gate status              |
+| GET    | `/api/developer/runtime`                     | Runtime diagnostics overview               |
+| GET    | `/api/developer/runtime/requests`            | Recent failed requests                     |
+| GET    | `/api/developer/runtime/exceptions`          | Recent runtime exceptions                  |
+| GET    | `/api/developer/runtime/runs`                | Recent reconciliation run outcomes         |
+| POST   | `/api/reconciliation/run`                    | Execute reconciliation from uploaded files |
+| GET    | `/api/reconciliation/latest`                 | Latest completed run report                |
+| GET    | `/api/reconciliation/:id`                    | Run report by ID                           |
+| GET    | `/api/reconciliation/:id/summary`            | Summary metrics by run                     |
+| GET    | `/api/reconciliation/:id/exceptions`         | Exception set (full or paged)              |
+| GET    | `/api/reconciliation/:id/reviewer-decisions` | Reviewer decisions for a run               |
+| POST   | `/api/reconciliation/:id/reviewer-decisions` | Upsert reviewer decision                   |
+| GET    | `/api/reconciliation/:id/export/workbook`    | Download workbook export                   |
+
+## Health endpoint
+
+### GET `/api/health`
+
+Response `200`:
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-05-09T12:34:56.789Z"
+}
+```
+
+## Developer diagnostics endpoints
+
+Developer diagnostics are guarded by environment policy.
+
+- If disabled, all `/api/developer/*` endpoints return `403`.
+- Enable explicitly with `ENABLE_DEVELOPER_DIAGNOSTICS=true`.
+
+### GET `/api/developer/status`
 
 Query parameters:
 
-- `force=1` or `force=true`: bypass the cache and rerun all checks
+- `force=1|true` to bypass cached snapshot.
 
-Response includes:
+Returns:
 
-- `generatedAt`
-- `repositoryPath`
-- `overallStatus`
-- `failedChecks`
-- `passedChecks`
-- `totalChecks`
-- `totalDurationMs`
-- `checks[]` with `name`, `command`, `ok`, `exitCode`, `durationMs`, `summary`, `details`, and optional `highlights`
-- `history[]` with recent snapshots, including `failingCheckNames`
-- `cache` with `ttlMs`, `ageMs`, and `fromCache`
+- Quality checks (unit, integration, e2e, postgres, lint, typecheck, coverage, security audit)
+- Aggregate pass/fail status
+- Recent status history
+- Cache metadata (`ttlMs`, `ageMs`, `fromCache`)
 
-Current checks:
+### GET `/api/developer/runtime`
 
-- `Unit tests`
-- `Integration tests`
-- `E2E tests`
-- `Static analysis (lint)`
-- `Static analysis (typecheck)`
-- `Coverage`
-- `Security vulnerabilities`
+Returns runtime overview including:
 
-Coverage highlights are summarized as `S`, `B`, `F`, and `L`. Security highlights are summarized by severity counts.
+- API reachability and uptime
+- failed request and exception counts within recent window
+- last reconciliation run snapshot
+- git context (branch, commit, latest message, dirty flag)
+- recent failed requests, exceptions, and run outcomes
 
-## Run Reconciliation
+### GET `/api/developer/runtime/requests`
 
-### `POST /api/reconciliation/run`
+Query parameters:
 
-Multipart form-data endpoint.
+- `limit` (default `10`, max `100`)
 
-Required fields:
+Response shape:
 
-- `bankFile`: `.xlsx`
-- `qboFile`: `.xlsx`
+```json
+{
+  "items": [
+    {
+      "timestamp": "...",
+      "method": "POST",
+      "path": "/api/reconciliation/run",
+      "statusCode": 500,
+      "durationMs": 312,
+      "correlationId": "..."
+    }
+  ]
+}
+```
 
-Optional fields:
+### GET `/api/developer/runtime/exceptions`
 
-- `accountIdentifier`
-- `periodLabel`
-- `reconciliationFrequency`
+Query parameters:
 
-Response includes:
+- `limit` (default `10`, max `100`)
 
-- run metadata
-- source file metadata
-- normalized transactions
-- match results
-- grouped match results
-- probable matches
-- exceptions with category, severity, category-specific recommended next actions, optional `priorRuleTraces`, and a nested `ruleTrace` object containing rule metadata, evidence, counterpart traceability, and grouped counterpart arrays when available
-- summary metrics
-- reviewer observations
-- reviewer decisions
-- workbook metadata
-- audit events
+Response shape:
 
-## Fetch Run
+```json
+{
+  "items": [
+    {
+      "timestamp": "...",
+      "method": "POST",
+      "path": "/api/reconciliation/run",
+      "statusCode": 500,
+      "correlationId": "...",
+      "errorName": "Error",
+      "message": "...",
+      "stackPreview": ["..."]
+    }
+  ]
+}
+```
 
-### `GET /api/reconciliation/latest`
+### GET `/api/developer/runtime/runs`
 
-Returns the most recently stored reconciliation run payload without the raw workbook binary.
+Query parameters:
 
-Returns `404` when no completed run has been stored yet.
+- `limit` (default `10`, max `50`)
 
-### `GET /api/reconciliation/:id`
+Response shape:
 
-Returns the stored run payload without the raw workbook binary.
+```json
+{
+  "items": [
+    {
+      "timestamp": "...",
+      "status": "Succeeded",
+      "correlationId": "...",
+      "runId": "...",
+      "accountIdentifier": "...",
+      "reconciliationFrequency": "Monthly",
+      "periodLabel": "...",
+      "durationMs": 1200,
+      "exceptionCount": 7
+    }
+  ]
+}
+```
 
-The run payload includes any persisted `reviewerDecisions` attached to probable-match, ambiguous-review, or exception targets.
-It now also includes additive `groupedMatchResults` emitted by the matcher for balanced grouped candidates, even while grouped exception classification remains on the compatibility path.
+## Reconciliation endpoints
 
-## Fetch Summary
+### POST `/api/reconciliation/run`
 
-### `GET /api/reconciliation/:id/summary`
+Consumes `multipart/form-data`.
 
-Returns `SummaryMetrics` only.
+Required file fields:
 
-## Fetch Exceptions
+- `bankFile` (`.xlsx`)
+- `qboFile` (`.xlsx`)
 
-### `GET /api/reconciliation/:id/exceptions`
+Optional form fields:
 
-Returns the typed exception list, including `recommendedNextActions`, optional `priorRuleTraces`, plus a nested `ruleTrace` object with `ruleId`, `ruleName`, `reason`, `evidence`, primary counterpart source references, and grouped `counterparts` when those were available during classification.
+- `accountIdentifier` (string)
+- `reconciliationFrequency` (`Monthly` | `Annual`)
+- `periodLabel` (string)
 
-## Reviewer Decisions
+Example:
 
-### `GET /api/reconciliation/:id/reviewer-decisions`
+```bash
+curl -X POST http://localhost:4000/api/reconciliation/run \
+  -F "bankFile=@./docs/sample-files/sample-bank.xlsx" \
+  -F "qboFile=@./docs/sample-files/sample-qbo.xlsx" \
+  -F "accountIdentifier=OPERATING-001" \
+  -F "reconciliationFrequency=Monthly" \
+  -F "periodLabel=2026-04"
+```
 
-Returns the persisted reviewer decisions for the specified run.
+Returns `201` with `ReconciliationRunReport` payload.
 
-### `POST /api/reconciliation/:id/reviewer-decisions`
+Validation and upload errors:
 
-Persists or updates a reviewer decision for a single review target on the specified run.
+- `400` invalid/missing form fields or unsupported extension
+- `413` file exceeds configured upload size (`MAX_UPLOAD_MB`)
+
+### GET `/api/reconciliation/latest`
+
+Returns latest completed run report.
+
+- `200` run found
+- `404` no completed run exists
+
+### GET `/api/reconciliation/:id`
+
+Returns run report by ID.
+
+- `200` run found
+- `404` run not found
+
+### GET `/api/reconciliation/:id/summary`
+
+Returns summary metrics for a run.
+
+- `200` summary found
+- `404` run not found
+
+### GET `/api/reconciliation/:id/exceptions`
+
+Two response modes:
+
+1. Full list mode (no paging query):
+
+- returns `ExceptionItem[]`
+
+2. Paged mode (`limit` or `offset` supplied):
+
+- query `limit` default `50`, max `200`
+- query `offset` default `0`
+- returns object:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 50,
+  "offset": 0,
+  "hasMore": false
+}
+```
+
+Both modes:
+
+- `200` run found
+- `404` run not found
+
+### GET `/api/reconciliation/:id/reviewer-decisions`
+
+Returns `ReviewerDecision[]` for the run.
+
+- `200` run found
+- `404` run not found
+
+### POST `/api/reconciliation/:id/reviewer-decisions`
+
+Creates or updates reviewer decision by target identity.
 
 Request body:
 
-- `targetType`: `ProbableMatch`, `AmbiguousReview`, or `ExceptionItem`
-- `targetId`: target identifier within the run
-- `outcome`: `ApprovedMatch`, `RejectedMatch`, `ConfirmedException`, or `ReclassifiedException`
-- `finalCategory`: required when `outcome` is `ReclassifiedException`
-- `notes`: optional reviewer rationale
-- `reviewerId`: optional reviewer identifier
-- `reviewerName`: optional reviewer display name
+```json
+{
+  "targetType": "ProbableMatch",
+  "targetId": "match-123",
+  "outcome": "ApprovedMatch",
+  "finalCategory": "AmountMismatch",
+  "notes": "Optional",
+  "reviewerId": "user-42",
+  "reviewerName": "A. Reviewer"
+}
+```
 
-Validation rules:
+`targetType` allowed values:
 
-- target must exist on the run
-- probable and ambiguous targets accept only `ApprovedMatch` or `RejectedMatch`
-- exception targets accept only `ConfirmedException` or `ReclassifiedException`
-- `finalCategory` must be a valid exception category when reclassifying
+- `ProbableMatch`
+- `AmbiguousReview`
+- `ExceptionItem`
 
-## Download Workbook
+`outcome` allowed values:
 
-### `GET /api/reconciliation/:id/export/workbook`
+- `ApprovedMatch`
+- `RejectedMatch`
+- `ConfirmedException`
+- `ReclassifiedException`
 
-Returns the generated `.xlsx` workbook as an attachment.
+Outcome compatibility rules:
 
-## Error Behavior
+- `ExceptionItem` -> `ConfirmedException` or `ReclassifiedException`
+- `ProbableMatch` / `AmbiguousReview` -> `ApprovedMatch` or `RejectedMatch`
 
-- `400` for missing required uploads
-- `400` for invalid upload type
-- `413` for files that exceed the configured upload limit
-- `404` for unknown run IDs
-- `500` for unexpected parse or processing failures
+Additional validation:
 
-## Observability
+- `finalCategory` is required when `outcome` is `ReclassifiedException`
+- `targetId` must exist on the specified run and target type
 
-Each response includes an `x-correlation-id` header for log tracing across a reconciliation run.
+Responses:
 
-## Class and Method Documentation
+- `201` decision persisted
+- `400` validation failed
+- `404` run not found
 
-For implementation-level API behavior (class and method signatures, inputs, outputs, and state before/after), see `docs/class-method-reference.md`.
+### GET `/api/reconciliation/:id/export/workbook`
 
-Key API-layer entries documented there include:
+Downloads generated workbook for run.
 
-- `InMemoryRunRepository.save`
-- `InMemoryRunRepository.findById`
-- `executeReconciliation`
-- `createApp`
-- `startServer`
+Headers:
+
+- `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- `Content-Disposition: attachment; filename="..."`
+
+Responses:
+
+- `200` workbook binary
+- `404` workbook not available
+
+## Main response models
+
+### ReconciliationRunReport
+
+Key fields:
+
+- run identity/context: `id`, `correlationId`, `accountIdentifier`, `periodLabel`, `reconciliationFrequency`, `status`, timestamps
+- source metadata: `sourceFiles`
+- result artifacts: `groupedMatchResults`, `probableMatches`, `exceptions`
+- analytics: `summary`
+- review state: `reviewerObservations`, `reviewerDecisions`
+- export manifest: `outputWorkbook` (`fileName`, `generatedAt`, `tabNames`)
+
+### SummaryMetrics
+
+Contains operational and accounting summary outputs, including:
+
+- match counts (`exactMatches`, `probableMatches`)
+- unmatched/duplicate/data-quality tallies
+- category distributions (`countsByCategory`, `amountByCategory`)
+- exposure and net amount metrics
+- chart series for UI rendering
+
+## Status code matrix
+
+- `200` successful read/download
+- `201` successful creation
+- `400` invalid request or domain validation failure
+- `403` developer diagnostics disabled
+- `404` resource not found
+- `413` upload too large
+- `500` unhandled server error

@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 
+const hasEnvVariable = (content: string, key: string): boolean =>
+  new RegExp(`^${key}=`, 'm').test(content);
+
+const hasCommand = (command: string): boolean =>
+  spawnSync('sh', ['-c', `command -v ${command} >/dev/null 2>&1`], { stdio: 'ignore' }).status ===
+  0;
+
+const dockerTest = hasCommand('docker') ? it : it.skip;
+
 describe('Docker Compose', () => {
-  it('renders a valid configuration', () => {
-    const output = execSync('docker compose --env-file .env.docker.example config', { encoding: 'utf-8' });
+  dockerTest('renders a valid configuration', () => {
+    const output = execSync('docker compose --env-file .env.docker.example config', {
+      encoding: 'utf-8',
+    });
     expect(output).toContain('services:');
     expect(output).toContain('postgres:');
     expect(output).toContain('api:');
@@ -14,7 +25,7 @@ describe('Docker Compose', () => {
 
   it('has required environment variables', () => {
     const envFile = fs.readFileSync('.env.docker.example', 'utf-8');
-    expect(envFile).toContain('DATABASE_URL');
-    expect(envFile).toContain('PUBLIC_WEB_PORT');
+    expect(hasEnvVariable(envFile, 'API_DATABASE_URL')).toBe(true);
+    expect(hasEnvVariable(envFile, 'PUBLIC_WEB_PORT')).toBe(true);
   });
 });

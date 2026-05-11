@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+const eventTargetWindow = globalThis as unknown as Window;
 
 const { mockProjectDocuments } = vi.hoisted(() => ({
   mockProjectDocuments: [
@@ -23,6 +25,16 @@ const { mockProjectDocuments } = vi.hoisted(() => ({
       audience: 'Contributors',
       pathLabel: 'docs/developer-setup.md',
       content: '# Developer Setup\n\n## Install\n\nInstall steps.',
+    },
+    {
+      id: 'architecture',
+      title: 'Architecture',
+      category: 'Architecture',
+      summary: 'Architecture summary',
+      audience: 'Engineers',
+      pathLabel: 'docs/architecture.md',
+      content:
+        '# Architecture\n\n## System Diagram\n\n<img src="/assets/architecture.png" alt="System architecture" />\n\n![Markdown architecture image](/assets/architecture.png)\n\n[Open full-size architecture diagram](/assets/architecture.png)\n\nUse this [inline architecture link](/assets/architecture.png) for context.',
     },
   ] as const,
 }));
@@ -74,9 +86,51 @@ describe('DocsOverview', () => {
 
     expect(globalThis.location.hash).toContain('readme::readme-intro-1');
 
-    fireEvent(globalThis as unknown as Window, new HashChangeEvent('hashchange'));
+    fireEvent(eventTargetWindow, new HashChangeEvent('hashchange'));
 
     expect(scrollIntoViewMock).toHaveBeenCalled();
     expect(screen.getByRole('link', { name: 'Open developer dashboard' })).toBeInTheDocument();
+  });
+
+  it('renders image and link markdown blocks for document content', async () => {
+    const user = userEvent.setup();
+
+    render(<DocsOverview showDeveloperDashboardLink={false} />);
+
+    await user.click(screen.getByRole('button', { name: /view architecture/i }));
+
+    expect(screen.getByRole('img', { name: 'System architecture' })).toHaveAttribute(
+      'src',
+      '/assets/architecture.png',
+    );
+    expect(screen.getByRole('img', { name: 'Markdown architecture image' })).toHaveAttribute(
+      'src',
+      '/assets/architecture.png',
+    );
+    expect(screen.getByRole('link', { name: 'Open full-size architecture diagram' })).toHaveAttribute(
+      'href',
+      '/assets/architecture.png',
+    );
+    expect(screen.getByRole('link', { name: 'inline architecture link' })).toHaveAttribute(
+      'href',
+      '/assets/architecture.png',
+    );
+  });
+
+  it('opens and closes an enlarged image modal from the docs diagram', async () => {
+    const user = userEvent.setup();
+
+    render(<DocsOverview showDeveloperDashboardLink={false} />);
+
+    await user.click(screen.getByRole('button', { name: /view architecture/i }));
+    await user.click(
+      screen.getByRole('button', { name: /open enlarged image: system architecture/i }),
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'System architecture' });
+    expect(within(dialog).getByRole('img', { name: 'System architecture' })).toBeInTheDocument();
+
+    fireEvent.keyDown(eventTargetWindow, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'System architecture' })).toBeNull();
   });
 });

@@ -75,7 +75,7 @@ if (typeof perf?.mark !== 'function') {
 		duration: 0,
 		detail: null,
 		toJSON: () => ({}),
-		}) as PerformanceMark;
+		});
 }
 
 if (typeof perf?.measure !== 'function') {
@@ -87,5 +87,5 @@ if (typeof perf?.measure !== 'function') {
 		duration: 0,
 		detail: null,
 		toJSON: () => ({}),
-		}) as PerformanceMeasure;
+		});
 }

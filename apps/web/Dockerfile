@@ -14,6 +14,8 @@ COPY packages/ui/package.json packages/ui/package.json
 RUN npm ci
 
 FROM deps AS build
+ARG VITE_ENABLE_DEVELOPER_DASHBOARD=false
+ENV VITE_ENABLE_DEVELOPER_DASHBOARD=${VITE_ENABLE_DEVELOPER_DASHBOARD}
 WORKDIR /app
 COPY . .
 RUN npm run build --workspace @recon/web

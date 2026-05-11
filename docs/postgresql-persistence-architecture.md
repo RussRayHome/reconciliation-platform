@@ -1,177 +1,291 @@
 # PostgreSQL Persistence Architecture
 
-## Purpose
+This document describes the current PostgreSQL-backed durability model for reconciliation lifecycle processing.
 
-This document captures the PostgreSQL persistence model added for reconciliation lifecycle durability.
+## 1. Purpose and boundaries
 
-The design persists explicit workflow state for:
+The PostgreSQL layer is responsible for durable lifecycle state, artifacts, auditability, and reviewer decisions.
 
-- reconciliation job creation
-- source file registration
-- raw row import batches
+Durable concerns include:
+
+- job lifecycle state and transition audit trail
+- source file and raw-row ingestion history
 - canonical normalized rows
-- match and grouped-match artifacts
-- exception and review-ready artifacts
-- export metadata
-- audit history
+- match, grouped match, and rule-trace artifacts
+- exception and reviewer-observation outputs
+- summary and export metadata
 - reviewer decisions
 
-## Why PostgreSQL
+Non-durable compatibility concerns still exist in API runtime for local convenience, but PostgreSQL is the source of truth for persisted reconciliation lifecycle data.
 
-PostgreSQL is a strong fit for this application because the workflow is transactional, auditable, and relational.
+## 2. Runtime selection and startup wiring
 
-The application processes medium-volume datasets rather than true large-scale analytics workloads. For 10K-row files, PostgreSQL supports:
+PostgreSQL persistence is considered enabled when either condition is true:
 
-- transactional state transitions
-- batch inserts without row-by-row ORM chatter
-- strong indexing on job, source, category, and review queries
-- JSONB where trace payloads are semi-structured
-- advisory locking for per-job serialization
+- `RECON_PERSISTENCE_BACKEND=postgres`
+- `DATABASE_URL` is set
 
-## Lifecycle Model
+When enabled, API startup requires `DATABASE_URL`; startup fails if it is missing.
 
-The persistence layer models reconciliation state explicitly.
+In Docker compose, `DATABASE_URL` is derived from `API_DATABASE_URL`, so containerized runtime still satisfies the same backend contract.
 
-Primary job states:
+Relevant wiring:
 
-- CREATED
-- FILE_REGISTERED
-- IMPORTING
-- IMPORTED
-- NORMALIZING
-- NORMALIZED
-- MATCHING
-- MATCHED
-- EXCEPTIONS_IDENTIFIED
-- REVIEW_READY
-- FINALIZED
-- FAILED
-- RETRY_PENDING
-- CANCELLED
+- `apps/api/src/server.ts`
+- `packages/persistence/src/postgres.ts`
+- `compose.yaml`
 
-Each transition is validated in code and written transactionally with an audit event.
+## 3. Migration behavior
 
-## Core Tables
+Migrations are defined in `packages/persistence/src/schema.ts` and applied by `runPostgresMigrations`.
 
-### reconciliation_job
+Startup migration behavior:
 
-Top-level workflow entity containing correlation data, period context, current lifecycle state, retry count, failure details, and timing metadata.
+- `RUN_DB_MIGRATIONS_ON_BOOT=true` -> run migrations
+- `RUN_DB_MIGRATIONS_ON_BOOT=false` -> skip on boot
+- unset -> run on boot outside production; skip behavior is configurable
 
-### reconciliation_source_file
+Explicit migration command path:
 
-One row per source input file with checksum, format, size, source system, and parsed worksheet metadata.
+- `apps/api/src/migrate.ts`
+- requires `DATABASE_URL`
 
-### reconciliation_import_batch
+Migration tracking table:
 
-Tracks chunked raw-row ingest batches so partial import progress is visible and auditable.
+- `schema_migrations(version, name, applied_at)`
 
-### reconciliation_raw_row
+## 4. Lifecycle state model
 
-Stores raw imported row identity, source lineage, raw value payload, exclusion flags, and parsing issues.
+State model is defined in `packages/persistence/src/stateMachine.ts`.
 
-### reconciliation_canonical_row
+Primary states:
 
-Stores normalized row data used by matching and reporting. Queryable fields stay relational; semi-structured source payloads remain JSONB.
+- `CREATED`
+- `FILE_REGISTERED`
+- `IMPORTING`
+- `IMPORTED`
+- `NORMALIZING`
+- `NORMALIZED`
+- `MATCHING`
+- `MATCHED`
+- `EXCEPTIONS_IDENTIFIED`
+- `REVIEW_READY`
+- `FINALIZED`
+- `FAILED`
+- `RETRY_PENDING`
+- `CANCELLED`
 
-### reconciliation_match_result
+Each transition is validated by `assertValidJobTransition` and written in the same transaction that persists the corresponding stage artifacts.
 
-Stores pairwise confirmed and probable matches.
+## 5. Durable write stages
 
-### reconciliation_match_group
+`PostgresReconciliationLifecycleStore` (`packages/persistence/src/reconciliationLifecycleStore.ts`) is the write orchestrator.
 
-Stores grouped-match artifacts separately because grouped results naturally carry variable-size member collections.
+### Stage 1: job creation
 
-### reconciliation_rule_result
+Method: `createJob`
 
-Stores persisted rule lineage for matches, grouped matches, and exceptions.
+Writes:
 
-### reconciliation_exception
+- `reconciliation_job`
+- `reconciliation_source_file`
 
-Stores final exception rows and their trace metadata.
+Transition:
 
-### reconciliation_review_observation
+- `CREATED` -> `FILE_REGISTERED`
 
-Stores review-oriented observations produced by the classification/reporting flow.
+### Stage 2: parsed row persistence
 
-### reconciliation_job_summary
+Method: `persistParsedRows`
 
-Stores final summary metrics and chart payloads for fast report retrieval.
+Writes:
 
-### reconciliation_export
+- `reconciliation_import_batch`
+- `reconciliation_raw_row`
+- source-file imported row counts
 
-Stores generated export metadata, checksum, and tab names.
+Transitions:
 
-### reconciliation_review_decision
+- `FILE_REGISTERED` -> `IMPORTING` -> `IMPORTED`
 
-Stores durable reviewer decisions as upserts keyed by run + target type + target id.
+### Stage 3: normalized row persistence
 
-### reconciliation_audit_event
+Method: `persistNormalizedRows`
 
-Stores state transitions and lifecycle events for traceability.
+Writes:
 
-## Batch Persistence Strategy
+- `reconciliation_canonical_row`
 
-Raw rows, canonical rows, and match artifacts are inserted in bounded batches.
+Transitions:
 
-Current defaults:
+- `IMPORTED` -> `NORMALIZING` -> `NORMALIZED`
 
-- raw rows: 500
-- canonical rows: 500
-- result artifacts: 500
+### Stage 4: matching artifact persistence
 
-This is sized for 10K-row workloads without over-fragmenting transactions.
+Method: `persistMatchingArtifacts`
 
-## Locking and Idempotency
+Writes:
 
-The lifecycle store takes a PostgreSQL advisory transaction lock per job id before mutating workflow state.
+- `reconciliation_match_group`
+- `reconciliation_match_result`
+- `reconciliation_rule_result` (match and grouped lineage)
 
-This prevents concurrent workers from racing the same reconciliation job through incompatible states.
+Transitions:
 
-Current idempotency coverage:
+- `NORMALIZED` -> `MATCHING` -> `MATCHED`
 
-- source files are unique per job and source system
-- raw rows are unique per source file and line number
-- reviewer decisions are unique per job and review target
+Bucket semantics in `reconciliation_match_result`:
 
-Future enhancement:
+- exact/primary match rows are persisted with `result_bucket='MATCH'`
+- review rows are persisted with `result_bucket='PROBABLE'`
+- probable ids are de-duplicated so the same result is not written to both buckets
 
-- promote input fingerprint handling into a first-class API idempotency contract for duplicate job submission reuse
+### Stage 5: exception and summary persistence
 
-## Recovery Model
+Method: `persistReviewArtifacts`
 
-The current implementation persists every major stage so a restart does not lose the durable record of work already completed.
+Writes:
 
-Failure handling currently marks the job FAILED and records audit context.
+- `reconciliation_exception`
+- `reconciliation_review_observation`
+- `reconciliation_rule_result` (exception lineage)
+- `reconciliation_job_summary`
 
-Recommended next step:
+Transitions:
 
-- add explicit resumable retry orchestration that restarts from the latest durable completed stage rather than rerunning the full pipeline
+- `MATCHED` -> `EXCEPTIONS_IDENTIFIED` -> `REVIEW_READY`
 
-## Testing Model
+### Stage 6: export finalization
 
-Two layers are provided:
+Method: `persistExportAndFinalize`
 
-- unit test for lifecycle state transitions
-- real PostgreSQL integration test using Testcontainers for schema creation, batch persistence, finalization, and rollback on uniqueness failure
+Writes:
 
-The dedicated command is:
+- `reconciliation_export`
+- `reconciliation_audit_event`
+- `reconciliation_job.completed_at`
+
+Transition:
+
+- `REVIEW_READY` -> `FINALIZED`
+
+### Stage 7: reviewer decisions
+
+Method: `persistReviewerDecision`
+
+Writes:
+
+- upsert in `reconciliation_review_decision`
+- audit event `review.decision.persisted`
+
+Uniqueness key:
+
+- `(job_id, target_type, target_id)`
+
+### Failure stage
+
+Method: `markFailed`
+
+Writes:
+
+- `reconciliation_job` failure fields
+- retry increment when transitioning to `RETRY_PENDING`
+- failure audit event
+
+## 6. Schema structure
+
+Core schema is migration-backed and relational-first with selective JSONB columns for trace payloads.
+
+Key tables:
+
+- `reconciliation_job`: lifecycle state, period context, retry/failure metadata, versioning
+- `reconciliation_source_file`: source registration and import metadata
+- `reconciliation_import_batch`: ingest batching ledger
+- `reconciliation_raw_row`: raw source rows
+- `reconciliation_canonical_row`: normalized rows
+- `reconciliation_match_result`: one-to-one match/probable rows with bucketing
+- `reconciliation_match_group`: grouped residual candidates/results
+- `reconciliation_rule_result`: traceable rule lineage per artifact target
+- `reconciliation_exception`: final exception records and trace references
+- `reconciliation_review_observation`: generated review notes
+- `reconciliation_job_summary`: summary metrics and chart payloads
+- `reconciliation_export`: workbook/export metadata
+- `reconciliation_review_decision`: durable reviewer outcomes
+- `reconciliation_audit_event`: transition and operation audit log
+
+Migration shape currently includes:
+
+- v1 base schema and indexes
+- v2 foreign keys for scalar transaction references
+- v3 read-model access indexes
+
+## 7. Read model architecture
+
+`PostgresReconciliationReadModelStore` (`packages/persistence/src/readModelStore.ts`) builds report payloads for API consumption.
+
+Key read paths:
+
+- latest completed run report lookup
+- run report by id (summary, exceptions, probable matches, grouped matches, observations, reviewer decisions, export manifest)
+- paged exceptions (`limit`, `offset`, `hasMore`)
+
+The read model is designed to return `ReconciliationRunReport` shape directly without requiring the full in-memory execution graph.
+
+## 8. Concurrency, consistency, and idempotency
+
+### Concurrency controls
+
+- each write stage runs in a SQL transaction
+- per-job serialization uses `pg_advisory_xact_lock(hashtext(job_id))`
+
+### Consistency controls
+
+- legal transitions are enforced by the state graph
+- write + transition + audit are co-committed
+- rollback occurs on any stage failure
+
+### Idempotency and uniqueness constraints
+
+- source file uniqueness per `(job_id, source_system)`
+- raw row uniqueness per `(source_file_id, line_number)`
+- reviewer decision uniqueness per `(job_id, target_type, target_id)`
+
+### Versioning
+
+- `record_version` is incremented on lifecycle transitions and reviewer-decision updates
+
+## 9. Operational quality gates
+
+Persistence changes should be validated with both code-level and environment-level checks.
+
+Recommended command set:
 
 ```bash
 npm run test:postgres
+npm run test
+npm run typecheck
+npm run docker:db:preflight
 ```
 
-This keeps Docker-dependent database tests out of the default unit/integration suite while still making them executable in CI and local verification.
+`docker:db:preflight` provides schema patch parity, table/index/constraint verification, and DB vulnerability checks before deploy-sensitive changes.
 
-## Current Rollout Shape
+## 10. Recovery and rollout model
 
-The PostgreSQL lifecycle store is wired into the API server when `DATABASE_URL` is configured.
+Current behavior:
 
-Current compatibility behavior remains in place:
+- each lifecycle stage is durably persisted
+- failures are recorded with transition-safe failure metadata and audit events
+- read-model queries can recover finalized outputs from DB state
 
-- the API now returns a lean reconciliation report read model to the UI instead of the full execution graph
-- the file-backed run repository still powers latest-run compatibility snapshots for local restart recovery
-- the PostgreSQL store is the durable lifecycle ledger for production-grade persistence
+Near-term enhancement direction:
 
-Recommended next rollout step:
+- formal resumable retry orchestration from last durable checkpoint
+- fuller retirement of local file-backed compatibility paths where PostgreSQL read models already cover the consumer needs
 
-- move read models for summaries, exceptions, and reviewer decisions onto PostgreSQL-backed query services so the JSON snapshot path can be retired
+## 11. Related references
+
+- `docs/architecture.md`
+- `docs/api.md`
+- `docs/developer-setup.md`
+- `docs/local-docker-platform.md`
+- `docs/reviewer-decision-persistence.md`

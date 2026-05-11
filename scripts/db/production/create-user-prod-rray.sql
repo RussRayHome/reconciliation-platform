@@ -1,0 +1,86 @@
+-- =============================================================================
+-- PRODUCTION ENVIRONMENT ONLY
+-- This script is intentionally excluded from the automated deployment pipeline.
+-- Run manually by a DBA after the production database is provisioned.
+--
+-- Creates 'prod_rray': a restricted application user with no DELETE privilege
+-- and no database-admin capabilities.
+--
+-- Privileges granted : CONNECT, USAGE, SELECT, INSERT, UPDATE
+-- Privileges withheld: DELETE, TRUNCATE, DROP, SUPERUSER, CREATEDB, CREATEROLE
+--
+-- BEFORE RUNNING:
+--   Replace the placeholder password below with a strong, unique credential.
+--   Store the production password in AWS Secrets Manager — never in source code.
+--
+-- How to run (AWS RDS / direct psql):
+--   psql -h <rds-endpoint> -p 5432 -U <rds-admin-user> -d reconciliation_platform \
+--       -v pwd="'<strong-password>'" \
+--       -f scripts/db/production/create-user-prod-rray.sql
+--
+-- Or with inline substitution:
+--   PGPASSWORD=<admin-pw> psql -h <host> -U <admin> -d reconciliation_platform \
+--       -c "\set pwd '<strong-password>'" \
+--       -f scripts/db/production/create-user-prod-rray.sql
+-- =============================================================================
+
+\echo 'Creating production user: prod_rray (restricted — no DELETE)'
+
+-- Set the password here or pass it in via -v pwd="'<value>'" from the shell.
+-- Replace CHANGE_ME_SECURE_PASSWORD before running.
+\set user_password 'CHANGE_ME_SECURE_PASSWORD'
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'prod_rray') THEN
+    CREATE ROLE prod_rray
+      LOGIN
+      NOSUPERUSER
+      NOCREATEDB
+      NOCREATEROLE
+      NOREPLICATION
+      CONNECTION LIMIT 25
+      PASSWORD :'user_password';
+    RAISE NOTICE 'Role prod_rray created.';
+  ELSE
+    ALTER ROLE prod_rray
+      LOGIN
+      NOSUPERUSER
+      NOCREATEDB
+      NOCREATEROLE
+      NOREPLICATION
+      CONNECTION LIMIT 25
+      PASSWORD :'user_password';
+    RAISE NOTICE 'Role prod_rray already exists — attributes updated.';
+  END IF;
+END;
+$$;
+
+-- Allow connecting to the database
+GRANT CONNECT ON DATABASE reconciliation_platform TO prod_rray;
+
+-- Allow navigating the public schema
+GRANT USAGE ON SCHEMA public TO prod_rray;
+
+-- Table access: SELECT, INSERT, UPDATE only — DELETE intentionally withheld
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO prod_rray;
+
+-- Sequence access required for INSERT (nextval) and cursor operations (currval)
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO prod_rray;
+
+-- Function and procedure execution
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO prod_rray;
+GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA public TO prod_rray;
+
+-- Propagate the same restricted grants to tables created in future by the app role
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE ON TABLES TO prod_rray;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO prod_rray;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS TO prod_rray;
+
+\echo 'Done. prod_rray has SELECT/INSERT/UPDATE — DELETE is not granted.'
+\echo 'Verify with: \dp in psql, or SELECT * FROM information_schema.role_table_grants WHERE grantee = ''prod_rray'';'

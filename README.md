@@ -1,207 +1,207 @@
 # Bank-to-QBO Reconciliation Platform
 
-A production-style monorepo for reconciling bank transaction exports against QuickBooks Online exports. The platform parses source workbooks, preserves row-level lineage, normalizes accounting data, applies evidence-based matching rules, classifies exceptions, produces accountant-friendly review outputs, and exports a multi-tab workpaper workbook.
+The reconciliation platform compares bank and QBO workbooks, classifies accounting exceptions, and produces an auditor-friendly workbook export with traceable source lineage.
 
-## Stack
+> **Start here:** Analysts and reviewers should begin with `docs/user-quickstart.md`. Developers and maintainers should begin with `docs/developer-setup.md`.
 
-- Frontend: React, TypeScript, Vite, TanStack Query, Recharts
-- API: Node.js, Express, TypeScript, Pino, Multer
-- Shared validation and typing: TypeScript-first domain packages
-- Workbook parsing/export: ExcelJS
-- Testing: Vitest, Supertest, Playwright
-- Tooling: npm workspaces, ESLint, Prettier, VS Code tasks/launch settings
+## What this repository provides
 
-## Workspace Layout
+- A React web workspace for upload, review, and export.
+- An Express API that parses workbooks, runs reconciliation, and returns structured results.
+- Shared domain, matching, normalization, and persistence packages used by both apps.
+- PostgreSQL-backed lifecycle persistence for durable reconciliation runs.
+- Local Docker deployment runbooks and preflight gates for safer delivery.
+
+## Audience and starting point
+
+### For analysts and reviewers
+
+Use this repo to run reconciliation and review results:
+
+1. Start the app (`npm run dev` for local, or `npm run docker:deploy` for Docker).
+2. Upload `bankFile` and `qboFile` in the Upload tab.
+3. Set account identifier, reconciliation frequency, and period label.
+4. Run reconciliation.
+5. Review summary metrics, probable matches, and exceptions.
+6. Download the workbook export for handoff and audit trail.
+
+Primary docs:
+
+- `docs/user-quickstart.md`
+- `docs/reconciliation-rules.md`
+- `docs/sample-config.md`
+- `docs/api.md`
+
+### For developers and maintainers
+
+Use this repo to build, test, and deploy the platform safely.
+
+Primary docs:
+
+- `docs/developer-setup.md`
+- `docs/architecture.md`
+- `docs/local-docker-platform.md`
+- `docs/test-strategy.md`
+- `docs/postgresql-persistence-architecture.md`
+
+## Monorepo layout
 
 ```text
-reconciliation-platform/
-  apps/
-    api/
-    web/
-  packages/
-    config/
-    core/
-    domain/
-    test-fixtures/
-    ui/
-  docs/
-  scripts/
+apps/
+  api/     Express API and reconciliation workflow orchestration
+  web/     React + Vite analyst workspace
+packages/
+  config/       Reconciliation defaults and account overrides
+  core/         Parse, normalize, match, classify, summarize, export
+  domain/       Shared types and domain contracts
+  persistence/  PostgreSQL lifecycle/read-model stores and migrations
+  test-fixtures Shared workbook fixtures used by unit/integration/e2e tests
+  ui/           Shared UI models and utilities
+scripts/
+  ops/          Deploy, health, preflight, cleanup runbooks
+docs/           Architecture, API, rules, testing, and operations guides
 ```
 
-## What It Does
+## End-to-end workflow
 
-- Ingests bank and QBO `.xlsx` exports
-- Dynamically maps source columns using configurable aliases
-- Preserves original file names and spreadsheet row numbers
-- Excludes QBO beginning-balance rows from matching
-- Normalizes dates, amounts, references, descriptions, merchants, and payees
-- Applies layered matching rules with exact, advisory review, and grouped-residual behavior
-- Separates exact matches from probable matches and exceptions
-- Classifies explicit exception categories including missing-in-bank, missing-in-QBO, amount mismatch, duplicate bank/QBO entries, date variance, timing difference, stale outstanding checks, likely miscoding, grouped split/combine issues, grouped deposit issues, check/reference variance, description variance, and ambiguous review cases
-- Preserves rule traces, grouped counterparts, prior rule lineage, and category-specific recommended next actions for accountant review
-- Exports an Excel workpaper with summary, assumptions, error report, probable matches, reviewer observations, and normalized views
-- Returns JSON summaries for local automation or integration
+1. **Upload and ingest**
+   - API accepts multipart `.xlsx` uploads (`bankFile`, `qboFile`).
+   - Parser preserves source lineage (file, sheet, row, raw values).
 
-## Quick Start
+2. **Normalize and validate**
+   - Text, amounts, dates, and references are normalized.
+   - Invalid rows are marked with data-quality issues and excluded from matching.
+
+3. **Match and classify**
+   - Candidate pairs are scored using amount/date/text/reference logic.
+   - Exact, probable, grouped, timing, and mismatch outcomes are produced.
+   - Residual rows are mapped into accountant-facing exception categories.
+
+4. **Summarize and report**
+   - Summary metrics and category exposure are generated.
+   - Exception report includes severity, rule trace, and suggested next actions.
+
+5. **Persist and export**
+   - Reconciliation lifecycle artifacts are persisted in PostgreSQL when enabled.
+   - Workbook export is generated for downstream review and archival.
+
+## Quick start
+
+### Prerequisites
+
+- Node.js >= 20
+- npm
+- Docker Desktop (for containerized stack and PostgreSQL tests)
+- Optional Python + `openpyxl` for workbook diagnostics scripts
+
+### Install dependencies
 
 ```bash
 npm install
+```
+
+### Start local development (API + web)
+
+```bash
+cp .env.example .env
 npm run dev
 ```
 
-- API: `http://localhost:4000`
-- Web: `http://127.0.0.1:5173`
-- Developer dashboard: `http://127.0.0.1:5173/developer-dashboard.html`
+Default local endpoints:
 
-## Docker Desktop Quick Start
+- Web: `http://localhost:5173`
+- API: `http://localhost:4000`
+- Health: `http://localhost:4000/api/health`
+
+### Run production-like Docker stack
 
 ```bash
 cp .env.docker.example .env.docker
+npm run docker:validate-env
 npm run docker:deploy
+npm run docker:health
 ```
 
-- Gateway and UI: `http://127.0.0.1:4173`
-- API health through NGINX: `http://127.0.0.1:4173/api/health`
-- PostgreSQL stays internal to Docker Compose
+Default containerized endpoints:
 
-To stop the stack:
+- Gateway: `http://127.0.0.1:4173`
+- API health via gateway: `http://127.0.0.1:4173/api/health`
+- NGINX health: `http://127.0.0.1:4173/healthz`
+- pgweb (database viewer): `http://127.0.0.1:8081`
+
+## Daily developer commands
+
+### Build and test
 
 ```bash
-npm run docker:cleanup
+npm run test
+npm run test:postgres
+npm run test:e2e
+npm run lint
+npm run typecheck
+npm run build
+npm run coverage
 ```
 
-To use a non-default Docker env file for the runbooks and TypeScript helpers, set `DOCKER_ENV_FILE=./path/to/file` before running the command. `DOCKER_COMPOSE_ENV_FILE` is still accepted as a legacy alias.
+### Security and static quality
 
-## Scripts
+```bash
+npm run security:scan
+npm run analyze:static
+```
 
-- `npm run dev`
-- `npm run dev:web`
-- `npm run dev:api`
-- `npm run ops:web:start`
-- `npm run ops:web:stop`
-- `npm run ops:db:start`
-- `npm run ops:db:stop`
-- `npm run ops:docker:stop`
-- `npm run ops:docker:restart`
-- `npm run ops:startup`
-- `npm run ops:shutdown`
-- `npm run runtime:status`
-- `npm run build`
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test`
-- `npm run test:unit`
-- `npm run test:integration`
-- `npm run test:e2e`
-- `npm run test:postgres`
-- `npm run coverage`
-- `npm run security:scan`
-- `npm run docker:validate-env`
-- `npm run docker:build`
-- `npm run docker:migrate`
-- `npm run docker:health`
-- `npm run docker:deploy`
-- `npm run docker:redeploy`
-- `npm run docker:smoke`
-- `npm run docker:up`
-- `npm run docker:cleanup`
-- `npm run docker:down`
-- `npm run docker:logs`
-- `npm run fixtures:generate`
-- `npm run analyze:reconciliation -- --account <accountId> --bank <bank.xlsx> --qbo <qbo.xlsx> [--windows 0,1,3,5,10,21] [--thresholds 0,0.05,0.1,0.2] [--similarity-days 5] [--hybrid-thresholds 0.1,0.15] [--hybrid-occurrences 1,2]`
-- `npm run compare:workbooks -- --mode parity --baseline <baseline.xlsx> --candidate <candidate.xlsx>`
+### Runtime harness utilities
 
-## Local Platform Operations
+```bash
+npm run harness:start
+npm run harness:status
+npm run harness:stop
+npm run runtime:status
+```
 
-The repository now includes focused command-line wrappers for the hardened local Docker platform:
+### Docker safety gates
 
-- `npm run docker:validate-env`: validates `.env.docker` before container startup
-- `npm run docker:migrate`: runs the one-shot migration service
-- `npm run docker:health`: verifies gateway, proxied API health, and PostgreSQL readiness
-- `npm run docker:deploy`: starts PostgreSQL, runs migrations, then starts `api` and `web`
-- `npm run docker:redeploy`: performs a clean restart of the full stack
-- `npm run docker:cleanup`: stops the stack without pruning volumes
+```bash
+npm run docker:preflight
+npm run docker:predeploy
+npm run docker:db:preflight
+```
 
-Use `docker:deploy`, `docker:health`, and `docker:cleanup` as the supported runbook path. Keep `docker:up` and `docker:down` for low-level Compose troubleshooting only.
+## Configuration model
 
-- `npm run ops:web:start`: starts the containerized web service and any required dependencies
-- `npm run ops:web:stop`: stops the containerized web service
-- `npm run ops:db:start`: starts the PostgreSQL container
-- `npm run ops:db:stop`: stops the PostgreSQL container
-- `npm run ops:docker:stop`: quits Docker Desktop on macOS
-- `npm run ops:docker:restart`: restarts Docker Desktop on macOS and waits for the daemon to become ready
-- `npm run ops:startup`: starts Docker Desktop if needed, then starts `postgres`, `api`, and `web`
-- `npm run ops:shutdown`: stops `web`, `api`, and `postgres`, then quits Docker Desktop
+Core runtime variables are documented in these templates:
 
-These commands can be run from the repository root and are backed by the typed `scripts/docker-ops.ts` entrypoint.
+- `.env.example` for local Node/Vite development
+- `.env.docker.example` for Docker Compose runtime
 
-`npm run runtime:status` reports whether the web runtime is currently the local Vite server or the containerized Nginx path, along with the matching API mode.
+Important flags:
 
-The detailed gateway/app/db runbook is documented in `docs/local-docker-platform.md`.
+- `RECON_PERSISTENCE_BACKEND=postgres` enables PostgreSQL-backed persistence.
+- `DATABASE_URL` (local) / `API_DATABASE_URL` (compose) controls DB connection.
+- `ENABLE_DEVELOPER_DIAGNOSTICS` gates `/api/developer/*` endpoints.
+- `VITE_ENABLE_DEVELOPER_DASHBOARD` exposes the developer dashboard UI outside dev mode.
+- `RUN_DB_MIGRATIONS_ON_BOOT` controls API boot-time migration behavior.
 
-## Core Flow
+## Documentation map
 
-1. Upload bank and QBO workbooks from the web UI.
-2. Optionally provide an account identifier, select a reconciliation frequency, and confirm the generated reconciliation label.
-3. API validates file types, assigns a correlation ID, parses both workbooks, and resolves account-specific config.
-4. Shared core logic normalizes source rows, detects duplicates, runs the matching engine, and reserves grouped residual candidates before weak one-to-one review suggestions.
-5. Exception classification and summary metrics are generated for accounting review, including rule traces, evidence, counterpart references, and recommended next actions.
-6. The API persists lifecycle state to PostgreSQL when `DATABASE_URL` is configured and still keeps a compatibility latest-run snapshot for restart-safe local report recovery.
-7. The API returns a lean report read model to the UI rather than the full execution graph.
-8. The web UI renders dashboard metrics, charts, probable matches, and filterable exceptions with category, rule, evidence, counterparts, and lineage.
+### Product and behavior
 
-For monthly runs, the web app uses `Monthly reconciliation month` plus an editable `Reconciliation label`. For annual runs, it switches to `Annual reconciliation year`.
+- `docs/user-quickstart.md`: plain-language runbook for analysts and reviewers.
+- `docs/reconciliation-rules.md`: matching and exception logic currently implemented.
+- `docs/sample-config.md`: account-level configuration levers.
+- `docs/api.md`: endpoint contracts and payload behavior.
 
-## Developer Dashboard
+### Engineering and operations
 
-The developer dashboard provides a single-page health view for the repository:
+- `docs/developer-setup.md`: setup, workflows, troubleshooting, and validation.
+- `docs/architecture.md`: system flow, module boundaries, and data movement.
+- `docs/local-docker-platform.md`: container topology and preflight runbooks.
+- `docs/postgresql-persistence-architecture.md`: durable lifecycle model.
+- `docs/test-strategy.md`: unit/integration/e2e and quality-gate strategy.
+- `docs/branch-protection.md`: recommended required checks.
+- `docs/class-method-reference.md`: method-level behavioral reference.
 
-- route: `http://127.0.0.1:5173/developer-dashboard.html`
-- API source: `GET /api/developer/status`
-- checks: unit tests, integration tests, e2e tests, static analysis (lint), static analysis (typecheck), coverage, and security vulnerabilities
-- recent history: stores the most recent status runs and identifies which check areas failed
-- cache behavior: standard refresh uses the cached payload when it is still within TTL, and force refresh reruns all checks immediately
+## Release and change tracking
 
-Coverage is summarized as `S/B/F/L` and security results are summarized by severity (`Critical`, `High`, `Moderate`, `Low`, `Info`).
-
-## Workbook Comparison Utilities
-
-The repository includes workbook comparison helpers under `scripts/`, including `workbook-parity.py` and `compare-attached-workbooks.py`.
-
-These utilities are useful for golden-standard comparisons and now accept explicit workbook paths. They still assume specific workbook sheet names and column layouts, so validate the expected format before relying on their output.
-
-See `scripts/README.md` for the current script inventory, supported commands, and guidance on which files are reusable versus ad hoc.
-
-## Documentation
-
-- `docs/architecture.md`
-- `docs/reconciliation-rules.md`
-- `docs/developer-setup.md`
-- `docs/test-strategy.md`
-- `docs/sample-config.md`
-- `docs/api.md`
-- `docs/first-class-grouped-matching.md`
-- `docs/reviewer-decision-persistence.md`
-- `docs/class-method-reference.md`
-- `scripts/README.md`
-- `CHANGELOG.md`
-- `RELEASE.md`
-
-## Class and Method Documentation
-
-Complete class and method documentation, including method inputs, outputs, and before/after state objects, is maintained in `docs/class-method-reference.md`.
-
-## Current Persistence Model
-
-The platform now supports a PostgreSQL-backed lifecycle store for durable reconciliation workflow state.
-
-- when `DATABASE_URL` is configured, the API initializes PostgreSQL persistence and records workflow stages, source files, raw rows, canonical rows, match artifacts, exceptions, summaries, exports, reviewer decisions, and audit history
-- API responses sent to the UI are lean report read models rather than the full execution graph
-- the compatibility repository still persists the latest report-capable run snapshot to `test-results/latest-reconciliation-run.json` so the latest report remains available after a local restart
-
-See [docs/postgresql-persistence-architecture.md](docs/postgresql-persistence-architecture.md) for the current rollout shape and remaining migration steps.
-
-## Release Tracking
-
-- `CHANGELOG.md` records noteworthy repository changes and documentation-facing release notes.
-- `RELEASE.md` defines how to prepare release notes, validation evidence, and rollback metadata for future releases.
+- `CHANGELOG.md` tracks release-level changes.
+- `RELEASE.md` captures release workflow details.

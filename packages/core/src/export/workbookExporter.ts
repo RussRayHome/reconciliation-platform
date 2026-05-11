@@ -72,7 +72,9 @@ const addChartDataTable = (
 
   const headerRow = Number(anchor.row) + 1;
   worksheet.getCell(headerRow, anchorCol).value = 'Category';
-  worksheet.getCell(headerRow, anchorCol + 1).value = formatAsCurrency ? 'Absolute Dollars' : 'Count';
+  worksheet.getCell(headerRow, anchorCol + 1).value = formatAsCurrency
+    ? 'Absolute Dollars'
+    : 'Count';
   worksheet.getRow(headerRow).font = { bold: true };
 
   data.forEach((item, index) => {
@@ -101,7 +103,7 @@ const formatCounterparts = (item: ExceptionItem): string => {
     .map((counterpart) =>
       counterpart.spreadsheetFileName
         ? `${sourceDisplayName(counterpart.source ?? '')}: ${counterpart.spreadsheetFileName} / ${counterpart.lineNumber ?? 'N/A'}`
-        : counterpart.transactionId ?? 'N/A',
+        : (counterpart.transactionId ?? 'N/A'),
     )
     .join(' | ');
 };
@@ -130,18 +132,21 @@ const buildNarrativeSummary = (
   const accountText = trimmedAccount ? ` for account ${trimmedAccount}` : '';
   const trimmedPeriod = periodLabel?.trim();
   const periodText = trimmedPeriod ? ` during ${trimmedPeriod}` : '';
+  const hasNoCategorizedExceptions = [
+    summary.missingFromBank,
+    summary.missingFromQBO,
+    summary.amountMismatches,
+    summary.dateVariances,
+    summary.timingDifferences,
+    summary.duplicates,
+  ].every((count) => count === 0);
   let statusSentence = `The reconciliation${accountText}${periodText} requires follow-up on a limited set of outstanding exceptions.`;
 
-  if (
-    summary.missingFromBank === 0 &&
-    summary.missingFromQBO === 0 &&
-    summary.amountMismatches === 0 &&
-    summary.dateVariances === 0 &&
-    summary.timingDifferences === 0 &&
-    summary.duplicates === 0
-  ) {
+  if (hasNoCategorizedExceptions) {
     statusSentence = `The reconciliation${accountText}${periodText} reconciles cleanly with no categorized exceptions requiring follow-up.`;
-  } else if (summary.timingDifferences > 0) {
+  }
+
+  if (!hasNoCategorizedExceptions && summary.timingDifferences > 0) {
     statusSentence = `The reconciliation${accountText}${periodText} generally reconciles, with a meaningful share of remaining exceptions driven by timing-related differences.`;
   }
 
@@ -149,20 +154,23 @@ const buildNarrativeSummary = (
 
   const categorySummary = errorCategories
     .filter((category) => (summary.countsByCategory[category] ?? 0) > 0)
-    .map((category) => `${summary.countsByCategory[category]} ${errorCategoryDisplayNames[category].toLowerCase()}`);
-  const exceptionSentence = categorySummary.length > 0
-    ? `Categorized exceptions include ${categorySummary.join(', ')}.`
-    : 'No classified follow-up categories remain open.';
+    .map(
+      (category) =>
+        `${summary.countsByCategory[category]} ${errorCategoryDisplayNames[category].toLowerCase()}`,
+    );
+  const exceptionSentence =
+    categorySummary.length > 0
+      ? `Categorized exceptions include ${categorySummary.join(', ')}.`
+      : 'No classified follow-up categories remain open.';
 
   return `${statusSentence} ${volumeSentence} ${exceptionSentence}`;
 };
 
-const addCategoryBreakdownTable = (
-  worksheet: ExcelJS.Worksheet,
-  summary: SummaryMetrics,
-): void => {
+const addCategoryBreakdownTable = (worksheet: ExcelJS.Worksheet, summary: SummaryMetrics): void => {
   const presentCategories = errorCategories.filter(
-    (category) => (summary.countsByCategory[category] ?? 0) > 0 || (summary.amountByCategory[category] ?? 0) > 0,
+    (category) =>
+      (summary.countsByCategory[category] ?? 0) > 0 ||
+      (summary.amountByCategory[category] ?? 0) > 0,
   );
 
   if (presentCategories.length === 0) {
@@ -194,15 +202,15 @@ const addSummaryCharts = (
 ): void => {
   const trimmedAccount = accountIdentifier?.trim();
   const accountLabel = trimmedAccount || 'Reconciliation';
-  const countChartData =
-    summary.charts.find((chart) => chart.id === 'countByCategory')?.data ?? [];
-  const exposureChartData =
-    (summary.charts.find((chart) => chart.id === 'exposureByCategory')?.data ?? [])
-      .filter((item) => item.value > 0);
+  const countChartData = summary.charts.find((chart) => chart.id === 'countByCategory')?.data ?? [];
+  const exposureChartData = (
+    summary.charts.find((chart) => chart.id === 'exposureByCategory')?.data ?? []
+  ).filter((item) => item.value > 0);
 
-  const resolvedExposureData = exposureChartData.length > 0
-    ? exposureChartData
-    : [{ label: 'No classified exception exposure', value: 0 }];
+  const resolvedExposureData =
+    exposureChartData.length > 0
+      ? exposureChartData
+      : [{ label: 'No classified exception exposure', value: 0 }];
 
   worksheet.getCell('D2').value = `${accountLabel} Reconciliation Summary by Category`;
   worksheet.getCell('D2').font = { bold: true, size: 16 };
@@ -216,11 +224,11 @@ const addSummaryCharts = (
   addChartDataTable(worksheet, 'D49', 'Exposure chart data', resolvedExposureData, true);
 
   const countChartPng = createBarChartPng(countChartData, {
-      width: 960,
-      height: 420,
-      barColor: [43, 120, 178, 255],
-      accentColor: [15, 118, 110, 255],
-    });
+    width: 960,
+    height: 420,
+    barColor: [43, 120, 178, 255],
+    accentColor: [15, 118, 110, 255],
+  });
 
   const countChartImageId = workbook.addImage({
     base64: `data:image/png;base64,${countChartPng.toString('base64')}`,
@@ -233,11 +241,11 @@ const addSummaryCharts = (
   });
 
   const exposureChartPng = createBarChartPng(resolvedExposureData, {
-      width: 880,
-      height: 420,
-      barColor: [194, 65, 12, 255],
-      accentColor: [166, 27, 67, 255],
-    });
+    width: 880,
+    height: 420,
+    barColor: [194, 65, 12, 255],
+    accentColor: [166, 27, 67, 255],
+  });
 
   const exposureChartImageId = workbook.addImage({
     base64: `data:image/png;base64,${exposureChartPng.toString('base64')}`,
@@ -414,7 +422,13 @@ export const exportWorkbook = async ({
   const observationsSheet = workbook.addWorksheet('Reviewer Observations');
   addHeaderRow(observationsSheet, ['Severity', 'Category', 'Title', 'Message', 'Created At']);
   reviewerObservations.forEach((item) => {
-    observationsSheet.addRow([item.severity, item.category, item.title, item.message, item.createdAt]);
+    observationsSheet.addRow([
+      item.severity,
+      item.category,
+      item.title,
+      item.message,
+      item.createdAt,
+    ]);
   });
 
   const bankSheet = workbook.addWorksheet('Bank Normalized');

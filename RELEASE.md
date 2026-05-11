@@ -48,6 +48,41 @@ Result summary:
 - security: pass/fail
 ```
 
+## FIXME Notation for Production Gating
+
+Use a structured FIXME marker for unresolved items that must be checked before production:
+
+- `FIXME(prod-gate): <summary> | owner=<name-or-team> | tracking=<ticket-or-link> | exit=<clear-remediation-criteria>`
+
+Use this marker only when all of the following are true:
+
+1. The item is unresolved.
+2. The item has production relevance (security, data integrity, reliability, or operational risk).
+3. The item must be explicitly resolved or waived before release.
+
+Pre-production scan command:
+
+```bash
+rg --no-heading --line-number --glob '!node_modules/**' --glob '!coverage/**' 'FIXME\(prod-gate\):' .
+```
+
+Optional blocking check (fails when markers exist):
+
+```bash
+if rg --no-heading --line-number --glob '!node_modules/**' --glob '!coverage/**' 'FIXME\(prod-gate\):' .; then
+  echo "Release blocked: unresolved FIXME(prod-gate) markers found."
+  exit 1
+else
+  echo "OK: no FIXME(prod-gate) markers found."
+fi
+```
+
+If any marker remains, capture the decision in release notes under Risks and Follow-Up with approver and timeline.
+
+Current production gate reminder:
+
+- `FIXME(prod-gate): Remove temporary DB CVE allowlist entries in scripts/ops/db-cve-allowlist.txt (CVE-2025-68121 and CVE-2026-33845) once upstream fixed packages are available or a formal waiver is approved | owner=platform-security | tracking=CVE-2025-68121,CVE-2026-33845 | exit=Remove allowlist entries and verify npm run docker:db:preflight:test-stage reports CRITICAL=0 with ALLOWLISTED=0`.
+
 ## Release Note Template
 
 ```md

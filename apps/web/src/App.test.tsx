@@ -9,10 +9,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import App from './App';
 import userEvent from '@testing-library/user-event';
 
-const mockedApiState = vi.hoisted(() => ({
-  latestRunResponse: null as unknown,
-  latestRunError: null as Error | null,
-  latestRunPromise: null as Promise<unknown> | null,
+const mockedApiState = vi.hoisted<{
+  latestRunResponse: unknown;
+  latestRunError: Error | null;
+  latestRunPromise: Promise<unknown> | null;
+}>(() => ({
+  latestRunResponse: null,
+  latestRunError: null,
+  latestRunPromise: null,
 }));
 
 vi.mock('./lib/api', async () => {

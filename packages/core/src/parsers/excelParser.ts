@@ -35,10 +35,7 @@ const scoreAliasMatch = (header: string, alias: string): number => {
     return 100;
   }
 
-  if (
-    normalizedHeader.includes(normalizedAlias) ||
-    normalizedAlias.includes(normalizedHeader)
-  ) {
+  if (normalizedHeader.includes(normalizedAlias) || normalizedAlias.includes(normalizedHeader)) {
     return 90;
   }
 
@@ -120,6 +117,26 @@ const stringifyCellValue = (value: ExcelJS.CellValue | null): string | undefined
   return stringifyUnknown(value);
 };
 
+const findBestColumnForAliases = (
+  headerByIndex: Map<number, string>,
+  aliases: string[],
+): { bestScore: number; bestColumnIndex: number | undefined } => {
+  let bestScore = 0;
+  let bestColumnIndex: number | undefined;
+
+  for (const [columnIndex, header] of headerByIndex.entries()) {
+    for (const alias of aliases) {
+      const score = scoreAliasMatch(header, alias);
+      if (score > bestScore) {
+        bestScore = score;
+        bestColumnIndex = columnIndex;
+      }
+    }
+  }
+
+  return { bestScore, bestColumnIndex };
+};
+
 const getColumnIndexes = (
   headerRow: ExcelJS.Row,
   config: SourceReconciliationConfig,
@@ -137,19 +154,11 @@ const getColumnIndexes = (
 
   const columnIndexes: Partial<Record<BusinessField, number>> = {};
 
-  for (const [field, aliases] of Object.entries(config.columnAliases) as [BusinessField, string[]][]) {
-    let bestScore = 0;
-    let bestColumnIndex: number | undefined;
-
-    for (const [columnIndex, header] of headerByIndex.entries()) {
-      for (const alias of aliases) {
-        const score = scoreAliasMatch(header, alias);
-        if (score > bestScore) {
-          bestScore = score;
-          bestColumnIndex = columnIndex;
-        }
-      }
-    }
+  for (const [field, aliases] of Object.entries(config.columnAliases) as [
+    BusinessField,
+    string[],
+  ][]) {
+    const { bestScore, bestColumnIndex } = findBestColumnForAliases(headerByIndex, aliases);
 
     if (bestColumnIndex && bestScore >= 80) {
       columnIndexes[field] = bestColumnIndex;
@@ -257,7 +266,7 @@ export const parseWorkbook = async ({
     headerRow.eachCell((cell, columnNumber) => {
       const headerName = stringifyCellValue(cell.value)?.trim() || `Column ${columnNumber}`;
       const value = row.getCell(columnNumber).value;
-      rawValues[headerName] = value instanceof Date ? value : stringifyCellValue(value) ?? null;
+      rawValues[headerName] = value instanceof Date ? value : (stringifyCellValue(value) ?? null);
       if (rawValues[headerName] !== null && rawValues[headerName] !== '') {
         hasValue = true;
       }

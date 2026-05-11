@@ -1,0 +1,35 @@
+services:
+  postgres:
+    build:
+      args:
+        POSTGRES_BASE_IMAGE: postgres:16.13
+        ENABLE_PGAUDIT: "true"
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pgaudit
+
+  api:
+    build:
+      target: test-stage
+    environment:
+      NODE_ENV: test
+      ENABLE_DEVELOPER_DIAGNOSTICS: "true"
+
+  web:
+    build:
+      args:
+        VITE_ENABLE_DEVELOPER_DASHBOARD: "true"
+
+  pgweb:
+    image: sosedoff/pgweb
+    environment:
+      PGWEB_DATABASE_URL: postgres://${POSTGRES_USER:-recon_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-reconciliation_platform}?sslmode=disable
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+    networks:
+      - default
+      - data
+    restart: unless-stopped

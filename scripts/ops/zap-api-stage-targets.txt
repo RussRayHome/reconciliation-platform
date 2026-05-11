@@ -1,0 +1,9 @@
+# Stage API OWASP ZAP baseline targets.
+# Entries can be absolute URLs or paths resolved against ZAP_API_BASE_URL.
+
+/api/health
+/api/developer/runtime
+/api/developer/runtime/requests?limit=5
+/api/developer/runtime/exceptions?limit=5
+/api/developer/runtime/runs?limit=5
+/api/reconciliation/latest

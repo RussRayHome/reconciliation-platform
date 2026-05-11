@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Reconciliation Platform Architecture</title>
+  <desc id="desc">Architecture diagram showing analyst and developer browsers, API boundary, core reconciliation engine layers, and persistence targets.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f6f7fb" />
+      <stop offset="100%" stop-color="#eef3f8" />
+    </linearGradient>
+    <linearGradient id="apiGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#194569" />
+      <stop offset="100%" stop-color="#355c7d" />
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#3d4f63" />
+    </marker>
+  </defs>
+
+  <style>
+    .bg { fill: url(#bg); }
+    .title { font: 700 36px "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #0f2032; }
+    .subtitle { font: 600 16px "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #22394f; }
+    .card { fill: #ffffff; stroke: #6f8498; stroke-width: 2; rx: 16; }
+    .card-strong { fill: url(#apiGrad); stroke: #11314a; stroke-width: 2; rx: 18; }
+    .core-shell { fill: #ffffff; stroke: #4d657d; stroke-width: 3; rx: 20; }
+    .label {
+      font: 700 20px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      fill: #10263a;
+      paint-order: stroke;
+      stroke: rgba(246, 250, 255, 0.92);
+      stroke-width: 1px;
+      stroke-linejoin: round;
+    }
+    .label-light {
+      font: 700 22px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      fill: #f5fbff;
+      paint-order: stroke;
+      stroke: rgba(7, 23, 38, 0.45);
+      stroke-width: 0.85px;
+      stroke-linejoin: round;
+    }
+    .small {
+      font: 600 15px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      fill: #223a50;
+      paint-order: stroke;
+      stroke: rgba(247, 250, 255, 0.88);
+      stroke-width: 0.8px;
+      stroke-linejoin: round;
+    }
+    .small-light {
+      font: 600 15px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      fill: #e6f2ff;
+      paint-order: stroke;
+      stroke: rgba(7, 23, 38, 0.45);
+      stroke-width: 0.75px;
+      stroke-linejoin: round;
+    }
+    .flow { stroke: #33495f; stroke-width: 3.4; fill: none; marker-end: url(#arrow); }
+    .flow-return { stroke: #4f657d; stroke-width: 2.8; stroke-dasharray: 8 7; fill: none; marker-end: url(#arrow); }
+    .flow-label {
+      font: 700 14px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      fill: #193047;
+      paint-order: stroke;
+      stroke: rgba(246, 250, 255, 0.92);
+      stroke-width: 0.9px;
+      stroke-linejoin: round;
+    }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="1600" height="980" />
+
+  <text class="title" x="800" y="70" text-anchor="middle">Bank-to-QBO Reconciliation Platform</text>
+  <text class="subtitle" x="800" y="102" text-anchor="middle">Analyst workflow and developer health workflow share the same API and core engine</text>
+
+  <rect class="card" x="90" y="140" width="300" height="140" />
+  <text class="label" x="240" y="190" text-anchor="middle">Analyst Browser</text>
+  <text class="small" x="240" y="218" text-anchor="middle">apps/web (Upload + Reports)</text>
+  <text class="small" x="240" y="242" text-anchor="middle">Monthly/Annual reconciliation runs</text>
+
+  <rect class="card" x="1210" y="140" width="300" height="140" />
+  <text class="label" x="1360" y="190" text-anchor="middle">Developer Browser</text>
+  <text class="small" x="1360" y="218" text-anchor="middle">Developer Dashboard</text>
+  <text class="small" x="1360" y="242" text-anchor="middle">Repo health + security checks</text>
+
+  <rect class="card-strong" x="560" y="300" width="480" height="190" />
+  <text class="label-light" x="800" y="350" text-anchor="middle">apps/api (HTTP Boundary)</text>
+  <text class="small-light" x="800" y="380" text-anchor="middle">/api/reconciliation, /api/health, /api/developer/status</text>
+  <text class="small-light" x="800" y="404" text-anchor="middle">Upload validation, correlation IDs, config resolution</text>
+  <text class="small-light" x="800" y="428" text-anchor="middle">Lean read-model responses + workbook download</text>
+
+  <rect class="core-shell" x="390" y="560" width="820" height="300" />
+  <text class="label" x="800" y="605" text-anchor="middle">packages/core (Reconciliation Engine)</text>
+
+  <rect class="card" x="430" y="640" width="145" height="95" />
+  <text class="label" x="503" y="680" text-anchor="middle" font-size="16">parsers</text>
+  <text class="small" x="503" y="705" text-anchor="middle">Workbook ingest</text>
+
+  <rect class="card" x="590" y="640" width="145" height="95" />
+  <text class="label" x="663" y="680" text-anchor="middle" font-size="16">normalization</text>
+  <text class="small" x="663" y="698" text-anchor="middle">
+    <tspan x="663" dy="0">Dates, amounts,</tspan>
+    <tspan x="663" dy="18">tokens</tspan>
+  </text>
+
+  <rect class="card" x="750" y="640" width="145" height="95" />
+  <text class="label" x="823" y="680" text-anchor="middle" font-size="16">matching</text>
+  <text class="small" x="823" y="698" text-anchor="middle">
+    <tspan x="823" dy="0">Exact + advisory</tspan>
+    <tspan x="823" dy="18">rules</tspan>
+  </text>
+
+  <rect class="card" x="910" y="640" width="145" height="95" />
+  <text class="label" x="983" y="680" text-anchor="middle" font-size="16">reporting</text>
+  <text class="small" x="983" y="698" text-anchor="middle">
+    <tspan x="983" dy="0">Exceptions +</tspan>
+    <tspan x="983" dy="18">summary</tspan>
+  </text>
+
+  <rect class="card" x="1070" y="640" width="120" height="95" />
+  <text class="label" x="1130" y="680" text-anchor="middle" font-size="16">export</text>
+  <text class="small" x="1130" y="705" text-anchor="middle">Workbook output</text>
+
+  <text class="small" x="800" y="790" text-anchor="middle">Pipeline: parse -> normalize -> match -> classify -> summarize -> export</text>
+
+  <rect class="card" x="120" y="565" width="220" height="120" />
+  <text class="label" x="230" y="612" text-anchor="middle">packages/domain</text>
+  <text class="small" x="230" y="638" text-anchor="middle">Shared contracts</text>
+
+  <rect class="card" x="120" y="715" width="220" height="120" />
+  <text class="label" x="230" y="762" text-anchor="middle">packages/config</text>
+  <text class="small" x="230" y="788" text-anchor="middle">Defaults + overrides</text>
+
+  <rect class="card" x="1240" y="360" width="250" height="130" />
+  <text class="label" x="1365" y="408" text-anchor="middle">PostgreSQL</text>
+  <text class="small" x="1365" y="434" text-anchor="middle">Lifecycle persistence</text>
+  <text class="small" x="1365" y="456" text-anchor="middle">Runs, matches, exceptions</text>
+
+  <rect class="card" x="1240" y="535" width="250" height="120" />
+  <text class="label" x="1365" y="582" text-anchor="middle">Latest-run Snapshot</text>
+  <text class="small" x="1365" y="608" text-anchor="middle">Compatibility local cache</text>
+
+  <rect class="card" x="120" y="360" width="220" height="130" />
+  <text class="label" x="230" y="408" text-anchor="middle">Quality Checks</text>
+  <text class="small" x="230" y="434" text-anchor="middle">test, lint, typecheck,</text>
+  <text class="small" x="230" y="456" text-anchor="middle">coverage, security scan</text>
+
+  <path class="flow" d="M390 210 L560 365" />
+  <text class="flow-label" x="470" y="255" text-anchor="middle">upload + run</text>
+
+  <path class="flow-return" d="M560 402 L390 242" />
+  <text class="flow-label" x="468" y="340" text-anchor="middle">summary + exports</text>
+
+  <path class="flow" d="M1210 210 L1040 365" />
+  <text class="flow-label" x="1125" y="255" text-anchor="middle">status request</text>
+
+  <path class="flow-return" d="M1040 418 L1210 240" />
+  <text class="flow-label" x="1125" y="352" text-anchor="middle">check results</text>
+
+  <path class="flow" d="M800 490 L800 560" />
+  <text class="flow-label" x="812" y="534">run pipeline</text>
+
+  <path class="flow-return" d="M730 560 L730 490" />
+  <text class="flow-label" x="690" y="534">match/report payload</text>
+
+  <path class="flow" d="M340 625 L390 625" />
+  <path class="flow" d="M340 775 L390 775" />
+
+  <path class="flow" d="M1040 390 L1240 425" />
+  <text class="flow-label" x="1140" y="398" text-anchor="middle">persist lifecycle data</text>
+
+  <path class="flow" d="M1040 450 L1240 585" />
+  <text class="flow-label" x="1136" y="516" text-anchor="middle">update latest-run snapshot</text>
+
+  <path class="flow" d="M340 425 L560 390" />
+  <text class="flow-label" x="450" y="394" text-anchor="middle">execute checks</text>
+</svg>

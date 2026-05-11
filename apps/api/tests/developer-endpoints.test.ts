@@ -1,10 +1,7 @@
 /** Integration tests for developer-facing API endpoints and diagnostics. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createSampleBankWorkbook,
-  createSampleQboWorkbook,
-} from '@recon/test-fixtures';
+import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
 
 import request from 'supertest';
 
@@ -26,6 +23,14 @@ type DeveloperStatusResponseBody = {
     passedCount?: number;
     failedCount?: number;
     areaLabel?: string;
+    securityComponentScores?: Array<{
+      component: string;
+      critical: number;
+      high: number;
+      moderate: number;
+      low: number;
+      info: number;
+    }>;
   }>;
   history: Array<{
     testTotals: {
@@ -101,6 +106,13 @@ const execFileMatchers: ExecFileMatcher[] = [
     },
   },
   {
+    matches: (joined) => joined.includes('npm') && joined.includes('run test:postgres:dashboard'),
+    result: {
+      stdout: 'Test Files  2 passed (2)\nTests  11 passed (11)\n',
+      stderr: '',
+    },
+  },
+  {
     matches: (joined) => joined.includes('npm') && joined.includes('run lint'),
     result: { stdout: '', stderr: '' },
   },
@@ -116,18 +128,63 @@ const execFileMatchers: ExecFileMatcher[] = [
     },
   },
   {
-    matches: (joined) => joined.includes('npm') && joined.includes('audit --json'),
+    matches: (joined) =>
+      joined.includes('npm') && joined.includes('run security:scan:components --silent'),
     result: {
       stdout: JSON.stringify({
-        metadata: {
-          vulnerabilities: {
-            info: 0,
-            low: 0,
-            moderate: 0,
-            high: 0,
+        components: [
+          {
+            component: 'API',
+            scanner: 'npm audit',
+            status: 'ok',
             critical: 0,
+            high: 0,
+            moderate: 0,
+            low: 0,
+            info: 0,
             total: 0,
           },
+          {
+            component: 'Database',
+            scanner: 'Trivy + pgAudit',
+            status: 'ok',
+            critical: 0,
+            high: 0,
+            moderate: 0,
+            low: 0,
+            info: 0,
+            total: 0,
+          },
+          {
+            component: 'Container Component',
+            scanner: 'Trivy',
+            status: 'ok',
+            critical: 0,
+            high: 0,
+            moderate: 0,
+            low: 0,
+            info: 0,
+            total: 0,
+          },
+          {
+            component: 'Web Server',
+            scanner: 'npm audit',
+            status: 'ok',
+            critical: 0,
+            high: 0,
+            moderate: 0,
+            low: 0,
+            info: 0,
+            total: 0,
+          },
+        ],
+        aggregate: {
+          critical: 0,
+          high: 0,
+          moderate: 0,
+          low: 0,
+          info: 0,
+          total: 0,
         },
       }),
       stderr: '',
@@ -136,12 +193,7 @@ const execFileMatchers: ExecFileMatcher[] = [
 ];
 
 const mockExecFile = vi.fn(
-  (
-    command: string,
-    args: string[],
-    _options: unknown,
-    callback: ExecFileCallback,
-  ) => {
+  (command: string, args: string[], _options: unknown, callback: ExecFileCallback) => {
     const joined = [command, ...args].join(' ');
 
     const matched = execFileMatchers.find((matcher) => matcher.matches(joined));
@@ -224,14 +276,37 @@ describe('developer endpoints', () => {
           areaLabel: 'E2E',
         }),
         expect.objectContaining({
+          name: 'Postgres DB tests',
+          testType: 'postgres',
+          passedCount: 11,
+          failedCount: 0,
+          areaLabel: 'Postgres DB',
+        }),
+        expect.objectContaining({
           name: 'Static analysis (lint)',
           areaLabel: 'Smells',
         }),
+        expect.objectContaining({
+          name: 'Security vulnerabilities',
+          areaLabel: 'Security',
+        }),
       ]),
     );
+
+    const securityCheck = body.checks.find((check) => check.name === 'Security vulnerabilities');
+    expect(securityCheck).toBeDefined();
+    expect(securityCheck?.securityComponentScores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ component: 'API' }),
+        expect.objectContaining({ component: 'Database' }),
+        expect.objectContaining({ component: 'Container Component' }),
+        expect.objectContaining({ component: 'Web Server' }),
+      ]),
+    );
+
     expect(body.history[0]).toMatchObject({
       testTotals: {
-        passed: 120,
+        passed: 131,
         failed: 0,
       },
       failingAreas: [],
@@ -288,7 +363,9 @@ describe('developer endpoints', () => {
 
     expect(requestsBody.items).toHaveLength(1);
 
-    const exceptions = await request(app).get('/api/developer/runtime/exceptions?limit=1').expect(200);
+    const exceptions = await request(app)
+      .get('/api/developer/runtime/exceptions?limit=1')
+      .expect(200);
     const exceptionsBody = exceptions.body as ItemsResponseBody;
 
     expect(exceptionsBody.items).toHaveLength(1);

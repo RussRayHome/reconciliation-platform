@@ -1,309 +1,372 @@
 # Developer Setup
 
-## Prerequisites
+This guide is the practical runbook for local development, validation, and deployment checks in the reconciliation platform.
 
-- Node.js 20 or later
-- npm 10 or later
-- VS Code
+## 1. Prerequisites
 
-## Install and Run
+Install the following before working in the repo:
+
+- Node.js >= 20
+- npm
+- Docker Desktop
+- Git
+- Optional: Python + `openpyxl` for workbook comparison diagnostics
+
+Recommended verification:
+
+```bash
+node -v
+npm -v
+docker --version
+docker compose version
+```
+
+## 2. Install and bootstrap
+
+From the repository root:
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env
 ```
 
-The root `dev` script starts both apps together:
-
-- API on port `4000`
-- Web on port `5173`
-
-## Docker Desktop
-
-Docker Desktop is supported for a production-like local stack with an NGINX gateway, an internal API service, and an internal PostgreSQL service.
-
-Prerequisites:
-
-- Docker Desktop running locally
-- port `4173` available
-
-Commands:
+For Docker workflows:
 
 ```bash
 cp .env.docker.example .env.docker
-npm run docker:deploy
-```
-
-Containerized local URLs:
-
-- Reconciliation UI: `http://127.0.0.1:4173`
-- API health through the gateway: `http://127.0.0.1:4173/api/health`
-- PostgreSQL stays internal to Docker Compose
-
-To stop the stack:
-
-```bash
-npm run docker:cleanup
-```
-
-To inspect logs:
-
-```bash
-npm run docker:logs
-```
-
-To rerun schema migrations without restarting the full stack:
-
-```bash
-npm run docker:migrate
-```
-
-To validate the local deployment:
-
-```bash
 npm run docker:validate-env
-npm run docker:health
 ```
 
-To target a non-default Docker env file, set `DOCKER_ENV_FILE=./path/to/file` before running any `docker:*` runbook or `ops:*` helper. `DOCKER_COMPOSE_ENV_FILE` is still accepted as a compatibility alias.
+## 3. Local development workflow
 
-Useful local URLs:
+### Start API + web
 
-- Reconciliation UI: `http://127.0.0.1:5173`
-- Developer dashboard: `http://127.0.0.1:5173/developer-dashboard.html`
-- API health: `http://127.0.0.1:4000/api/health`
-- Developer status API: `http://127.0.0.1:4000/api/developer/status`
+```bash
+npm run dev
+```
 
-The developer dashboard is intended to stay local by default:
+Default local ports:
 
-- the web app only shows the dashboard link in dev builds
-- the API blocks `/api/developer/*` in production unless explicitly enabled
+- Web (Vite): `http://localhost:5173`
+- API (Express): `http://localhost:4000`
+- API health: `http://localhost:4000/api/health`
 
-## Useful Commands
+### Start services separately
+
+```bash
+npm run dev:api
+npm run dev:web
+```
+
+### Runtime harness (fixed ports and lifecycle controls)
 
 ```bash
 npm run harness:start
+npm run harness:status
 npm run harness:restart
 npm run harness:stop
-npm run harness:status
-npm run runtime:status
-npm run ops:web:start
-npm run ops:web:stop
-npm run ops:db:start
-npm run ops:db:stop
-npm run ops:docker:stop
-npm run ops:docker:restart
-npm run ops:startup
-npm run ops:shutdown
-npm run docker:validate-env
-npm run docker:build
-npm run docker:migrate
-npm run docker:health
-npm run docker:deploy
-npm run docker:redeploy
-npm run docker:smoke
-npm run docker:cleanup
-npm run docker:up
-npm run docker:down
-npm run docker:logs
-npm run typecheck
-npm run lint
-npm run test
-npm run test:postgres
-npm run test:e2e
-npm run coverage
-npm run build
-npm run security:scan
-npm run compare:workbooks -- --mode parity --baseline ./baseline.xlsx --candidate ./candidate.xlsx
-```
-
-## Local Docker Operations
-
-Use the operations scripts when you want narrower control than `docker:up` and `docker:down`.
-
-```bash
-npm run ops:web:start
-npm run ops:web:stop
-npm run ops:db:start
-npm run ops:db:stop
-npm run ops:docker:stop
-npm run ops:docker:restart
-npm run ops:startup
-npm run ops:shutdown
-```
-
-Behavior:
-
-- `ops:web:start` starts the `web` compose service and its required dependencies
-- `ops:web:stop` stops only the `web` compose service
-- `ops:db:start` starts only the PostgreSQL compose service
-- `ops:db:stop` stops only the PostgreSQL compose service
-- `ops:docker:stop` quits Docker Desktop on macOS
-- `ops:docker:restart` restarts Docker Desktop on macOS and waits until `docker info` succeeds
-- `ops:startup` starts Docker Desktop if needed, then starts `postgres`, `api`, and `web`
-- `ops:shutdown` stops `web`, `api`, and `postgres`, then quits Docker Desktop
-
-These commands are implemented through a single typed entrypoint in `scripts/docker-ops.ts`.
-
-For the production-like deployment path, prefer the runbooks in `scripts/ops/` and the topology summary in `docs/local-docker-platform.md`.
-
-Use `docker:up` and `docker:down` only when you want direct raw Compose behavior. The supported operational path is `docker:deploy`, `docker:health`, and `docker:cleanup`.
-
-## Runtime Harness
-
-Use the runtime harness commands when you want a deterministic local API + web startup on the expected ports with a single entrypoint.
-
-```bash
-npm run harness:start
-```
-
-The harness start command:
-
-- starts the API on port `4000`
-- starts the web app on port `4173`
-- writes API runtime logs to `test-results/runtime-api.log`
-- fails fast if either expected port is already occupied
-
-If a prior harness run or another local process is still holding either port, stop it with:
-
-```bash
-npm run harness:stop
-```
-
-To force a clean stop-then-start cycle in one command, run:
-
-```bash
-npm run harness:restart
-```
-
-To inspect whether the expected harness ports are free before starting, run:
-
-```bash
-npm run harness:status
-```
-
-To see whether the current web runtime is Vite or the containerized Nginx path, run:
-
-```bash
 npm run runtime:status
 ```
 
-These commands should be run from the repository root.
+Harness defaults:
 
-If you open the parent workspace instead of the repository folder directly, the bundled VS Code tasks `harness:start`, `harness:restart`, `harness:stop`, and `harness:status` already target the nested `reconciliation-platform` root for you.
+- API: `4000`
+- Web: `4173`
 
-## Quality Workflow
+Use the harness when you want predictable local ports and explicit start/stop behavior.
 
-For a full local quality pass, use the same checks surfaced by the developer dashboard:
+## 4. Run a reconciliation locally
 
-```bash
-npm run test
-npm run test:e2e
-npm run lint
-npm run typecheck
-npm run coverage
-npm run security:scan
-```
+1. Open the web app.
+2. Upload both source files (`bankFile`, `qboFile`).
+3. Set account identifier (optional), reconciliation frequency, and period label.
+4. Submit the run.
+5. Review summary, probable matches, and exception report.
+6. Download workbook export.
 
-The developer dashboard runs and summarizes these checks:
-
-- Unit tests
-- Integration tests
-- E2E tests
-- Static analysis (lint)
-- Static analysis (typecheck)
-- Coverage
-- Security vulnerabilities
-
-`GET /api/developer/status` caches results for `DEV_STATUS_CACHE_TTL_MS` milliseconds. Add `?force=1` to bypass the cache and rerun the checks immediately.
-
-## VS Code Support
-
-The repository includes:
-
-- recommended extensions in `.vscode/extensions.json`
-- format and lint settings in `.vscode/settings.json`
-- runnable tasks in `.vscode/tasks.json`
-- launch configurations in `.vscode/launch.json`
-
-## Environment Variables
-
-Copy values from `.env.example` as needed.
-
-- `PORT`: API port
-- `VITE_API_BASE_URL`: backend base URL for the web app
-- `LOG_LEVEL`: Pino log level
-- `DEBUG_RECONCILIATION`: optional debug switch for future deeper tracing
-- `MAX_UPLOAD_MB`: upload cap for source files
-- `RECON_PERSISTENCE_BACKEND`: set to `postgres` to force-enable PostgreSQL persistence
-- `DATABASE_URL`: PostgreSQL connection string for lifecycle persistence
-- `PG_POOL_MAX`: PostgreSQL pool max connections
-- `PG_IDLE_TIMEOUT_MS`: PostgreSQL idle timeout in milliseconds
-- `PG_STATEMENT_TIMEOUT_MS`: PostgreSQL statement timeout in milliseconds
-- `DEV_STATUS_CACHE_TTL_MS`: cache TTL for the developer status endpoint in milliseconds
-- `DEV_STATUS_HISTORY_LIMIT`: number of recent developer-status snapshots to retain in memory
-- `ENABLE_DEVELOPER_DIAGNOSTICS`: set to `true` to expose `/api/developer/*` outside the default local/dev behavior; set to `false` to force-disable it
-- `VITE_ENABLE_DEVELOPER_DASHBOARD`: set to `true` to show the dashboard link in a non-dev frontend build
-- `JAVA_HOME`: JDK home for Python- or JVM-backed tooling on macOS
-- `JAVA_BIN`: explicit `java` executable path when a library cannot resolve `PATH`
-
-## Java / Python Interop on macOS
-
-If Java was installed with Homebrew, make sure `JAVA_HOME` points to the JDK root and **not** the `bin` folder.
-
-Recommended shell setup:
-
-```bash
-export JAVA_HOME=$(/usr/libexec/java_home)
-export PATH="$JAVA_HOME/bin:$PATH"
-```
-
-The workspace also includes local `.env` and VS Code settings that point Python tooling at the detected Brew JDK for this machine.
-
-## Generating Sample Workbooks
+Generated sample files for testing:
 
 ```bash
 npm run fixtures:generate
 ```
 
-This writes sample `.xlsx` inputs under `docs/sample-files` for local experimentation.
+Samples are written to `docs/sample-files/`.
 
-## Running a Reconciliation Locally
+## 5. Quality gate workflow
 
-The current web flow expects:
-
-- `Bank workbook`
-- `QBO workbook`
-- optional `Account identifier`
-- `Reconciliation frequency` set to `Monthly` or `Annual`
-- `Monthly reconciliation month` for monthly runs or `Annual reconciliation year` for annual runs
-- editable `Reconciliation label`
-
-After submission, the UI renders summary metrics, charts, probable match review, exception reporting, and workbook download links.
-
-When PostgreSQL persistence is enabled, the API also records reconciliation lifecycle state, source-file registrations, imported rows, normalized rows, match artifacts, exceptions, summary metrics, exports, and reviewer decisions in PostgreSQL.
-
-## Golden-Standard Comparison Scripts
-
-The workbook comparison helpers in `scripts/workbook-parity.py` and `scripts/compare-attached-workbooks.py` are available for manual parity checks.
-
-The preferred entrypoint is now the unified CLI:
+Run these before opening or updating a pull request:
 
 ```bash
-npm run compare:workbooks -- --mode parity --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
-npm run compare:workbooks -- --mode row --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
-npm run compare:workbooks -- --mode second-pass --baseline ./path/to/baseline.xlsx --candidate ./path/to/candidate.xlsx
+npm run test
+npm run test:postgres
+npm run test:e2e
+npm run lint
+npm run typecheck
+npm run build
+npm run coverage
+npm run security:scan
 ```
 
-They currently use hard-coded workbook paths and should be updated for your local files before running them.
+### What each command validates
 
-## Class and Method Documentation
+- `test`: unit + integration logic and API behavior.
+- `test:postgres`: PostgreSQL lifecycle/persistence integration via Testcontainers.
+- `test:e2e`: browser-level upload-to-results workflow.
+- `lint`: static quality and style checks.
+- `typecheck`: TypeScript type safety across workspaces.
+- `build`: production bundle/compile verification.
+- `coverage`: combined coverage for unit + integration suites.
+- `security:scan`: npm audit with high-severity threshold.
 
-When changing reconciliation logic, update `docs/class-method-reference.md` in the same pull request.
+## 6. Docker deployment runbook
 
-Documentation requirements for each newly exported class method or function:
+Use this path for production-like local verification.
 
-- list inputs
-- list outputs
-- include method state object before execution
-- include method state object after execution
+### Standard deploy sequence
+
+```bash
+npm run docker:validate-env
+npm run docker:preflight
+npm run docker:deploy
+npm run docker:db:preflight
+npm run docker:health
+npm run docker:predeploy
+```
+
+### Helpful supporting commands
+
+```bash
+npm run docker:migrate
+npm run docker:redeploy
+npm run docker:logs
+npm run docker:cleanup
+```
+
+### Service topology
+
+- `web` (NGINX): public entrypoint on `4173`
+- `api` (Express): internal application network
+- `postgres`: internal data network (host mapped to `5432`)
+- `migrate`: one-shot migration service that must complete before API start
+- `pgweb`: database viewer on `8081`
+
+## 7. Preflight checks
+
+### Build preflight (`npm run docker:preflight`)
+
+Runs checks for:
+
+- Docker daemon availability
+- `.dockerignore` coverage
+- Dockerfile linting
+- secret-pattern scan
+- host port conflicts
+- env file presence
+- image build + image size check
+- non-root runtime user check
+- dev dependency leak check
+- Trivy vulnerability scan
+
+### Compose predeploy (`npm run docker:predeploy`)
+
+Runs checks for:
+
+- compose config validity
+- stack startup readiness
+- `/api/health` endpoint reachability via gateway
+- inter-service connectivity probe
+- graceful shutdown behavior
+- cleanup integrity
+
+### Database preflight (`npm run docker:db:preflight`)
+
+Runs checks for:
+
+- Docker + env resolution
+- Postgres startup and readiness
+- migration table existence
+- schema patch coverage parity
+- required tables, indexes, and constraints
+- write/read smoke verification
+- Trivy scan of DB image with optional allowlist handling
+
+Temporary CVE exceptions can be managed in:
+
+- `scripts/ops/db-cve-allowlist.txt`
+
+## 8. Persistence and environment modes
+
+### Local env (`.env`)
+
+Common flags:
+
+- `RECON_PERSISTENCE_BACKEND=postgres`
+- `DATABASE_URL=postgresql://...`
+- `ENABLE_DEVELOPER_DIAGNOSTICS=false`
+- `VITE_ENABLE_DEVELOPER_DASHBOARD=false`
+
+### Docker env (`.env.docker`)
+
+Common flags:
+
+- `API_DATABASE_URL=postgresql://...@postgres:5432/...`
+- `RUN_DB_MIGRATIONS_ON_BOOT=false`
+- `ENABLE_DEVELOPER_DIAGNOSTICS=false`
+- `RECONCILIATION_RUN_STORE_PATH=/var/lib/reconciliation/latest-reconciliation-run.json`
+
+## 9. Developer diagnostics and dashboard
+
+Developer endpoints are grouped under `/api/developer/*`.
+
+Access policy:
+
+- Enabled by default outside production.
+- In production, controlled by `ENABLE_DEVELOPER_DIAGNOSTICS=true|false`.
+
+Web dashboard visibility:
+
+- Enabled in dev mode automatically.
+- In non-dev builds, set `VITE_ENABLE_DEVELOPER_DASHBOARD=true`.
+
+## 10. Troubleshooting
+
+### Port conflict failures
+
+Symptoms:
+
+- preflight reports listeners on `4000`, `4173`, `5432`, or `5173`
+
+Fix:
+
+```bash
+npm run harness:stop
+npm run docker:cleanup
+lsof -i :4000 -i :4173 -i :5432 -i :5173
+```
+
+### Docker deploy does not become healthy
+
+Check:
+
+```bash
+npm run docker:logs
+npm run docker:health
+```
+
+Then re-run:
+
+```bash
+npm run docker:redeploy
+```
+
+### PostgreSQL migration failures
+
+Check DB preflight output and schema parity:
+
+```bash
+npm run docker:db:preflight
+```
+
+If needed, clean and redeploy:
+
+```bash
+npm run docker:cleanup
+npm run docker:deploy
+```
+
+### E2E test environment issues
+
+Ensure Playwright browsers are installed and stack is stable:
+
+```bash
+npx playwright install
+npm run test:e2e
+```
+
+## 11. Pull request quality baseline
+
+Before merge:
+
+1. Run the quality gate workflow from section 5.
+2. Run Docker preflight and predeploy checks for deployment-facing changes.
+3. Ensure required branch protection checks pass.
+
+See `docs/branch-protection.md` for recommended required checks.
+
+## 12. Complete root script catalog
+
+Source of truth: `package.json` scripts at the repository root.
+
+### Development and runtime
+
+- `dev`: starts API and web dev servers together using `concurrently`.
+- `dev:api`: starts the API workspace dev server (`tsx watch`).
+- `dev:web`: starts the web workspace Vite dev server.
+- `dev:api:test`: starts API in non-watch runtime mode for harness/testing flows.
+- `dev:web:test`: starts web in test runtime mode on `127.0.0.1:4173`.
+- `ops:web:start`: starts only the compose `web` service via helper script.
+- `ops:web:stop`: stops only the compose `web` service via helper script.
+- `ops:db:start`: starts only the compose `postgres` service via helper script.
+- `ops:db:stop`: stops only the compose `postgres` service via helper script.
+- `ops:docker:stop`: stops Docker Desktop (macOS helper behavior).
+- `ops:docker:restart`: restarts Docker Desktop and prints compose status.
+- `ops:startup`: starts the compose stack path (`postgres`, `migrate`, `api`, `web`).
+- `ops:shutdown`: stops stack services and shuts down Docker Desktop.
+- `harness:start`: starts fixed-port local API/web harness for predictable local runs.
+- `harness:restart`: restarts the fixed-port runtime harness.
+- `harness:stop`: stops runtime harness processes on harness ports.
+- `harness:status`: prints fixed-port harness listener status.
+- `runtime:status`: prints current API/web runtime mode and port listeners.
+
+### Docker and deployment operations
+
+- `docker:validate-env`: validates Docker env files and required variable presence.
+- `docker:preflight`: runs build-time Docker safety checks before stack startup.
+- `docker:build`: runs `docker compose build` for stack images.
+- `docker:predeploy`: runs compose startup/shutdown and readiness predeploy checks.
+- `docker:db:preflight`: runs DB patch parity, schema integrity, and DB-image vulnerability checks.
+- `docker:gate`: runs `docker:preflight` then `docker:predeploy` as a combined gate.
+- `docker:migrate`: runs migration workflow script against configured runtime.
+- `docker:health`: runs Docker runtime health checks.
+- `docker:deploy`: executes the standard deploy runbook script.
+- `docker:redeploy`: executes cleanup/restart deploy runbook script.
+- `docker:smoke`: runs isolated end-to-end Docker smoke checks, then tears down.
+- `docker:up`: runs `docker compose up --build` directly.
+- `docker:cleanup`: runs Docker cleanup script for stack artifacts.
+- `docker:down`: runs `docker compose down --remove-orphans`.
+- `docker:logs`: tails compose logs.
+
+### Build, test, and static quality
+
+- `build`: builds all workspaces that expose a build script.
+- `test`: runs unit and integration suites in sequence.
+- `test:unit`: runs Vitest unit projects (`unit-core`, `unit-web`).
+- `test:integration`: runs Vitest integration project.
+- `test:postgres`: runs PostgreSQL integration suite (Testcontainers-backed).
+- `test:e2e`: runs Playwright end-to-end browser tests.
+- `lint`: runs ESLint across the repository.
+- `analyze:static`: runs full static quality chain (`lint`, test-quality, deps, unused exports, complexity).
+- `analyze:deps`: runs dependency-cruiser boundary/cycle analysis.
+- `analyze:test-quality`: fails tests that do not contain assertion patterns.
+- `analyze:unused-exports`: runs `ts-prune` against typecheck project config.
+- `analyze:complexity`: runs `escomplex` analysis with configured thresholds.
+- `format`: runs Prettier write formatting across the repository.
+- `typecheck`: runs TypeScript typecheck (`tsc -p tsconfig.typecheck.json`).
+- `coverage`: runs Vitest coverage across unit and integration projects.
+- `security:scan`: runs `npm audit` with high-severity threshold.
+
+### Governance and data tooling
+
+- `github:protect-main`: applies required GitHub branch-protection checks to `main`.
+- `fixtures:generate`: generates sample reconciliation fixture workbooks under `docs/sample-files/`.
+- `analyze:reconciliation`: runs reconciliation sensitivity analysis across amount/date/similarity windows.
+- `compare:workbooks`: runs workbook comparison CLI (`parity`, `row`, `second-pass`) for reconciliation outputs.
+
+## 13. Related docs
+
+- `docs/architecture.md`
+- `docs/api.md`
+- `docs/reconciliation-rules.md`
+- `docs/local-docker-platform.md`
+- `docs/postgresql-persistence-architecture.md`
+- `docs/test-strategy.md`

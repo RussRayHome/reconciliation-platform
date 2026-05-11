@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "dev:test": "tsx src/index.ts",
+    "dev": "NODE_OPTIONS=--no-deprecation tsx watch src/index.ts",
+    "dev:test": "NODE_OPTIONS=--no-deprecation tsx src/index.ts",
     "build": "tsup --config tsup.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -18,9 +18,9 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "multer": "^2.0.0",
-    "pino": "^9.7.0",
-    "pino-http": "^10.4.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
     "pino-pretty": "^13.0.0",
-    "zod": "^3.24.3"
+    "zod": "^4.3.6"
   }
 }

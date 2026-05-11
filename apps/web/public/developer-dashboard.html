@@ -23,7 +23,7 @@
 
       body {
         margin: 0;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
         background: linear-gradient(160deg, #f8fbff 0%, #edf2f7 42%, #f2f5f7 100%);
         color: var(--ink);
       }
@@ -295,6 +295,122 @@
         color: #b42318;
       }
 
+      .security-component-stack {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+        display: grid;
+        gap: 10px;
+      }
+
+      .security-component-row {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #f8fbff;
+        padding: 10px;
+      }
+
+      .security-component-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .security-component-title {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #102a43;
+      }
+
+      .security-component-meta {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .security-component-note {
+        margin: 7px 0 0;
+        font-size: 0.78rem;
+        color: #52606d;
+      }
+
+      .security-component-vuln-section {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed #d9e2ec;
+      }
+
+      .security-component-vuln-title {
+        margin: 0 0 6px;
+        color: #243b53;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      .security-component-vuln-table-wrap {
+        border: 1px solid #d9e2ec;
+        border-radius: 8px;
+        background: #ffffff;
+        max-height: 250px;
+        overflow: auto;
+      }
+
+      .security-component-vuln-table {
+        width: 100%;
+        min-width: 700px;
+        border-collapse: collapse;
+        font-size: 0.78rem;
+      }
+
+      .security-component-vuln-table th,
+      .security-component-vuln-table td {
+        text-align: left;
+        vertical-align: top;
+        padding: 6px 8px;
+        border-bottom: 1px solid #eef2f7;
+      }
+
+      .security-component-vuln-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #f7fbff;
+        color: #486581;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        font-size: 0.68rem;
+      }
+
+      .security-component-vuln-id {
+        white-space: nowrap;
+        font-weight: 700;
+        color: #102a43;
+      }
+
+      .security-component-vuln-severity {
+        white-space: nowrap;
+        font-weight: 700;
+      }
+
+      .security-component-vuln-severity.critical {
+        color: #b42318;
+      }
+
+      .security-component-vuln-severity.high {
+        color: #c2410c;
+      }
+
+      .security-component-vuln-empty {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
       .history-list {
         margin: 0;
         padding: 0;
@@ -393,34 +509,34 @@
         </article>
         <article class="metric">
           <p class="metric-label">Total runtime</p>
-          <p id="runtime" class="metric-value" style="font-size: 1.1rem;">-</p>
+          <p id="runtime" class="metric-value" style="font-size: 1.1rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Last updated</p>
-          <p id="updated" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="updated" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
       </section>
 
       <section class="sub-strip">
         <article class="metric">
           <p class="metric-label">Cache status</p>
-          <p id="cache-status" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="cache-status" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Cache age / TTL</p>
-          <p id="cache-age" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="cache-age" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Health ratio</p>
-          <p id="health-ratio" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="health-ratio" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Failing areas</p>
-          <p id="failing-areas" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="failing-areas" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
       </section>
 
-      <section class="card" style="margin-bottom: 12px;">
+      <section class="card" style="margin-bottom: 12px">
         <div class="card-top">
           <h3>Current Repo Focus</h3>
           <span id="repo-focus-badge" class="pill">Loading</span>
@@ -429,7 +545,7 @@
         <ul id="repo-focus-list" class="highlights"></ul>
       </section>
 
-      <section class="card" style="margin-bottom: 12px;">
+      <section class="card" style="margin-bottom: 12px">
         <div class="card-top">
           <h3>Recent History</h3>
           <span id="history-count" class="pill">0 runs</span>
@@ -446,7 +562,7 @@
         </article>
         <article class="metric">
           <p class="metric-label">Server started</p>
-          <p id="server-started-at" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="server-started-at" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Exceptions (last 10m)</p>
@@ -458,30 +574,30 @@
         </article>
         <article class="metric">
           <p class="metric-label">Last request seen</p>
-          <p id="last-request-at" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="last-request-at" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Last reconciliation</p>
-          <p id="last-run-status" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="last-run-status" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">API uptime</p>
-          <p id="api-uptime" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="api-uptime" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
       </section>
 
       <section class="sub-strip">
         <article class="metric">
           <p class="metric-label">Current branch</p>
-          <p id="git-branch" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="git-branch" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Current commit</p>
-          <p id="git-commit" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="git-commit" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
         <article class="metric">
           <p class="metric-label">Working tree</p>
-          <p id="git-dirty" class="metric-value" style="font-size: 0.98rem;">-</p>
+          <p id="git-dirty" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
       </section>
 
@@ -577,11 +693,30 @@
         return `${seconds.toFixed(2)} s`;
       };
 
+      const stripAnsiCodes = (value) => String(value || '').replaceAll(/\u001b\[[0-9;]*m/gu, '');
+
+      const getCoverageDisplayText = (value) => {
+        const text = stripAnsiCodes(value).replaceAll(/\r\n?/gu, '\n');
+        const lines = text.split('\n');
+        const startIndex = lines.findIndex((line) => /\bTest Files\b/u.test(line));
+
+        if (startIndex >= 0) {
+          const trimmed = lines.slice(startIndex).join('\n').trim();
+          if (trimmed) {
+            return trimmed;
+          }
+        }
+
+        return text.trim() || 'No additional output';
+      };
+
       const setButtonsBusy = (busy, activeButton = null) => {
         refreshButton.disabled = busy;
         forceRefreshButton.disabled = busy;
-        refreshButton.textContent = busy && activeButton === refreshButton ? 'Running...' : 'Refresh checks';
-        forceRefreshButton.textContent = busy && activeButton === forceRefreshButton ? 'Running...' : 'Force refresh';
+        refreshButton.textContent =
+          busy && activeButton === refreshButton ? 'Running...' : 'Refresh checks';
+        forceRefreshButton.textContent =
+          busy && activeButton === forceRefreshButton ? 'Running...' : 'Force refresh';
       };
 
       const getCoverageMetricBoxes = (check) => {
@@ -594,9 +729,10 @@
             .map((metric) => {
               const value = Number.parseFloat(metric.value);
               const threshold = Number.parseFloat(metric.threshold);
-              const meetsThreshold = typeof metric.meetsThreshold === 'boolean'
-                ? metric.meetsThreshold
-                : Number.isFinite(value) && Number.isFinite(threshold) && value >= threshold;
+              const meetsThreshold =
+                typeof metric.meetsThreshold === 'boolean'
+                  ? metric.meetsThreshold
+                  : Number.isFinite(value) && Number.isFinite(threshold) && value >= threshold;
 
               return {
                 label: metric.label,
@@ -654,29 +790,36 @@
           .filter(Boolean);
       };
 
+      const securitySeverityColorFn = {
+        Critical: (n) => (n > 0 ? 'sec-critical' : 'sec-clear'),
+        High: (n) => (n > 0 ? 'sec-high' : 'sec-clear'),
+        Moderate: (n) => (n > 0 ? 'sec-moderate' : 'sec-clear'),
+        Low: (n) => (n > 0 ? 'sec-low' : 'sec-clear'),
+        Info: (n) => (n > 0 ? 'sec-info' : 'sec-clear'),
+      };
+
+      const toSecurityCount = (value) => {
+        const parsed = Number.parseInt(String(value ?? '0'), 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+
       const getSecurityMetricBoxes = (check) => {
         if (check?.name !== 'Security vulnerabilities' || !Array.isArray(check?.highlights)) {
           return [];
         }
 
-        const severityColorFn = {
-          Critical: (n) => n > 0 ? 'sec-critical' : 'sec-clear',
-          High: (n) => n > 0 ? 'sec-high' : 'sec-clear',
-          Moderate: (n) => n > 0 ? 'sec-moderate' : 'sec-clear',
-          Low: (n) => n > 0 ? 'sec-low' : 'sec-clear',
-          Info: (n) => n > 0 ? 'sec-info' : 'sec-clear',
-        };
-
         return check.highlights
           .map((item) => {
-            const match = String(item).match(/^\s*(Critical|High|Moderate|Low|Info)\s*:\s*(\d+)\s*$/i);
+            const match = String(item).match(
+              /^\s*(Critical|High|Moderate|Low|Info)\s*:\s*(\d+)\s*$/i,
+            );
             if (!match) {
               return null;
             }
 
             const label = match[1] || '';
             const count = Number.parseInt(match[2] || '0', 10);
-            const colorFn = severityColorFn[label];
+            const colorFn = securitySeverityColorFn[label];
             if (!colorFn) {
               return null;
             }
@@ -684,6 +827,445 @@
             return { label, value: String(count), colorClass: colorFn(count) };
           })
           .filter(Boolean);
+      };
+
+      const getSecurityComponentMetricBoxes = (componentScore) => {
+        const severities = ['Critical', 'High', 'Moderate', 'Low', 'Info'];
+        return severities.map((label) => {
+          const field = label.toLowerCase();
+          const count = toSecurityCount(componentScore?.[field]);
+          const colorFn = securitySeverityColorFn[label];
+          return {
+            label,
+            value: String(count),
+            colorClass: colorFn ? colorFn(count) : 'sec-clear',
+          };
+        });
+      };
+
+      const parseJsonFromMixedOutput = (value) => {
+        const text = String(value || '');
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}');
+
+        if (jsonStart < 0 || jsonEnd < 0 || jsonEnd < jsonStart) {
+          return null;
+        }
+
+        try {
+          return JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+        } catch {
+          return null;
+        }
+      };
+
+      const cveIdRegex = /CVE-\d{4}-\d+/iu;
+      const securityCveSeverityRank = {
+        CRITICAL: 0,
+        HIGH: 1,
+        MODERATE: 2,
+        LOW: 3,
+        INFO: 4,
+        UNKNOWN: 5,
+      };
+
+      const normalizeSecurityCveId = (value) => {
+        const match = String(value || '')
+          .toUpperCase()
+          .match(cveIdRegex);
+        return match ? match[0] : '';
+      };
+
+      const normalizeSecurityCveSeverity = (value) => {
+        const normalized = String(value || '')
+          .trim()
+          .toUpperCase();
+
+        if (normalized === 'MEDIUM') {
+          return 'MODERATE';
+        }
+
+        if (
+          normalized === 'CRITICAL' ||
+          normalized === 'HIGH' ||
+          normalized === 'MODERATE' ||
+          normalized === 'LOW' ||
+          normalized === 'INFO' ||
+          normalized === 'UNKNOWN'
+        ) {
+          return normalized;
+        }
+
+        return 'UNKNOWN';
+      };
+
+      const normalizeSecurityCveDescription = (value) => {
+        const normalized = String(value || '')
+          .replaceAll(/\s+/gu, ' ')
+          .trim();
+        if (!normalized) {
+          return 'No description provided.';
+        }
+
+        return normalized.length > 220 ? `${normalized.slice(0, 217).trimEnd()}...` : normalized;
+      };
+
+      const decodeQuotedJsonText = (value) => {
+        const text = String(value || '');
+        if (!text) {
+          return '';
+        }
+
+        try {
+          return JSON.parse(`"${text}"`);
+        } catch {
+          return text
+            .replaceAll(String.raw`\n`, ' ')
+            .replaceAll(String.raw`\r`, ' ')
+            .replaceAll(String.raw`\t`, ' ')
+            .replaceAll(String.raw`\"`, '"')
+            .replaceAll(String.raw`\\`, '\\');
+        }
+      };
+
+      const parseSecurityCveFindingsFromDetailsText = (value) => {
+        const text = String(value || '');
+        if (!text.includes('CVE-')) {
+          return [];
+        }
+
+        const cveRows = [];
+        const lines = text.split(/\r?\n/gu);
+        const isCompleteFinding = (finding) =>
+          Boolean(
+            finding &&
+            finding.id &&
+            finding.description &&
+            finding.severity &&
+            finding.component &&
+            finding.scanner,
+          );
+
+        let currentFinding = null;
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+
+          const idMatch = line.match(/"id"\s*:\s*"(CVE-\d{4}-\d+)"/u);
+          if (idMatch?.[1]) {
+            if (isCompleteFinding(currentFinding)) {
+              cveRows.push(currentFinding);
+            }
+
+            currentFinding = {
+              id: idMatch[1],
+              description: '',
+              severity: '',
+              component: '',
+              scanner: '',
+            };
+            continue;
+          }
+
+          if (!currentFinding) {
+            continue;
+          }
+
+          const descriptionMatch = line.match(/"description"\s*:\s*"((?:\\.|[^"\\])*)"/u);
+          if (descriptionMatch?.[1]) {
+            currentFinding.description = decodeQuotedJsonText(descriptionMatch[1]);
+            continue;
+          }
+
+          const severityMatch = line.match(/"severity"\s*:\s*"([^"]+)"/u);
+          if (severityMatch?.[1]) {
+            currentFinding.severity = severityMatch[1];
+            continue;
+          }
+
+          const componentMatch = line.match(/"component"\s*:\s*"([^"]+)"/u);
+          if (componentMatch?.[1]) {
+            currentFinding.component = componentMatch[1];
+            continue;
+          }
+
+          const scannerMatch = line.match(/"scanner"\s*:\s*"([^"]+)"/u);
+          if (scannerMatch?.[1]) {
+            currentFinding.scanner = scannerMatch[1];
+            continue;
+          }
+
+          if (line.startsWith('}')) {
+            if (isCompleteFinding(currentFinding)) {
+              cveRows.push(currentFinding);
+            }
+            currentFinding = null;
+          }
+        }
+
+        if (isCompleteFinding(currentFinding)) {
+          cveRows.push(currentFinding);
+        }
+
+        return cveRows;
+      };
+
+      const normalizeSecurityComponentCveFindings = (
+        value,
+        fallbackComponent = '',
+        fallbackScanner = '',
+      ) => {
+        const rawFindings = Array.isArray(value) ? value : [];
+        const findingsByKey = new Map();
+
+        for (const entry of rawFindings) {
+          if (!entry || typeof entry !== 'object') {
+            continue;
+          }
+
+          const id =
+            normalizeSecurityCveId(entry.id) ||
+            normalizeSecurityCveId(entry.cve) ||
+            normalizeSecurityCveId(entry.vulnerabilityId);
+          if (!id) {
+            continue;
+          }
+
+          const severity = normalizeSecurityCveSeverity(entry.severity);
+          const description = normalizeSecurityCveDescription(entry.description || entry.title);
+          const component =
+            String(entry.component || fallbackComponent || '').trim() || 'Unknown component';
+          const scanner =
+            String(entry.scanner || fallbackScanner || '').trim() || 'Unknown scanner';
+          const key = `${id}|${component}|${scanner}`;
+
+          const existing = findingsByKey.get(key);
+          if (!existing) {
+            findingsByKey.set(key, {
+              id,
+              description,
+              severity,
+              component,
+              scanner,
+            });
+            continue;
+          }
+
+          const existingRank =
+            securityCveSeverityRank[existing.severity] ?? securityCveSeverityRank.UNKNOWN;
+          const incomingRank = securityCveSeverityRank[severity] ?? securityCveSeverityRank.UNKNOWN;
+          if (incomingRank < existingRank) {
+            existing.severity = severity;
+          }
+
+          if (description.length > existing.description.length) {
+            existing.description = description;
+          }
+        }
+
+        return [...findingsByKey.values()].sort((left, right) => {
+          const leftRank =
+            securityCveSeverityRank[left.severity] ?? securityCveSeverityRank.UNKNOWN;
+          const rightRank =
+            securityCveSeverityRank[right.severity] ?? securityCveSeverityRank.UNKNOWN;
+          if (leftRank !== rightRank) {
+            return leftRank - rightRank;
+          }
+
+          return left.id.localeCompare(right.id);
+        });
+      };
+
+      const getSecurityComponentCveFindingsMap = (check) => {
+        const findingsByComponent = new Map();
+        const getKey = (value) => {
+          const normalized = String(value || '')
+            .trim()
+            .toLowerCase();
+
+          if (!normalized) {
+            return '';
+          }
+
+          if (
+            normalized === 'container' ||
+            normalized === 'containers' ||
+            normalized === 'container image' ||
+            normalized === 'container images'
+          ) {
+            return 'container component';
+          }
+
+          if (normalized === 'db') {
+            return 'database';
+          }
+
+          if (normalized === 'web') {
+            return 'web server';
+          }
+
+          return normalized;
+        };
+
+        const addFindings = (componentName, scannerName, findings) => {
+          const componentKey = getKey(componentName);
+          if (!componentKey) {
+            return;
+          }
+
+          const normalized = normalizeSecurityComponentCveFindings(
+            findings,
+            componentName,
+            scannerName,
+          );
+          if (normalized.length === 0) {
+            return;
+          }
+
+          findingsByComponent.set(
+            componentKey,
+            normalizeSecurityComponentCveFindings([
+              ...(findingsByComponent.get(componentKey) || []),
+              ...normalized,
+            ]),
+          );
+        };
+
+        for (const componentScore of Array.isArray(check?.securityComponentScores)
+          ? check.securityComponentScores
+          : []) {
+          addFindings(
+            componentScore?.component,
+            componentScore?.scanner,
+            componentScore?.cveFindings,
+          );
+        }
+
+        for (const finding of normalizeSecurityComponentCveFindings(check?.securityCveFindings)) {
+          addFindings(finding.component, finding.scanner, [finding]);
+        }
+
+        const parsedDetails = parseJsonFromMixedOutput(check?.details);
+        for (const componentScore of Array.isArray(parsedDetails?.components)
+          ? parsedDetails.components
+          : []) {
+          addFindings(
+            componentScore?.component,
+            componentScore?.scanner,
+            componentScore?.cveFindings,
+          );
+        }
+
+        for (const finding of normalizeSecurityComponentCveFindings(parsedDetails?.cveFindings)) {
+          addFindings(finding.component, finding.scanner, [finding]);
+        }
+
+        for (const finding of normalizeSecurityComponentCveFindings(
+          parseSecurityCveFindingsFromDetailsText(check?.details),
+        )) {
+          addFindings(finding.component, finding.scanner, [finding]);
+        }
+
+        return findingsByComponent;
+      };
+
+      const buildSecurityComponentRowsMarkup = (check) => {
+        if (
+          check?.name !== 'Security vulnerabilities' ||
+          !Array.isArray(check?.securityComponentScores) ||
+          check.securityComponentScores.length === 0
+        ) {
+          return '';
+        }
+
+        const findingsByComponent = getSecurityComponentCveFindingsMap(check);
+
+        const componentRows = check.securityComponentScores
+          .map((componentScore) => {
+            const rawComponentName = String(componentScore?.component || '').trim();
+            if (!rawComponentName) {
+              return '';
+            }
+
+            const rawStatus = String(componentScore?.status || 'ok').toLowerCase();
+            let statusClass = 'bad';
+            if (rawStatus === 'ok') {
+              statusClass = 'ok';
+            } else if (rawStatus === 'skipped') {
+              statusClass = 'warn';
+            }
+
+            const scannerName = String(componentScore?.scanner || 'Unknown scanner').trim();
+            const note = String(componentScore?.note || '').trim();
+            const metricBoxes = getSecurityComponentMetricBoxes(componentScore);
+
+            const componentKey = rawComponentName.toLowerCase();
+            const componentFindings = (findingsByComponent.get(componentKey) || []).filter(
+              (finding) => finding.severity === 'CRITICAL' || finding.severity === 'HIGH',
+            );
+
+            const hasCriticalOrHighCounts =
+              toSecurityCount(componentScore?.critical) + toSecurityCount(componentScore?.high) > 0;
+            const vulnerabilityEmptyText = hasCriticalOrHighCounts
+              ? 'Critical/High counts are present, but CVE detail rows were not provided by this scan payload.'
+              : 'No Critical/High vulnerabilities reported for this component.';
+            const vulnSectionMarkup =
+              componentFindings.length > 0
+                ? `<section class="security-component-vuln-section">
+                  <p class="security-component-vuln-title">Critical/High vulnerabilities</p>
+                  <div class="security-component-vuln-table-wrap">
+                    <table class="security-component-vuln-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Severity</th>
+                          <th>Component</th>
+                          <th>Scanner</th>
+                          <th>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>${componentFindings
+                        .map(
+                          (finding) => `<tr>
+                            <td class="security-component-vuln-id">${escapeHtml(finding.id)}</td>
+                            <td class="security-component-vuln-severity ${escapeHtml(finding.severity.toLowerCase())}">${escapeHtml(finding.severity)}</td>
+                            <td>${escapeHtml(finding.component)}</td>
+                            <td>${escapeHtml(finding.scanner)}</td>
+                            <td>${escapeHtml(finding.description)}</td>
+                          </tr>`,
+                        )
+                        .join('')}</tbody>
+                    </table>
+                  </div>
+                </section>`
+                : `<p class="security-component-vuln-empty">${escapeHtml(vulnerabilityEmptyText)}</p>`;
+
+            return `<section class="security-component-row">
+              <div class="security-component-header">
+                <div>
+                  <p class="security-component-title">${escapeHtml(rawComponentName)}</p>
+                  <p class="security-component-meta">Scanner: ${escapeHtml(scannerName)}</p>
+                </div>
+                <span class="pill ${statusClass}">${escapeHtml(rawStatus.toUpperCase())}</span>
+              </div>
+              <div class="coverage-metrics">${metricBoxes
+                .map(
+                  (metric) => `<div class="coverage-metric-box ${escapeHtml(metric.colorClass)}">
+                    <p class="coverage-metric-label">${escapeHtml(metric.label)}</p>
+                    <p class="coverage-metric-value">${escapeHtml(metric.value)}</p>
+                  </div>`,
+                )
+                .join('')}</div>
+              ${note ? `<p class="security-component-note">${escapeHtml(note)}</p>` : ''}
+              ${vulnSectionMarkup}
+            </section>`;
+          })
+          .join('');
+
+        if (!componentRows.trim()) {
+          return '';
+        }
+
+        return `<section class="security-component-stack">${componentRows}</section>`;
       };
 
       const renderHistory = (items) => {
@@ -705,14 +1287,16 @@
           const right = document.createElement('div');
           const isHealthy = run.overallStatus === 'healthy';
           const testTotals = run.testTotals || { passed: 0, failed: 0, byType: [] };
-          const testsByType = Array.isArray(testTotals.byType) && testTotals.byType.length > 0
-            ? testTotals.byType
-                .map((item) => `${item.label} P:${item.passed} F:${item.failed}`)
-                .join(', ')
-            : 'No test details';
-          const failingAreas = Array.isArray(run.failingAreas) && run.failingAreas.length > 0
-            ? run.failingAreas.join(', ')
-            : 'none';
+          const testsByType =
+            Array.isArray(testTotals.byType) && testTotals.byType.length > 0
+              ? testTotals.byType
+                  .map((item) => `${item.label} P:${item.passed} F:${item.failed}`)
+                  .join(', ')
+              : 'No test details';
+          const failingAreas =
+            Array.isArray(run.failingAreas) && run.failingAreas.length > 0
+              ? run.failingAreas.join(', ')
+              : 'none';
 
           left.textContent = `${asLocal(run.generatedAt)} | Passed: ${testTotals.passed ?? 0}, Failed: ${testTotals.failed ?? 0} | tests ${testsByType} | areas ${failingAreas} | runtime ${formatDuration(run.totalDurationMs)}`;
           right.textContent = isHealthy ? 'PASS' : 'FAIL';
@@ -754,7 +1338,9 @@
         failedRequestsWindow.textContent = String(payload.failedRequestsLastWindow ?? 0);
         failedRequestsWindow.className = `metric-value ${(payload.failedRequestsLastWindow ?? 0) > 0 ? 'bad' : 'ok'}`;
 
-        lastRequestAt.textContent = payload.lastRequestAt ? asLocal(payload.lastRequestAt) : 'No recent requests';
+        lastRequestAt.textContent = payload.lastRequestAt
+          ? asLocal(payload.lastRequestAt)
+          : 'No recent requests';
         apiUptime.textContent = formatDuration(payload.uptimeMs);
 
         const lastRun = payload.lastReconciliationRun;
@@ -802,9 +1388,10 @@
           exceptionsCount,
           payload.recentExceptions,
           (item) => {
-            const stackLine = Array.isArray(item.stackPreview) && item.stackPreview.length > 0
-              ? `<p class="runtime-row-meta">${escapeHtml(item.stackPreview[0])}</p>`
-              : '';
+            const stackLine =
+              Array.isArray(item.stackPreview) && item.stackPreview.length > 0
+                ? `<p class="runtime-row-meta">${escapeHtml(item.stackPreview[0])}</p>`
+                : '';
             return `
               <p class="runtime-row-title">${escapeHtml(item.errorName || 'Error')} | ${escapeHtml(item.message || 'Unknown error')}</p>
               <p class="runtime-row-meta">${escapeHtml(asLocal(item.timestamp))} | ${escapeHtml(item.method)} ${escapeHtml(item.path)} | status ${escapeHtml(item.statusCode)} | corr ${escapeHtml(item.correlationId)}</p>
@@ -830,7 +1417,11 @@
           runsCount,
           payload.recentReconciliationRuns,
           (item) => {
-            const contextParts = [item.reconciliationFrequency, item.periodLabel, item.accountIdentifier]
+            const contextParts = [
+              item.reconciliationFrequency,
+              item.periodLabel,
+              item.accountIdentifier,
+            ]
               .filter(Boolean)
               .map((part) => escapeHtml(part));
             const failureText = item.failureReason
@@ -846,76 +1437,117 @@
         );
       };
 
+      const resolveCheckMetricBoxes = (check) => {
+        const coverageMetricBoxes = getCoverageMetricBoxes(check);
+        return coverageMetricBoxes.length > 0 ? coverageMetricBoxes : getSecurityMetricBoxes(check);
+      };
+
+      const buildCheckSummaryHtml = (check, metricBoxes) => {
+        if (metricBoxes.length === 0) {
+          return `<div><strong>Summary:</strong> ${escapeHtml(check.summary)}</div>`;
+        }
+
+        return `<div><strong>Summary:</strong></div>
+          <div class="coverage-metrics">${metricBoxes
+            .map(
+              (metric) => `<div class="coverage-metric-box ${escapeHtml(metric.colorClass)}">
+                <p class="coverage-metric-label">${escapeHtml(metric.label)}</p>
+                <p class="coverage-metric-value">${escapeHtml(metric.value)}</p>
+                ${metric.helper ? `<p class="coverage-metric-helper">${escapeHtml(metric.helper)}</p>` : ''}
+              </div>`,
+            )
+            .join('')}</div>`;
+      };
+
+      const appendCheckHighlights = (card, check, metricBoxes) => {
+        if (
+          check?.name === 'Coverage' ||
+          metricBoxes.length > 0 ||
+          !Array.isArray(check.highlights) ||
+          check.highlights.length === 0
+        ) {
+          return;
+        }
+
+        const highlightList = document.createElement('ul');
+        highlightList.className = 'highlights';
+
+        for (const item of check.highlights.slice(0, 3)) {
+          const row = document.createElement('li');
+          row.textContent = item;
+          highlightList.appendChild(row);
+        }
+
+        const preBlock = card.querySelector('pre');
+        if (preBlock) {
+          preBlock.before(highlightList);
+          return;
+        }
+
+        card.appendChild(highlightList);
+      };
+
+      const buildRepoCheckCard = (check) => {
+        const card = document.createElement('article');
+        card.className = 'card';
+
+        const isSecurityCheck = check?.name === 'Security vulnerabilities';
+        const isCoverageCheck = check?.name === 'Coverage';
+        const statusClass = check.ok ? 'ok' : 'bad';
+        const statusText = check.ok ? 'PASS' : 'FAIL';
+        const metricBoxes = isCoverageCheck ? [] : resolveCheckMetricBoxes(check);
+        const securityComponentRowsHtml = buildSecurityComponentRowsMarkup(check);
+        const summaryHtml = buildCheckSummaryHtml(check, metricBoxes);
+        const checkDetails = isCoverageCheck
+          ? getCoverageDisplayText(check.details)
+          : check.details || 'No additional output';
+        const outputMarkup = isSecurityCheck ? '' : `<pre>${escapeHtml(checkDetails)}</pre>`;
+        const detailsMarkup = `<div class="details">
+            ${summaryHtml}
+            <div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>
+            <div><strong>Duration:</strong> ${escapeHtml(formatDuration(check.durationMs))}</div>
+            <div><strong>Command:</strong> ${escapeHtml(check.command)}</div>
+          </div>`;
+
+        card.innerHTML = `
+          <div class="card-top">
+            <h3>${escapeHtml(check.name)}</h3>
+            <span class="pill ${statusClass}">${statusText}</span>
+          </div>
+          ${detailsMarkup}
+          ${securityComponentRowsHtml}
+          ${outputMarkup}
+        `;
+
+        appendCheckHighlights(card, check, metricBoxes);
+        return card;
+      };
+
       const renderRepoChecks = (checks) => {
         cards.innerHTML = '';
         for (const check of checks) {
-          const card = document.createElement('article');
-          card.className = 'card';
-
-          const statusClass = check.ok ? 'ok' : 'bad';
-          const statusText = check.ok ? 'PASS' : 'FAIL';
-          const metricBoxes = getCoverageMetricBoxes(check).length > 0
-            ? getCoverageMetricBoxes(check)
-            : getSecurityMetricBoxes(check);
-
-          const summaryHtml = metricBoxes.length > 0
-            ? `<div><strong>Summary:</strong></div>
-               <div class="coverage-metrics">${metricBoxes
-                 .map(
-                   (metric) => `<div class="coverage-metric-box ${escapeHtml(metric.colorClass)}">
-                     <p class="coverage-metric-label">${escapeHtml(metric.label)}</p>
-                     <p class="coverage-metric-value">${escapeHtml(metric.value)}</p>
-                     ${metric.helper ? `<p class="coverage-metric-helper">${escapeHtml(metric.helper)}</p>` : ''}
-                   </div>`,
-                 )
-                 .join('')}</div>`
-            : `<div><strong>Summary:</strong> ${escapeHtml(check.summary)}</div>`;
-
-          card.innerHTML = `
-            <div class="card-top">
-              <h3>${escapeHtml(check.name)}</h3>
-              <span class="pill ${statusClass}">${statusText}</span>
-            </div>
-            <div class="details">
-              ${summaryHtml}
-              <div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>
-              <div><strong>Duration:</strong> ${escapeHtml(formatDuration(check.durationMs))}</div>
-              <div><strong>Command:</strong> ${escapeHtml(check.command)}</div>
-            </div>
-            <pre>${escapeHtml(check.details || 'No additional output')}</pre>
-          `;
-
-          if (metricBoxes.length === 0 && Array.isArray(check.highlights) && check.highlights.length > 0) {
-            const highlightList = document.createElement('ul');
-            highlightList.className = 'highlights';
-
-            for (const item of check.highlights.slice(0, 3)) {
-              const row = document.createElement('li');
-              row.textContent = item;
-              highlightList.appendChild(row);
-            }
-
-            card.insertBefore(highlightList, card.querySelector('pre'));
-          }
-
-          cards.appendChild(card);
+          cards.appendChild(buildRepoCheckCard(check));
         }
       };
 
       const renderRepoFocus = (payload) => {
         const checks = Array.isArray(payload?.checks) ? payload.checks : [];
         const failingChecks = checks.filter((check) => !check.ok);
-        const uniqueFailingAreas = [...new Set(failingChecks.map((check) => check.areaLabel || check.name))];
-        const passedChecks = Number(payload?.passedChecks ?? Math.max(0, checks.length - failingChecks.length));
+        const uniqueFailingAreas = [
+          ...new Set(failingChecks.map((check) => check.areaLabel || check.name)),
+        ];
+        const passedChecks = Number(
+          payload?.passedChecks ?? Math.max(0, checks.length - failingChecks.length),
+        );
         const totalChecks = Number(payload?.totalChecks ?? checks.length);
         const ratioPercent = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0;
 
-        healthRatio.textContent = totalChecks > 0
-          ? `${passedChecks}/${totalChecks} (${ratioPercent}%)`
-          : 'No checks';
+        healthRatio.textContent =
+          totalChecks > 0 ? `${passedChecks}/${totalChecks} (${ratioPercent}%)` : 'No checks';
         healthRatio.className = `metric-value ${failingChecks.length === 0 ? 'ok' : 'bad'}`;
 
-        failingAreas.textContent = uniqueFailingAreas.length > 0 ? uniqueFailingAreas.join(', ') : 'None';
+        failingAreas.textContent =
+          uniqueFailingAreas.length > 0 ? uniqueFailingAreas.join(', ') : 'None';
         failingAreas.className = `metric-value ${uniqueFailingAreas.length === 0 ? 'ok' : 'bad'}`;
 
         repoFocusList.innerHTML = '';
@@ -972,15 +1604,19 @@
           await loadRuntime();
           const response = await fetch(`/api/developer/status${force ? '?force=1' : ''}`);
           const payload = await readJsonOrThrow(response, 'Failed to load developer status.');
-          overall.textContent = payload.overallStatus === 'healthy' ? 'Healthy' : 'Attention needed';
+          overall.textContent =
+            payload.overallStatus === 'healthy' ? 'Healthy' : 'Attention needed';
           overall.className = `metric-value ${payload.overallStatus === 'healthy' ? 'ok' : 'bad'}`;
 
           failed.textContent = String(payload.failedChecks);
           failed.className = `metric-value ${payload.failedChecks === 0 ? 'ok' : 'bad'}`;
 
           total.textContent = String(payload.totalChecks);
-          passed.textContent = String(payload.passedChecks ?? Math.max(0, payload.totalChecks - payload.failedChecks));
-          passed.className = `metric-value ${Number(passed.textContent) === Number(total.textContent) ? 'ok' : ''}`.trim();
+          passed.textContent = String(
+            payload.passedChecks ?? Math.max(0, payload.totalChecks - payload.failedChecks),
+          );
+          passed.className =
+            `metric-value ${Number(passed.textContent) === Number(total.textContent) ? 'ok' : ''}`.trim();
           runtime.textContent = formatDuration(payload.totalDurationMs);
           updated.textContent = asLocal(payload.generatedAt);
 

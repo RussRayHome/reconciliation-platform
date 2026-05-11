@@ -1,5 +1,3 @@
-name: reconciliation-platform
-
 x-default-logging: &default-logging
   driver: json-file
   options:
@@ -12,7 +10,7 @@ x-api-environment: &api-environment
   LOG_LEVEL: ${LOG_LEVEL:-info}
   MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
   RECON_PERSISTENCE_BACKEND: ${RECON_PERSISTENCE_BACKEND:-postgres}
-  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  DATABASE_URL: ${API_DATABASE_URL:-postgresql://recon_app:change-local-password@postgres:5432/reconciliation_platform}
   PG_POOL_MAX: ${PG_POOL_MAX:-10}
   PG_IDLE_TIMEOUT_MS: ${PG_IDLE_TIMEOUT_MS:-30000}
   PG_STATEMENT_TIMEOUT_MS: ${PG_STATEMENT_TIMEOUT_MS:-60000}
@@ -32,11 +30,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-recon_app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     restart: unless-stopped
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     expose:
       - "5432"
     volumes:
       - recon-postgres-data:/var/lib/postgresql/data
     networks:
+      - default
       - data
     healthcheck:
       test:
@@ -48,20 +49,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-    logging: *default-logging
-
-  pgweb:
-    image: sosedoff/pgweb
-    environment:
-      PGWEB_DATABASE_URL: postgres://recon_app:change-local-password@postgres:5432/reconciliation_platform?sslmode=disable
-    ports:
-      - "8081:8081"
-    depends_on:
-      - postgres
-    networks:
-      - default
-      - data
-    restart: unless-stopped
     logging: *default-logging
 
   migrate:

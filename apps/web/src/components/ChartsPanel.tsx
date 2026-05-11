@@ -53,7 +53,14 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} angle={-32} textAnchor="end" height={108} tickMargin={10} />
             <YAxis />
-            <Tooltip formatter={(value: number) => value.toFixed(2)} />
+            <Tooltip
+              formatter={(value: number | string | ReadonlyArray<number | string> | undefined) => {
+                if (typeof value === 'number' || typeof value === 'string') {
+                  return Number(value).toFixed(2);
+                }
+                return '0.00';
+              }}
+            />
             <Bar dataKey="value" fill="#c2410c" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

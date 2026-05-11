@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useState } from 'react';
+import { startTransition, useDeferredValue, useMemo, useState } from 'react';
 
 import { errorCategoryDisplayNames, type ExceptionItem } from '@recon/domain';
 import { Pill } from '@recon/ui';
@@ -6,6 +6,21 @@ import { Pill } from '@recon/ui';
 interface ExceptionTableProps {
   exceptions: ExceptionItem[];
 }
+
+type ExceptionDisplayItem = {
+  item: ExceptionItem;
+  categoryLabel: string;
+  ruleLabel: string;
+  sourceLabel: string;
+  dateLabel: string;
+  amountLabel: string;
+  reasonLabel: string;
+  evidenceLabel: string;
+  nextActionsLabel: string;
+  counterpartLabel: string;
+  ruleLineageLabel: string;
+  fileLineLabel: string;
+};
 
 const toneBySeverity = {
   Critical: 'critical',
@@ -28,7 +43,7 @@ const getCounterpartLabel = (item: ExceptionItem): string => {
     .map((counterpart) =>
       counterpart.spreadsheetFileName
         ? `${counterpart.source?.toUpperCase() ?? ''} ${counterpart.spreadsheetFileName} / ${counterpart.lineNumber ?? 'N/A'}`.trim()
-        : counterpart.transactionId ?? 'N/A',
+        : (counterpart.transactionId ?? 'N/A'),
     )
     .join(' | ');
 };
@@ -45,24 +60,50 @@ const getRuleLineageLabel = (item: ExceptionItem): string => {
     .join(' | ');
 };
 
+const getCategoryLabel = (category: ExceptionItem['category']): string =>
+  errorCategoryDisplayNames[category] ?? category;
+
+const toDisplayItem = (item: ExceptionItem): ExceptionDisplayItem => ({
+  item,
+  categoryLabel: getCategoryLabel(item.category),
+  ruleLabel: item.ruleTrace?.ruleName ?? 'Derived classification',
+  sourceLabel: item.source.toUpperCase(),
+  dateLabel: item.transactionDate ?? 'N/A',
+  amountLabel: item.amount?.toFixed(2) ?? 'N/A',
+  reasonLabel: item.ruleTrace?.reason ?? item.errorMessage,
+  evidenceLabel: item.ruleTrace?.evidence.join(' | ') ?? 'N/A',
+  nextActionsLabel: item.recommendedNextActions.join(' | '),
+  counterpartLabel: getCounterpartLabel(item),
+  ruleLineageLabel: getRuleLineageLabel(item),
+  fileLineLabel: `${item.spreadsheetFileName} / ${item.lineNumber}`,
+});
+
 export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const deferredQuery = useDeferredValue(query);
-  const categories = ['All', ...new Set(exceptions.map((item) => item.category))];
+  const categories = useMemo(
+    () => ['All', ...new Set(exceptions.map((item) => item.category))],
+    [exceptions],
+  );
+  const normalizedQuery = deferredQuery.trim().toUpperCase();
   const hasActiveFilters = query.trim().length > 0 || categoryFilter !== 'All';
 
-  const filtered = exceptions.filter((item) => {
-    const matchesCategory = categoryFilter === 'All' || item.category === categoryFilter;
-    const search = deferredQuery.trim().toUpperCase();
-    const matchesQuery =
-      !search ||
-      item.errorMessage.toUpperCase().includes(search) ||
-      item.spreadsheetFileName.toUpperCase().includes(search) ||
-      item.normalizedComparisonTokens.join(' ').toUpperCase().includes(search);
+  const filtered = useMemo(
+    () =>
+      exceptions.filter((item) => {
+        const matchesCategory = categoryFilter === 'All' || item.category === categoryFilter;
+        const matchesQuery =
+          !normalizedQuery ||
+          item.errorMessage.toUpperCase().includes(normalizedQuery) ||
+          item.spreadsheetFileName.toUpperCase().includes(normalizedQuery) ||
+          item.normalizedComparisonTokens.join(' ').toUpperCase().includes(normalizedQuery);
 
-    return matchesCategory && matchesQuery;
-  });
+        return matchesCategory && matchesQuery;
+      }),
+    [categoryFilter, exceptions, normalizedQuery],
+  );
+  const displayItems = useMemo(() => filtered.map(toDisplayItem), [filtered]);
 
   return (
     <div className="table-shell">
@@ -91,14 +132,15 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
             <option key={category} value={category}>
               {category === 'All'
                 ? category
-                : errorCategoryDisplayNames[category as keyof typeof errorCategoryDisplayNames] ?? category}
+                : (errorCategoryDisplayNames[category as keyof typeof errorCategoryDisplayNames] ??
+                  category)}
             </option>
           ))}
         </select>
       </div>
       <div className="table-results-meta" aria-live="polite">
         <span>
-          Showing {filtered.length} of {exceptions.length} exceptions.
+          Showing {displayItems.length} of {exceptions.length} exceptions.
         </span>
         {hasActiveFilters ? (
           <button
@@ -113,13 +155,11 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
           </button>
         ) : null}
       </div>
-      {filtered.length === 0 ? (
+      {displayItems.length === 0 ? (
         <div className="empty-state-card table-empty-state" role="status" aria-live="polite">
           <span className="eyebrow">No matching exceptions</span>
           <h3>No exceptions match the current filters</h3>
-          <p>
-            Adjust the search text or category filter to see matching exception items again.
-          </p>
+          <p>Adjust the search text or category filter to see matching exception items again.</p>
         </div>
       ) : (
         <>
@@ -145,77 +185,73 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((item) => (
-                  <tr key={item.id}>
+                {displayItems.map((entry) => (
+                  <tr key={entry.item.id}>
                     <td>
-                      <Pill tone={toneBySeverity[item.severity]}>{item.severity}</Pill>
+                      <Pill tone={toneBySeverity[entry.item.severity]}>{entry.item.severity}</Pill>
                     </td>
-                    <td>{errorCategoryDisplayNames[item.category] ?? item.category}</td>
-                    <td>{item.ruleTrace?.ruleName ?? 'Derived classification'}</td>
-                    <td>{item.source.toUpperCase()}</td>
-                    <td>{item.transactionDate ?? 'N/A'}</td>
-                    <td>{item.amount?.toFixed(2) ?? 'N/A'}</td>
-                    <td>{item.ruleTrace?.reason ?? item.errorMessage}</td>
-                    <td>{item.ruleTrace?.evidence.join(' | ') ?? 'N/A'}</td>
-                    <td>{item.recommendedNextActions.join(' | ')}</td>
-                    <td>{getCounterpartLabel(item)}</td>
-                    <td>{getRuleLineageLabel(item)}</td>
-                    <td>
-                      {item.spreadsheetFileName} / {item.lineNumber}
-                    </td>
+                    <td>{entry.categoryLabel}</td>
+                    <td>{entry.ruleLabel}</td>
+                    <td>{entry.sourceLabel}</td>
+                    <td>{entry.dateLabel}</td>
+                    <td>{entry.amountLabel}</td>
+                    <td>{entry.reasonLabel}</td>
+                    <td>{entry.evidenceLabel}</td>
+                    <td>{entry.nextActionsLabel}</td>
+                    <td>{entry.counterpartLabel}</td>
+                    <td>{entry.ruleLineageLabel}</td>
+                    <td>{entry.fileLineLabel}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div className="exception-card-list" aria-label="Exception report cards">
-            {filtered.map((item) => (
-              <article className="exception-card" key={`card-${item.id}`}>
+            {displayItems.map((entry) => (
+              <article className="exception-card" key={`card-${entry.item.id}`}>
                 <div className="exception-card__header">
-                  <Pill tone={toneBySeverity[item.severity]}>{item.severity}</Pill>
-                  <strong>{errorCategoryDisplayNames[item.category] ?? item.category}</strong>
+                  <Pill tone={toneBySeverity[entry.item.severity]}>{entry.item.severity}</Pill>
+                  <strong>{entry.categoryLabel}</strong>
                 </div>
                 <div className="exception-card__row">
                   <span>Rule</span>
-                  <strong>{item.ruleTrace?.ruleName ?? 'Derived classification'}</strong>
+                  <strong>{entry.ruleLabel}</strong>
                 </div>
                 <div className="exception-card__row">
                   <span>Source</span>
-                  <strong>{item.source.toUpperCase()}</strong>
+                  <strong>{entry.sourceLabel}</strong>
                 </div>
                 <div className="exception-card__row">
                   <span>Date</span>
-                  <strong>{item.transactionDate ?? 'N/A'}</strong>
+                  <strong>{entry.dateLabel}</strong>
                 </div>
                 <div className="exception-card__row">
                   <span>Amount</span>
-                  <strong>{item.amount?.toFixed(2) ?? 'N/A'}</strong>
+                  <strong>{entry.amountLabel}</strong>
                 </div>
                 <div className="exception-card__row">
                   <span>File / Line</span>
-                  <strong>
-                    {item.spreadsheetFileName} / {item.lineNumber}
-                  </strong>
+                  <strong>{entry.fileLineLabel}</strong>
                 </div>
                 <div className="exception-card__detail-block">
                   <span>Reason</span>
-                  <p>{item.ruleTrace?.reason ?? item.errorMessage}</p>
+                  <p>{entry.reasonLabel}</p>
                 </div>
                 <div className="exception-card__detail-block">
                   <span>Evidence</span>
-                  <p>{item.ruleTrace?.evidence.join(' | ') ?? 'N/A'}</p>
+                  <p>{entry.evidenceLabel}</p>
                 </div>
                 <div className="exception-card__detail-block">
                   <span>Next Actions</span>
-                  <p>{item.recommendedNextActions.join(' | ')}</p>
+                  <p>{entry.nextActionsLabel}</p>
                 </div>
                 <div className="exception-card__detail-block">
                   <span>Counterparts</span>
-                  <p>{getCounterpartLabel(item)}</p>
+                  <p>{entry.counterpartLabel}</p>
                 </div>
                 <div className="exception-card__detail-block">
                   <span>Rule Lineage</span>
-                  <p>{getRuleLineageLabel(item)}</p>
+                  <p>{entry.ruleLineageLabel}</p>
                 </div>
               </article>
             ))}

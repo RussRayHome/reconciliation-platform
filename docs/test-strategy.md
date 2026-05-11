@@ -1,113 +1,192 @@
 # Test Strategy
 
-## Objectives
+This strategy defines how the platform protects reconciliation correctness, API stability, UI behavior, and deployment safety.
 
-The tests are intended to protect accounting logic, workbook ingestion behavior, API safety, and the primary analyst workflow.
+## 1. Objectives
 
-## Test Layers
+The test and validation stack is designed to:
 
-### Unit tests
+- keep reconciliation outcomes deterministic and auditable
+- prevent API contract regressions
+- protect the analyst workflow in the web app
+- verify persistence behavior with real PostgreSQL
+- catch release risk via lint/typecheck/security/build and Docker preflight gates
 
-Located in shared packages and focused on deterministic business logic.
+## 2. Test layers
 
-- normalization of text, dates, and signed amounts
-- duplicate detection and classified reconciliation outcomes from fixture data
-- workbook export smoke coverage
-- performance smoke for a representative local workload
+## Unit tests
 
-### Integration tests
+Scope:
 
-Located in `apps/api/tests`.
+- normalization, parsing helpers, and matching utilities
+- exception classification and summary logic
+- UI component behavior in isolation
 
-- multipart upload handling
-- reconciliation execution via HTTP
-- summary endpoint
-- exceptions endpoint
-- workbook download endpoint
-- validation failures for missing uploads
+Command:
 
-### UI tests
+```bash
+npm run test:unit
+```
 
-Located in `apps/web/src`.
+## Integration tests
 
-- upload form behavior
-- mutation flow and result rendering
-- summary metrics visibility
-- exception display rendering
+Scope:
 
-### End-to-end tests
+- API upload handling and request validation
+- reconciliation execution through HTTP routes
+- report and exception retrieval behavior
 
-Located in `apps/web/tests/e2e`.
+Command:
 
-- real browser upload path using generated workbook buffers
-- reconciliation run from UI to API
-- monthly reconciliation path using the current month selector and reconciliation label inputs
-- visibility of summary, review, and exception sections
+```bash
+npm run test:integration
+```
 
-The primary browser regression covers the current monthly flow by selecting `Monthly reconciliation month`, filling `Reconciliation label`, submitting the run, and asserting that `Exception Report`, `Probable Match Review`, and summary content are visible.
+## PostgreSQL integration tests
 
-## Fixture Strategy
+Scope:
 
-Fixtures are centralized in `packages/test-fixtures` so unit, integration, and e2e tests all exercise the same workbook shapes and accounting scenarios.
+- migration-backed persistence operations
+- lifecycle state transition durability
+- uniqueness and rollback behavior
 
-## Current Coverage Scope
+Command:
 
-The current suite covers:
+```bash
+npm run test:postgres
+```
 
-- beginning-balance exclusion
-- duplicate detection
-- data-quality flagging
-- amount mismatch classification
-- date variance and timing-difference classification
-- stale outstanding check classification
-- likely miscoding classification
-- check-number and reference-number variance classification
-- ambiguous review classification
-- grouped split/combine residual classification
-- grouped deposit residual classification
-- grouped override behavior for larger residual pools
-- summary generation
-- exception category breakdown and counts-by-category alignment
-- rule trace, grouped counterpart, and lineage surfacing through export and API payloads
-- export workbook creation
-- API round-trip behavior
-- browser upload smoke path
-- monthly reconciliation UI behavior
-- negative-path API validation for missing uploads
+## End-to-end tests
 
-## Operational Checks
+Scope:
 
-The repository also exposes a developer dashboard backed by `GET /api/developer/status`.
+- browser upload-to-results workflow
+- monthly reconciliation controls and output visibility
+- end-user critical path from file submission through report surfaces
 
-That endpoint runs and summarizes the same quality gates used during local verification:
+Command:
+
+```bash
+npm run test:e2e
+```
+
+## 3. Command matrix
+
+| Command                    | Purpose                         | Typical use               |
+|----------------------------|---------------------------------|---------------------------|
+| `npm run test`             | unit + integration aggregate    | default pre-PR validation |
+| `npm run test:unit`        | fast deterministic logic checks | iterative development     |
+| `npm run test:integration` | API contract behavior           | route/service changes     |
+| `npm run test:postgres`    | real DB persistence checks      | schema/store changes      |
+| `npm run test:e2e`         | browser regression checks       | UI workflow changes       |
+| `npm run lint`             | static quality checks           | every PR                  |
+| `npm run typecheck`        | TS type safety checks           | every PR                  |
+| `npm run coverage`         | coverage report generation      | release verification      |
+| `npm run security:scan`    | dependency vulnerability audit  | release verification      |
+| `npm run build`            | production build integrity      | merge/release gate        |
+
+## 4. Suggested validation tiers
+
+## Tier A: fast local confidence
+
+```bash
+npm run test
+npm run lint
+npm run typecheck
+```
+
+## Tier B: full application confidence
+
+```bash
+npm run test
+npm run test:postgres
+npm run test:e2e
+npm run coverage
+npm run build
+```
+
+## Tier C: release and deployment confidence
+
+```bash
+npm run test
+npm run test:postgres
+npm run test:e2e
+npm run lint
+npm run typecheck
+npm run coverage
+npm run security:scan
+npm run build
+npm run docker:preflight
+npm run docker:db:preflight
+npm run docker:predeploy
+```
+
+## 5. Fixture strategy
+
+`packages/test-fixtures` is the shared fixture source for:
 
 - unit tests
 - integration tests
 - e2e tests
-- lint
-- typecheck
-- coverage
-- security audit
+- docs sample generation (`npm run fixtures:generate`)
 
-Use it as a quick repository-health snapshot, not as a replacement for targeted test debugging.
+Guidelines:
 
-## Future Additions
+- update fixtures centrally when business rules evolve
+- avoid ad hoc one-off fixture definitions in individual test suites
+- keep fixture names scenario-oriented (`timing-difference`, `amount-mismatch`, etc.)
 
-Recommended next regression additions:
+## 6. Coverage scope
 
-- denser grouped-settlement competition scenarios where grouping, timing, miscoding, and advisory review suggestions overlap
-- reviewer-decision persistence once reviewed-state workflow is added
-- persistence-backed reviewer workflow
+The current suite verifies key reconciliation behavior including:
 
-## Class and Method Documentation Coverage
+- beginning-balance exclusion
+- duplicate handling split by source
+- data-quality blocking and classification
+- amount mismatch and date/timing variance outcomes
+- stale outstanding check classification
+- likely miscoding classification
+- reference/check/description variance paths
+- ambiguous review candidate handling
+- grouped split/combine and grouped deposit residual handling
+- summary category counts and exposure alignment
+- workbook export generation and API retrieval
 
-The test suite maps directly to methods documented in `docs/class-method-reference.md`.
+## 7. Developer diagnostics endpoint as quality dashboard
 
-Every method reference entry includes:
+`GET /api/developer/status` aggregates test and quality checks into one payload.
 
-- input contract
-- output contract
-- state object before execution
-- state object after execution
+It is useful for:
 
-Use this mapping to add regression tests whenever method state transitions change.
+- quick health snapshots
+- trend visibility through cached history
+
+It is not a replacement for direct command execution when debugging a failing check.
+
+## 8. Non-test quality gates
+
+Operational scripts complement test suites:
+
+- `docker:preflight` for container/build hygiene
+- `docker:predeploy` for compose startup/shutdown and health checks
+- `docker:db:preflight` for migration/schema/index/constraint and DB vulnerability checks
+
+These gates should run for infrastructure, container, or persistence-impacting changes.
+
+## 9. Adding or changing tests
+
+When introducing new behavior:
+
+1. add/adjust unit tests for deterministic logic
+2. add integration tests when API contracts change
+3. add e2e assertions when user workflow changes
+4. add postgres tests when persistence schema/store behavior changes
+5. update `docs/reconciliation-rules.md` or `docs/api.md` when behavior contracts change
+
+## 10. Useful references
+
+- `docs/reconciliation-rules.md`
+- `docs/api.md`
+- `docs/developer-setup.md`
+- `docs/local-docker-platform.md`
+- `docs/class-method-reference.md`

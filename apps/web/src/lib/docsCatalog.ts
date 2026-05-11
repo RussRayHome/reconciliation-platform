@@ -1,5 +1,6 @@
 import apiDoc from '../../../../docs/api.md?raw';
 import architectureDoc from '../../../../docs/architecture.md?raw';
+import architectureDiagramSvgUrl from '../../../../docs/images/application-architecture.svg?url';
 import changelogDoc from '../../../../CHANGELOG.md?raw';
 import classMethodReferenceDoc from '../../../../docs/class-method-reference.md?raw';
 import developerSetupDoc from '../../../../docs/developer-setup.md?raw';
@@ -10,6 +11,10 @@ import releaseDoc from '../../../../RELEASE.md?raw';
 import sampleConfigDoc from '../../../../docs/sample-config.md?raw';
 import scriptsReadmeDoc from '../../../../scripts/README.md?raw';
 import testStrategyDoc from '../../../../docs/test-strategy.md?raw';
+
+const architectureDocWithResolvedAssets = architectureDoc
+  .replaceAll('images/application-architecture.png', architectureDiagramSvgUrl)
+  .replaceAll('images/application-architecture.svg', architectureDiagramSvgUrl);
 
 export type ProjectDocument = {
   id: string;
@@ -40,7 +45,7 @@ export const projectDocuments: ProjectDocument[] = [
       'Explains the monorepo structure, application boundaries, data flow, and runtime responsibilities.',
     audience: 'Engineers changing system design or major flows',
     pathLabel: 'docs/architecture.md',
-    content: architectureDoc,
+    content: architectureDocWithResolvedAssets,
   },
   {
     id: 'api',

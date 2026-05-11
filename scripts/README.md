@@ -137,6 +137,30 @@ Purpose:
 - Shared Docker Compose and Docker Desktop helper used by `docker-ops.ts` and `docker-smoke-test.ts`.
 - Centralizes Compose file resolution, Docker readiness checks, and macOS Docker Desktop automation.
 
+### `github-branch-protection.ts`
+
+Purpose:
+
+- Applies the baseline required status checks for branch protection through GitHub CLI.
+- Safely merges required checks into existing branch protection without replacing other protection settings.
+
+How to run:
+
+```bash
+npm run github:protect-main -- --repo <owner>/<repo>
+```
+
+Options:
+
+- `--repo owner/repo`: explicit repository target (optional when resolvable from env or git remote)
+- `--branch <name>`: target branch (defaults to `main` in the npm wrapper)
+- `--dry-run`: preview operations without writing changes
+
+Notes:
+
+- Requires `gh` CLI and authenticated session (`gh auth status`).
+- If branch protection does not exist yet, it creates a baseline rule with the required checks.
+
 ## Production-Like Docker Runbooks
 
 The `scripts/ops/` directory contains Bash and PowerShell entrypoints for the hardened local deployment flow.

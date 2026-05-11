@@ -1,6 +1,8 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
+import { SectionCard } from '@recon/ui';
 import { docsById, projectDocuments } from '../lib/docsCatalog';
+import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 
 type DocsOverviewProps = {
   showDeveloperDashboardLink: boolean;
@@ -15,13 +17,62 @@ type MarkdownBlock =
   | { type: 'heading'; level: 1 | 2 | 3; text: string; anchorId: string }
   | { type: 'paragraph'; text: string }
   | { type: 'list'; ordered: boolean; items: string[] }
+  | { type: 'image'; src: string; alt: string }
+  | { type: 'link'; href: string; text: string }
   | { type: 'code'; code: string };
 
 const categoryOrder = ['Overview', 'Architecture', 'Setup', 'Reference', 'Operations'] as const;
+const categoryIconNames: Record<(typeof categoryOrder)[number], SemanticIconName> = {
+  Overview: 'overview',
+  Architecture: 'architecture',
+  Setup: 'setup',
+  Reference: 'reference',
+  Operations: 'operations',
+};
 const docsHashSeparator = '::';
 const headingExpression = /^(#{1,3})\s+(.+)$/;
 const bulletExpression = /^[-*]\s+(.+)$/;
 const orderedExpression = /^\d+\.\s+(.+)$/;
+const markdownImageExpression = /^!\[([^\]]*)\]\(([^)]+)\)$/;
+const markdownLinkExpression = /^\[([^\]]+)\]\(([^)]+)\)$/;
+const inlineTokenExpression = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
+const htmlImageExpression = /^<img\s+[^>]*src=["']([^"']+)["'][^>]*>$/i;
+const htmlImageAltExpression = /\salt=["']([^"']*)["']/i;
+
+const resolveCategoryIconName = (category: (typeof categoryOrder)[number]): SemanticIconName =>
+  categoryIconNames[category];
+
+const parseSpecialMarkdownBlock = (trimmedLine: string): MarkdownBlock | null => {
+  const markdownImageMatch = markdownImageExpression.exec(trimmedLine);
+  if (markdownImageMatch) {
+    return {
+      type: 'image',
+      alt: markdownImageMatch[1]?.trim() ?? '',
+      src: markdownImageMatch[2]?.trim() ?? '',
+    };
+  }
+
+  const htmlImageMatch = htmlImageExpression.exec(trimmedLine);
+  if (htmlImageMatch) {
+    const altMatch = htmlImageAltExpression.exec(trimmedLine);
+    return {
+      type: 'image',
+      alt: altMatch?.[1]?.trim() ?? '',
+      src: htmlImageMatch[1]?.trim() ?? '',
+    };
+  }
+
+  const markdownLinkMatch = markdownLinkExpression.exec(trimmedLine);
+  if (markdownLinkMatch) {
+    return {
+      type: 'link',
+      text: markdownLinkMatch[1]?.trim() ?? '',
+      href: markdownLinkMatch[2]?.trim() ?? '',
+    };
+  }
+
+  return null;
+};
 
 const slugifyHeading = (text: string): string =>
   text
@@ -65,9 +116,7 @@ const resolveInitialLocationState = (): {
 };
 
 const writeDocsLocation = (documentId: string, sectionAnchorId?: string | null): void => {
-  const hash = sectionAnchorId
-    ? `${documentId}${docsHashSeparator}${sectionAnchorId}`
-    : documentId;
+  const hash = sectionAnchorId ? `${documentId}${docsHashSeparator}${sectionAnchorId}` : documentId;
   globalThis.history.replaceState({}, '', `/docs#${hash}`);
 };
 
@@ -111,6 +160,7 @@ const parseMarkdown = (content: string, documentId: string): MarkdownBlock[] => 
     const headingMatch = headingExpression.exec(line);
     const bulletMatch = bulletExpression.exec(line);
     const orderedMatch = orderedExpression.exec(line);
+    const specialBlock = parseSpecialMarkdownBlock(trimmed);
 
     if (trimmed.startsWith('```')) {
       flushParagraph();
@@ -145,6 +195,13 @@ const parseMarkdown = (content: string, documentId: string): MarkdownBlock[] => 
         anchorId: buildHeadingAnchorId(documentId, headingText, nextOccurrence),
         text: headingText,
       });
+      return;
+    }
+
+    if (specialBlock) {
+      flushParagraph();
+      flushList();
+      blocks.push(specialBlock);
       return;
     }
 
@@ -189,32 +246,32 @@ const parseMarkdown = (content: string, documentId: string): MarkdownBlock[] => 
   return blocks;
 };
 
-const renderInlineMarkdown = (text: string) => {
-  const codeParts = text.split(/(`[^`]+`)/g);
+const renderInlineMarkdown = (text: string) =>
+  text
+    .split(inlineTokenExpression)
+    .filter((part) => part.length > 0)
+    .map((part, index) => {
+      if (part.startsWith('`') && part.endsWith('`')) {
+        return <code key={`${part}-${index}`}>{part.slice(1, -1)}</code>;
+      }
 
-  return codeParts.map((part, index) => {
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={`${part}-${index}`}>{part.slice(1, -1)}</code>;
-    }
-
-    const strongParts = part.split(/(\*\*[^*]+\*\*)/g);
-    return strongParts.map((segment, segmentIndex) => {
-      if (segment.startsWith('**') && segment.endsWith('**')) {
+      const linkMatch = markdownLinkExpression.exec(part);
+      if (linkMatch) {
         return (
-          <strong key={`${segment}-${index}-${segmentIndex}`}>
-            {segment.slice(2, -2)}
-          </strong>
+          <a key={`${part}-${index}`} href={linkMatch[2]}>
+            {linkMatch[1]}
+          </a>
         );
       }
 
-      return <span key={`${segment}-${index}-${segmentIndex}`}>{segment}</span>;
-    });
-  });
-};
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+      }
 
-export function DocsOverview({
-  showDeveloperDashboardLink,
-}: Readonly<DocsOverviewProps>) {
+      return <span key={`${part}-${index}`}>{part}</span>;
+    });
+
+export function DocsOverview({ showDeveloperDashboardLink }: Readonly<DocsOverviewProps>) {
   const initialLocationState = resolveInitialLocationState();
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -222,6 +279,7 @@ export function DocsOverview({
   const [activeSectionAnchorId, setActiveSectionAnchorId] = useState<string | null>(
     initialLocationState.sectionAnchorId,
   );
+  const [zoomedImage, setZoomedImage] = useState<{ src: string; alt: string } | null>(null);
 
   const filteredDocuments = useMemo(() => {
     const query = deferredSearchTerm.trim().toLowerCase();
@@ -303,7 +361,9 @@ export function DocsOverview({
   const headings = useMemo<HeadingLink[]>(
     () =>
       parsedBlocks
-        .filter((block): block is Extract<MarkdownBlock, { type: 'heading' }> => block.type === 'heading')
+        .filter(
+          (block): block is Extract<MarkdownBlock, { type: 'heading' }> => block.type === 'heading',
+        )
         .slice(0, 6)
         .map((block) => ({ text: block.text, anchorId: block.anchorId })),
     [parsedBlocks],
@@ -320,13 +380,33 @@ export function DocsOverview({
       return;
     }
 
-    const prefersReducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    const prefersReducedMotion = globalThis.matchMedia?.(
+      '(prefers-reduced-motion: reduce)',
+    )?.matches;
 
     targetSection.scrollIntoView({
       behavior: prefersReducedMotion ? 'auto' : 'smooth',
       block: 'start',
     });
   }, [activeDocumentId, activeSectionAnchorId, parsedBlocks]);
+
+  useEffect(() => {
+    if (!zoomedImage) {
+      return undefined;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setZoomedImage(null);
+      }
+    };
+
+    globalThis.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      globalThis.removeEventListener('keydown', onKeyDown);
+    };
+  }, [zoomedImage]);
 
   const documentsByCategory = useMemo(
     () =>
@@ -354,6 +434,14 @@ export function DocsOverview({
     writeDocsLocation(activeDocument.id, sectionAnchorId);
   };
 
+  const openImageModal = (src: string, alt: string) => {
+    setZoomedImage({ src, alt: alt || 'Documentation diagram' });
+  };
+
+  const closeImageModal = () => {
+    setZoomedImage(null);
+  };
+
   return (
     <div className="app-shell">
       <div className="hero-backdrop" />
@@ -363,8 +451,8 @@ export function DocsOverview({
             <span className="eyebrow">Repository documentation hub</span>
             <h1>Project Documents Overview</h1>
             <p>
-              Browse the project&apos;s key guides, references, setup docs, and release notes
-              from one place. Select any document to inspect its contents without leaving the app.
+              Browse the project&apos;s key guides, references, setup docs, and release notes from
+              one place. Select any document to inspect its contents without leaving the app.
             </p>
             <div className="docs-hero-actions">
               <a className="hero-primary-cta" href="/">
@@ -394,7 +482,7 @@ export function DocsOverview({
           </div>
         </header>
 
-        <SectionCardLike
+        <SectionCard
           title="Document Navigator"
           description="Filter the documentation set and choose which project document to inspect."
         >
@@ -412,15 +500,21 @@ export function DocsOverview({
               The hub focuses on the project&apos;s primary guides and operational references.
             </p>
           </div>
-        </SectionCardLike>
+        </SectionCard>
 
         <section className="docs-hub-grid">
           <div className="docs-directory-column">
             {documentsByCategory.map((entry) => (
               <section className="docs-category-group" key={entry.category}>
                 <div className="docs-category-header">
-                  <h2>{entry.category}</h2>
-                  <span>{entry.documents.length} docs</span>
+                  <h2 className="docs-category-title">
+                    <SemanticIcon
+                      name={resolveCategoryIconName(entry.category)}
+                      className="docs-category-title__icon"
+                    />
+                    <span>{entry.category}</span>
+                  </h2>
+                  <span className="docs-category-header__count">{entry.documents.length} docs</span>
                 </div>
 
                 <div className="docs-card-grid">
@@ -434,7 +528,13 @@ export function DocsOverview({
                         className={`docs-nav-card ${isActive ? 'docs-nav-card--active' : ''}`}
                         onClick={() => onSelectDocument(document.id)}
                       >
-                        <span className="docs-nav-card__path">{document.pathLabel}</span>
+                        <span className="docs-nav-card__path">
+                          <SemanticIcon
+                            name={resolveCategoryIconName(document.category)}
+                            className="docs-nav-card__path-icon"
+                          />
+                          <span>{document.pathLabel}</span>
+                        </span>
                         <strong>{`View ${document.title}`}</strong>
                         <p>{document.summary}</p>
                         <span className="docs-nav-card__audience">{document.audience}</span>
@@ -451,7 +551,13 @@ export function DocsOverview({
               <>
                 <div className="docs-viewer-header">
                   <div>
-                    <span className="eyebrow">{activeDocument.category}</span>
+                    <span className="eyebrow docs-eyebrow">
+                      <SemanticIcon
+                        name={resolveCategoryIconName(activeDocument.category)}
+                        className="docs-eyebrow__icon"
+                      />
+                      <span>{activeDocument.category}</span>
+                    </span>
                     <h2>{activeDocument.title}</h2>
                     <p>{activeDocument.summary}</p>
                   </div>
@@ -517,6 +623,38 @@ export function DocsOverview({
                       );
                     }
 
+                    if (block.type === 'image') {
+                      return (
+                        <figure key={`${block.src}-${index}`} className="docs-markdown-image-shell">
+                          <button
+                            type="button"
+                            className="docs-image-zoom-trigger"
+                            aria-label={
+                              block.alt
+                                ? `Open enlarged image: ${block.alt}`
+                                : 'Open enlarged image'
+                            }
+                            onClick={() => openImageModal(block.src, block.alt)}
+                          >
+                            <img
+                              src={block.src}
+                              alt={block.alt}
+                              className="docs-markdown-image"
+                              loading="lazy"
+                            />
+                          </button>
+                        </figure>
+                      );
+                    }
+
+                    if (block.type === 'link') {
+                      return (
+                        <p key={`${block.href}-${index}`}>
+                          <a href={block.href}>{block.text}</a>
+                        </p>
+                      );
+                    }
+
                     if (block.type === 'list') {
                       const ListTag = block.ordered ? 'ol' : 'ul';
 
@@ -543,28 +681,17 @@ export function DocsOverview({
           </aside>
         </section>
       </main>
-    </div>
-  );
-}
 
-function SectionCardLike({
-  title,
-  description,
-  children,
-}: Readonly<{
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}>) {
-  return (
-    <section className="section-card">
-      <div className="section-card__header">
-        <div>
-          <h2>{title}</h2>
-          <p>{description}</p>
-        </div>
-      </div>
-      <div className="section-card__body">{children}</div>
-    </section>
+      {zoomedImage ? (
+        <dialog className="docs-image-modal-backdrop" open aria-label={zoomedImage.alt}>
+          <div className="docs-image-modal">
+            <button type="button" className="docs-image-modal-close" onClick={closeImageModal}>
+              Close
+            </button>
+            <img src={zoomedImage.src} alt={zoomedImage.alt} className="docs-image-modal-image" />
+          </div>
+        </dialog>
+      ) : null}
+    </div>
   );
 }
