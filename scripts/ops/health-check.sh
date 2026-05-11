@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+# Check the health of a running Docker Compose stack (gateway, API, PostgreSQL).
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:health         # dev environment
+#   npm run docker:health:stage   # stage environment
+#
+# Usage (direct):
+#   DOCKER_ENV_FILE=.env.docker.dev \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
+#   bash scripts/ops/health-check.sh
+#
+# What it checks:
+#   - Gateway HTTP response on PUBLIC_WEB_PORT (nginx reverse proxy)
+#   - API /api/health JSON response
+#   - PostgreSQL pg_isready inside the postgres container
+#
+# Exits 0 if all checks pass, 1 if any fail.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

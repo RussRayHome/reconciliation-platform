@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+# Pre-deploy runtime checks run after the stack is built but before traffic is accepted.
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:predeploy        # also called by npm run docker:gate
+#
+# Usage (direct):
+#   DOCKER_ENV_FILE=.env.docker.dev \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
+#   bash scripts/ops/predeploy-stack-checks.sh
+#
+# What it checks:
+#   - All running containers are healthy (no Exited or Restarting)
+#   - The gateway health endpoint responds on PUBLIC_WEB_PORT
+#   - The API /api/health returns { status: "ok" }
+#   - PostgreSQL is ready inside the postgres container
+#
+# Exits 0 if all checks pass, 1 if any fail.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

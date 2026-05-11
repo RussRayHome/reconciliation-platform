@@ -32,6 +32,7 @@ type PersistedSourceFileRegistration = {
   uploadedAt: string;
 };
 
+/** Input to `createJob` — creates the job row and registers source file metadata. */
 export interface CreateReconciliationJobInput {
   jobId: string;
   correlationId: string;
@@ -44,6 +45,7 @@ export interface CreateReconciliationJobInput {
   sourceFiles: PersistedSourceFileRegistration[];
 }
 
+/** Input to `persistMatchingArtifacts` — pairwise and grouped match results with their rule evaluations. */
 export interface PersistMatchingArtifactsInput {
   jobId: string;
   matchResults: MatchResult[];
@@ -51,6 +53,7 @@ export interface PersistMatchingArtifactsInput {
   groupedMatchResults: GroupedMatchResult[];
 }
 
+/** Input to `persistReviewArtifacts` — exception items, reviewer observations, and run summary. */
 export interface PersistReviewArtifactsInput {
   jobId: string;
   exceptions: ExceptionItem[];
@@ -58,6 +61,7 @@ export interface PersistReviewArtifactsInput {
   summary: SummaryMetrics;
 }
 
+/** Input to `persistExportAndFinalize` — workbook binary metadata and audit event list. */
 export interface PersistExportArtifactsInput {
   jobId: string;
   outputWorkbook: OutputWorkbook;
@@ -69,6 +73,7 @@ export interface PersistExportArtifactsInput {
   }>;
 }
 
+/** Input to `markFailed` — transitions the job to FAILED or RETRY_PENDING with an error record. */
 export interface MarkJobFailedInput {
   jobId: string;
   failedAt: string;
@@ -130,6 +135,7 @@ const buildInsertStatement = (
 const hashJson = (value: unknown): string =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+/** Computes a hex-encoded SHA-256 digest of a binary or string value. Used for workbook checksums. */
 export const computeSha256Hex = (value: Uint8Array | Buffer | string): string =>
   createHash('sha256').update(value).digest('hex');
 
@@ -287,6 +293,21 @@ const buildRuleResultsFromExceptions = (exceptions: ExceptionItem[]): RuleResult
 
 const toNullableDate = (value?: string): string | null => value ?? null;
 
+/**
+ * Writes all reconciliation artifacts to PostgreSQL, advancing the job state machine at each step.
+ *
+ * Every public method wraps its writes in a single transaction, acquires an advisory lock on the
+ * job row, validates the state transition, performs the inserts/updates, and records an audit event.
+ * This ensures the job can never skip a state and that partial writes are rolled back on error.
+ *
+ * Typical call sequence:
+ *   1. `createJob`           — insert job + source file registrations → CREATED → FILE_REGISTERED
+ *   2. `persistParsedRows`   — bulk-insert raw rows → IMPORTING → IMPORTED
+ *   3. `persistNormalizedRows` — bulk-insert canonical rows → NORMALIZING → NORMALIZED
+ *   4. `persistMatchingArtifacts` — insert match results + rule evaluations → MATCHING → MATCHED
+ *   5. `persistReviewArtifacts`  — insert exceptions, observations, summary → EXCEPTIONS_IDENTIFIED → REVIEW_READY
+ *   6. `persistExportAndFinalize` — insert export record + audit events → FINALIZED
+ */
 export class PostgresReconciliationLifecycleStore {
   constructor(
     private readonly pool: Pool,

@@ -2,6 +2,11 @@ import type { TextNormalizationConfig } from '@recon/domain';
 
 const punctuationPattern = /[^A-Z0-9\s]/g;
 
+/**
+ * Applies text normalization rules from `config` to a raw string value.
+ * Steps are applied in order: uppercase → strip punctuation → collapse whitespace → remove stop words.
+ * Returns an empty string for null/undefined input.
+ */
 export const normalizeText = (value: string | undefined, config: TextNormalizationConfig): string => {
   if (!value) {
     return '';
@@ -31,6 +36,11 @@ export const normalizeText = (value: string | undefined, config: TextNormalizati
   return output.trim();
 };
 
+/**
+ * Normalizes each value in `values`, splits on whitespace, deduplicates, and returns a
+ * sorted token array used for token-similarity scoring during matching.
+ * Empty and undefined values are silently skipped.
+ */
 export const buildComparisonTokens = (
   values: Array<string | undefined>,
   config: TextNormalizationConfig,

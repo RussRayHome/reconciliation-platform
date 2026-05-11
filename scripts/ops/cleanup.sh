@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+# Tear down a Docker Compose stack and remove its associated volumes and orphan containers.
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:cleanup         # dev environment
+#   npm run docker:cleanup:stage   # stage environment
+#
+# Usage (direct):
+#   DOCKER_ENV_FILE=.env.docker.dev \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
+#   bash scripts/ops/cleanup.sh
+#
+# WARNING: Removes named volumes (database data). Run only when you want a clean slate.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

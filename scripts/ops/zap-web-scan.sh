@@ -1,4 +1,19 @@
 #!/usr/bin/env bash
+# OWASP ZAP passive + active scan against the web frontend of the stage environment.
+#
+# Usage (via npm scripts — preferred):
+#   npm run security:scan:zap:web:stage         # standard scan
+#   npm run security:scan:zap:web:stage:strict  # fail on warnings (ZAP_FAIL_ON_WARN=true)
+#
+# Prerequisites:
+#   - Stage stack must be running (npm run docker:deploy:stage)
+#   - Docker must be running (ZAP executes inside its own container)
+#
+# Required env vars (in .env.docker.stage):
+#   PUBLIC_WEB_PORT — port the nginx gateway is listening on
+#
+# Optional env vars:
+#   ZAP_FAIL_ON_WARN=true — treat ZAP warnings as failures (used in strict mode)
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

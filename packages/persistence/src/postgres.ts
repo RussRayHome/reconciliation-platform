@@ -2,6 +2,7 @@ import { Pool, type PoolConfig } from 'pg';
 
 import { postgresMigrations } from './schema';
 
+/** Connection pool settings loaded from environment variables. */
 export type PostgresPersistenceConfig = {
   connectionString: string;
   max?: number;
@@ -9,9 +10,19 @@ export type PostgresPersistenceConfig = {
   statementTimeoutMillis?: number;
 };
 
+/**
+ * Returns true when the API is configured to use PostgreSQL persistence.
+ * Checks for `RECON_PERSISTENCE_BACKEND=postgres` or a bare `DATABASE_URL` variable.
+ * When false the API falls back to in-memory run storage.
+ */
 export const isPostgresPersistenceEnabled = (): boolean =>
   process.env.RECON_PERSISTENCE_BACKEND === 'postgres' || Boolean(process.env.DATABASE_URL);
 
+/**
+ * Reads PostgreSQL connection settings from environment variables and returns a config object,
+ * or null if `DATABASE_URL` is not set (i.e. Postgres persistence is not configured).
+ * Reads: `DATABASE_URL`, `PG_POOL_MAX`, `PG_IDLE_TIMEOUT_MS`, `PG_STATEMENT_TIMEOUT_MS`.
+ */
 export const loadPostgresPersistenceConfigFromEnv = (): PostgresPersistenceConfig | null => {
   const connectionString = process.env.DATABASE_URL;
 
@@ -27,6 +38,7 @@ export const loadPostgresPersistenceConfigFromEnv = (): PostgresPersistenceConfi
   };
 };
 
+/** Creates a `pg.Pool` from the given config. Call once at process start and share the instance. */
 export const createPostgresPool = (config: PostgresPersistenceConfig): Pool => {
   const poolConfig: PoolConfig = {
     connectionString: config.connectionString,
@@ -38,6 +50,12 @@ export const createPostgresPool = (config: PostgresPersistenceConfig): Pool => {
   return new Pool(poolConfig);
 };
 
+/**
+ * Applies all pending schema migrations in a single transaction.
+ * Creates `schema_migrations` if it does not exist, then runs each migration in
+ * `postgresMigrations` that has not been recorded there yet.
+ * Safe to call on every process start — already-applied migrations are skipped.
+ */
 export const runPostgresMigrations = async (pool: Pool): Promise<void> => {
   const client = await pool.connect();
 

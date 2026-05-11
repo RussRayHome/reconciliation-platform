@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+# Build production Docker images and push them to AWS ECR for deployment.
+#
+# Usage (via npm scripts — preferred):
+#   npm run aws:ecr:push
+#
+# Usage (direct):
+#   AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 bash scripts/ops/ecr-push.sh
+#
+# Required env vars:
+#   AWS_ACCOUNT_ID — 12-digit AWS account number
+#
+# Optional env vars:
+#   AWS_REGION    — AWS region (default: us-east-1)
+#   ECR_REGISTRY  — full ECR registry host (default: <account>.dkr.ecr.<region>.amazonaws.com)
+#   IMAGE_TAG     — image tag to apply (default: short git SHA, or 'latest' if not in a git repo)
+#
+# What it does:
+#   1. Authenticates Docker with ECR (aws ecr get-login-password)
+#   2. Builds the API image using the 'runtime' Dockerfile target
+#   3. Builds the web image with VITE_ENABLE_DEVELOPER_DASHBOARD=false
+#   4. Tags and pushes both images to ECR
+#
+# Prerequisites: aws CLI configured with push permissions to the target ECR repositories.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

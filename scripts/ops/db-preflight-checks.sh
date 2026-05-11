@@ -1,4 +1,34 @@
 #!/usr/bin/env bash
+# Comprehensive PostgreSQL pre-flight check suite run before database-touching deployments.
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:db:preflight          # dev environment
+#   npm run docker:db:preflight:stage    # stage environment
+#
+# Usage (direct):
+#   DOCKER_ENV_FILE=.env.docker.dev \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
+#   bash scripts/ops/db-preflight-checks.sh
+#
+# Checks run (in order):
+#   DB1  — Docker daemon available
+#   DB2  — Environment file resolves and required variables are set
+#   DB3  — Postgres container starts (docker compose up -d postgres)
+#   DB4  — Postgres readiness (pg_isready)
+#   DB10 — Postgres image vulnerability scan (trivy, if available)
+#   DB11 — pgAudit extension enabled
+#   DB12 — Expected database users exist (rray for dev/stage)
+#   DB13 — User role attributes correct (SUPERUSER, CREATEDB, CREATEROLE, LOGIN)
+#   DB5  — schema_migrations tracking table exists
+#   DB6  — All migration patches applied
+#   DB7  — Core tables present
+#   DB8  — Required indexes and constraints present
+#   DB9  — Transactional DDL/DML/procedure sweep (BEGIN…ROLLBACK)
+#   DB14 — User database and table privileges correct
+#
+# Exits 0 if no FAIL items; exits 1 if any check fails.
+# WARN items are recorded but do not cause a non-zero exit.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

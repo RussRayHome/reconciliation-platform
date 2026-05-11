@@ -1,3 +1,10 @@
+/**
+ * All valid states in the reconciliation job lifecycle.
+ * The happy path is: CREATED → FILE_REGISTERED → IMPORTING → IMPORTED →
+ * NORMALIZING → NORMALIZED → MATCHING → MATCHED → EXCEPTIONS_IDENTIFIED →
+ * REVIEW_READY → FINALIZED.
+ * Any state can transition to FAILED or CANCELLED; FAILED can retry via RETRY_PENDING.
+ */
 export const reconciliationJobStates = [
   'CREATED',
   'FILE_REGISTERED',
@@ -46,11 +53,17 @@ const transitionGraph: Readonly<Record<ReconciliationJobState, readonly Reconcil
   CANCELLED: [],
 };
 
+/** Returns true when moving from `currentState` to `nextState` is permitted by the transition graph. */
 export const canTransitionJobState = (
   currentState: ReconciliationJobState,
   nextState: ReconciliationJobState,
 ): boolean => transitionGraph[currentState].includes(nextState);
 
+/**
+ * Throws if the transition `currentState → nextState` is not permitted.
+ * Called inside every database write that advances or fails a job so that the
+ * state machine invariants are enforced at the persistence layer, not just in application code.
+ */
 export const assertValidJobTransition = (
   currentState: ReconciliationJobState,
   nextState: ReconciliationJobState,

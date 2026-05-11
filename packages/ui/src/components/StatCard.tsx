@@ -1,5 +1,15 @@
 import type { ReactNode } from 'react';
 
+/**
+ * A metric tile for the reconciliation summary dashboard.
+ *
+ * @param label   - Short descriptor rendered above the value (e.g. "Exact Matches").
+ * @param value   - The primary metric to display prominently.
+ * @param tone    - Colour treatment: `positive` = green, `warning` = amber, `critical` = red.
+ * @param helper  - Optional sub-text rendered below the value (e.g. a percentage or context note).
+ * @param icon    - Optional React node rendered in the card header (decorative; aria-hidden).
+ * @param iconLabel - Tooltip text for the icon shell element.
+ */
 interface StatCardProps {
   label: string;
   value: string | number;

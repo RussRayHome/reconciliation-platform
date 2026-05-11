@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Validate that all required Docker environment variables are present.
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:validate-env
+#
+# Usage (direct):
+#   DOCKER_ENV_FILE=.env.docker.dev \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
+#   bash scripts/ops/validate-env.sh
+#
+# Called automatically by deploy.sh, predeploy-stack-checks.sh, and db-preflight-checks.sh
+# before any Docker Compose operations. Exits non-zero with a clear error listing any missing
+# or empty required variables so deploy failures are caught early.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

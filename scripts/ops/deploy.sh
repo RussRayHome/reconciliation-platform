@@ -1,4 +1,29 @@
 #!/usr/bin/env bash
+# Deploy (or redeploy) the full Docker Compose stack for a given environment.
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:deploy          # dev environment
+#   npm run docker:deploy:stage    # stage environment
+#
+# Usage (direct):
+#   DOCKER_ENV_FILE=.env.docker.dev \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
+#   bash scripts/ops/deploy.sh
+#
+# Required env vars (set in the env file):
+#   POSTGRES_PASSWORD, COMPOSE_PROJECT_NAME
+#
+# Optional env vars:
+#   DOCKER_ENV_FILE            — path to the active env file (default: .env.docker.dev)
+#   DOCKER_ENV_FALLBACK_FILE   — path to the example/fallback env file
+#   DOCKER_COMPOSE_EXTRA_FILE  — path to the environment overlay compose file
+#
+# What it does:
+#   1. Validates env file presence and required variables (via validate-env.sh)
+#   2. Pulls/builds images if needed
+#   3. Starts all services with `docker compose up -d --build`
+#   4. Waits for the gateway health endpoint to become ready
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

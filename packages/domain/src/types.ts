@@ -8,6 +8,7 @@ import type {
   SourceSystem,
 } from './enums';
 
+/** Canonical field names the engine recognises in uploaded spreadsheets. */
 export type BusinessField =
   | 'transactionDate'
   | 'postingDate'
@@ -24,6 +25,7 @@ export type BusinessField =
   | 'runningBalance'
   | 'accountIdentifier';
 
+/** Metadata registered for a single uploaded spreadsheet (bank or QBO). */
 export interface SourceFile {
   id: string;
   source: SourceSystem;
@@ -37,6 +39,11 @@ export interface SourceFile {
   uploadedAt: string;
 }
 
+/**
+ * A single row read directly from a source spreadsheet before any normalization.
+ * `rawValues` preserves the original cell values keyed by column header; the
+ * typed `*Raw` fields are extracted from those values during parsing.
+ */
 export interface RawTransactionRow {
   id: string;
   sourceFileId: string;
@@ -63,6 +70,13 @@ export interface RawTransactionRow {
   parsingIssues: string[];
 }
 
+/**
+ * A transaction row after parsing, type coercion, and text normalization.
+ * `normalizedComparisonTokens` and `normalizedReferenceTokens` are the pre-built
+ * token sets used by the matching engine's similarity scoring.
+ * `contextFingerprint` is a hash of the row's identifying fields and is used to
+ * detect duplicates within the same source file.
+ */
 export interface NormalizedTransaction {
   id: string;
   runId: string;
@@ -123,6 +137,11 @@ export interface MatchCandidate {
   evaluations: RuleEvaluation[];
 }
 
+/**
+ * The final outcome of the matching engine for one bank/QBO transaction pair (or an unmatched
+ * singleton). Pairwise results have both `bankTransactionId` and `qboTransactionId` set;
+ * unmatched results have only one side populated.
+ */
 export interface MatchResult {
   id: string;
   disposition: MatchDisposition;
@@ -151,6 +170,11 @@ export interface GroupedMatchMember {
   amount: number;
 }
 
+/**
+ * A many-to-many match where multiple bank transactions together correspond to one or more QBO
+ * transactions (e.g. a single QBO deposit that was split across several bank entries).
+ * `bankMembers` and `qboMembers` carry display-level detail for the workbook export.
+ */
 export interface GroupedMatchResult {
   id: string;
   disposition: GroupedMatchDisposition;
@@ -185,6 +209,11 @@ export interface ExceptionRuleTrace {
   counterparts?: CounterpartTrace[];
 }
 
+/**
+ * A classified reconciliation exception — a transaction (or pair) that could not be
+ * cleanly matched. `ruleTrace` is the winning rule; `priorRuleTraces` are rules that
+ * were evaluated and rejected before the final classification was made.
+ */
 export interface ExceptionItem {
   id: string;
   runId: string;
@@ -217,6 +246,11 @@ export interface ChartSeries {
   data: ChartMetricDatum[];
 }
 
+/**
+ * Aggregate statistics computed after matching and exception classification.
+ * `unresolvedExposure` is the net dollar amount of all unmatched items — the key
+ * metric reviewers use to assess reconciliation completeness.
+ */
 export interface SummaryMetrics {
   totalRecordsReviewed: number;
   bankRecords: number;
@@ -394,6 +428,11 @@ export interface AccountOverrideConfig {
   };
 }
 
+/**
+ * Top-level configuration for a reconciliation run.
+ * `accountOverrides` can selectively override bank, QBO, matching, or reporting
+ * sub-config for a specific account identifier without changing the base config.
+ */
 export interface ReconciliationConfig {
   bank: SourceReconciliationConfig;
   qbo: SourceReconciliationConfig;
@@ -403,6 +442,7 @@ export interface ReconciliationConfig {
   accountOverrides: AccountOverrideConfig[];
 }
 
+/** Everything needed to start a reconciliation run — passed directly to `runReconciliation`. */
 export interface ReconciliationInput {
   runId: string;
   correlationId: string;
@@ -414,6 +454,7 @@ export interface ReconciliationInput {
   reconciliationFrequency?: ReconciliationFrequency;
 }
 
+/** Full output produced by `runReconciliation`; persisted to PostgreSQL by the lifecycle store. */
 export interface ReconciliationOutput {
   normalizedTransactions: NormalizedTransaction[];
   matchResults: MatchResult[];

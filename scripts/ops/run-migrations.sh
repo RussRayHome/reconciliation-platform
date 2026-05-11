@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Run pending database schema migrations inside the running postgres container.
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:migrate
+#
+# Usage (direct):
+#   DOCKER_ENV_FILE=.env.docker.dev \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
+#   bash scripts/ops/run-migrations.sh
+#
+# Prerequisites: the postgres container must already be running (npm run docker:deploy first).
+# Migrations are also applied automatically on API boot when RUN_DB_MIGRATIONS_ON_BOOT=true.
+# Use this script for manual migration runs or to verify migration state without restarting the API.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

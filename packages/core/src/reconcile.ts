@@ -10,6 +10,17 @@ import { exportWorkbook } from './export/workbookExporter';
 import { normalizeTransactions } from './normalization/transactions';
 import { reconcileMatches } from './matching/engine';
 
+/**
+ * Executes a full reconciliation run end-to-end.
+ *
+ * Pipeline: normalize → match → classify exceptions → build summary → export workbook.
+ * Each stage appends an audit event so the caller gets a timestamped trace of every step.
+ *
+ * @param input - Source files, raw transaction rows, run config, and optional metadata
+ *   (accountIdentifier, periodLabel, reconciliationFrequency).
+ * @returns The complete reconciliation output including match results, classified exceptions,
+ *   summary metrics, reviewer observations, and a binary workbook ready for download.
+ */
 export const runReconciliation = async (
   input: ReconciliationInput,
 ): Promise<ReconciliationOutput> => {

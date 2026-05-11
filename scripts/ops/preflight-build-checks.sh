@@ -1,4 +1,19 @@
 #!/usr/bin/env bash
+# Static pre-build checks run before `docker compose build` to catch configuration problems early.
+#
+# Usage (via npm scripts — preferred):
+#   npm run docker:preflight
+#
+# Usage (direct):
+#   bash scripts/ops/preflight-build-checks.sh
+#
+# What it checks:
+#   - Docker daemon is running
+#   - Required env file exists (falls back to .env.docker.dev.example)
+#   - All required environment variables are set and non-empty
+#   - Dockerfile and compose overlay file are present
+#
+# Exits 0 if all checks pass, 1 if any fail. Called by `npm run docker:gate`.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
