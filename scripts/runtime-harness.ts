@@ -136,18 +136,14 @@ const spawnHarnessChild = (
   workspaceName: '@recon/api' | '@recon/web',
   envOverrides: NodeJS.ProcessEnv,
 ): ChildProcess => {
-  const child = spawn(
-    npmExecutable,
-    ['run', 'dev:test', '--workspace', workspaceName],
-    {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        ...envOverrides,
-      },
-      stdio: 'inherit',
+  const child = spawn(npmExecutable, ['run', 'dev:test', '--workspace', workspaceName], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      ...envOverrides,
     },
-  );
+    stdio: 'inherit',
+  });
 
   child.on('error', (error) => {
     console.error(`${label} failed to start: ${error.message}`);
@@ -176,6 +172,7 @@ const startHarness = async (): Promise<number> => {
   });
   const webChild = spawnHarnessChild('WEB', '@recon/web', {
     VITE_API_BASE_URL: `http://127.0.0.1:${apiPort}`,
+    VITE_ENVIRONMENT_PATH_SEGMENT: 'dev',
   });
 
   const children = [apiChild, webChild];
@@ -233,7 +230,9 @@ const main = async (): Promise<void> => {
   const command = process.argv[2];
 
   if (!isHarnessCommand(command)) {
-    console.error('Usage: npm run harness:start | npm run harness:restart | npm run harness:stop | npm run harness:status');
+    console.error(
+      'Usage: npm run harness:start | npm run harness:restart | npm run harness:stop | npm run harness:status',
+    );
     process.exitCode = 1;
     return;
   }

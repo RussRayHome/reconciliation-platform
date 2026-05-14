@@ -116,7 +116,7 @@ Default local endpoints:
 ### Run production-like Docker stack
 
 ```bash
-cp .env.docker.example .env.docker
+cp .env.docker.dev.fallback .env.docker
 npm run docker:validate-env
 npm run docker:deploy
 npm run docker:health
@@ -172,7 +172,7 @@ npm run docker:db:preflight
 Core runtime variables are documented in these templates:
 
 - `.env.example` for local Node/Vite development
-- `.env.docker.example` for Docker Compose runtime
+- `.env.docker.dev.fallback` for Docker Compose runtime
 
 Important flags:
 

@@ -21,11 +21,7 @@ import { expect, type Page, test } from '@playwright/test';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-async function setWorkbookFiles(
-  page: Page,
-  bankBuffer: Buffer,
-  qboBuffer: Buffer,
-): Promise<void> {
+async function setWorkbookFiles(page: Page, bankBuffer: Buffer, qboBuffer: Buffer): Promise<void> {
   await page.locator('#bank-workbook-input').setInputFiles({
     name: 'bank.xlsx',
     mimeType: XLSX_MIME,
@@ -363,37 +359,36 @@ test.describe('export artifacts', () => {
 // ─── Session Persistence ──────────────────────────────────────────────────────
 
 test.describe('session persistence', () => {
-  test(
-    'after a run the results are still accessible after a full page reload',
-    { timeout: 120_000 },
-    async ({ page }) => {
-      const [bankBuffer, qboBuffer] = await Promise.all([
-        createSampleBankWorkbook(),
-        createSampleQboWorkbook(),
-      ]);
-      await runReconciliation(page, bankBuffer, qboBuffer);
+  test('after a run the results are still accessible after a full page reload', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const [bankBuffer, qboBuffer] = await Promise.all([
+      createSampleBankWorkbook(),
+      createSampleQboWorkbook(),
+    ]);
+    await runReconciliation(page, bankBuffer, qboBuffer);
 
-      // persistRun() runs inside a React useEffect that fires after paint.
-      // Wait for localStorage to be written before reloading so the next page
-      // load can hydrate from it synchronously without a backend round-trip.
-      await page.waitForFunction(
-        () => !!window.localStorage.getItem('reconciliation-platform:latest-report-run'),
-        { timeout: 10_000 },
-      );
+    // persistRun() runs inside a React useEffect that fires after paint.
+    // Wait for localStorage to be written before reloading so the next page
+    // load can hydrate from it synchronously without a backend round-trip.
+    await page.waitForFunction(
+      () => !!window.localStorage.getItem('reconciliation-platform:latest-report-run'),
+      { timeout: 10_000 },
+    );
 
-      await page.reload();
+    await page.reload();
 
-      // After reload the Exceptions tab requires a live run (which doesn't exist).
-      // The Reports tab uses reportRun = run ?? persistedRun, so it renders the
-      // persisted data. Navigate there and open the Exception Report sub-view.
-      await page.locator('#tab-reports').click();
-      await page.getByRole('button', { name: 'Exception Report' }).click();
-      await expect(page.getByRole('heading', { name: 'Exception Report' })).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(page.locator('#exception-search-input')).toBeVisible();
-    },
-  );
+    // After reload the Exceptions tab requires a live run (which doesn't exist).
+    // The Reports tab uses reportRun = run ?? persistedRun, so it renders the
+    // persisted data. Navigate there and open the Exception Report sub-view.
+    await page.locator('#tab-reports').click();
+    await page.getByRole('button', { name: 'Exception Report' }).click();
+    await expect(page.getByRole('heading', { name: 'Exception Report' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator('#exception-search-input')).toBeVisible();
+  });
 });
 
 // ─── Edge Cases ──────────────────────────────────────────────────────────────

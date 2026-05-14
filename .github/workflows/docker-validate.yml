@@ -68,14 +68,14 @@ jobs:
         run: npm run typecheck && npm run lint
 
       - name: Render Compose config
-        run: docker compose --env-file .env.docker.example -f compose.yaml config >/tmp/reconciliation-compose-config.txt
+        run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml config >/tmp/reconciliation-compose-config.txt
 
       - name: Build container images
-        run: docker compose --env-file .env.docker.example -f compose.yaml build
+        run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml build
 
       - name: Run container smoke test
         env:
-          DOCKER_ENV_FILE: .env.docker.example
+          DOCKER_ENV_FILE: .env.docker.dev.fallback
         run: npm run docker:smoke
 
   zap-web-stage:
@@ -97,13 +97,13 @@ jobs:
         run: npm ci
 
       - name: Deploy Stage stack
-        run: npm run docker:deploy:test-stage
+        run: npm run docker:deploy:stage
 
       - name: Run OWASP ZAP baseline scan (Stage web)
-        run: npm run security:scan:zap:web:test-stage
+        run: npm run security:scan:zap:web:stage
 
       - name: Run OWASP ZAP baseline scan (Stage API)
-        run: npm run security:scan:zap:api:test-stage
+        run: npm run security:scan:zap:api:stage
 
       - name: Upload OWASP ZAP artifacts
         if: always()
@@ -117,4 +117,4 @@ jobs:
 
       - name: Cleanup Stage stack
         if: always()
-        run: npm run docker:cleanup:test-stage
+        run: npm run docker:cleanup:stage

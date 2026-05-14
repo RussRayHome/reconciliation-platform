@@ -10,8 +10,13 @@ services:
       - shared_preload_libraries=pgaudit
 
   api:
+    image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api-dev
     build:
-      target: test-stage
+      target: dev
+    user: "0:0"
+    volumes:
+      - recon-app-state:/var/lib/reconciliation
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       NODE_ENV: test
       ENABLE_DEVELOPER_DIAGNOSTICS: "true"
@@ -20,6 +25,7 @@ services:
     build:
       args:
         VITE_ENABLE_DEVELOPER_DASHBOARD: "true"
+        VITE_ENVIRONMENT_PATH_SEGMENT: "dev"
 
   pgweb:
     image: sosedoff/pgweb

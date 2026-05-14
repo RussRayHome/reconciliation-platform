@@ -19,9 +19,13 @@ x-api-environment: &api-environment
 
 services:
   postgres:
+    image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-data
     build:
       context: ./
       dockerfile: Dockerfile.postgres
+      args:
+        POSTGRES_BASE_IMAGE: ${POSTGRES_BASE_IMAGE:-postgres:16.13}
+        ENABLE_PGAUDIT: ${ENABLE_PGAUDIT:-true}
     environment:
       LANG: en_US.UTF-8
       LANGUAGE: en_US:en
@@ -52,6 +56,7 @@ services:
     logging: *default-logging
 
   migrate:
+    image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -68,6 +73,7 @@ services:
     logging: *default-logging
 
   api:
+    image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -100,6 +106,7 @@ services:
     logging: *default-logging
 
   web:
+    image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-web
     build:
       context: .
       dockerfile: apps/web/Dockerfile

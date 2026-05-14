@@ -7,7 +7,7 @@
 #
 # Usage (direct):
 #   DOCKER_ENV_FILE=.env.docker.dev \
-#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
 #   bash scripts/ops/deploy.sh
 #
@@ -33,7 +33,7 @@ if [[ "$ENV_FILE_INPUT" = /* ]]; then
 else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
-FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.example}"
+FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.fallback}"
 if [[ "$FALLBACK_FILE_INPUT" = /* ]]; then
   FALLBACK_FILE="$FALLBACK_FILE_INPUT"
 else
@@ -73,6 +73,22 @@ append_extra_compose_files() {
   done
 }
 
+extract_service_block_from_compose_config() {
+  local service_name="$1"
+  docker compose "${compose_args[@]}" config 2>/dev/null | awk -v service="$service_name" '
+    $0 ~ "^  " service ":" { in_service=1; print; next }
+    in_service && $0 ~ "^  [A-Za-z0-9_-]+:" { exit }
+    in_service { print }
+  '
+}
+
+resolve_service_build_target() {
+  local service_name="$1"
+  local service_block
+  service_block="$(extract_service_block_from_compose_config "$service_name")"
+  printf '%s\n' "$service_block" | sed -n 's/^[[:space:]]*target:[[:space:]]*//p' | head -n 1
+}
+
 compose_args=(-f "$ROOT_DIR/compose.yaml")
 append_extra_compose_files
 
@@ -83,9 +99,35 @@ elif [[ -f "$FALLBACK_FILE" ]]; then
 fi
 
 bash "$ROOT_DIR/scripts/ops/validate-env.sh"
-docker compose "${compose_args[@]}" up --build -d postgres
-docker compose "${compose_args[@]}" up --build migrate
-docker compose "${compose_args[@]}" up --build -d api web
+DEPLOY_ENV="dev"
+if [[ "${DOCKER_COMPOSE_EXTRA_FILE:-}" == *"stage"* ]] || [[ "$ENV_FILE" == *"stage"* ]]; then
+  DEPLOY_ENV="stage"
+fi
+
+if [[ "${DOCKER_BUILD_NO_CACHE:-false}" == "true" ]]; then
+  docker compose "${compose_args[@]}" build --no-cache
+else
+  docker compose "${compose_args[@]}" build
+fi
+docker compose "${compose_args[@]}" up -d postgres
+bash "$ROOT_DIR/scripts/db/run-users.sh" "$DEPLOY_ENV"
+docker compose "${compose_args[@]}" up migrate
+docker compose "${compose_args[@]}" up -d --force-recreate api web
+if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
+  docker compose "${compose_args[@]}" up -d pgweb
+fi
+
+api_build_target="$(resolve_service_build_target "api")"
+if [[ "$api_build_target" == "dev" ]]; then
+  if docker compose "${compose_args[@]}" exec -T api sh -lc 'ls node_modules/.bin/vitest >/dev/null 2>&1'; then
+    echo "Verified dev tooling image: vitest is present in the api container."
+  else
+    echo "api service resolved to target=dev, but vitest is missing from the running container." >&2
+    echo "Rebuild with: docker compose ${compose_args[*]} build --no-cache api" >&2
+    exit 1
+  fi
+fi
+
 bash "$ROOT_DIR/scripts/ops/health-check.sh"
 
 echo "Local stack deployed."

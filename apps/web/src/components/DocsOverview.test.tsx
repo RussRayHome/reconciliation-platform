@@ -54,7 +54,7 @@ describe('DocsOverview', () => {
     scrollIntoViewMock.mockReset();
     Element.prototype.scrollIntoView = scrollIntoViewMock;
     globalThis.history.replaceState({}, '', '/docs');
-    document.title = 'Bank-to-QBO Reconciliation Platform';
+    document.title = 'Financial Reconciliation Platform';
   });
 
   afterEach(() => {
@@ -79,8 +79,16 @@ describe('DocsOverview', () => {
 
   it('updates the location hash and scrolls when a section heading is selected', async () => {
     const user = userEvent.setup();
+    globalThis.history.replaceState({}, '', '/dev/docs');
 
-    render(<DocsOverview showDeveloperDashboardLink={true} />);
+    render(
+      <DocsOverview
+        appHref="/dev"
+        docsHref="/dev/docs"
+        showDeveloperDashboardLink={true}
+        developerDashboardHref="/dev/developer-dashboard.html"
+      />,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Intro' }));
 
@@ -89,7 +97,11 @@ describe('DocsOverview', () => {
     fireEvent(eventTargetWindow, new HashChangeEvent('hashchange'));
 
     expect(scrollIntoViewMock).toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: 'Open developer dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toHaveAttribute(
+      'href',
+      '/dev/developer-dashboard.html',
+    );
+    expect(globalThis.location.pathname).toBe('/dev/docs');
   });
 
   it('renders image and link markdown blocks for document content', async () => {
@@ -107,10 +119,9 @@ describe('DocsOverview', () => {
       'src',
       '/assets/architecture.png',
     );
-    expect(screen.getByRole('link', { name: 'Open full-size architecture diagram' })).toHaveAttribute(
-      'href',
-      '/assets/architecture.png',
-    );
+    expect(
+      screen.getByRole('link', { name: 'Open full-size architecture diagram' }),
+    ).toHaveAttribute('href', '/assets/architecture.png');
     expect(screen.getByRole('link', { name: 'inline architecture link' })).toHaveAttribute(
       'href',
       '/assets/architecture.png',

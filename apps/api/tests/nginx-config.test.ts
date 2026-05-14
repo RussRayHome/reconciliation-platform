@@ -17,7 +17,7 @@ describe('NGINX Configuration', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nginx-config-'));
     const tempConfigPath = path.join(tempDir, 'default.conf');
 
-    fs.writeFileSync(tempConfigPath, config.replace('http://api:4000', 'http://127.0.0.1:4000'));
+    fs.writeFileSync(tempConfigPath, config.replaceAll('http://api:4000', 'http://127.0.0.1:4000'));
 
     try {
       const output = execSync(

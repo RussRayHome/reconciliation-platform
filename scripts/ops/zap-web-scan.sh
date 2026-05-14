@@ -25,7 +25,7 @@ else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
 
-FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.stage.example}"
+FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.stage.fallback}"
 if [[ "$FALLBACK_FILE_INPUT" = /* ]]; then
   FALLBACK_FILE="$FALLBACK_FILE_INPUT"
 else

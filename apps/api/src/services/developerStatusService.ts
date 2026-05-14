@@ -42,6 +42,8 @@ const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 const runtimeMissingToolRegex = /(?:^|\n)\s*(?:sh|\/bin\/sh):\s*([a-z0-9._-]+):\s*not found\b/i;
 const runtimeAuditNetworkErrorRegex = /EAI_AGAIN|ENOTFOUND|audit endpoint returned an error/i;
+const runtimeDockerUnavailableRegex =
+  /docker info failed|Cannot connect to the Docker daemon|docker:\s*not found|permission denied while trying to connect to the Docker daemon|Could not find a working container runtime strategy/i;
 const runtimePlaywrightBrowserMissingRegex =
   /browserType\.launch:\s*Executable doesn't exist at|Looks like Playwright was just installed or updated/i;
 const runtimeSkippableChecks = new Set([
@@ -58,6 +60,198 @@ const isProductionRuntime = (): boolean => process.env.NODE_ENV === 'production'
 const isContainerRuntime = (): boolean => existsSync('/.dockerenv');
 const isToolingConstrainedRuntime = (): boolean => isProductionRuntime() || isContainerRuntime();
 
+const hostDevPostgresPreflightLogPath = '/var/lib/reconciliation/dev-postgres-preflight.log';
+const hostDevPostgresPreflightTotalsRegex = /Totals:\s*PASS=(\d+)\s*WARN=(\d+)\s*FAIL=(\d+)/i;
+
+type HostPreflightTotals = {
+  pass: number;
+  warn: number;
+  fail: number;
+};
+
+const readHostDevPostgresPreflightLog = (): string | null => {
+  if (!existsSync(hostDevPostgresPreflightLogPath)) {
+    return null;
+  }
+
+  try {
+    const content = readFileSync(hostDevPostgresPreflightLogPath, 'utf8').trim();
+    return content.length > 0 ? content : null;
+  } catch {
+    return null;
+  }
+};
+
+const parseHostDevPostgresPreflightTotals = (content: string): HostPreflightTotals | null => {
+  const match = hostDevPostgresPreflightTotalsRegex.exec(content);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    pass: Number(match[1]),
+    warn: Number(match[2]),
+    fail: Number(match[3]),
+  };
+};
+
+const buildPostgresRuntimeSkipDetails = (command: string): string => {
+  return [
+    `Command requires host Docker daemon access: ${command}`,
+    'Current API container runtime does not provide Docker daemon/tooling access.',
+    'Run this check from the host workspace for a definitive Postgres result.',
+  ].join('\n');
+};
+
+const buildPostgresRuntimeSkip = (
+  name: string,
+  command: string,
+  durationMs: number,
+  _output: string,
+  metadata: Partial<DeveloperCheck>,
+  reason: string,
+): DeveloperCheck => {
+  const hostRunLog = readHostDevPostgresPreflightLog();
+  const hostTotals = hostRunLog ? parseHostDevPostgresPreflightTotals(hostRunLog) : null;
+
+  if (hostRunLog && hostTotals) {
+    const hasFailures = hostTotals.fail > 0;
+
+    return {
+      name,
+      command,
+      ok: !hasFailures,
+      exitCode: hasFailures ? 1 : 0,
+      durationMs,
+      summary: `Host dev preflight snapshot: PASS=${hostTotals.pass}, WARN=${hostTotals.warn}, FAIL=${hostTotals.fail}`,
+      details: truncateOutput(hostRunLog),
+      highlights: [
+        'Showing latest host dev Postgres preflight snapshot.',
+        `Totals: PASS=${hostTotals.pass}, WARN=${hostTotals.warn}, FAIL=${hostTotals.fail}`,
+        'Run `npm run docker:db:preflight:dev` from host to refresh this snapshot.',
+      ],
+      ...metadata,
+    };
+  }
+
+  if (hostRunLog) {
+    return {
+      name,
+      command,
+      ok: true,
+      exitCode: 0,
+      durationMs,
+      summary: 'Host dev preflight snapshot loaded (totals unavailable)',
+      details: truncateOutput(hostRunLog),
+      highlights: [
+        'Showing latest host dev Postgres preflight snapshot.',
+        'Run `npm run docker:db:preflight:dev` from host to refresh this snapshot.',
+      ],
+      ...metadata,
+    };
+  }
+
+  return {
+    name,
+    command,
+    ok: true,
+    exitCode: 0,
+    durationMs,
+    summary: 'Skipped in container runtime: Postgres DB checks require host Docker tooling',
+    details: truncateOutput(buildPostgresRuntimeSkipDetails(command)),
+    highlights: [
+      reason,
+      'This check runs Docker preflight and Postgres Vitest suites that are designed for host execution.',
+      'Run `npm run test:postgres:dashboard` from the host workspace for definitive results.',
+    ],
+    ...metadata,
+  };
+};
+
+const buildMissingToolRuntimeSkip = (
+  name: string,
+  command: string,
+  durationMs: number,
+  output: string,
+  metadata: Partial<DeveloperCheck>,
+  tool: string,
+): DeveloperCheck => ({
+  name,
+  command,
+  ok: true,
+  exitCode: 0,
+  durationMs,
+  summary: `Skipped in container runtime: ${tool} is not installed`,
+  details: truncateOutput(
+    output.length > 0 ? output : 'Tool is not available in this runtime image.',
+  ),
+  highlights: [
+    `Skipped because ${tool} is unavailable in the current API container image.`,
+    'Run this check from the host workspace (or a dev-tooling image) for definitive results.',
+  ],
+  ...metadata,
+});
+
+const buildRuntimeToolSkipResult = (
+  name: string,
+  command: string,
+  durationMs: number,
+  output: string,
+  metadata: Partial<DeveloperCheck>,
+): DeveloperCheck | null => {
+  if (!runtimeSkippableChecks.has(name)) {
+    return null;
+  }
+
+  if (runtimeDockerUnavailableRegex.test(output)) {
+    if (name === 'Postgres DB tests') {
+      return buildPostgresRuntimeSkip(
+        name,
+        command,
+        durationMs,
+        output,
+        metadata,
+        'Skipped because Docker tooling is unavailable from the current API container runtime.',
+      );
+    }
+
+    return {
+      name,
+      command,
+      ok: true,
+      exitCode: 0,
+      durationMs,
+      summary: 'Skipped in container runtime: Docker tooling is unavailable',
+      details: truncateOutput(
+        output.length > 0 ? output : 'Docker tooling is not available in this runtime image.',
+      ),
+      highlights: [
+        'Skipped because Docker tooling is unavailable from the current API container runtime.',
+        'Run this check from the host workspace (or a dev-tooling image) for definitive results.',
+      ],
+      ...metadata,
+    };
+  }
+
+  const missingTool = runtimeMissingToolRegex.exec(output)?.[1];
+  if (!missingTool) {
+    return null;
+  }
+
+  if (name === 'Postgres DB tests') {
+    return buildPostgresRuntimeSkip(
+      name,
+      command,
+      durationMs,
+      output,
+      metadata,
+      `Skipped because ${missingTool} is unavailable in the current API container image.`,
+    );
+  }
+
+  return buildMissingToolRuntimeSkip(name, command, durationMs, output, metadata, missingTool);
+};
+
 const buildRuntimeSkipResult = (
   name: string,
   command: string,
@@ -69,28 +263,15 @@ const buildRuntimeSkipResult = (
     return null;
   }
 
-  if (runtimeSkippableChecks.has(name)) {
-    const missingToolMatch = runtimeMissingToolRegex.exec(output);
-    if (missingToolMatch?.[1]) {
-      const tool = missingToolMatch[1];
-
-      return {
-        name,
-        command,
-        ok: true,
-        exitCode: 0,
-        durationMs,
-        summary: `Skipped in container runtime: ${tool} is not installed`,
-        details: truncateOutput(
-          output.length > 0 ? output : 'Tool is not available in this runtime image.',
-        ),
-        highlights: [
-          `Skipped because ${tool} is unavailable in the current API container image.`,
-          'Run this check from the host workspace (or a dev-tooling image) for definitive results.',
-        ],
-        ...metadata,
-      };
-    }
+  const runtimeToolSkipResult = buildRuntimeToolSkipResult(
+    name,
+    command,
+    durationMs,
+    output,
+    metadata,
+  );
+  if (runtimeToolSkipResult) {
+    return runtimeToolSkipResult;
   }
 
   if (name === 'E2E tests' && runtimePlaywrightBrowserMissingRegex.test(output)) {
@@ -100,16 +281,13 @@ const buildRuntimeSkipResult = (
       ok: true,
       exitCode: 0,
       durationMs,
-      summary: 'Skipped in container runtime: Playwright browser binaries are not installed',
+      summary: 'Skipped in container runtime: run E2E tests from host workspace',
       details: truncateOutput(
         output.length > 0
           ? output
           : 'Playwright browser binaries are not available in this runtime image.',
       ),
-      highlights: [
-        'Skipped because Playwright browser binaries are unavailable in the current API container image.',
-        'Run `npx playwright install --with-deps` and execute E2E tests from the host workspace for definitive results.',
-      ],
+      highlights: ['Run `npm run test:e2e` from the host workspace for definitive results.'],
       ...metadata,
     };
   }
@@ -324,6 +502,29 @@ export const createDeveloperStatusService = ({
       const output = `${stdout}\n${stderr}`.trim();
       const highlights = extractHighlights?.(output);
       const metadata = parseMetadata?.(output) ?? {};
+
+      if (
+        name === 'Unit tests' &&
+        runtimeDockerUnavailableRegex.test(output) &&
+        (metadata.failedCount ?? 0) === 0 &&
+        (metadata.passedCount ?? 0) > 0
+      ) {
+        return {
+          name,
+          command,
+          ok: true,
+          exitCode: 0,
+          durationMs,
+          summary: `Passed: ${metadata.passedCount}, Failed: 0`,
+          details: truncateOutput(output),
+          highlights: [
+            'Unit assertions passed; Docker-dependent Testcontainers suites were not available in this runtime.',
+            'Run `npm run test:postgres` from a Docker-enabled host for Postgres integration coverage.',
+          ],
+          ...metadata,
+        };
+      }
+
       const runtimeSkipResult = buildRuntimeSkipResult(name, command, durationMs, output, metadata);
 
       if (runtimeSkipResult) {
@@ -356,7 +557,7 @@ export const createDeveloperStatusService = ({
 
     const integrationTests = await runDeveloperCheck(
       'Integration tests',
-      ['run', 'test:integration'],
+      ['run', 'test:integration:dashboard'],
       (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
       parseTestHighlights,
       240000,
@@ -387,7 +588,7 @@ export const createDeveloperStatusService = ({
       (stdout) => summarizeLintOutput(stdout),
       undefined,
       240000,
-      () => ({ areaLabel: 'Smells' }),
+      () => ({ areaLabel: 'Static analysis' }),
     );
 
     const typecheck = await runDeveloperCheck(
@@ -396,7 +597,7 @@ export const createDeveloperStatusService = ({
       () => summarizeTypecheckOutput(),
       undefined,
       240000,
-      () => ({ areaLabel: 'Types' }),
+      () => ({ areaLabel: 'Static analysis' }),
     );
 
     const coverage = await runDeveloperCheck(

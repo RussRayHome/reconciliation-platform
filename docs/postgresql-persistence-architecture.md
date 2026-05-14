@@ -218,6 +218,7 @@ Migration shape currently includes:
 - v1 base schema and indexes
 - v2 foreign keys for scalar transaction references
 - v3 read-model access indexes
+- v4 conditional pgAudit extension activation (enabled in dev and stage; no-op if not preloaded)
 
 ## 7. Read model architecture
 
@@ -271,19 +272,69 @@ npm run docker:db:preflight
 
 ## 10. Recovery and rollout model
 
-Current behavior:
+### Persistence behavior
 
-- each lifecycle stage is durably persisted
+- each lifecycle stage is durably persisted in a single SQL transaction
 - failures are recorded with transition-safe failure metadata and audit events
 - read-model queries can recover finalized outputs from DB state
 
-Near-term enhancement direction:
+### Database user management
 
-- formal resumable retry orchestration from last durable checkpoint
-- fuller retirement of local file-backed compatibility paths where PostgreSQL read models already cover the consumer needs
+The `rray` database user (dev/stage) is created automatically by `docker:deploy` immediately after the migration service completes. Manual invocation:
+
+```bash
+npm run db:users:dev
+npm run db:users:stage
+```
+
+Production user creation (`prod_rray`, `prod_rray_admin`) is intentionally excluded from automated pipelines and must be run manually by a DBA.
+
+### Backup and restore
+
+Backups use `pg_dump -Fc` (custom compressed format). Restores use `pg_restore -j 4` (parallel, 4 workers).
+
+```bash
+npm run db:backup:dev          # → .backups/recon-dev-<timestamp>.dump
+npm run db:backup:stage        # → .backups/recon-stage-<timestamp>.dump
+npm run db:restore:dev         # restores from most recent dev backup
+npm run db:restore:stage       # restores from most recent stage backup
+npm run db:restore:dev -- .backups/recon-dev-20260512-090000.dump   # restore specific file
+```
+
+Restore sequence (automated by `restore.sh`):
+
+1. Stop api, web, pgweb
+2. Terminate active DB connections
+3. Copy dump into postgres container
+4. `pg_restore --clean --if-exists -j 4`
+5. Re-apply user grants
+6. Restart api, web, pgweb
+
+Backup files are written to `.backups/` (gitignored). Take a backup before any destructive schema operation.
+
+### Seed data
+
+A representative baseline dataset is available for development environments. It contains two reconciliation jobs (one FINALIZED with a matched pair and exception, one FAILED) spanning all 14 tables.
+
+```bash
+npm run db:seed:dev
+npm run db:seed:stage
+```
+
+The seed is idempotent (`ON CONFLICT DO NOTHING`) and safe to re-run.
+
+### Full recovery sequence after complete data loss
+
+```bash
+npm run docker:deploy       # fresh postgres + all migrations + rray user
+npm run db:restore:dev      # restore from most recent snapshot
+# — if no snapshot exists:
+npm run db:seed:dev
+```
 
 ## 11. Related references
 
+- `docs/erd.md`
 - `docs/architecture.md`
 - `docs/api.md`
 - `docs/developer-setup.md`

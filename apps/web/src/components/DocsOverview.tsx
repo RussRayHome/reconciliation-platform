@@ -5,7 +5,10 @@ import { docsById, projectDocuments } from '../lib/docsCatalog';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 
 type DocsOverviewProps = {
+  appHref?: string;
+  docsHref?: string;
   showDeveloperDashboardLink: boolean;
+  developerDashboardHref?: string;
 };
 
 type HeadingLink = {
@@ -115,9 +118,13 @@ const resolveInitialLocationState = (): {
   };
 };
 
-const writeDocsLocation = (documentId: string, sectionAnchorId?: string | null): void => {
+const writeDocsLocation = (
+  docsHref: string,
+  documentId: string,
+  sectionAnchorId?: string | null,
+): void => {
   const hash = sectionAnchorId ? `${documentId}${docsHashSeparator}${sectionAnchorId}` : documentId;
-  globalThis.history.replaceState({}, '', `/docs#${hash}`);
+  globalThis.history.replaceState({}, '', `${docsHref}#${hash}`);
 };
 
 const parseMarkdown = (content: string, documentId: string): MarkdownBlock[] => {
@@ -271,7 +278,12 @@ const renderInlineMarkdown = (text: string) =>
       return <span key={`${part}-${index}`}>{part}</span>;
     });
 
-export function DocsOverview({ showDeveloperDashboardLink }: Readonly<DocsOverviewProps>) {
+export function DocsOverview({
+  appHref = '/',
+  docsHref = '/docs',
+  showDeveloperDashboardLink,
+  developerDashboardHref = '/developer-dashboard.html',
+}: Readonly<DocsOverviewProps>) {
   const initialLocationState = resolveInitialLocationState();
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -337,14 +349,14 @@ export function DocsOverview({ showDeveloperDashboardLink }: Readonly<DocsOvervi
 
     setActiveDocumentId(fallbackDocument.id);
     setActiveSectionAnchorId(null);
-    writeDocsLocation(fallbackDocument.id);
-  }, [activeDocumentId, filteredDocuments]);
+    writeDocsLocation(docsHref, fallbackDocument.id);
+  }, [activeDocumentId, docsHref, filteredDocuments]);
 
   useEffect(() => {
     document.title = 'Documentation Hub';
 
     return () => {
-      document.title = 'Bank-to-QBO Reconciliation Platform';
+      document.title = 'Financial Reconciliation Platform';
     };
   }, []);
 
@@ -422,7 +434,7 @@ export function DocsOverview({ showDeveloperDashboardLink }: Readonly<DocsOvervi
   const onSelectDocument = (documentId: string) => {
     setActiveDocumentId(documentId);
     setActiveSectionAnchorId(null);
-    writeDocsLocation(documentId);
+    writeDocsLocation(docsHref, documentId);
   };
 
   const onSelectSection = (sectionAnchorId: string) => {
@@ -431,7 +443,7 @@ export function DocsOverview({ showDeveloperDashboardLink }: Readonly<DocsOvervi
     }
 
     setActiveSectionAnchorId(sectionAnchorId);
-    writeDocsLocation(activeDocument.id, sectionAnchorId);
+    writeDocsLocation(docsHref, activeDocument.id, sectionAnchorId);
   };
 
   const openImageModal = (src: string, alt: string) => {
@@ -455,12 +467,12 @@ export function DocsOverview({ showDeveloperDashboardLink }: Readonly<DocsOvervi
               one place. Select any document to inspect its contents without leaving the app.
             </p>
             <div className="docs-hero-actions">
-              <a className="hero-primary-cta" href="/">
+              <a className="hero-primary-cta" href={appHref}>
                 Back to reconciliation app
               </a>
               {showDeveloperDashboardLink ? (
-                <a className="hero-secondary-cta" href="/developer-dashboard.html">
-                  Open developer dashboard
+                <a className="hero-primary-cta" href={developerDashboardHref}>
+                  Developer Dashboard
                 </a>
               ) : null}
             </div>

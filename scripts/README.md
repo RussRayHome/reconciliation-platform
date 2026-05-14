@@ -161,6 +161,99 @@ Notes:
 - Requires `gh` CLI and authenticated session (`gh auth status`).
 - If branch protection does not exist yet, it creates a baseline rule with the required checks.
 
+## Database Scripts
+
+The `scripts/db/` directory contains scripts for database user management, backups, restores, and seed data.
+
+### `db/backup.sh`
+
+Purpose:
+
+- Dump the target environment database to `.backups/recon-<env>-<timestamp>.dump` using `pg_dump -Fc` (custom compressed format).
+
+How to run:
+
+```bash
+npm run db:backup          # dev
+npm run db:backup:dev      # dev
+npm run db:backup:stage    # stage
+```
+
+Notes:
+
+- The postgres container must be running.
+- Output files are written to `.backups/` (gitignored).
+- Take a backup before any destructive schema operation or volume wipe.
+
+### `db/restore.sh`
+
+Purpose:
+
+- Restore a database from a `pg_dump` backup file using `pg_restore -j 4` (parallel restore).
+- Stops dependent services (api, web, pgweb) before restore and restarts them after.
+- Re-applies database user grants after restore.
+
+How to run:
+
+```bash
+npm run db:restore:dev                                            # most recent dev backup
+npm run db:restore:stage                                          # most recent stage backup
+bash scripts/db/restore.sh dev .backups/recon-dev-20260512.dump  # specific file
+```
+
+Notes:
+
+- If no dump file is specified, restores from the most recent `.backups/recon-<env>-*.dump`.
+- Postgres must be running; the script starts it automatically if needed.
+
+### `db/seed.sql`
+
+Purpose:
+
+- SQL seed file containing a representative baseline dataset for development and testing.
+- Contains two reconciliation jobs: one FINALIZED (with matches, exceptions, and an export) and one FAILED.
+- Covers all 14 tables in the schema.
+- Idempotent: uses `ON CONFLICT DO NOTHING` throughout.
+
+### `db/run-seed.sh`
+
+Purpose:
+
+- Wrapper that pipes `seed.sql` into the running postgres container for a given environment.
+
+How to run:
+
+```bash
+npm run db:seed:dev
+npm run db:seed:stage
+```
+
+Notes:
+
+- The postgres container must be running.
+- Safe to run multiple times.
+
+### `db/run-users.sh`
+
+Purpose:
+
+- Creates or updates the `rray` database user (dev/stage only) with full superuser privileges.
+- Called automatically by `scripts/ops/deploy.sh` — no manual run needed on a standard deploy.
+
+How to run manually:
+
+```bash
+npm run db:users:dev
+npm run db:users:stage
+```
+
+### `db/run-prod-users.sh`
+
+Purpose:
+
+- Creates production database users (`prod_rray`, `prod_rray_admin`) via direct psql (no Docker).
+- Must be run manually by a DBA. Never called by automated pipelines.
+
 ## Production-Like Docker Runbooks
 
 The `scripts/ops/` directory contains Bash and PowerShell entrypoints for the hardened local deployment flow.
@@ -169,7 +262,7 @@ The `scripts/ops/` directory contains Bash and PowerShell entrypoints for the ha
 
 Purpose:
 
-- Start PostgreSQL, run the dedicated migration service, then start the internal API and public NGINX gateway.
+- Build images, start PostgreSQL, run the dedicated migration service, create database users, then start the API and NGINX gateway. Also starts pgweb when defined in the compose config (dev and stage).
 
 ### `ops/redeploy.*`
 
@@ -187,7 +280,7 @@ Purpose:
 
 Purpose:
 
-- Verify `/healthz`, `/api/health`, and PostgreSQL readiness for the containerized stack.
+- Verify `/healthz`, `/api/health`, PostgreSQL readiness, and (when present in the compose config) pgweb availability for the containerized stack.
 
 ### `ops/cleanup.*`
 

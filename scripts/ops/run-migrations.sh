@@ -6,7 +6,7 @@
 #
 # Usage (direct):
 #   DOCKER_ENV_FILE=.env.docker.dev \
-#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
 #   bash scripts/ops/run-migrations.sh
 #
@@ -22,7 +22,7 @@ if [[ "$ENV_FILE_INPUT" = /* ]]; then
 else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
-FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.example}"
+FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.fallback}"
 if [[ "$FALLBACK_FILE_INPUT" = /* ]]; then
   FALLBACK_FILE="$FALLBACK_FILE_INPUT"
 else

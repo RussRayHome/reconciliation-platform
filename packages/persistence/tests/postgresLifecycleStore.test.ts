@@ -24,9 +24,6 @@ import type { Pool } from 'pg';
 import type { StartedTestContainer } from 'testcontainers';
 import { randomUUID } from 'node:crypto';
 
-const runPostgresTests = process.env.RUN_POSTGRES_TESTS === 'true';
-const describePostgres = runPostgresTests ? describe : describe.skip;
-
 let container: StartedTestContainer;
 let pool: Pool;
 let startupError: Error | null = null;
@@ -259,7 +256,7 @@ const countQueriesDuring = async <T>(
   }
 };
 
-describePostgres('PostgresReconciliationLifecycleStore', () => {
+describe('PostgresReconciliationLifecycleStore', () => {
   beforeAll(async () => {
     try {
       container = await new GenericContainer('postgres:16-alpine')
@@ -276,7 +273,8 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
       await runPostgresMigrations(pool);
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
-      console.warn(`Skipping PostgreSQL integration setup: ${startupError.message}`);
+      console.warn(`PostgreSQL integration setup failed: ${startupError.message}`);
+      throw startupError;
     }
   });
 
@@ -290,8 +288,12 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
   });
 
   beforeEach(async () => {
-    if (startupError || !pool) {
-      return;
+    if (startupError) {
+      throw startupError;
+    }
+
+    if (!pool) {
+      throw new Error('Postgres pool is not initialized.');
     }
 
     await pool.query(
@@ -301,7 +303,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('installs the phase 2 report and review indexes used by the PostgreSQL read model', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const result = await pool.query<{ indexname: string }>(
@@ -334,7 +336,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('persists lifecycle state, row data, derived results, and review decisions through finalization', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool, {
@@ -616,7 +618,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('rolls back raw-row persistence and leaves the job pre-import when duplicate line numbers violate uniqueness', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool, { rawRowBatchSize: 10 });
@@ -666,7 +668,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('serializes concurrent import writes for the same job and prevents duplicate persistence', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
@@ -729,7 +731,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('upserts reviewer decisions in place, increments record version, and leaves a single durable row', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
@@ -808,7 +810,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('marks jobs for retry with failure metadata and does not create unrelated persistence rows', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
@@ -864,7 +866,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('rejects invalid failure transitions and leaves finalized jobs unchanged', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
@@ -920,7 +922,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('rejects match artifacts that reference non-existent canonical rows and rolls the transaction back', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
@@ -988,7 +990,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('persists a probable match only once when it is also present in matchResults', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
@@ -1057,7 +1059,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('rejects review artifacts whose rule lineage points at non-existent canonical rows and rolls the transaction back', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
@@ -1150,7 +1152,7 @@ describePostgres('PostgresReconciliationLifecycleStore', () => {
 
   it('keeps read-model query counts bounded for large exception sets', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);

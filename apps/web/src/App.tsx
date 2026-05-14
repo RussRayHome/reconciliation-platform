@@ -183,20 +183,74 @@ const useDismissibleFieldHelp = (
   }, [openHelpField, setOpenHelpField]);
 };
 
-function App() {
-  const showDeveloperDashboardLink =
-    import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEVELOPER_DASHBOARD === 'true';
+const readEnvString = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
 
-  if (globalThis.location.pathname.startsWith('/docs')) {
-    return <DocsOverview showDeveloperDashboardLink={showDeveloperDashboardLink} />;
+function App() {
+  const env = import.meta.env as Record<string, unknown>;
+  let pathname = globalThis.location.pathname;
+  const showDeveloperDashboardLink =
+    env.DEV === true || readEnvString(env.VITE_ENABLE_DEVELOPER_DASHBOARD) === 'true';
+  const configuredEnvironmentPathSegment = (readEnvString(env.VITE_ENVIRONMENT_PATH_SEGMENT) ?? '')
+    .trim()
+    .replace(/^\/+|\/+$/g, '');
+
+  if (pathname === '/' && configuredEnvironmentPathSegment.toLowerCase() === 'dev') {
+    const developmentAppPath = `/${configuredEnvironmentPathSegment}`;
+
+    globalThis.history.replaceState(globalThis.history.state, '', developmentAppPath);
+    pathname = developmentAppPath;
   }
 
-  return <ReconciliationApp showDeveloperDashboardLink={showDeveloperDashboardLink} />;
+  const nestedRouteEnvironmentPathSegment =
+    /^\/([A-Za-z0-9_-]+)\/(?:docs(?:\/|$)|developer-dashboard\.html$)/.exec(pathname)?.[1] ?? '';
+  const rootRouteEnvironmentPathSegment = /^\/([A-Za-z0-9_-]+)\/?$/.exec(pathname)?.[1] ?? '';
+  const routeEnvironmentPathSegment =
+    nestedRouteEnvironmentPathSegment ||
+    (rootRouteEnvironmentPathSegment.toLowerCase() === 'docs'
+      ? ''
+      : rootRouteEnvironmentPathSegment);
+  const activeEnvironmentPathSegment =
+    routeEnvironmentPathSegment || configuredEnvironmentPathSegment;
+  const docsHref = activeEnvironmentPathSegment ? `/${activeEnvironmentPathSegment}/docs` : '/docs';
+  const developerDashboardHref = activeEnvironmentPathSegment
+    ? `/${activeEnvironmentPathSegment}/developer-dashboard.html`
+    : '/developer-dashboard.html';
+  const appHref = activeEnvironmentPathSegment ? `/${activeEnvironmentPathSegment}` : '/';
+  const isDocsRoute =
+    pathname === '/docs' ||
+    pathname.startsWith('/docs/') ||
+    /^\/[A-Za-z0-9_-]+\/docs(?:\/|$)/.test(pathname);
+
+  if (isDocsRoute) {
+    return (
+      <DocsOverview
+        appHref={appHref}
+        docsHref={docsHref}
+        showDeveloperDashboardLink={showDeveloperDashboardLink}
+        developerDashboardHref={developerDashboardHref}
+      />
+    );
+  }
+
+  return (
+    <ReconciliationApp
+      docsHref={docsHref}
+      showDeveloperDashboardLink={showDeveloperDashboardLink}
+      developerDashboardHref={developerDashboardHref}
+    />
+  );
 }
 
 function ReconciliationApp({
+  docsHref,
   showDeveloperDashboardLink,
-}: Readonly<{ showDeveloperDashboardLink: boolean }>) {
+  developerDashboardHref,
+}: Readonly<{
+  docsHref: string;
+  showDeveloperDashboardLink: boolean;
+  developerDashboardHref: string;
+}>) {
   const currentYear = new Date().getFullYear();
   const previousSevenYears = Array.from({ length: 7 }, (_, index) =>
     String(currentYear - index - 1),
@@ -377,7 +431,9 @@ function ReconciliationApp({
       <div className="hero-backdrop" />
       <main className="app-layout">
         <HeroSection
+          docsHref={docsHref}
           showDeveloperDashboardLink={showDeveloperDashboardLink}
+          developerDashboardHref={developerDashboardHref}
           run={run}
           periodLabel={periodLabel}
           reconciliationFrequency={reconciliationFrequency}
@@ -478,13 +534,17 @@ function ReconciliationApp({
 }
 
 function HeroSection({
+  docsHref,
   showDeveloperDashboardLink,
+  developerDashboardHref,
   run,
   periodLabel,
   reconciliationFrequency,
   onOpenUploadTab,
 }: Readonly<{
+  docsHref: string;
   showDeveloperDashboardLink: boolean;
+  developerDashboardHref: string;
   run: RunData | undefined;
   periodLabel: string;
   reconciliationFrequency: ReconciliationFrequency;
@@ -493,39 +553,39 @@ function HeroSection({
   return (
     <header className="hero-card">
       <div>
-        <span className="eyebrow">Audit-ready monthly close workflow</span>
-        <h1>Bank-to-QBO Reconciliation Platform</h1>
-        <p>
-          Upload source workbooks, preserve row-level traceability, run evidence-based matching, and
-          export accountant-friendly workpapers with repeatable rules.
-        </p>
-        <a className="hero-primary-cta" href="#source-upload-form" onClick={onOpenUploadTab}>
-          Start reconciliation
-        </a>
-        <a className="hero-secondary-cta" href="/docs">
-          Open documentation hub
-        </a>
-        {showDeveloperDashboardLink ? (
-          <a
-            className="hero-secondary-cta hero-secondary-cta--spaced"
-            href="/developer-dashboard.html"
-          >
-            Open developer dashboard
-          </a>
-        ) : null}
-      </div>
-      <div className="hero-meta">
-        <div className="hero-brand">
-          <img
-            className="hero-brand__mascot"
-            src={kinneyHighlander}
-            alt="Small Scottish man in a kilt illustration"
-          />
-          <div>
-            <span>Powered by</span>
-            <strong>Kinney Software Solutions LLC</strong>
+        <div className="hero-heading-row">
+          <div className="hero-title-block">
+            <h1>Financial Reconciliation Platform</h1>
+          </div>
+          <div className="hero-brand">
+            <img
+              className="hero-brand__mascot"
+              src={kinneyHighlander}
+              alt="Small Scottish man in a kilt illustration"
+            />
+            <p className="hero-brand__company">Kinney Software Solutions LLC</p>
           </div>
         </div>
+        <p>
+          Audit-ready monthly workflow: upload source workbooks, preserve row-level traceability,
+          run evidence-based matching, and export accountant-friendly workpapers with repeatable
+          rules.
+        </p>
+        <div className="hero-cta-row">
+          <a className="hero-primary-cta" href="#source-upload-form" onClick={onOpenUploadTab}>
+            Start Reconciliation
+          </a>
+          <a className="hero-primary-cta" href={docsHref}>
+            Documentation
+          </a>
+          {showDeveloperDashboardLink ? (
+            <a className="hero-primary-cta" href={developerDashboardHref}>
+              Developer Dashboard
+            </a>
+          ) : null}
+        </div>
+      </div>
+      <div className="hero-meta">
         <div>
           <span>Correlation-aware processing</span>
           <strong>{run?.correlationId ?? 'Awaiting run'}</strong>

@@ -38,9 +38,9 @@
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
-        gap: 12px;
+        gap: 18px;
         align-items: center;
-        margin-bottom: 18px;
+        margin-bottom: 28px;
       }
 
       .title {
@@ -49,28 +49,78 @@
       }
 
       .subtitle {
-        margin: 6px 0 0;
+        margin: 10px 0 0;
+        line-height: 1.45;
         color: var(--muted);
       }
 
       .actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
+        margin-top: 8px;
       }
 
       .button {
-        border: 1px solid #0f6c7a;
-        background: #0f6c7a;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-appearance: none;
+        appearance: none;
+        border: 2px solid #083f48;
+        background: linear-gradient(180deg, #0e6170 0%, #084853 100%);
         color: #fff;
-        padding: 9px 14px;
-        border-radius: 10px;
+        padding: 9px 16px;
+        border-radius: 12px;
         cursor: pointer;
-        font-weight: 600;
+        font-family: inherit;
+        font-size: 1rem;
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: 0.01em;
+        text-decoration: none;
+        white-space: nowrap;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.32),
+          0 7px 0 #063842,
+          0 13px 22px rgba(8, 29, 36, 0.34);
+        transition:
+          transform 120ms ease,
+          box-shadow 120ms ease;
       }
 
       .button.secondary {
-        background: #fff;
-        color: #0f6c7a;
+        border-color: #083f48;
+        background: linear-gradient(180deg, #0e6170 0%, #084853 100%);
+        color: #fff;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.32),
+          0 7px 0 #063842,
+          0 13px 22px rgba(8, 29, 36, 0.34);
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+      }
+
+      .button:active {
+        transform: translateY(3px);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.24),
+          0 3px 0 #063842,
+          0 7px 12px rgba(8, 29, 36, 0.28);
+      }
+
+      .button.secondary:active {
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.24),
+          0 3px 0 #063842,
+          0 7px 12px rgba(8, 29, 36, 0.28);
+      }
+
+      .button:focus-visible {
+        outline: 3px solid rgba(22, 145, 163, 0.28);
+        outline-offset: 2px;
       }
 
       .status-strip {
@@ -478,13 +528,16 @@
       <header class="header">
         <div>
           <h1 class="title">Developer Dashboard</h1>
-          <p class="subtitle">Live status for tests, static analysis, and security checks.</p>
+          <p class="subtitle">
+            In search for gremlins. Live status for tests, static code analysis, code coverage, and
+            security vulnerabilities.
+          </p>
         </div>
         <div class="actions">
           <button id="refresh" class="button">Refresh checks</button>
-          <button id="force-refresh" class="button secondary">Force refresh</button>
-          <a class="button secondary" href="/docs">Open docs hub</a>
-          <a class="button secondary" href="/">Open application</a>
+          <button id="force-refresh" class="button">Force refresh</button>
+          <a class="button" href="docs">Documents</a>
+          <a class="button" href=".">Open application</a>
         </div>
       </header>
 
@@ -695,6 +748,25 @@
 
       const stripAnsiCodes = (value) => String(value || '').replaceAll(/\u001b\[[0-9;]*m/gu, '');
 
+      const fetchWithTimeout = async (url, timeoutMs) => {
+        const controller = new AbortController();
+        const timeoutHandle = window.setTimeout(() => {
+          controller.abort();
+        }, timeoutMs);
+
+        try {
+          return await fetch(url, { signal: controller.signal });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s.`);
+          }
+
+          throw error;
+        } finally {
+          window.clearTimeout(timeoutHandle);
+        }
+      };
+
       const getCoverageDisplayText = (value) => {
         const text = stripAnsiCodes(value).replaceAll(/\r\n?/gu, '\n');
         const lines = text.split('\n');
@@ -710,13 +782,68 @@
         return text.trim() || 'No additional output';
       };
 
+      const getPostgresPreflightDisplayText = (value) => {
+        const text = stripAnsiCodes(value).replaceAll(/\r\n?/gu, '\n');
+        const marker = 'Database Preflight Summary';
+        const markerIndex = text.indexOf(marker);
+
+        if (markerIndex < 0) {
+          return text.trim() || 'No additional output';
+        }
+
+        const trimmed = text.slice(markerIndex).trim();
+        return trimmed || 'No additional output';
+      };
+
+      let busyTicker = null;
+      let busyStartedAt = 0;
+
+      const clearBusyTicker = () => {
+        if (busyTicker !== null) {
+          window.clearInterval(busyTicker);
+          busyTicker = null;
+        }
+      };
+
       const setButtonsBusy = (busy, activeButton = null) => {
+        const setIdleLabels = () => {
+          refreshButton.textContent = 'Refresh checks';
+          forceRefreshButton.textContent = 'Force refresh';
+        };
+
         refreshButton.disabled = busy;
         forceRefreshButton.disabled = busy;
-        refreshButton.textContent =
-          busy && activeButton === refreshButton ? 'Running...' : 'Refresh checks';
-        forceRefreshButton.textContent =
-          busy && activeButton === forceRefreshButton ? 'Running...' : 'Force refresh';
+
+        if (!busy) {
+          clearBusyTicker();
+          setIdleLabels();
+          return;
+        }
+
+        busyStartedAt = Date.now();
+
+        const renderBusyLabels = () => {
+          const elapsedSeconds = Math.max(1, Math.floor((Date.now() - busyStartedAt) / 1000));
+
+          if (activeButton === refreshButton) {
+            refreshButton.textContent = `Refreshing (${elapsedSeconds}s)`;
+            forceRefreshButton.textContent = 'Force refresh';
+            return;
+          }
+
+          if (activeButton === forceRefreshButton) {
+            refreshButton.textContent = 'Refresh checks';
+            forceRefreshButton.textContent = `Force refresh (${elapsedSeconds}s)`;
+            return;
+          }
+
+          refreshButton.textContent = `Refreshing (${elapsedSeconds}s)`;
+          forceRefreshButton.textContent = `Refreshing (${elapsedSeconds}s)`;
+        };
+
+        clearBusyTicker();
+        renderBusyLabels();
+        busyTicker = window.setInterval(renderBusyLabels, 1000);
       };
 
       const getCoverageMetricBoxes = (check) => {
@@ -1487,12 +1614,103 @@
         card.appendChild(highlightList);
       };
 
+      const staticAnalysisCheckNames = new Set([
+        'Static analysis (lint)',
+        'Static analysis (typecheck)',
+      ]);
+
+      const isStaticAnalysisCheck = (check) =>
+        staticAnalysisCheckNames.has(String(check?.name || ''));
+
+      const getStaticAnalysisCheckLabel = (checkName) =>
+        String(checkName || '').includes('typecheck') ? 'typecheck' : 'lint';
+
+      const buildMergedStaticAnalysisCheck = (staticChecks) => {
+        const failingCheck = staticChecks.find((check) => !check.ok);
+        const mergedOk = staticChecks.every((check) => check.ok);
+        const summaryParts = staticChecks.map((check) => {
+          const label = getStaticAnalysisCheckLabel(check.name);
+          return `${label}: ${check.ok ? 'PASS' : 'FAIL'} (${check.summary || 'No summary'})`;
+        });
+
+        const details = staticChecks
+          .map((check) => {
+            const label = getStaticAnalysisCheckLabel(check.name);
+            return [
+              `[${label}]`,
+              `Summary: ${check.summary || 'No summary'}`,
+              `Exit code: ${check.exitCode}`,
+              `Duration: ${formatDuration(check.durationMs)}`,
+              `Command: ${check.command}`,
+              '',
+              String(check.details || 'No additional output'),
+            ].join('\n');
+          })
+          .join('\n\n----------------------------------------\n\n');
+
+        return {
+          name: 'Static analysis',
+          areaLabel: 'Static analysis',
+          ok: mergedOk,
+          exitCode: failingCheck ? Number(failingCheck.exitCode || 1) : 0,
+          durationMs: staticChecks.reduce(
+            (sum, check) => sum + (Number.isFinite(check.durationMs) ? check.durationMs : 0),
+            0,
+          ),
+          summary: summaryParts.join(' | '),
+          command: staticChecks
+            .map((check) => `[${getStaticAnalysisCheckLabel(check.name)}] ${check.command}`)
+            .join('\n'),
+          details,
+          highlights: staticChecks
+            .flatMap((check) => {
+              if (!Array.isArray(check.highlights)) {
+                return [];
+              }
+
+              const label = getStaticAnalysisCheckLabel(check.name);
+              return check.highlights.map((item) => `[${label}] ${item}`);
+            })
+            .slice(0, 6),
+        };
+      };
+
+      const mergeChecksForDisplay = (checks) => {
+        if (!Array.isArray(checks) || checks.length === 0) {
+          return [];
+        }
+
+        const staticChecks = checks.filter((check) => isStaticAnalysisCheck(check));
+        if (staticChecks.length === 0) {
+          return checks;
+        }
+
+        const mergedStaticCheck = buildMergedStaticAnalysisCheck(staticChecks);
+        const mergedChecks = [];
+        let insertedStaticCard = false;
+
+        for (const check of checks) {
+          if (isStaticAnalysisCheck(check)) {
+            if (!insertedStaticCard) {
+              mergedChecks.push(mergedStaticCheck);
+              insertedStaticCard = true;
+            }
+            continue;
+          }
+
+          mergedChecks.push(check);
+        }
+
+        return mergedChecks;
+      };
+
       const buildRepoCheckCard = (check) => {
         const card = document.createElement('article');
         card.className = 'card';
 
         const isSecurityCheck = check?.name === 'Security vulnerabilities';
         const isCoverageCheck = check?.name === 'Coverage';
+        const isPostgresCheck = check?.name === 'Postgres DB tests';
         const statusClass = check.ok ? 'ok' : 'bad';
         const statusText = check.ok ? 'PASS' : 'FAIL';
         const metricBoxes = isCoverageCheck ? [] : resolveCheckMetricBoxes(check);
@@ -1500,7 +1718,9 @@
         const summaryHtml = buildCheckSummaryHtml(check, metricBoxes);
         const checkDetails = isCoverageCheck
           ? getCoverageDisplayText(check.details)
-          : check.details || 'No additional output';
+          : isPostgresCheck
+            ? getPostgresPreflightDisplayText(check.details)
+            : check.details || 'No additional output';
         const outputMarkup = isSecurityCheck ? '' : `<pre>${escapeHtml(checkDetails)}</pre>`;
         const detailsMarkup = `<div class="details">
             ${summaryHtml}
@@ -1525,21 +1745,20 @@
 
       const renderRepoChecks = (checks) => {
         cards.innerHTML = '';
-        for (const check of checks) {
+        const checksForDisplay = mergeChecksForDisplay(checks);
+        for (const check of checksForDisplay) {
           cards.appendChild(buildRepoCheckCard(check));
         }
       };
 
       const renderRepoFocus = (payload) => {
-        const checks = Array.isArray(payload?.checks) ? payload.checks : [];
+        const checks = mergeChecksForDisplay(Array.isArray(payload?.checks) ? payload.checks : []);
         const failingChecks = checks.filter((check) => !check.ok);
         const uniqueFailingAreas = [
           ...new Set(failingChecks.map((check) => check.areaLabel || check.name)),
         ];
-        const passedChecks = Number(
-          payload?.passedChecks ?? Math.max(0, checks.length - failingChecks.length),
-        );
-        const totalChecks = Number(payload?.totalChecks ?? checks.length);
+        const passedChecks = Math.max(0, checks.length - failingChecks.length);
+        const totalChecks = checks.length;
         const ratioPercent = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0;
 
         healthRatio.textContent =
@@ -1592,7 +1811,7 @@
       };
 
       const loadRuntime = async () => {
-        const response = await fetch('/api/developer/runtime');
+        const response = await fetchWithTimeout('/api/developer/runtime', 30000);
         const payload = await readJsonOrThrow(response, 'Failed to load runtime diagnostics.');
         renderRuntimePanels(payload);
       };
@@ -1602,19 +1821,28 @@
 
         try {
           await loadRuntime();
-          const response = await fetch(`/api/developer/status${force ? '?force=1' : ''}`);
-          const payload = await readJsonOrThrow(response, 'Failed to load developer status.');
-          overall.textContent =
-            payload.overallStatus === 'healthy' ? 'Healthy' : 'Attention needed';
-          overall.className = `metric-value ${payload.overallStatus === 'healthy' ? 'ok' : 'bad'}`;
-
-          failed.textContent = String(payload.failedChecks);
-          failed.className = `metric-value ${payload.failedChecks === 0 ? 'ok' : 'bad'}`;
-
-          total.textContent = String(payload.totalChecks);
-          passed.textContent = String(
-            payload.passedChecks ?? Math.max(0, payload.totalChecks - payload.failedChecks),
+          const response = await fetchWithTimeout(
+            `/api/developer/status${force ? '?force=1' : ''}`,
+            600000,
           );
+          const payload = await readJsonOrThrow(response, 'Failed to load developer status.');
+
+          const checksForDisplay = mergeChecksForDisplay(
+            Array.isArray(payload?.checks) ? payload.checks : [],
+          );
+          const failedChecksCount = checksForDisplay.filter((check) => !check.ok).length;
+          const totalChecksCount = checksForDisplay.length;
+          const passedChecksCount = Math.max(0, totalChecksCount - failedChecksCount);
+          const overallStatus = failedChecksCount === 0 ? 'healthy' : 'attention-needed';
+
+          overall.textContent = overallStatus === 'healthy' ? 'Healthy' : 'Attention needed';
+          overall.className = `metric-value ${overallStatus === 'healthy' ? 'ok' : 'bad'}`;
+
+          failed.textContent = String(failedChecksCount);
+          failed.className = `metric-value ${failedChecksCount === 0 ? 'ok' : 'bad'}`;
+
+          total.textContent = String(totalChecksCount);
+          passed.textContent = String(passedChecksCount);
           passed.className =
             `metric-value ${Number(passed.textContent) === Number(total.textContent) ? 'ok' : ''}`.trim();
           runtime.textContent = formatDuration(payload.totalDurationMs);

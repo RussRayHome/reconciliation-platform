@@ -1,4 +1,4 @@
-FROM node:24.14.1-alpine AS deps
+FROM node:24.14.1 AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -13,10 +13,16 @@ COPY packages/ui/package.json packages/ui/package.json
 
 RUN npm ci
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+RUN npx playwright install --with-deps chromium
+
 FROM deps AS build
 WORKDIR /app
 COPY . .
 RUN npm run build --workspace @recon/api
+
+FROM docker:28.1.1-cli AS docker-cli
 
 FROM node:24.14.1-alpine AS runtime-base
 WORKDIR /app
@@ -33,12 +39,15 @@ COPY packages/persistence/package.json packages/persistence/package.json
 COPY packages/test-fixtures/package.json packages/test-fixtures/package.json
 COPY packages/ui/package.json packages/ui/package.json
 
-FROM runtime-base AS test-stage
+FROM build AS dev
 ENV NODE_ENV=test
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-COPY --from=build /app/. ./
+RUN mkdir -p /usr/local/libexec/docker/cli-plugins
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 
-RUN mkdir -p /var/lib/reconciliation && chown -R node:node /app /var/lib/reconciliation
+RUN mkdir -p /var/lib/reconciliation && chown -R node:node /app /var/lib/reconciliation /ms-playwright
 
 USER node
 

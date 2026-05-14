@@ -33,10 +33,16 @@ export default defineConfig({
         test: {
           name: 'unit-core',
           environment: 'node',
-          include: [
-            'packages/**/*.test.ts',
-            'packages/**/*.test.tsx',
-          ],
+          include: ['packages/**/src/**/*.test.ts', 'packages/**/src/**/*.test.tsx'],
+        },
+      },
+      {
+        test: {
+          name: 'unit-data',
+          environment: 'node',
+          include: ['packages/persistence/tests/**/*.test.ts'],
+          testTimeout: 180000,
+          hookTimeout: 180000,
         },
       },
       {

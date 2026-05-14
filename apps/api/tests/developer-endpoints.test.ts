@@ -30,6 +30,15 @@ type DeveloperStatusResponseBody = {
       moderate: number;
       low: number;
       info: number;
+      cveFindings?: Array<{
+        id: string;
+        severity: string;
+      }>;
+    }>;
+    securityCveFindings?: Array<{
+      id: string;
+      severity: string;
+      component: string;
     }>;
   }>;
   history: Array<{
@@ -154,6 +163,15 @@ const execFileMatchers: ExecFileMatcher[] = [
             low: 0,
             info: 0,
             total: 0,
+            cveFindings: [
+              {
+                id: 'CVE-2026-33845',
+                description: 'Sample database CVE',
+                severity: 'CRITICAL',
+                component: 'Database',
+                scanner: 'Trivy + pgAudit',
+              },
+            ],
           },
           {
             component: 'Container Component',
@@ -165,6 +183,15 @@ const execFileMatchers: ExecFileMatcher[] = [
             low: 0,
             info: 0,
             total: 0,
+            cveFindings: [
+              {
+                id: 'CVE-2023-45853',
+                description: 'Sample container CVE',
+                severity: 'CRITICAL',
+                component: 'Container Component',
+                scanner: 'Trivy',
+              },
+            ],
           },
           {
             component: 'Web Server',
@@ -186,6 +213,22 @@ const execFileMatchers: ExecFileMatcher[] = [
           info: 0,
           total: 0,
         },
+        cveFindings: [
+          {
+            id: 'CVE-2026-33845',
+            description: 'Sample database CVE',
+            severity: 'CRITICAL',
+            component: 'Database',
+            scanner: 'Trivy + pgAudit',
+          },
+          {
+            id: 'CVE-2023-45853',
+            description: 'Sample container CVE',
+            severity: 'CRITICAL',
+            component: 'Container Component',
+            scanner: 'Trivy',
+          },
+        ],
       }),
       stderr: '',
     },
@@ -284,7 +327,11 @@ describe('developer endpoints', () => {
         }),
         expect.objectContaining({
           name: 'Static analysis (lint)',
-          areaLabel: 'Smells',
+          areaLabel: 'Static analysis',
+        }),
+        expect.objectContaining({
+          name: 'Static analysis (typecheck)',
+          areaLabel: 'Static analysis',
         }),
         expect.objectContaining({
           name: 'Security vulnerabilities',
@@ -301,6 +348,41 @@ describe('developer endpoints', () => {
         expect.objectContaining({ component: 'Database' }),
         expect.objectContaining({ component: 'Container Component' }),
         expect.objectContaining({ component: 'Web Server' }),
+      ]),
+    );
+
+    const databaseSecurityScore = securityCheck?.securityComponentScores?.find(
+      (item) => item.component === 'Database',
+    );
+    expect(databaseSecurityScore).toBeDefined();
+    expect(
+      databaseSecurityScore?.cveFindings?.some(
+        (finding) => finding.id === 'CVE-2026-33845' && finding.severity === 'CRITICAL',
+      ),
+    ).toBe(true);
+
+    const containerSecurityScore = securityCheck?.securityComponentScores?.find(
+      (item) => item.component === 'Container Component',
+    );
+    expect(containerSecurityScore).toBeDefined();
+    expect(
+      containerSecurityScore?.cveFindings?.some(
+        (finding) => finding.id === 'CVE-2023-45853' && finding.severity === 'CRITICAL',
+      ),
+    ).toBe(true);
+
+    expect(securityCheck?.securityCveFindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'CVE-2026-33845',
+          severity: 'CRITICAL',
+          component: 'Database',
+        }),
+        expect.objectContaining({
+          id: 'CVE-2023-45853',
+          severity: 'CRITICAL',
+          component: 'Container Component',
+        }),
       ]),
     );
 

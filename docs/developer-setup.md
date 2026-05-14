@@ -33,7 +33,7 @@ cp .env.example .env
 For Docker workflows:
 
 ```bash
-cp .env.docker.example .env.docker
+cp .env.docker.dev.fallback .env.docker
 npm run docker:validate-env
 ```
 
@@ -127,10 +127,20 @@ Use this path for production-like local verification.
 ```bash
 npm run docker:validate-env
 npm run docker:preflight
-npm run docker:deploy
+npm run docker:deploy          # builds images, runs migrations, creates db users, starts all services
 npm run docker:db:preflight
 npm run docker:health
 npm run docker:predeploy
+```
+
+`docker:deploy` automates user creation — no manual `db:users:dev` step is needed on a fresh deploy.
+
+### First-time setup with seed data
+
+After a fresh deploy, optionally seed a representative baseline dataset:
+
+```bash
+npm run db:seed:dev
 ```
 
 ### Helpful supporting commands
@@ -144,11 +154,20 @@ npm run docker:cleanup
 
 ### Service topology
 
-- `web` (NGINX): public entrypoint on `4173`
-- `api` (Express): internal application network
-- `postgres`: internal data network (host mapped to `5432`)
-- `migrate`: one-shot migration service that must complete before API start
-- `pgweb`: database viewer on `8081`
+| Service    | Role                      | Host port | Environments    |
+|------------|---------------------------|-----------|-----------------|
+| `web`      | NGINX public gateway      | `4173`    | dev, stage      |
+| `api`      | Express API               | internal  | dev, stage      |
+| `postgres` | PostgreSQL data store     | `5432`    | dev, stage      |
+| `migrate`  | One-shot migration runner | none      | dev, stage      |
+| `pgweb`    | Postgres web admin        | `8081`    | dev, stage only |
+
+Access points after deploy:
+
+- Application: `http://127.0.0.1:4173`
+- Documentation Hub: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
+- Developer Dashboard: `http://127.0.0.1:4173/<environment>/developer-dashboard.html` (for example `dev/developer-dashboard.html`)
+- Postgres Admin: `http://127.0.0.1:8081`
 
 ## 7. Preflight checks
 
@@ -354,6 +373,20 @@ Source of truth: `package.json` scripts at the repository root.
 - `typecheck`: runs TypeScript typecheck (`tsc -p tsconfig.typecheck.json`).
 - `coverage`: runs Vitest coverage across unit and integration projects.
 - `security:scan`: runs `npm audit` with high-severity threshold.
+
+### Database management
+
+- `db:users:dev`: creates or updates the `rray` database user in the dev environment (automated by `docker:deploy`).
+- `db:users:stage`: creates or updates the `rray` database user in the stage environment (automated by `docker:deploy:stage`).
+- `db:users:prod-rray`: creates the restricted production app user (manual DBA operation only).
+- `db:users:prod-rray-admin`: creates the production DBA admin user (manual DBA operation only).
+- `db:backup`: dumps the dev database to `.backups/recon-dev-<timestamp>.dump`.
+- `db:backup:dev`: same as `db:backup`.
+- `db:backup:stage`: dumps the stage database.
+- `db:restore:dev`: restores the dev database from the most recent backup (or a specified dump file).
+- `db:restore:stage`: restores the stage database from the most recent backup.
+- `db:seed:dev`: inserts a baseline representative dataset into the dev database (idempotent).
+- `db:seed:stage`: inserts a baseline representative dataset into the stage database (idempotent).
 
 ### Governance and data tooling
 

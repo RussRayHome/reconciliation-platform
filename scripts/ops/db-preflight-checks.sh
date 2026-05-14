@@ -7,7 +7,7 @@
 #
 # Usage (direct):
 #   DOCKER_ENV_FILE=.env.docker.dev \
-#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
 #   bash scripts/ops/db-preflight-checks.sh
 #
@@ -38,7 +38,7 @@ if [[ "$ENV_FILE_INPUT" = /* ]]; then
 else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
-FALLBACK_FILE="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.example}"
+FALLBACK_FILE="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.fallback}"
 
 resolve_compose_file_path() {
   local input_path="$1"
@@ -597,7 +597,7 @@ check_user_role_attributes() {
     [[ -z "$username" ]] && continue
     local attrs
     attrs="$(run_psql_query "SELECT rolsuper::text || '|' || rolcreatedb::text || '|' || rolcreaterole::text || '|' || rolcanlogin::text FROM pg_roles WHERE rolname = '$username';")"
-    if [[ "$attrs" != "t|t|t|t" ]]; then
+    if [[ "$attrs" != "true|true|true|true" ]]; then
       bad_users+=("$username (got: $attrs)")
     fi
   done < <(get_expected_dev_stage_users)

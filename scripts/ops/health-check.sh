@@ -7,7 +7,7 @@
 #
 # Usage (direct):
 #   DOCKER_ENV_FILE=.env.docker.dev \
-#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
 #   bash scripts/ops/health-check.sh
 #
@@ -26,7 +26,7 @@ if [[ "$ENV_FILE_INPUT" = /* ]]; then
 else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
-FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.example}"
+FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.fallback}"
 if [[ "$FALLBACK_FILE_INPUT" = /* ]]; then
   FALLBACK_FILE="$FALLBACK_FILE_INPUT"
 else
@@ -90,4 +90,10 @@ curl --fail --silent --show-error "http://127.0.0.1:${PUBLIC_WEB_PORT}/healthz" 
 curl --fail --silent --show-error "http://127.0.0.1:${PUBLIC_WEB_PORT}/api/health" >/dev/null
 docker compose "${compose_args[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null
 
-echo "Gateway, API, and PostgreSQL health checks passed."
+if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
+  PGWEB_PORT="${PGWEB_PORT:-8081}"
+  curl --fail --silent --show-error "http://127.0.0.1:${PGWEB_PORT}/" >/dev/null
+  echo "Gateway, API, PostgreSQL, and Postgres Admin health checks passed."
+else
+  echo "Gateway, API, and PostgreSQL health checks passed."
+fi

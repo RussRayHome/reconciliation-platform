@@ -6,7 +6,7 @@
 #
 # Usage (direct):
 #   DOCKER_ENV_FILE=.env.docker.dev \
-#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.example \
+#   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
 #   bash scripts/ops/predeploy-stack-checks.sh
 #
@@ -26,9 +26,48 @@ if [[ "$ENV_FILE_INPUT" = /* ]]; then
 else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
-FALLBACK_FILE="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.example}"
+FALLBACK_FILE_INPUT="${DOCKER_ENV_FALLBACK_FILE:-$ROOT_DIR/.env.docker.dev.fallback}"
+if [[ "$FALLBACK_FILE_INPUT" = /* ]]; then
+  FALLBACK_FILE="$FALLBACK_FILE_INPUT"
+else
+  FALLBACK_FILE="$ROOT_DIR/${FALLBACK_FILE_INPUT#./}"
+fi
+
+resolve_compose_file_path() {
+  local input_path="$1"
+  if [[ "$input_path" = /* ]]; then
+    printf '%s\n' "$input_path"
+  else
+    printf '%s\n' "$ROOT_DIR/${input_path#./}"
+  fi
+}
+
+append_extra_compose_files() {
+  local configured_files="${DOCKER_COMPOSE_EXTRA_FILE:-}"
+  if [[ -z "$configured_files" ]]; then
+    return
+  fi
+
+  local remaining="$configured_files"
+  while [[ -n "$remaining" ]]; do
+    local next_path="$remaining"
+    if [[ "$remaining" == *:* ]]; then
+      next_path="${remaining%%:*}"
+      remaining="${remaining#*:}"
+    else
+      remaining=""
+    fi
+
+    if [[ -z "$next_path" ]]; then
+      continue
+    fi
+
+    compose_args+=(-f "$(resolve_compose_file_path "$next_path")")
+  done
+}
 
 compose_args=(-f "$ROOT_DIR/compose.yaml")
+append_extra_compose_files
 SOURCE_FILE=""
 if [[ -f "$ENV_FILE" ]]; then
   compose_args+=(--env-file "$ENV_FILE")
@@ -134,7 +173,7 @@ run_phase_three_checks() {
   fi
 
   if (( can_deploy == 1 )); then
-    if npm run docker:deploy; then
+    if bash "$ROOT_DIR/scripts/ops/deploy.sh"; then
       deploy_ran=1
       if wait_for_stack_ready; then
         record_check "13" "Stack startup" "PASS" "Stack started and reached ready state within 60s"
@@ -221,7 +260,7 @@ run_phase_three_checks() {
     record_check "16" "Graceful shutdown check" "WARN" "Skipped because stack did not start"
   fi
 
-  if npm run docker:cleanup; then
+  if bash "$ROOT_DIR/scripts/ops/cleanup.sh"; then
     docker image rm preflight-check:test >/dev/null 2>&1 || true
     if (( stop_ok == 1 )); then
       record_check "17" "Cleanup" "PASS" "docker:cleanup completed and preflight image removed if present"

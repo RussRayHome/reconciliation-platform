@@ -1,8 +1,13 @@
-import { createPostgresPool, loadPostgresPersistenceConfigFromEnv, runPostgresMigrations } from '@recon/persistence';
+import {
+  createPostgresPool,
+  loadPostgresPersistenceConfigFromEnv,
+  runPostgresMigrations,
+} from '@recon/persistence';
+import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 
 import pino from 'pino';
 
-const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const logger = pino({ level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL) });
 
 const main = async (): Promise<void> => {
   const postgresConfig = loadPostgresPersistenceConfigFromEnv();
@@ -13,7 +18,10 @@ const main = async (): Promise<void> => {
   const pool = createPostgresPool(postgresConfig);
   try {
     await runPostgresMigrations(pool);
-    logger.info({ action: 'persistence.postgres.migrations.complete' }, 'PostgreSQL migrations completed');
+    logger.info(
+      { action: 'persistence.postgres.migrations.complete' },
+      'PostgreSQL migrations completed',
+    );
   } finally {
     await pool.end();
   }

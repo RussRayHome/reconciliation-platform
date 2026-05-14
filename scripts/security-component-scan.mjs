@@ -213,6 +213,57 @@ const parseJsonFromOutput = (output) => {
   }
 };
 
+const composeConfigCache = new Map();
+
+const loadComposeConfig = async (repoRoot, composePrefixArgs) => {
+  const cacheKey = `${repoRoot}::${composePrefixArgs.join('\u0001')}`;
+  const cached = composeConfigCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const response = await runCommand(
+    'docker',
+    [...composePrefixArgs, 'config', '--format', 'json'],
+    {
+      cwd: repoRoot,
+      timeout: 45000,
+    },
+  );
+
+  if (!response.ok) {
+    const failure = {
+      ok: false,
+      services: {},
+      note:
+        firstNonEmptyLine(response.stderr || response.stdout || response.message) ||
+        'Failed to resolve compose config.',
+    };
+    composeConfigCache.set(cacheKey, failure);
+    return failure;
+  }
+
+  const parsed = parseJsonFromOutput(response.stdout);
+  if (!parsed || typeof parsed !== 'object') {
+    const failure = {
+      ok: false,
+      services: {},
+      note: 'Compose config output was not parseable JSON.',
+    };
+    composeConfigCache.set(cacheKey, failure);
+    return failure;
+  }
+
+  const success = {
+    ok: true,
+    services:
+      typeof parsed.services === 'object' && parsed.services !== null ? parsed.services : {},
+    note: '',
+  };
+  composeConfigCache.set(cacheKey, success);
+  return success;
+};
+
 const runCommand = async (
   command,
   args,
@@ -286,9 +337,14 @@ const collectComposeFileSets = (repoRoot) => {
     addSet(explicitExtraFile);
   }
 
-  const testStageComposeFile = path.join(repoRoot, 'compose.test-stage.yaml');
-  if (existsSync(testStageComposeFile)) {
-    addSet(testStageComposeFile);
+  const devComposeFile = path.join(repoRoot, 'compose.dev.yaml');
+  if (existsSync(devComposeFile)) {
+    addSet(devComposeFile);
+  }
+
+  const stageComposeFile = path.join(repoRoot, 'compose.stage.yaml');
+  if (existsSync(stageComposeFile)) {
+    addSet(stageComposeFile);
   }
 
   addSet(null);
@@ -371,10 +427,11 @@ const collectComposeEnvCandidates = (repoRoot) => {
 
   addCandidate(process.env.DOCKER_ENV_FILE);
   addCandidate(process.env.DOCKER_COMPOSE_ENV_FILE);
-  addCandidate('.env.docker.test-stage');
+  addCandidate('.env.docker.dev');
+  addCandidate('.env.docker.dev.fallback');
   addCandidate('.env.docker');
-  addCandidate('.env.docker.test-stage.example');
-  addCandidate('.env.docker.example');
+  addCandidate('.env.docker.stage');
+  addCandidate('.env.docker.stage.fallback');
 
   return candidates;
 };
@@ -677,6 +734,93 @@ const scanNpmWorkspaceComponent = async (component, workspace, repoRoot) => {
   return withTotal(result);
 };
 
+const resolveRunningContainerServiceImage = async (serviceName, repoRoot, composePrefixArgs) => {
+  const serviceLookup = await runCommand(
+    'docker',
+    [...composePrefixArgs, 'ps', '-q', serviceName],
+    {
+      cwd: repoRoot,
+      timeout: 30000,
+    },
+  );
+
+  if (serviceLookup.ok) {
+    const containerId = firstNonEmptyLine(serviceLookup.stdout);
+    if (!containerId) {
+      return {
+        imageRef: '',
+        reason: `${serviceName} container is not running.`,
+      };
+    }
+
+    const imageLookup = await runCommand(
+      'docker',
+      ['inspect', '--format', '{{.Image}}', containerId],
+      { cwd: repoRoot, timeout: 30000 },
+    );
+
+    if (imageLookup.ok) {
+      const imageRef = firstNonEmptyLine(imageLookup.stdout);
+      if (imageRef) {
+        return {
+          imageRef,
+          reason: '',
+        };
+      }
+
+      return {
+        imageRef: '',
+        reason: `Unable to resolve image for ${serviceName} container.`,
+      };
+    }
+
+    return {
+      imageRef: '',
+      reason:
+        firstNonEmptyLine(imageLookup.stderr || imageLookup.stdout || imageLookup.message) ||
+        `Unable to inspect ${serviceName} container image.`,
+    };
+  }
+
+  return {
+    imageRef: '',
+    reason:
+      firstNonEmptyLine(serviceLookup.stderr || serviceLookup.stdout || serviceLookup.message) ||
+      `Failed to query ${serviceName} container status.`,
+  };
+};
+
+const resolveConfiguredServiceImage = async (serviceName, repoRoot, composePrefixArgs) => {
+  const composeConfig = await loadComposeConfig(repoRoot, composePrefixArgs);
+  const configuredService = composeConfig.services?.[serviceName];
+  const configuredImageRef = collapseWhitespace(configuredService?.image);
+
+  if (!configuredImageRef) {
+    return {
+      imageRef: '',
+      reason: composeConfig.note || `No configured image found for service ${serviceName}.`,
+    };
+  }
+
+  const localImageLookup = await runCommand(
+    'docker',
+    ['image', 'inspect', '--format', '{{.Id}}', configuredImageRef],
+    { cwd: repoRoot, timeout: 30000 },
+  );
+
+  if (localImageLookup.ok && firstNonEmptyLine(localImageLookup.stdout)) {
+    return {
+      imageRef: configuredImageRef,
+      reason: `Scanning local image ${configuredImageRef}.`,
+    };
+  }
+
+  return {
+    imageRef: '',
+    reason: `Configured image ${configuredImageRef} is not available locally.`,
+  };
+};
+
 const resolveComposeServiceImage = async (
   serviceName,
   repoRoot,
@@ -690,56 +834,31 @@ const resolveComposeServiceImage = async (
     };
   }
 
-  const serviceLookup = await runCommand(
-    'docker',
-    [...composePrefixArgs, 'ps', '-q', serviceName],
-    {
-      cwd: repoRoot,
-      timeout: 30000,
-    },
+  const runningContainer = await resolveRunningContainerServiceImage(
+    serviceName,
+    repoRoot,
+    composePrefixArgs,
   );
 
-  if (!serviceLookup.ok) {
-    return {
-      imageRef: '',
-      reason: firstNonEmptyLine(
-        serviceLookup.stderr || serviceLookup.stdout || serviceLookup.message,
-      ),
-    };
+  if (runningContainer.imageRef) {
+    return runningContainer;
   }
 
-  const containerId = firstNonEmptyLine(serviceLookup.stdout);
-  if (!containerId) {
-    return {
-      imageRef: '',
-      reason: `${serviceName} container is not running.`,
-    };
-  }
-
-  const imageLookup = await runCommand(
-    'docker',
-    ['inspect', '--format', '{{.Image}}', containerId],
-    { cwd: repoRoot, timeout: 30000 },
+  const configuredImage = await resolveConfiguredServiceImage(
+    serviceName,
+    repoRoot,
+    composePrefixArgs,
   );
-
-  if (!imageLookup.ok) {
+  if (configuredImage.imageRef) {
     return {
-      imageRef: '',
-      reason: firstNonEmptyLine(imageLookup.stderr || imageLookup.stdout || imageLookup.message),
-    };
-  }
-
-  const imageRef = firstNonEmptyLine(imageLookup.stdout);
-  if (!imageRef) {
-    return {
-      imageRef: '',
-      reason: `Unable to resolve image for ${serviceName} container.`,
+      imageRef: configuredImage.imageRef,
+      reason: [runningContainer.reason, configuredImage.reason].filter(Boolean).join(' '),
     };
   }
 
   return {
-    imageRef,
-    reason: '',
+    imageRef: '',
+    reason: [runningContainer.reason, configuredImage.reason].filter(Boolean).join(' | '),
   };
 };
 
@@ -749,7 +868,7 @@ const scanTrivyImages = async (component, imageRefs, repoRoot, trivyAvailable) =
 
   if (uniqueImageRefs.length === 0) {
     result.status = 'skipped';
-    result.note = 'No running container image was found for this component.';
+    result.note = 'No local image was found for this component.';
     return withTotal(result);
   }
 

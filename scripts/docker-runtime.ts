@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const composeFile = path.join(repoRoot, 'compose.yaml');
 const defaultComposeEnvFile = path.join(repoRoot, '.env.docker');
-const fallbackComposeEnvFile = path.join(repoRoot, '.env.docker.example');
+const fallbackComposeEnvFile = path.join(repoRoot, '.env.docker.dev.fallback');
 
 export type ComposeService = 'postgres' | 'migrate' | 'api' | 'web';
 

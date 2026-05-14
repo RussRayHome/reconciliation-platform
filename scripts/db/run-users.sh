@@ -4,8 +4,7 @@
 # Runs the dev/stage user creation SQL against the target Docker Compose
 # environment. The postgres container must already be running.
 #
-# This script is NOT called by any automated deployment pipeline.
-# Run manually when setting up a dev or stage environment for the first time.
+# This script is used by docker deploy workflows and can also be run manually.
 
 set -euo pipefail
 
@@ -14,16 +13,25 @@ SQL_FILE="$ROOT_DIR/scripts/db/dev-stage/create-users.sql"
 
 ENVIRONMENT="${1:-}"
 
+resolve_path() {
+  local input_path="$1"
+  if [[ "$input_path" = /* ]]; then
+    printf '%s\n' "$input_path"
+  else
+    printf '%s\n' "$ROOT_DIR/${input_path#./}"
+  fi
+}
+
 case "$ENVIRONMENT" in
   dev)
-    ENV_FILE="$ROOT_DIR/.env.docker.dev"
-    FALLBACK_FILE="$ROOT_DIR/.env.docker.dev.example"
-    COMPOSE_EXTRA="$ROOT_DIR/compose.dev.yaml"
+    ENV_FILE="$(resolve_path "${DOCKER_ENV_FILE:-.env.docker.dev}")"
+    FALLBACK_FILE="$(resolve_path "${DOCKER_ENV_FALLBACK_FILE:-.env.docker.dev.fallback}")"
+    COMPOSE_EXTRA="$(resolve_path "${DOCKER_COMPOSE_EXTRA_FILE:-compose.dev.yaml}")"
     ;;
   stage)
-    ENV_FILE="$ROOT_DIR/.env.docker.stage"
-    FALLBACK_FILE="$ROOT_DIR/.env.docker.stage.example"
-    COMPOSE_EXTRA="$ROOT_DIR/compose.stage.yaml"
+    ENV_FILE="$(resolve_path "${DOCKER_ENV_FILE:-.env.docker.stage}")"
+    FALLBACK_FILE="$(resolve_path "${DOCKER_ENV_FALLBACK_FILE:-.env.docker.stage.fallback}")"
+    COMPOSE_EXTRA="$(resolve_path "${DOCKER_COMPOSE_EXTRA_FILE:-compose.stage.yaml}")"
     ;;
   *)
     printf 'Usage: %s <dev|stage>\n' "$0" >&2
@@ -46,21 +54,51 @@ set -a
 source "$SOURCE_FILE"
 set +a
 
-compose_args=(-f "$ROOT_DIR/compose.yaml" -f "$COMPOSE_EXTRA" --env-file "$SOURCE_FILE")
+APP_DB_USER="${POSTGRES_USER:-recon_app}"
+APP_DB_NAME="${POSTGRES_DB:-reconciliation_platform}"
+APP_DB_PASSWORD="${POSTGRES_PASSWORD:-}"
 
-if ! docker compose "${compose_args[@]}" exec -T postgres pg_isready \
-    -U "${POSTGRES_USER:-recon_app}" -d "${POSTGRES_DB:-reconciliation_platform}" >/dev/null 2>&1; then
-  printf 'Postgres is not ready in the %s environment. Start the stack first:\n' "$ENVIRONMENT"
-  printf '  npm run docker:deploy:%s\n' "$ENVIRONMENT" >&2
+if [[ -z "$APP_DB_PASSWORD" ]]; then
+  printf 'POSTGRES_PASSWORD is missing in %s\n' "$SOURCE_FILE" >&2
   exit 1
 fi
+
+compose_args=(-f "$ROOT_DIR/compose.yaml" -f "$COMPOSE_EXTRA" --env-file "$SOURCE_FILE")
+
+max_wait_seconds=60
+elapsed_seconds=0
+while ! docker compose "${compose_args[@]}" exec -T postgres pg_isready \
+    -U "$APP_DB_USER" -d "$APP_DB_NAME" >/dev/null 2>&1; do
+  if (( elapsed_seconds >= max_wait_seconds )); then
+    printf 'Postgres is not ready in the %s environment after %ss.\n' "$ENVIRONMENT" "$max_wait_seconds" >&2
+    printf '  npm run docker:deploy:%s\n' "$ENVIRONMENT" >&2
+    exit 1
+  fi
+  sleep 2
+  elapsed_seconds=$((elapsed_seconds + 2))
+done
 
 printf 'Running dev/stage user creation against %s environment...\n' "$ENVIRONMENT"
 
 docker compose "${compose_args[@]}" exec -T postgres \
   psql \
-    -U "${POSTGRES_USER:-recon_app}" \
-    -d "${POSTGRES_DB:-reconciliation_platform}" \
+    -v ON_ERROR_STOP=1 \
+    -U "$APP_DB_USER" \
+    -d postgres \
+    -v app_role="$APP_DB_USER" \
+    -v app_password="$APP_DB_PASSWORD" \
+    <<'SQL'
+SELECT format(
+  'ALTER ROLE %I WITH LOGIN PASSWORD %L',
+  :'app_role',
+  :'app_password'
+) \gexec
+SQL
+
+docker compose "${compose_args[@]}" exec -T postgres \
+  psql \
+    -U "$APP_DB_USER" \
+    -d "$APP_DB_NAME" \
   < "$SQL_FILE"
 
 printf 'User creation complete for %s.\n' "$ENVIRONMENT"

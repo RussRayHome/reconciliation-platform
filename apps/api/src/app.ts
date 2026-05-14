@@ -16,6 +16,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { createDeveloperStatusService } from './services/developerStatusService';
 import { createDeveloperRuntimeService } from './services/developerRuntimeService';
+import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
@@ -536,7 +537,7 @@ export const createApp = (
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
   const developerDiagnosticsEnabled = isDeveloperDiagnosticsEnabled();
-  const httpLogger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+  const httpLogger = pino({ level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL) });
 
   app.set('trust proxy', true);
   app.use(cors());

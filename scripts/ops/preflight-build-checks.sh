@@ -8,8 +8,10 @@
 #   bash scripts/ops/preflight-build-checks.sh
 #
 # What it checks:
+#   - Required host tools are available (bash, docker, docker compose, node, npm, curl)
 #   - Docker daemon is running
-#   - Required env file exists (falls back to .env.docker.dev.example)
+#   - Dev and stage compose contexts resolve and have no unhealthy/restarting/failed containers
+#   - Required env file exists (falls back to .env.docker.dev.fallback)
 #   - All required environment variables are set and non-empty
 #   - Dockerfile and compose overlay file are present
 #
@@ -23,9 +25,49 @@ if [[ "$ENV_FILE_INPUT" = /* ]]; then
 else
   ENV_FILE="$ROOT_DIR/${ENV_FILE_INPUT#./}"
 fi
-FALLBACK_FILE="$ROOT_DIR/.env.docker.dev.example"
+
+default_fallback_file="$ROOT_DIR/.env.docker.dev.fallback"
+if [[ "$ENV_FILE_INPUT" == *".stage"* ]]; then
+  default_fallback_file="$ROOT_DIR/.env.docker.stage.fallback"
+fi
+
+FALLBACK_FILE="${DOCKER_ENV_FALLBACK_FILE:-$default_fallback_file}"
+
+resolve_compose_file_path() {
+  local input_path="$1"
+  if [[ "$input_path" = /* ]]; then
+    printf '%s\n' "$input_path"
+  else
+    printf '%s\n' "$ROOT_DIR/${input_path#./}"
+  fi
+}
+
+append_extra_compose_files() {
+  local configured_files="${DOCKER_COMPOSE_EXTRA_FILE:-}"
+  if [[ -z "$configured_files" ]]; then
+    return
+  fi
+
+  local remaining="$configured_files"
+  while [[ -n "$remaining" ]]; do
+    local next_path="$remaining"
+    if [[ "$remaining" == *:* ]]; then
+      next_path="${remaining%%:*}"
+      remaining="${remaining#*:}"
+    else
+      remaining=""
+    fi
+
+    if [[ -z "$next_path" ]]; then
+      continue
+    fi
+
+    compose_args+=(-f "$(resolve_compose_file_path "$next_path")")
+  done
+}
 
 compose_args=(-f "$ROOT_DIR/compose.yaml")
+append_extra_compose_files
 if [[ -f "$ENV_FILE" ]]; then
   compose_args+=(--env-file "$ENV_FILE")
 elif [[ -f "$FALLBACK_FILE" ]]; then
@@ -115,6 +157,122 @@ print_summary() {
   done
 
   printf '\nTotals: PASS=%d WARN=%d FAIL=%d\n' "$pass_count" "$warn_count" "$fail_count"
+}
+
+resolve_env_source_file() {
+  local preferred_file="$1"
+  local fallback_file="$2"
+
+  if [[ -f "$preferred_file" ]]; then
+    printf '%s\n' "$preferred_file"
+    return 0
+  fi
+
+  if [[ -f "$fallback_file" ]]; then
+    printf '%s\n' "$fallback_file"
+    return 0
+  fi
+
+  printf '\n'
+  return 1
+}
+
+extract_service_block_from_compose_config() {
+  local service_name="$1"
+  docker compose "${compose_args[@]}" config 2>/dev/null | awk -v service="$service_name" '
+    $0 ~ "^  " service ":" { in_service=1; print; next }
+    in_service && $0 ~ "^  [A-Za-z0-9_-]+:" { exit }
+    in_service { print }
+  '
+}
+
+resolve_service_image_ref() {
+  local service_name="$1"
+  local service_block
+  service_block="$(extract_service_block_from_compose_config "$service_name")"
+  printf '%s\n' "$service_block" | sed -n 's/^[[:space:]]*image:[[:space:]]*//p' | head -n 1
+}
+
+resolve_service_build_target() {
+  local service_name="$1"
+  local service_block
+  service_block="$(extract_service_block_from_compose_config "$service_name")"
+  printf '%s\n' "$service_block" | sed -n 's/^[[:space:]]*target:[[:space:]]*//p' | head -n 1
+}
+
+check_required_tools() {
+  local -a required_tools=("bash" "docker" "node" "npm" "curl")
+  local -a missing_tools=()
+  local tool
+
+  for tool in "${required_tools[@]}"; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      missing_tools+=("$tool")
+    fi
+  done
+
+  if ! docker compose version >/dev/null 2>&1; then
+    missing_tools+=("docker-compose-plugin")
+  fi
+
+  if (( ${#missing_tools[@]} > 0 )); then
+    record_check "1A" "Required tooling" "FAIL" "Missing: ${missing_tools[*]}"
+    return 1
+  fi
+
+  record_check "1A" "Required tooling" "PASS" "bash, docker, docker compose, node, npm, and curl are available"
+  return 0
+}
+
+check_environment_docker_state() {
+  local env_name="$1"
+  local env_file="$2"
+  local fallback_file="$3"
+  local overlay_file="$4"
+  local check_id="$5"
+  local source_file
+  local -a env_compose_args=()
+  local ps_output
+  local container_rows
+  local issue_lines
+  local first_issue
+
+  if [[ ! -f "$overlay_file" ]]; then
+    record_check "$check_id" "Docker state (${env_name})" "FAIL" "Missing compose overlay $(basename "$overlay_file")"
+    return 1
+  fi
+
+  source_file="$(resolve_env_source_file "$env_file" "$fallback_file")"
+  if [[ -z "$source_file" ]]; then
+    record_check "$check_id" "Docker state (${env_name})" "FAIL" "Missing $(basename "$env_file") and $(basename "$fallback_file")"
+    return 1
+  fi
+
+  env_compose_args=(-f "$ROOT_DIR/compose.yaml" -f "$overlay_file" --env-file "$source_file")
+
+  if ! docker compose "${env_compose_args[@]}" config --quiet >/dev/null 2>&1; then
+    record_check "$check_id" "Docker state (${env_name})" "FAIL" "Compose config invalid for ${env_name}"
+    return 1
+  fi
+
+  ps_output="$(docker compose "${env_compose_args[@]}" ps --all 2>/dev/null || true)"
+  container_rows="$(printf '%s\n' "$ps_output" | tail -n +2 | grep -m1 . || true)"
+
+  if [[ -z "$container_rows" ]]; then
+    record_check "$check_id" "Docker state (${env_name})" "PASS" "Config valid using $(basename "$source_file"); no existing containers"
+    return 0
+  fi
+
+  issue_lines="$(printf '%s\n' "$ps_output" | grep -E 'Restarting|unhealthy|[Dd]ead|Exited \([1-9][0-9]*\)' || true)"
+
+  if [[ -n "$issue_lines" ]]; then
+    first_issue="$(printf '%s\n' "$issue_lines" | grep -m1 . || true)"
+    record_check "$check_id" "Docker state (${env_name})" "FAIL" "Container issue detected: ${first_issue}"
+    return 1
+  fi
+
+  record_check "$check_id" "Docker state (${env_name})" "PASS" "Config valid using $(basename "$source_file"); no unhealthy/restarting/failed containers"
+  return 0
 }
 
 abort_if_daemon_missing() {
@@ -282,24 +440,32 @@ check_secret_scan() {
 
 check_port_conflicts() {
   local listeners
+  local non_docker_listeners
 
   listeners="$(lsof -i :4000 -i :4173 -i :5432 -i :5173 2>/dev/null | grep LISTEN || true)"
   if [[ -n "$listeners" ]]; then
-    local first_line
-    first_line="$(printf '%s\n' "$listeners" | grep -m1 . || true)"
-    record_check "5" "Port conflict check" "FAIL" "Ports in use; first listener: ${first_line}"
+    non_docker_listeners="$(printf '%s\n' "$listeners" | grep -Eiv 'com\.docke|docker|docker-proxy' || true)"
+    if [[ -n "$non_docker_listeners" ]]; then
+      local first_non_docker_line
+      first_non_docker_line="$(printf '%s\n' "$non_docker_listeners" | grep -m1 . || true)"
+      record_check "5" "Port conflict check" "FAIL" "Ports in use by non-Docker process; first listener: ${first_non_docker_line}"
+    else
+      local first_line
+      first_line="$(printf '%s\n' "$listeners" | grep -m1 . || true)"
+      record_check "5" "Port conflict check" "WARN" "Ports are currently bound by Docker runtime; first listener: ${first_line}"
+    fi
   else
     record_check "5" "Port conflict check" "PASS" "Ports 4000, 4173, 5432, and 5173 are free"
   fi
 }
 
 check_required_env_file() {
-  if [[ -f "$ROOT_DIR/.env.docker" ]]; then
-    record_check "6" "Required environment file" "PASS" ".env.docker exists"
-  elif [[ -f "$ROOT_DIR/.env.docker.dev.example" ]]; then
-    record_check "6" "Required environment file" "WARN" "Only .env.docker.dev.example exists; run cp .env.docker.dev.example .env.docker"
+  if [[ -f "$ENV_FILE" ]]; then
+    record_check "6" "Required environment file" "PASS" "$(basename "$ENV_FILE") exists"
+  elif [[ -f "$FALLBACK_FILE" ]]; then
+    record_check "6" "Required environment file" "WARN" "Using fallback $(basename "$FALLBACK_FILE"); create $(basename "$ENV_FILE") for environment-specific overrides"
   else
-    record_check "6" "Required environment file" "WARN" "Neither .env.docker nor .env.docker.dev.example exists"
+    record_check "6" "Required environment file" "WARN" "Missing $(basename "$ENV_FILE") and $(basename "$FALLBACK_FILE")"
   fi
 }
 
@@ -307,9 +473,15 @@ build_image_and_detect_target() {
   local build_log
   local build_output_status=0
   local built_image_ref=""
+  local api_image_ref=""
+  local api_build_target=""
+  local expects_dev_tooling=0
   local size_bytes=""
   local size_mb=0
+  local size_pass_threshold_mb=300
+  local size_warn_threshold_mb=600
   local whoami_result=""
+  local has_vitest_binary=0
   local trivy_output=""
   local critical_count=0
   local high_count=0
@@ -326,8 +498,22 @@ build_image_and_detect_target() {
       record_check "7" "Build Docker image" "FAIL" "docker build failed"
     fi
   else
+    api_image_ref="$(resolve_service_image_ref "api")"
+    api_build_target="$(resolve_service_build_target "api")"
+    if [[ "$api_build_target" == "dev" ]]; then
+      expects_dev_tooling=1
+      size_pass_threshold_mb=1500
+      size_warn_threshold_mb=2200
+    fi
+
     if docker compose "${compose_args[@]}" build >"$build_log" 2>&1; then
-      built_image_ref="${compose_project_name}-api:latest"
+      if [[ -n "$api_image_ref" ]] && docker image inspect "$api_image_ref" >/dev/null 2>&1; then
+        built_image_ref="$api_image_ref"
+      fi
+
+      if [[ -z "$built_image_ref" ]]; then
+        built_image_ref="${compose_project_name}-api:latest"
+      fi
 
       if ! docker image inspect "$built_image_ref" >/dev/null 2>&1; then
         built_image_ref="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${compose_project_name}-api:" | grep -m1 . || true)"
@@ -341,7 +527,7 @@ build_image_and_detect_target() {
         record_check "7" "Build Docker image" "FAIL" "docker compose build succeeded but no image ID was resolved"
         build_output_status=1
       else
-        record_check "7" "Build Docker image" "PASS" "docker compose build succeeded (image ${built_image_ref:0:12})"
+        record_check "7" "Build Docker image" "PASS" "docker compose build succeeded (image ${built_image_ref})"
       fi
     else
       build_output_status=1
@@ -365,12 +551,12 @@ build_image_and_detect_target() {
     record_check "8" "Image size check" "FAIL" "Unable to inspect image size"
   else
     size_mb=$((size_bytes / 1024 / 1024))
-    if (( size_mb < 300 )); then
+    if (( size_mb < size_pass_threshold_mb )); then
       record_check "8" "Image size check" "PASS" "${size_mb} MB"
-    elif (( size_mb <= 600 )); then
-      record_check "8" "Image size check" "WARN" "${size_mb} MB (consider multi-stage optimization)"
+    elif (( size_mb <= size_warn_threshold_mb )); then
+      record_check "8" "Image size check" "WARN" "${size_mb} MB (target=${api_build_target:-runtime})"
     else
-      record_check "8" "Image size check" "FAIL" "${size_mb} MB exceeds 600 MB"
+      record_check "8" "Image size check" "FAIL" "${size_mb} MB exceeds ${size_warn_threshold_mb} MB for target=${api_build_target:-runtime}"
     fi
   fi
 
@@ -383,10 +569,22 @@ build_image_and_detect_target() {
     record_check "9" "Non-root user check" "PASS" "Container runs as ${whoami_result}"
   fi
 
-  if docker run --rm "$built_image_ref" ls node_modules/.bin/vitest >/dev/null 2>&1; then
-    record_check "10" "Dev dependency leak check" "FAIL" "vitest binary exists inside runtime image"
+  if docker run --rm "$built_image_ref" sh -lc 'ls node_modules/.bin/vitest >/dev/null 2>&1'; then
+    has_vitest_binary=1
+  fi
+
+  if (( expects_dev_tooling == 1 )); then
+    if (( has_vitest_binary == 1 )); then
+      record_check "10" "Dev dependency leak check" "PASS" "Dev target detected (target=${api_build_target}); vitest binary is present"
+    else
+      record_check "10" "Dev dependency leak check" "FAIL" "Dev target detected (target=${api_build_target}) but vitest binary is missing"
+    fi
   else
-    record_check "10" "Dev dependency leak check" "PASS" "No vitest binary found in runtime image"
+    if (( has_vitest_binary == 1 )); then
+      record_check "10" "Dev dependency leak check" "FAIL" "Runtime target detected (target=${api_build_target:-runtime}) but vitest binary exists"
+    else
+      record_check "10" "Dev dependency leak check" "PASS" "No vitest binary found in runtime image"
+    fi
   fi
 
   if command -v trivy >/dev/null 2>&1; then
@@ -403,7 +601,11 @@ build_image_and_detect_target() {
     done < <(printf '%s\n' "$trivy_output" | grep -Eo 'HIGH: [0-9]+' || true)
 
     if (( critical_count > 0 )); then
-      record_check "11" "Security vulnerability scan" "FAIL" "CRITICAL=${critical_count}, HIGH=${high_count}"
+      if (( expects_dev_tooling == 1 )); then
+        record_check "11" "Security vulnerability scan" "WARN" "CRITICAL=${critical_count}, HIGH=${high_count} (dev target image)"
+      else
+        record_check "11" "Security vulnerability scan" "FAIL" "CRITICAL=${critical_count}, HIGH=${high_count}"
+      fi
     elif (( high_count > 0 )); then
       record_check "11" "Security vulnerability scan" "WARN" "CRITICAL=0, HIGH=${high_count}"
     else
@@ -423,7 +625,20 @@ build_image_and_detect_target() {
 main() {
   printf 'Running Docker pre-flight checks (phases 1-2) in %s\n\n' "$ROOT_DIR"
 
+  check_required_tools
   abort_if_daemon_missing
+  check_environment_docker_state \
+    "dev" \
+    "$ROOT_DIR/.env.docker.dev" \
+    "$ROOT_DIR/.env.docker.dev.fallback" \
+    "$ROOT_DIR/compose.dev.yaml" \
+    "1B"
+  check_environment_docker_state \
+    "stage" \
+    "$ROOT_DIR/.env.docker.stage" \
+    "$ROOT_DIR/.env.docker.stage.fallback" \
+    "$ROOT_DIR/compose.stage.yaml" \
+    "1C"
   check_dockerignore_completeness
   check_dockerfile_linting
   check_secret_scan

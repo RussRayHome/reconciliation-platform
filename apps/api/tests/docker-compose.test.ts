@@ -14,7 +14,7 @@ const dockerTest = hasCommand('docker') ? it : it.skip;
 
 describe('Docker Compose', () => {
   dockerTest('renders a valid configuration', () => {
-    const output = execSync('docker compose --env-file .env.docker.example config', {
+    const output = execSync('docker compose --env-file .env.docker.dev.fallback config', {
       encoding: 'utf-8',
     });
     expect(output).toContain('services:');
@@ -24,7 +24,7 @@ describe('Docker Compose', () => {
   });
 
   it('has required environment variables', () => {
-    const envFile = fs.readFileSync('.env.docker.example', 'utf-8');
+    const envFile = fs.readFileSync('.env.docker.dev.fallback', 'utf-8');
     expect(hasEnvVariable(envFile, 'API_DATABASE_URL')).toBe(true);
     expect(hasEnvVariable(envFile, 'PUBLIC_WEB_PORT')).toBe(true);
   });

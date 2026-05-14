@@ -17,12 +17,13 @@ import type { PostgresReconciliationLifecycleStore } from '@recon/persistence';
 import type { AuditEvent, ReconciliationRun } from '@recon/domain';
 import pino from 'pino';
 import { randomUUID } from 'node:crypto';
+import { resolveLogLevelAtLeastInfo } from './logLevel';
 
 // Module-level logger used for service-layer tracing outside HTTP context.
 // When called from an HTTP route, call-site logs via request.log supplement these.
 const serviceLogger = pino({
   name: 'reconciliation-service',
-  level: process.env.LOG_LEVEL ?? 'info',
+  level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL),
 });
 
 interface UploadedFile {
@@ -69,10 +70,17 @@ export const executeReconciliation = async ({
   const log = serviceLogger.child({ correlationId, accountIdentifier });
   const t0 = Date.now();
 
-  log.info({ action: 'service.reconciliation.start', bankFile: bankFile.originalname, qboFile: qboFile.originalname, bankSizeBytes: bankFile.size, qboSizeBytes: qboFile.size });
+  log.info({
+    action: 'service.reconciliation.start',
+    bankFile: bankFile.originalname,
+    qboFile: qboFile.originalname,
+    bankSizeBytes: bankFile.size,
+    qboSizeBytes: qboFile.size,
+  });
 
   // ── 1. Config resolution ───────────────────────────────────────────────────
-  const config = resolveReconciliationConfig(accountIdentifier, sampleAccountOverrides) ??
+  const config =
+    resolveReconciliationConfig(accountIdentifier, sampleAccountOverrides) ??
     defaultReconciliationConfig;
   log.debug({
     action: 'service.config.resolved',
@@ -114,7 +122,13 @@ export const executeReconciliation = async ({
       }),
     ]);
   } catch (parseError) {
-    log.error({ action: 'service.parse.error', err: parseError instanceof Error ? { message: parseError.message, stack: parseError.stack } : parseError });
+    log.error({
+      action: 'service.parse.error',
+      err:
+        parseError instanceof Error
+          ? { message: parseError.message, stack: parseError.stack }
+          : parseError,
+    });
     throw parseError;
   }
 
@@ -136,13 +150,22 @@ export const executeReconciliation = async ({
 
   // Log first few raw rows at debug level for traceability
   if (process.env.DEBUG_RECONCILIATION === 'true') {
-    log.debug({ action: 'service.parse.bank.sample', rows: bankParsed.rawRows.slice(0, 5).map(r => ({ line: r.lineNumber, raw: r.rawValues })) });
-    log.debug({ action: 'service.parse.qbo.sample', rows: qboParsed.rawRows.slice(0, 5).map(r => ({ line: r.lineNumber, raw: r.rawValues })) });
+    log.debug({
+      action: 'service.parse.bank.sample',
+      rows: bankParsed.rawRows.slice(0, 5).map((r) => ({ line: r.lineNumber, raw: r.rawValues })),
+    });
+    log.debug({
+      action: 'service.parse.qbo.sample',
+      rows: qboParsed.rawRows.slice(0, 5).map((r) => ({ line: r.lineNumber, raw: r.rawValues })),
+    });
   }
 
   // ── 3. Core reconciliation pipeline ───────────────────────────────────────
   const reconStart = Date.now();
-  log.debug({ action: 'service.reconciliation.pipeline.start', totalRawRows: bankParsed.rawRows.length + qboParsed.rawRows.length });
+  log.debug({
+    action: 'service.reconciliation.pipeline.start',
+    totalRawRows: bankParsed.rawRows.length + qboParsed.rawRows.length,
+  });
 
   let auditEvents: AuditEvent[] = [
     {
@@ -156,10 +179,7 @@ export const executeReconciliation = async ({
     },
   ];
 
-  const appendAuditEvent = (
-    action: AuditEvent['action'],
-    details: AuditEvent['details'],
-  ): void => {
+  const appendAuditEvent = (action: AuditEvent['action'], details: AuditEvent['details']): void => {
     auditEvents = [
       ...auditEvents,
       {
@@ -256,7 +276,13 @@ export const executeReconciliation = async ({
       unresolvedExposure: summary.unresolvedExposure,
     });
   } catch (reconError) {
-    log.error({ action: 'service.reconciliation.pipeline.error', err: reconError instanceof Error ? { message: reconError.message, stack: reconError.stack } : reconError });
+    log.error({
+      action: 'service.reconciliation.pipeline.error',
+      err:
+        reconError instanceof Error
+          ? { message: reconError.message, stack: reconError.stack }
+          : reconError,
+    });
     throw reconError;
   }
 

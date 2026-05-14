@@ -5,10 +5,7 @@ import type { Pool } from 'pg';
 import { GenericContainer } from 'testcontainers';
 import type { StartedTestContainer } from 'testcontainers';
 
-const runPostgresTests = process.env.RUN_POSTGRES_TESTS === 'true';
-const describePostgres = runPostgresTests ? describe : describe.skip;
-
-describePostgres('PostgreSQL Migrations', () => {
+describe('PostgreSQL Migrations', () => {
   let container: StartedTestContainer | undefined;
   let pool: Pool;
   let startupError: Error | null = null;
@@ -57,9 +54,10 @@ describePostgres('PostgreSQL Migrations', () => {
       });
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
-      console.warn(`Skipping PostgreSQL migration setup: ${startupError.message}`);
+      console.warn(`PostgreSQL migration setup failed: ${startupError.message}`);
+      throw startupError;
     }
-  });
+  }, 180000);
 
   afterAll(async () => {
     if (pool) {
@@ -72,7 +70,7 @@ describePostgres('PostgreSQL Migrations', () => {
 
   it('applies migrations idempotently', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     await runPostgresMigrations(pool);
@@ -86,7 +84,7 @@ describePostgres('PostgreSQL Migrations', () => {
 
   it('runs pgTap assertions against the postgres test database', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     await pool.query('CREATE EXTENSION IF NOT EXISTS pgtap');
@@ -103,7 +101,7 @@ describePostgres('PostgreSQL Migrations', () => {
 
   it('enables pg_stat_statements and records query stats', async () => {
     if (startupError) {
-      return;
+      throw startupError;
     }
 
     await pool.query('CREATE EXTENSION IF NOT EXISTS pg_stat_statements');
@@ -116,8 +114,12 @@ describePostgres('PostgreSQL Migrations', () => {
   });
 
   it('runs migra schema diff during postgres db tests', async () => {
-    if (startupError || !container) {
-      return;
+    if (startupError) {
+      throw startupError;
+    }
+
+    if (!container) {
+      throw new Error('Postgres container is not initialized.');
     }
 
     const migraImportResult = await container.exec([

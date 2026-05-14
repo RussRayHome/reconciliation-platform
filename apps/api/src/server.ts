@@ -10,6 +10,7 @@ import type { Server as HttpServer } from 'node:http';
 import type { Pool } from 'pg';
 
 import { FileBackedRunRepository } from './services/runRepository';
+import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 import { createApp } from './app';
 import { createWriteStream } from 'node:fs';
 import { markServerStarted } from './services/runtimeDiagnostics';
@@ -65,7 +66,8 @@ const closeHttpServer = async (server: HttpServer): Promise<void> =>
 export const createServerRuntime = async (): Promise<ServerRuntime> => {
   const isProduction = process.env.NODE_ENV === 'production';
   const logFile = process.env.LOG_FILE;
-  const level = (process.env.LOG_LEVEL ?? 'info') as pino.Level;
+  const level = resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL);
+  const streamLevel: pino.Level = level === 'silent' ? 'info' : level;
 
   // Build a multistream that goes to:
   //   1. stdout   – pretty in dev, raw JSON in production
@@ -73,7 +75,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
   const streams: pino.StreamEntry[] = [];
 
   if (isProduction) {
-    streams.push({ level, stream: process.stdout });
+    streams.push({ level: streamLevel, stream: process.stdout });
   } else {
     // pino.transport returns a writable stream backed by a worker thread
     const prettyStream = pino.transport({
@@ -81,7 +83,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
       options: { colorize: true, translateTime: 'SYS:standard' },
     }) as pino.DestinationStream;
     streams.push({
-      level,
+      level: streamLevel,
       stream: prettyStream,
     });
   }
@@ -147,7 +149,7 @@ export const startServer = async (): Promise<void> => {
       {
         port: runtime.port,
         logFile: process.env.LOG_FILE ?? null,
-        level: process.env.LOG_LEVEL ?? 'info',
+        level: runtime.logger.level,
       },
       'Reconciliation API listening',
     );

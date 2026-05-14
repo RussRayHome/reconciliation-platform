@@ -116,7 +116,8 @@ const createRunResponse = () => ({
       ruleTrace: {
         ruleId: 'missing-from-qbo',
         ruleName: 'Missing from QBO',
-        reason: 'No QBO-side transaction remained after exact, review, and variance matching rules were applied.',
+        reason:
+          'No QBO-side transaction remained after exact, review, and variance matching rules were applied.',
         evidence: ['Transaction stayed unmatched after cross-source candidate selection.'],
       },
       recommendedNextActions: [
@@ -138,7 +139,8 @@ const createRunResponse = () => ({
       ruleTrace: {
         ruleId: 'grouped-split-combine-residual',
         ruleName: 'Grouped Split/Combine Residual',
-        reason: 'Residual unmatched transactions form a one-to-many relationship that the one-to-one matcher cannot settle cleanly.',
+        reason:
+          'Residual unmatched transactions form a one-to-many relationship that the one-to-one matcher cannot settle cleanly.',
         evidence: ['Grouped total balances across sources.'],
         counterpart: {
           source: 'qbo',
@@ -179,7 +181,8 @@ const createRunResponse = () => ({
       ruleTrace: {
         ruleId: 'grouped-deposit-residual',
         ruleName: 'Grouped Deposit Residual',
-        reason: 'Residual unmatched deposits form a grouped receipt pattern rather than independent missing items.',
+        reason:
+          'Residual unmatched deposits form a grouped receipt pattern rather than independent missing items.',
         evidence: ['Grouped deposit total balances across sources.'],
         counterpart: {
           source: 'bank',
@@ -214,7 +217,8 @@ const createRunResponse = () => ({
       ruleTrace: {
         ruleId: 'timing-difference-reclassification',
         ruleName: 'Timing Difference Reclassification',
-        reason: 'A same-amount, timing-compatible counterpart exists outside the primary date tolerance but within the timing-difference window.',
+        reason:
+          'A same-amount, timing-compatible counterpart exists outside the primary date tolerance but within the timing-difference window.',
         evidence: ['Same amount paired within the extended timing window.'],
         counterpart: {
           source: 'qbo',
@@ -316,6 +320,7 @@ const renderApp = () =>
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   storage.clear();
   mockedApiState.latestRunResponse = null;
   mockedApiState.latestRunError = null;
@@ -336,8 +341,42 @@ const createDeferred = <T,>() => {
 };
 
 describe('App', () => {
+  it('uses environment-prefixed docs and dashboard links on an environment root route', () => {
+    globalThis.history.pushState({}, '', '/dev');
+
+    renderApp();
+
+    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute(
+      'href',
+      '/dev/docs',
+    );
+    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toHaveAttribute(
+      'href',
+      '/dev/developer-dashboard.html',
+    );
+  });
+
+  it('redirects root to /dev when the development environment path segment is configured', () => {
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'dev');
+    globalThis.history.pushState({}, '', '/');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/dev');
+  });
+
   it('renders the documentation hub on the docs route', () => {
     globalThis.history.pushState({}, '', '/docs');
+
+    renderApp();
+
+    expect(screen.getByRole('heading', { name: 'Project Documents Overview' })).toBeInTheDocument();
+    expect(screen.getByText('Project Overview')).toBeInTheDocument();
+    expect(screen.getByLabelText('Selected document preview')).toBeInTheDocument();
+  });
+
+  it('renders the documentation hub on an environment-prefixed docs route', () => {
+    globalThis.history.pushState({}, '', '/dev/docs');
 
     renderApp();
 
@@ -351,7 +390,10 @@ describe('App', () => {
 
     expect(screen.getByRole('tab', { name: /Upload/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: /Rules/i })).toHaveAttribute('aria-selected', 'false');
-    expect(screen.getByRole('tab', { name: /Exceptions/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /Exceptions/i })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
     expect(screen.getByRole('tab', { name: /Reports/i })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByText('Source Upload')).toBeInTheDocument();
   });
@@ -403,14 +445,18 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /Run Summary/i })).toBeInTheDocument();
     expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
-    expect(screen.getByRole('heading', { name: 'Exception Category Breakdown' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Exception Category Breakdown' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Likely Split/Combine Issue')).toBeInTheDocument();
     expect(screen.getByText('Deposit Grouping Issue')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Exception Report/i }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/QBO qbo.xlsx \/ 4 \| QBO qbo.xlsx \/ 5/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/QBO qbo.xlsx \/ 4 \| QBO qbo.xlsx \/ 5/i).length).toBeGreaterThan(
+      0,
+    );
     expect(
       screen.getAllByText(
         /Prior: Amount \+ Extended Date Window Match \| Final: Timing Difference Reclassification/i,
@@ -504,7 +550,9 @@ describe('App', () => {
 
     expect(screen.getByText('No exception set yet')).toBeInTheDocument();
     expect(
-      screen.getByText(/Upload both source workbooks in the Upload tab and run the reconciliation/i),
+      screen.getByText(
+        /Upload both source workbooks in the Upload tab and run the reconciliation/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -526,7 +574,9 @@ describe('App', () => {
     expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue(
       `Monthly Recon for ${month} ${currentYear}`,
     );
-    expect(screen.getByText(`Month applies to the current year (${currentYear}).`)).toBeInTheDocument();
+    expect(
+      screen.getByText(`Month applies to the current year (${currentYear}).`),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(`Suggested: Monthly Recon for ${month} ${currentYear}`),
     ).toBeInTheDocument();
@@ -577,19 +627,25 @@ describe('App', () => {
 
     const bankHelpButton = screen.getByRole('button', { name: 'Open help for bank source file' });
     expect(
-      screen.queryByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+      screen.queryByText(
+        'Upload the exported bank transaction workbook used as the bank source of truth.',
+      ),
     ).toBeNull();
 
     fireEvent.click(bankHelpButton);
 
     expect(
-      screen.getByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+      screen.getByText(
+        'Upload the exported bank transaction workbook used as the bank source of truth.',
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(bankHelpButton);
 
     expect(
-      screen.queryByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+      screen.queryByText(
+        'Upload the exported bank transaction workbook used as the bank source of truth.',
+      ),
     ).toBeNull();
   });
 
@@ -599,13 +655,17 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open help for bank source file' }));
 
     expect(
-      screen.getByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+      screen.getByText(
+        'Upload the exported bank transaction workbook used as the bank source of truth.',
+      ),
     ).toBeInTheDocument();
 
     fireEvent.mouseDown(document.body);
 
     expect(
-      screen.queryByText('Upload the exported bank transaction workbook used as the bank source of truth.'),
+      screen.queryByText(
+        'Upload the exported bank transaction workbook used as the bank source of truth.',
+      ),
     ).toBeNull();
   });
 
@@ -662,9 +722,9 @@ describe('App', () => {
   });
 
   it('submits the selected local files and metadata as multipart form data', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
 
     renderApp();
 
@@ -711,9 +771,9 @@ describe('App', () => {
   });
 
   it('submits selected monthly month as period label when frequency is monthly', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
 
     renderApp();
 
@@ -748,9 +808,9 @@ describe('App', () => {
   });
 
   it('allows editing the prepopulated reconciliation label before submit', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
 
     renderApp();
 
@@ -807,6 +867,8 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Run reconciliation' })).toBeDisabled();
-    expect(screen.getByText('Reconciliation label is required before running.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Reconciliation label is required before running.'),
+    ).toBeInTheDocument();
   });
 });
