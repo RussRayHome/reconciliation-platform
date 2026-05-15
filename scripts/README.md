@@ -206,7 +206,7 @@ Notes:
 - If no dump file is specified, restores from the most recent `.backups/recon-<env>-*.dump`.
 - Postgres must be running; the script starts it automatically if needed.
 
-### `db/seed.sql`
+### `db/dev-stage/seed.psql`
 
 Purpose:
 
@@ -219,7 +219,7 @@ Purpose:
 
 Purpose:
 
-- Wrapper that pipes `seed.sql` into the running postgres container for a given environment.
+- Wrapper that pipes `seed.psql` into the running postgres container for a given environment.
 
 How to run:
 
@@ -281,6 +281,13 @@ Purpose:
 Purpose:
 
 - Verify `/healthz`, `/api/health`, PostgreSQL readiness, and (when present in the compose config) pgweb availability for the containerized stack.
+
+### `ops/in-flight-url-check.sh`
+
+Purpose:
+
+- Validate environment-prefixed gateway URLs after test execution.
+- Checks application, docs, developer dashboard, pgweb (when present), and dashboard server runtime endpoints.
 
 ### `ops/cleanup.*`
 

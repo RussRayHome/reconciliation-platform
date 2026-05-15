@@ -33,10 +33,10 @@ usage() {
 
 case "$SCRIPT_NAME" in
   prod-rray)
-    SQL_FILE="$ROOT_DIR/scripts/db/production/create-user-prod-rray.sql"
+    SQL_FILE="$ROOT_DIR/scripts/db/production/create-user-prod-rray.psql"
     ;;
   prod-rray-admin)
-    SQL_FILE="$ROOT_DIR/scripts/db/production/create-user-prod-rray-admin.sql"
+    SQL_FILE="$ROOT_DIR/scripts/db/production/create-user-prod-rray-admin.psql"
     ;;
   *)
     usage >&2

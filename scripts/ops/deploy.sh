@@ -116,6 +116,9 @@ docker compose "${compose_args[@]}" up -d --force-recreate api web
 if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
   docker compose "${compose_args[@]}" up -d pgweb
 fi
+if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^nginx-ui$'; then
+  docker compose "${compose_args[@]}" up -d nginx-ui
+fi
 
 api_build_target="$(resolve_service_build_target "api")"
 if [[ "$api_build_target" == "dev" ]]; then

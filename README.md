@@ -125,6 +125,10 @@ npm run docker:health
 Default containerized endpoints:
 
 - Gateway: `http://127.0.0.1:4173`
+- Environment docs: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
+- Environment developer dashboard: `http://127.0.0.1:4173/<environment>/developer-dashboard.html` (for example `dev/developer-dashboard.html`)
+- Environment pgweb: `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
+- Environment dashboard server payload: `http://127.0.0.1:4173/<environment>/dashboard/server` (for example `dev/dashboard/server`)
 - API health via gateway: `http://127.0.0.1:4173/api/health`
 - NGINX health: `http://127.0.0.1:4173/healthz`
 - pgweb (database viewer): `http://127.0.0.1:8081`

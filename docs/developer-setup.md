@@ -167,7 +167,9 @@ Access points after deploy:
 - Application: `http://127.0.0.1:4173`
 - Documentation Hub: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
 - Developer Dashboard: `http://127.0.0.1:4173/<environment>/developer-dashboard.html` (for example `dev/developer-dashboard.html`)
-- Postgres Admin: `http://127.0.0.1:8081`
+- Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
+- Dashboard Server runtime payload: `http://127.0.0.1:4173/<environment>/dashboard/server` (for example `dev/dashboard/server`)
+- Postgres Admin (direct port): `http://127.0.0.1:8081`
 
 ## 7. Preflight checks
 

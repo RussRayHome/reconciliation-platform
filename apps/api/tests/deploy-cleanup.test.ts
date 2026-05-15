@@ -8,14 +8,25 @@ import { join } from 'node:path';
 const defaultDockerDatabaseUrl =
   'postgresql://recon_app:change-local-password@localhost:5432/reconciliation_platform';
 
+const parsedPortOffset = Number.parseInt(process.env.INTEGRATION_PORT_OFFSET ?? '', 10);
+const integrationPortOffset = Number.isFinite(parsedPortOffset)
+  ? parsedPortOffset
+  : process.pid % 500;
+const withPortOffset = (basePort: number): string => `${basePort + integrationPortOffset}`;
+
 const isolatedIntegrationProjectName =
-  process.env.INTEGRATION_COMPOSE_PROJECT_NAME ?? 'reconciliation-platform-integration';
-const isolatedIntegrationWebPort = process.env.INTEGRATION_PUBLIC_WEB_PORT ?? '44173';
-const isolatedIntegrationPostgresPort = process.env.INTEGRATION_POSTGRES_HOST_PORT ?? '55432';
+  process.env.INTEGRATION_COMPOSE_PROJECT_NAME ??
+  `reconciliation-platform-integration-${process.pid}`;
+const isolatedIntegrationWebPort = process.env.INTEGRATION_PUBLIC_WEB_PORT ?? withPortOffset(44173);
+const isolatedIntegrationPostgresPort =
+  process.env.INTEGRATION_POSTGRES_HOST_PORT ?? withPortOffset(55432);
+const isolatedIntegrationPgwebPort = process.env.INTEGRATION_PGWEB_PORT ?? withPortOffset(58081);
+const isolatedIntegrationNginxUiPort =
+  process.env.INTEGRATION_NGINX_UI_HTTP_PORT ?? withPortOffset(60082);
 const fallbackDockerEnvPath = '.env.docker.dev.fallback';
 const isolatedDockerEnvPath = join(tmpdir(), 'reconciliation-platform.integration.env');
 
-const isolatedDockerEnvContents = `${readFileSync(fallbackDockerEnvPath, 'utf-8').trimEnd()}\nCOMPOSE_PROJECT_NAME=${isolatedIntegrationProjectName}\nPUBLIC_WEB_PORT=${isolatedIntegrationWebPort}\nPOSTGRES_HOST_PORT=${isolatedIntegrationPostgresPort}\n`;
+const isolatedDockerEnvContents = `${readFileSync(fallbackDockerEnvPath, 'utf-8').trimEnd()}\nCOMPOSE_PROJECT_NAME=${isolatedIntegrationProjectName}\nPUBLIC_WEB_PORT=${isolatedIntegrationWebPort}\nPOSTGRES_HOST_PORT=${isolatedIntegrationPostgresPort}\nPGWEB_PORT=${isolatedIntegrationPgwebPort}\nNGINX_UI_HTTP_PORT=${isolatedIntegrationNginxUiPort}\n`;
 writeFileSync(isolatedDockerEnvPath, isolatedDockerEnvContents, 'utf-8');
 
 const dockerEnv = {
@@ -25,6 +36,8 @@ const dockerEnv = {
   COMPOSE_PROJECT_NAME: isolatedIntegrationProjectName,
   PUBLIC_WEB_PORT: isolatedIntegrationWebPort,
   POSTGRES_HOST_PORT: isolatedIntegrationPostgresPort,
+  PGWEB_PORT: isolatedIntegrationPgwebPort,
+  NGINX_UI_HTTP_PORT: isolatedIntegrationNginxUiPort,
   DB_PREFLIGHT_FAIL_ON_CRITICAL: 'false',
   DB_PREFLIGHT_FAIL_ON_HIGH: 'false',
   // validate-env.sh requires DATABASE_URL even when using .env.docker.dev.fallback.

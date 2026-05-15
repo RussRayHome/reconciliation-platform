@@ -57,6 +57,33 @@ type RuntimeResponseBody = {
     commit: string;
     isDirty: boolean | null;
   };
+  promotionReadiness: {
+    sync: {
+      trackingBranch: string | null;
+      remoteRef: string | null;
+      localCommit: string | null;
+      remoteCommit: string | null;
+      aheadCount: number | null;
+      behindCount: number | null;
+      inSync: boolean | null;
+    };
+    baseline: {
+      tagName: string;
+      exists: boolean;
+      commit: string | null;
+      matchesHead: boolean | null;
+    };
+    overall: string;
+    summary: string;
+    environments: Array<{
+      name: string;
+      runtime: string;
+      sourceBranch: string | null;
+      targetRevision: string | null;
+      status: string;
+      note: string;
+    }>;
+  };
   recentReconciliationRuns: unknown[];
   recentFailedRequests: unknown[];
   recentExceptions: unknown[];
@@ -92,6 +119,30 @@ const execFileMatchers: ExecFileMatcher[] = [
   {
     matches: (joined) => joined.includes('git status --porcelain'),
     result: { stdout: '', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git symbolic-ref --short refs/remotes/origin/HEAD'),
+    result: { stdout: 'origin/dev\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git rev-parse --short origin/dev'),
+    result: { stdout: 'abc1234\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git rev-list --left-right --count origin/dev...HEAD'),
+    result: { stdout: '0\t0\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git rev-parse --short stable-baseline-2026-05-14^{}'),
+    result: { stdout: 'abc1234\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git rev-parse --short origin/stage'),
+    result: { stdout: 'abc1234\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('git rev-parse --short origin/main'),
+    result: { stdout: 'def5678\n', stderr: '' },
   },
   {
     matches: (joined) => joined.includes('npm') && joined.includes('run test:unit'),
@@ -436,6 +487,47 @@ describe('developer endpoints', () => {
       commit: 'abc1234',
       isDirty: null,
     });
+    expect(runtimeBody.promotionReadiness.sync).toMatchObject({
+      trackingBranch: 'dev',
+      remoteRef: 'origin/dev',
+      localCommit: 'abc1234',
+      remoteCommit: 'abc1234',
+      aheadCount: 0,
+      behindCount: 0,
+      inSync: true,
+    });
+    expect(runtimeBody.promotionReadiness.baseline).toMatchObject({
+      tagName: 'stable-baseline-2026-05-14',
+      exists: true,
+      commit: 'abc1234',
+      matchesHead: true,
+    });
+    expect(runtimeBody.promotionReadiness.overall).toBe('ready');
+    expect(runtimeBody.promotionReadiness.environments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'dev',
+          runtime: 'Docker Compose',
+          sourceBranch: 'feature/developer-dashboard-docs',
+          targetRevision: 'abc1234',
+          status: 'ready',
+        }),
+        expect.objectContaining({
+          name: 'stage',
+          runtime: 'Docker Compose',
+          sourceBranch: 'dev',
+          targetRevision: 'abc1234',
+          status: 'ready',
+        }),
+        expect.objectContaining({
+          name: 'prod',
+          runtime: 'AWS',
+          sourceBranch: 'main',
+          targetRevision: 'def5678',
+          status: 'ready',
+        }),
+      ]),
+    );
     expect(runtimeBody.recentReconciliationRuns.length).toBeGreaterThanOrEqual(1);
     expect(runtimeBody.recentFailedRequests.length).toBeGreaterThanOrEqual(1);
     expect(runtimeBody.recentExceptions.length).toBeGreaterThanOrEqual(1);

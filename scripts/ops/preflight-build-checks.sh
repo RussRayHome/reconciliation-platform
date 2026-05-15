@@ -419,7 +419,7 @@ check_secret_scan() {
     content="${line#*:}"
     content="${content#*:}"
 
-    if [[ "$content" == *'${'* ]]; then
+    if [[ "$content" == *\$\{* ]]; then
       continue
     fi
 

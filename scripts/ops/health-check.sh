@@ -66,6 +66,48 @@ append_extra_compose_files() {
   done
 }
 
+wait_for_http() {
+  local label="$1"
+  local url="$2"
+  local retries="${HEALTH_CHECK_RETRIES:-30}"
+  local delay_seconds="${HEALTH_CHECK_DELAY_SECONDS:-2}"
+  local attempt=1
+
+  while (( attempt <= retries )); do
+    if curl --fail --silent --show-error "$url" >/dev/null; then
+      return 0
+    fi
+
+    if (( attempt == retries )); then
+      echo "Health check failed for ${label} at ${url} after ${retries} attempts." >&2
+      return 1
+    fi
+
+    sleep "$delay_seconds"
+    attempt=$((attempt + 1))
+  done
+}
+
+wait_for_postgres() {
+  local retries="${HEALTH_CHECK_RETRIES:-30}"
+  local delay_seconds="${HEALTH_CHECK_DELAY_SECONDS:-2}"
+  local attempt=1
+
+  while (( attempt <= retries )); do
+    if docker compose "${compose_args[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null; then
+      return 0
+    fi
+
+    if (( attempt == retries )); then
+      echo "Health check failed for PostgreSQL after ${retries} attempts." >&2
+      return 1
+    fi
+
+    sleep "$delay_seconds"
+    attempt=$((attempt + 1))
+  done
+}
+
 compose_args=(-f "$ROOT_DIR/compose.yaml")
 append_extra_compose_files
 if [[ -f "$ENV_FILE" ]]; then
@@ -86,14 +128,30 @@ set -a
 source "$SOURCE_FILE"
 set +a
 
-curl --fail --silent --show-error "http://127.0.0.1:${PUBLIC_WEB_PORT}/healthz" >/dev/null
-curl --fail --silent --show-error "http://127.0.0.1:${PUBLIC_WEB_PORT}/api/health" >/dev/null
-docker compose "${compose_args[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null
+wait_for_http "Gateway" "http://127.0.0.1:${PUBLIC_WEB_PORT}/healthz"
+wait_for_http "API" "http://127.0.0.1:${PUBLIC_WEB_PORT}/api/health"
+wait_for_postgres
 
+pgweb_enabled=false
 if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
   PGWEB_PORT="${PGWEB_PORT:-8081}"
-  curl --fail --silent --show-error "http://127.0.0.1:${PGWEB_PORT}/" >/dev/null
+  wait_for_http "Postgres Admin" "http://127.0.0.1:${PGWEB_PORT}/"
+  pgweb_enabled=true
+fi
+
+nginx_ui_enabled=false
+if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^nginx-ui$'; then
+  NGINX_UI_HTTP_PORT="${NGINX_UI_HTTP_PORT:-8082}"
+  wait_for_http "Nginx UI" "http://127.0.0.1:${NGINX_UI_HTTP_PORT}/"
+  nginx_ui_enabled=true
+fi
+
+if [[ "$pgweb_enabled" == "true" && "$nginx_ui_enabled" == "true" ]]; then
+  echo "Gateway, API, PostgreSQL, Postgres Admin, and Nginx UI health checks passed."
+elif [[ "$pgweb_enabled" == "true" ]]; then
   echo "Gateway, API, PostgreSQL, and Postgres Admin health checks passed."
+elif [[ "$nginx_ui_enabled" == "true" ]]; then
+  echo "Gateway, API, PostgreSQL, and Nginx UI health checks passed."
 else
   echo "Gateway, API, and PostgreSQL health checks passed."
 fi

@@ -13,10 +13,25 @@
 --
 -- Or manually via psql:
 --   psql -h <host> -p <port> -U <admin-user> -d reconciliation_platform \
---       -f scripts/db/dev-stage/create-users.sql
+--       -f scripts/db/dev-stage/create-users.psql
 -- =============================================================================
 
 \echo 'Creating dev/stage user: rray'
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'recon_app') THEN
+    CREATE ROLE recon_app
+      LOGIN
+      NOSUPERUSER
+      NOCREATEDB
+      NOCREATEROLE
+      NOREPLICATION
+      PASSWORD 'change-local-password';
+    RAISE NOTICE 'Role recon_app created for default privilege grants.';
+  END IF;
+END;
+$$;
 
 DO $$
 BEGIN

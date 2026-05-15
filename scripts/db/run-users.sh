@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SQL_FILE="$ROOT_DIR/scripts/db/dev-stage/create-users.sql"
+SQL_FILE="$ROOT_DIR/scripts/db/dev-stage/create-users.psql"
 
 ENVIRONMENT="${1:-}"
 

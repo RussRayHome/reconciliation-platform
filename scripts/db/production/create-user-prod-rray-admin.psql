@@ -17,8 +17,10 @@
 -- How to run (AWS RDS / direct psql):
 --   psql -h <rds-endpoint> -p 5432 -U <rds-admin-user> -d reconciliation_platform \
 --       -v pwd="'<strong-password>'" \
---       -f scripts/db/production/create-user-prod-rray-admin.sql
+--       -f scripts/db/production/create-user-prod-rray-admin.psql
 -- =============================================================================
+
+\set ON_ERROR_STOP on
 
 \echo 'Creating production admin user: prod_rray_admin (superuser + DB admin)'
 
@@ -34,21 +36,19 @@ BEGIN
       SUPERUSER
       CREATEDB
       CREATEROLE
-      REPLICATION
-      PASSWORD :'user_password';
+      REPLICATION;
     RAISE NOTICE 'Role prod_rray_admin created.';
   ELSE
-    ALTER ROLE prod_rray_admin
-      LOGIN
-      SUPERUSER
-      CREATEDB
-      CREATEROLE
-      REPLICATION
-      PASSWORD :'user_password';
-    RAISE NOTICE 'Role prod_rray_admin already exists — attributes updated.';
+    RAISE NOTICE 'Role prod_rray_admin already exists — attributes will be updated.';
   END IF;
 END;
 $$;
+
+SELECT format(
+  'ALTER ROLE %I WITH LOGIN SUPERUSER CREATEDB CREATEROLE REPLICATION PASSWORD %L',
+  'prod_rray_admin',
+  :'user_password'
+) \gexec
 
 -- Full database ownership
 GRANT ALL PRIVILEGES ON DATABASE reconciliation_platform TO prod_rray_admin;

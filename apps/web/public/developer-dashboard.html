@@ -130,11 +130,51 @@
         margin-bottom: 16px;
       }
 
+      .repo-health-primary {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      }
+
       .sub-strip {
         display: grid;
         gap: 12px;
         grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
         margin-bottom: 16px;
+      }
+
+      .repo-health-secondary {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      }
+
+      .repo-health-secondary .metric {
+        min-height: 88px;
+      }
+
+      .repo-health-secondary .metric-value {
+        line-height: 1.25;
+      }
+
+      #updated,
+      #cache-status,
+      #cache-age,
+      #health-ratio,
+      #failing-areas {
+        font-size: 0.93rem;
+      }
+
+      #updated,
+      #cache-age,
+      #health-ratio {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #failing-areas {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: break-word;
       }
 
       .section-label {
@@ -512,6 +552,66 @@
         line-height: 1.5;
       }
 
+      .matrix-table-wrap {
+        margin-top: 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow-x: auto;
+        background: #ffffff;
+      }
+
+      .matrix-table {
+        width: 100%;
+        min-width: 720px;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+      }
+
+      .matrix-table th,
+      .matrix-table td {
+        padding: 9px 10px;
+        text-align: left;
+        border-bottom: 1px solid #e5edf5;
+        vertical-align: top;
+      }
+
+      .matrix-table th {
+        background: #f7fbff;
+        color: #334e68;
+        font-size: 0.74rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .matrix-table tr:last-child td {
+        border-bottom: none;
+      }
+
+      .matrix-tag {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 2px 9px;
+        border: 1px solid #c4d6e8;
+        background: #f0f7ff;
+        color: #1f4a70;
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+
+      .muted-note {
+        color: var(--muted);
+      }
+
+      .promotion-note {
+        margin: 10px 0 0;
+        color: #52606d;
+        font-size: 0.84rem;
+      }
+
+      #promotion-blockers {
+        margin-top: 10px;
+      }
+
       pre {
         margin-top: 10px;
         background: #0b1220;
@@ -543,7 +643,7 @@
 
       <p class="section-label">Repo Health</p>
 
-      <section class="status-strip">
+      <section class="status-strip repo-health-primary">
         <article class="metric">
           <p class="metric-label">Overall status</p>
           <p id="overall" class="metric-value">Loading...</p>
@@ -570,7 +670,7 @@
         </article>
       </section>
 
-      <section class="sub-strip">
+      <section class="sub-strip repo-health-secondary">
         <article class="metric">
           <p class="metric-label">Cache status</p>
           <p id="cache-status" class="metric-value" style="font-size: 0.98rem">-</p>
@@ -604,6 +704,92 @@
           <span id="history-count" class="pill">0 runs</span>
         </div>
         <ul id="history" class="history-list"></ul>
+      </section>
+
+      <p class="section-label">Promotion Readiness</p>
+
+      <section class="status-strip">
+        <article class="metric">
+          <p class="metric-label">Local vs remote sync</p>
+          <p id="sync-status" class="metric-value" style="font-size: 0.98rem">Loading...</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Baseline anchor</p>
+          <p id="baseline-anchor" class="metric-value" style="font-size: 0.98rem">Loading...</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Remote repo health</p>
+          <p id="remote-health" class="metric-value" style="font-size: 0.98rem">Loading...</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">Promotion readiness</p>
+          <p id="promotion-readiness" class="metric-value" style="font-size: 0.98rem">Loading...</p>
+        </article>
+      </section>
+
+      <section class="card" style="margin-bottom: 12px">
+        <div class="card-top">
+          <h3>Environment Promotion Matrix</h3>
+          <span id="env-matrix-badge" class="pill warn">Loading</span>
+        </div>
+        <p id="env-matrix-summary" class="summary-copy">
+          Loading promotion readiness diagnostics...
+        </p>
+        <div class="matrix-table-wrap">
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th>Environment</th>
+                <th>Runtime</th>
+                <th>Source branch</th>
+                <th>Target revision</th>
+                <th>Status</th>
+                <th>Readiness notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="matrix-tag">Dev</span></td>
+                <td>Docker Compose</td>
+                <td id="env-dev-branch">-</td>
+                <td id="env-dev-revision">-</td>
+                <td id="env-dev-status">Loading...</td>
+                <td id="env-dev-note" class="muted-note">Loading...</td>
+              </tr>
+              <tr>
+                <td><span class="matrix-tag">Stage</span></td>
+                <td>Docker Compose</td>
+                <td id="env-stage-branch">dev</td>
+                <td id="env-stage-revision">-</td>
+                <td id="env-stage-status">Loading...</td>
+                <td id="env-stage-note" class="muted-note">Loading...</td>
+              </tr>
+              <tr>
+                <td><span class="matrix-tag">Prod</span></td>
+                <td>AWS</td>
+                <td id="env-prod-branch">main</td>
+                <td id="env-prod-revision">-</td>
+                <td id="env-prod-status">Loading...</td>
+                <td id="env-prod-note" class="muted-note">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="promotion-note">
+          Promotion readiness is sourced from runtime diagnostics and cross-checked against repo
+          health results.
+        </p>
+      </section>
+
+      <section class="card" style="margin-bottom: 12px">
+        <div class="card-top">
+          <h3>Promotion Decision</h3>
+          <span id="promotion-decision-badge" class="pill warn">Pending</span>
+        </div>
+        <p id="promotion-decision-summary" class="summary-copy">
+          Loading promotion gate evaluation...
+        </p>
+        <ul id="promotion-blockers" class="highlights"></ul>
       </section>
 
       <p class="section-label">Local Runtime Health</p>
@@ -716,6 +902,27 @@
       const gitBranch = document.getElementById('git-branch');
       const gitCommit = document.getElementById('git-commit');
       const gitDirty = document.getElementById('git-dirty');
+      const syncStatus = document.getElementById('sync-status');
+      const baselineAnchor = document.getElementById('baseline-anchor');
+      const remoteHealth = document.getElementById('remote-health');
+      const promotionReadiness = document.getElementById('promotion-readiness');
+      const envMatrixBadge = document.getElementById('env-matrix-badge');
+      const envMatrixSummary = document.getElementById('env-matrix-summary');
+      const envDevBranch = document.getElementById('env-dev-branch');
+      const envDevRevision = document.getElementById('env-dev-revision');
+      const envDevStatus = document.getElementById('env-dev-status');
+      const envDevNote = document.getElementById('env-dev-note');
+      const envStageBranch = document.getElementById('env-stage-branch');
+      const envStageRevision = document.getElementById('env-stage-revision');
+      const envStageStatus = document.getElementById('env-stage-status');
+      const envStageNote = document.getElementById('env-stage-note');
+      const envProdBranch = document.getElementById('env-prod-branch');
+      const envProdRevision = document.getElementById('env-prod-revision');
+      const envProdStatus = document.getElementById('env-prod-status');
+      const envProdNote = document.getElementById('env-prod-note');
+      const promotionDecisionBadge = document.getElementById('promotion-decision-badge');
+      const promotionDecisionSummary = document.getElementById('promotion-decision-summary');
+      const promotionBlockers = document.getElementById('promotion-blockers');
 
       const asLocal = (iso) => {
         const date = new Date(iso);
@@ -750,7 +957,7 @@
 
       const fetchWithTimeout = async (url, timeoutMs) => {
         const controller = new AbortController();
-        const timeoutHandle = window.setTimeout(() => {
+        const timeoutHandle = globalThis.setTimeout(() => {
           controller.abort();
         }, timeoutMs);
 
@@ -763,7 +970,7 @@
 
           throw error;
         } finally {
-          window.clearTimeout(timeoutHandle);
+          globalThis.clearTimeout(timeoutHandle);
         }
       };
 
@@ -800,7 +1007,7 @@
 
       const clearBusyTicker = () => {
         if (busyTicker !== null) {
-          window.clearInterval(busyTicker);
+          globalThis.clearInterval(busyTicker);
           busyTicker = null;
         }
       };
@@ -843,8 +1050,10 @@
 
         clearBusyTicker();
         renderBusyLabels();
-        busyTicker = window.setInterval(renderBusyLabels, 1000);
+        busyTicker = globalThis.setInterval(renderBusyLabels, 1000);
       };
+
+      let latestRuntimePayload = null;
 
       const getCoverageMetricBoxes = (check) => {
         if (check?.name !== 'Coverage') {
@@ -1564,6 +1773,352 @@
         );
       };
 
+      const toPromotionStateClass = (state) => {
+        if (state === 'ready') {
+          return 'ok';
+        }
+
+        if (state === 'attention') {
+          return 'bad';
+        }
+
+        return 'warn';
+      };
+
+      const findPromotionEnvironment = (promotion, name) => {
+        if (!Array.isArray(promotion?.environments)) {
+          return null;
+        }
+
+        return (
+          promotion.environments.find((item) => String(item?.name || '').toLowerCase() === name) ||
+          null
+        );
+      };
+
+      const resolveSyncPresentation = (promotion, branch, commit) => {
+        const fallback = {
+          state: 'pending',
+          text: `Local ${branch} @ ${commit}`,
+        };
+        const sync = promotion?.sync;
+
+        if (!sync?.remoteRef) {
+          return fallback;
+        }
+
+        if (sync.inSync === true) {
+          return {
+            state: 'ready',
+            text: `${sync.remoteRef} in sync (ahead ${sync.aheadCount ?? '?'}, behind ${sync.behindCount ?? '?'})`,
+          };
+        }
+
+        if (sync.inSync === false) {
+          return {
+            state: 'attention',
+            text: `${sync.remoteRef} drifted (ahead ${sync.aheadCount ?? '?'}, behind ${sync.behindCount ?? '?'})`,
+          };
+        }
+
+        return {
+          state: 'pending',
+          text: `${sync.remoteRef} sync state unavailable`,
+        };
+      };
+
+      const resolveBaselinePresentation = (promotion) => {
+        const baseline = promotion?.baseline;
+        if (!baseline?.tagName) {
+          return {
+            state: 'pending',
+            text: 'Baseline not available',
+          };
+        }
+
+        const text = baseline.commit
+          ? `${baseline.tagName} @ ${baseline.commit}`
+          : `${baseline.tagName} not resolved`;
+
+        if (baseline.exists === false || baseline.matchesHead === false) {
+          return { state: 'attention', text };
+        }
+
+        if (baseline.matchesHead === true) {
+          return { state: 'ready', text };
+        }
+
+        return { state: 'pending', text };
+      };
+
+      const resolveRemoteHealthPresentation = (statusPayload, syncState) => {
+        if (typeof statusPayload?.overallStatus !== 'string') {
+          return {
+            state: 'pending',
+            text: 'Waiting for repo checks',
+          };
+        }
+
+        if (statusPayload.overallStatus !== 'healthy') {
+          return {
+            state: 'attention',
+            text: 'Repo checks failing',
+          };
+        }
+
+        if (syncState === 'ready') {
+          return {
+            state: 'ready',
+            text: 'Repo checks healthy + remote sync aligned',
+          };
+        }
+
+        if (syncState === 'attention') {
+          return {
+            state: 'attention',
+            text: 'Repo checks healthy, but remote sync drift detected',
+          };
+        }
+
+        return {
+          state: 'pending',
+          text: 'Repo checks healthy, remote sync pending',
+        };
+      };
+
+      const resolveEnvironmentStatusText = (environment) => {
+        if (!environment) {
+          return 'PENDING | No environment data';
+        }
+
+        const state = String(environment.status || 'pending').toUpperCase();
+        return `${state} | ${environment.note || ''}`;
+      };
+
+      const collectPromotionBlockers = ({ syncState, baselineState, remoteState, stageState }) => {
+        const blockers = [];
+
+        if (remoteState === 'attention') {
+          blockers.push('Repo health checks are failing.');
+        }
+
+        if (syncState === 'attention') {
+          blockers.push('Local branch is not synchronized with the remote tracking branch.');
+        } else if (syncState === 'pending') {
+          blockers.push('Remote sync status is incomplete for this clone.');
+        }
+
+        if (baselineState === 'attention') {
+          blockers.push('Baseline tag does not match the current HEAD commit.');
+        } else if (baselineState === 'pending') {
+          blockers.push('Baseline tag cannot be resolved in this clone.');
+        }
+
+        if (stageState === 'attention') {
+          blockers.push('Stage branch is not aligned with the tracking branch commit.');
+        } else if (stageState === 'pending') {
+          blockers.push('Stage branch reference is unavailable in this clone.');
+        }
+
+        return blockers;
+      };
+
+      const renderPromotionDecision = ({
+        overallState,
+        summaryText,
+        syncState,
+        baselineState,
+        remoteState,
+        stageState,
+        prodState,
+      }) => {
+        if (!promotionDecisionBadge || !promotionDecisionSummary || !promotionBlockers) {
+          return;
+        }
+
+        const blockers = collectPromotionBlockers({
+          syncState,
+          baselineState,
+          remoteState,
+          stageState,
+        });
+
+        let decisionState = 'pending';
+        let decisionLabel = 'PENDING';
+
+        if (overallState === 'ready' && blockers.length === 0) {
+          decisionState = 'ready';
+          decisionLabel = 'READY';
+        } else if (overallState === 'attention' || blockers.length > 0) {
+          decisionState = 'attention';
+          decisionLabel = 'HOLD';
+        }
+
+        promotionDecisionBadge.textContent = decisionLabel;
+        promotionDecisionBadge.className = `pill ${toPromotionStateClass(decisionState)}`;
+
+        if (blockers.length > 0) {
+          promotionDecisionSummary.textContent = `${summaryText} ${blockers.length} blocker${blockers.length === 1 ? '' : 's'} detected.`;
+        } else if (decisionState === 'ready') {
+          promotionDecisionSummary.textContent = `${summaryText} Promotion gates are clear for the next environment.`;
+        } else {
+          promotionDecisionSummary.textContent = summaryText;
+        }
+
+        promotionBlockers.innerHTML = '';
+
+        if (blockers.length === 0) {
+          const advisory = document.createElement('li');
+          advisory.textContent =
+            prodState === 'pending'
+              ? 'Production candidate reference is unavailable in this clone. Verify AWS deployment readiness externally.'
+              : 'No active promotion blockers detected.';
+          promotionBlockers.appendChild(advisory);
+          return;
+        }
+
+        for (const blocker of blockers) {
+          const row = document.createElement('li');
+          row.textContent = blocker;
+          promotionBlockers.appendChild(row);
+        }
+      };
+
+      const renderEnvironmentRow = ({
+        environment,
+        branchElement,
+        revisionElement,
+        statusElement,
+        noteElement,
+        fallbackBranch,
+        fallbackRevision,
+        fallbackNote,
+      }) => {
+        if (branchElement) {
+          branchElement.textContent = environment?.sourceBranch || fallbackBranch;
+        }
+
+        if (revisionElement) {
+          revisionElement.textContent = environment?.targetRevision || fallbackRevision;
+        }
+
+        if (statusElement) {
+          const text = resolveEnvironmentStatusText(environment);
+          statusElement.textContent = text;
+          statusElement.title = text;
+        }
+
+        if (noteElement) {
+          noteElement.textContent = environment?.note || fallbackNote;
+        }
+      };
+
+      const renderPromotionReadiness = (runtimePayload, statusPayload = null) => {
+        const promotion = runtimePayload?.promotionReadiness;
+        const branch = runtimePayload?.gitContext?.branch || 'unknown';
+        const commit = runtimePayload?.gitContext?.commit || 'unknown';
+
+        const syncPresentation = resolveSyncPresentation(promotion, branch, commit);
+        const baselinePresentation = resolveBaselinePresentation(promotion);
+        const remotePresentation = resolveRemoteHealthPresentation(
+          statusPayload,
+          syncPresentation.state,
+        );
+
+        let overallState = promotion?.overall || 'pending';
+        if (
+          typeof statusPayload?.overallStatus === 'string' &&
+          statusPayload.overallStatus !== 'healthy'
+        ) {
+          overallState = 'attention';
+        }
+
+        const summaryText =
+          promotion?.summary || 'Promotion readiness details are loading from runtime diagnostics.';
+
+        if (syncStatus) {
+          syncStatus.textContent = syncPresentation.text;
+          syncStatus.className =
+            `metric-value ${toPromotionStateClass(syncPresentation.state)}`.trim();
+          syncStatus.title = syncPresentation.text;
+        }
+
+        if (baselineAnchor) {
+          baselineAnchor.textContent = baselinePresentation.text;
+          baselineAnchor.className =
+            `metric-value ${toPromotionStateClass(baselinePresentation.state)}`.trim();
+          baselineAnchor.title = baselinePresentation.text;
+        }
+
+        if (remoteHealth) {
+          remoteHealth.textContent = remotePresentation.text;
+          remoteHealth.className =
+            `metric-value ${toPromotionStateClass(remotePresentation.state)}`.trim();
+          remoteHealth.title = remotePresentation.text;
+        }
+
+        if (promotionReadiness) {
+          promotionReadiness.textContent = overallState.toUpperCase();
+          promotionReadiness.className =
+            `metric-value ${toPromotionStateClass(overallState)}`.trim();
+          promotionReadiness.title = summaryText;
+        }
+
+        if (envMatrixBadge) {
+          envMatrixBadge.textContent = overallState.toUpperCase();
+          envMatrixBadge.className = `pill ${toPromotionStateClass(overallState)}`;
+        }
+
+        if (envMatrixSummary) {
+          envMatrixSummary.textContent = summaryText;
+        }
+
+        const devEnvironment = findPromotionEnvironment(promotion, 'dev');
+        const stageEnvironment = findPromotionEnvironment(promotion, 'stage');
+        const prodEnvironment = findPromotionEnvironment(promotion, 'prod');
+
+        renderEnvironmentRow({
+          environment: devEnvironment,
+          branchElement: envDevBranch,
+          revisionElement: envDevRevision,
+          statusElement: envDevStatus,
+          noteElement: envDevNote,
+          fallbackBranch: branch,
+          fallbackRevision: commit,
+          fallbackNote: 'Awaiting development environment diagnostics.',
+        });
+        renderEnvironmentRow({
+          environment: stageEnvironment,
+          branchElement: envStageBranch,
+          revisionElement: envStageRevision,
+          statusElement: envStageStatus,
+          noteElement: envStageNote,
+          fallbackBranch: 'dev',
+          fallbackRevision: 'Pending API wiring',
+          fallbackNote: 'Awaiting stage environment diagnostics.',
+        });
+        renderEnvironmentRow({
+          environment: prodEnvironment,
+          branchElement: envProdBranch,
+          revisionElement: envProdRevision,
+          statusElement: envProdStatus,
+          noteElement: envProdNote,
+          fallbackBranch: 'main',
+          fallbackRevision: 'Pending API wiring',
+          fallbackNote: 'Awaiting production candidate diagnostics.',
+        });
+
+        renderPromotionDecision({
+          overallState,
+          summaryText,
+          syncState: syncPresentation.state,
+          baselineState: baselinePresentation.state,
+          remoteState: remotePresentation.state,
+          stageState: String(stageEnvironment?.status || 'pending'),
+          prodState: String(prodEnvironment?.status || 'pending'),
+        });
+      };
+
       const resolveCheckMetricBoxes = (check) => {
         const coverageMetricBoxes = getCoverageMetricBoxes(check);
         return coverageMetricBoxes.length > 0 ? coverageMetricBoxes : getSecurityMetricBoxes(check);
@@ -1716,11 +2271,12 @@
         const metricBoxes = isCoverageCheck ? [] : resolveCheckMetricBoxes(check);
         const securityComponentRowsHtml = buildSecurityComponentRowsMarkup(check);
         const summaryHtml = buildCheckSummaryHtml(check, metricBoxes);
-        const checkDetails = isCoverageCheck
-          ? getCoverageDisplayText(check.details)
-          : isPostgresCheck
-            ? getPostgresPreflightDisplayText(check.details)
-            : check.details || 'No additional output';
+        let checkDetails = check.details || 'No additional output';
+        if (isCoverageCheck) {
+          checkDetails = getCoverageDisplayText(check.details);
+        } else if (isPostgresCheck) {
+          checkDetails = getPostgresPreflightDisplayText(check.details);
+        }
         const outputMarkup = isSecurityCheck ? '' : `<pre>${escapeHtml(checkDetails)}</pre>`;
         const detailsMarkup = `<div class="details">
             ${summaryHtml}
@@ -1764,10 +2320,12 @@
         healthRatio.textContent =
           totalChecks > 0 ? `${passedChecks}/${totalChecks} (${ratioPercent}%)` : 'No checks';
         healthRatio.className = `metric-value ${failingChecks.length === 0 ? 'ok' : 'bad'}`;
+        healthRatio.title = healthRatio.textContent;
 
         failingAreas.textContent =
           uniqueFailingAreas.length > 0 ? uniqueFailingAreas.join(', ') : 'None';
         failingAreas.className = `metric-value ${uniqueFailingAreas.length === 0 ? 'ok' : 'bad'}`;
+        failingAreas.title = failingAreas.textContent;
 
         repoFocusList.innerHTML = '';
 
@@ -1813,14 +2371,17 @@
       const loadRuntime = async () => {
         const response = await fetchWithTimeout('/api/developer/runtime', 30000);
         const payload = await readJsonOrThrow(response, 'Failed to load runtime diagnostics.');
+        latestRuntimePayload = payload;
         renderRuntimePanels(payload);
+        renderPromotionReadiness(payload);
+        return payload;
       };
 
       const loadStatus = async (force = false, activeButton = null) => {
         setButtonsBusy(true, activeButton);
 
         try {
-          await loadRuntime();
+          const runtimePayload = await loadRuntime();
           const response = await fetchWithTimeout(
             `/api/developer/status${force ? '?force=1' : ''}`,
             600000,
@@ -1847,16 +2408,20 @@
             `metric-value ${Number(passed.textContent) === Number(total.textContent) ? 'ok' : ''}`.trim();
           runtime.textContent = formatDuration(payload.totalDurationMs);
           updated.textContent = asLocal(payload.generatedAt);
+          updated.title = updated.textContent;
 
           cacheStatus.textContent = payload.cache?.fromCache ? 'Served from cache' : 'Fresh run';
           cacheStatus.className = `metric-value ${payload.cache?.fromCache ? '' : 'ok'}`.trim();
+          cacheStatus.title = cacheStatus.textContent;
           cacheAge.textContent = payload.cache
             ? `${formatDuration(payload.cache.ageMs)} / ${formatDuration(payload.cache.ttlMs)}`
             : '-';
+          cacheAge.title = cacheAge.textContent;
 
           renderRepoFocus(payload);
           renderHistory(payload.history);
           renderRepoChecks(payload.checks);
+          renderPromotionReadiness(runtimePayload || latestRuntimePayload, payload);
         } catch (error) {
           overall.textContent = 'Unavailable';
           overall.className = 'metric-value bad';

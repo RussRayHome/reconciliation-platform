@@ -16,13 +16,15 @@
 -- How to run (AWS RDS / direct psql):
 --   psql -h <rds-endpoint> -p 5432 -U <rds-admin-user> -d reconciliation_platform \
 --       -v pwd="'<strong-password>'" \
---       -f scripts/db/production/create-user-prod-rray.sql
+--       -f scripts/db/production/create-user-prod-rray.psql
 --
 -- Or with inline substitution:
 --   PGPASSWORD=<admin-pw> psql -h <host> -U <admin> -d reconciliation_platform \
 --       -c "\set pwd '<strong-password>'" \
---       -f scripts/db/production/create-user-prod-rray.sql
+--       -f scripts/db/production/create-user-prod-rray.psql
 -- =============================================================================
+
+\set ON_ERROR_STOP on
 
 \echo 'Creating production user: prod_rray (restricted — no DELETE)'
 
@@ -39,22 +41,19 @@ BEGIN
       NOCREATEDB
       NOCREATEROLE
       NOREPLICATION
-      CONNECTION LIMIT 25
-      PASSWORD :'user_password';
+      CONNECTION LIMIT 25;
     RAISE NOTICE 'Role prod_rray created.';
   ELSE
-    ALTER ROLE prod_rray
-      LOGIN
-      NOSUPERUSER
-      NOCREATEDB
-      NOCREATEROLE
-      NOREPLICATION
-      CONNECTION LIMIT 25
-      PASSWORD :'user_password';
-    RAISE NOTICE 'Role prod_rray already exists — attributes updated.';
+    RAISE NOTICE 'Role prod_rray already exists — attributes will be updated.';
   END IF;
 END;
 $$;
+
+SELECT format(
+  'ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION CONNECTION LIMIT 25 PASSWORD %L',
+  'prod_rray',
+  :'user_password'
+) \gexec
 
 -- Allow connecting to the database
 GRANT CONNECT ON DATABASE reconciliation_platform TO prod_rray;

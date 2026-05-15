@@ -87,7 +87,9 @@ Access points after deploy:
 - API health through gateway: `http://127.0.0.1:4173/api/health`
 - NGINX health: `http://127.0.0.1:4173/healthz`
 - Developer Dashboard: `http://127.0.0.1:4173/<environment>/developer-dashboard.html` (for example `dev/developer-dashboard.html`)
-- Postgres Admin (pgweb): `http://127.0.0.1:8081` (dev and stage only)
+- Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
+- Dashboard Server runtime payload: `http://127.0.0.1:4173/<environment>/dashboard/server` (for example `dev/dashboard/server`)
+- Postgres Admin (direct port): `http://127.0.0.1:8081` (dev and stage only)
 
 ## 6. Environment files
 

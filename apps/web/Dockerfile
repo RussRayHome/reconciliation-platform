@@ -1,5 +1,8 @@
-FROM node:24.14.1-alpine AS deps
+FROM node:26.1.0-alpine AS deps
 WORKDIR /app
+
+ARG NPM_VERSION=11.14.1
+RUN npm install -g "npm@${NPM_VERSION}"
 
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json

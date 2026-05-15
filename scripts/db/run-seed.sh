@@ -13,7 +13,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SQL_FILE="$ROOT_DIR/scripts/db/seed.sql"
+SQL_FILE="$ROOT_DIR/scripts/db/dev-stage/seed.psql"
 ENVIRONMENT="${1:-}"
 
 case "$ENVIRONMENT" in
