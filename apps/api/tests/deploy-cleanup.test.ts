@@ -44,7 +44,7 @@ const dockerEnv = {
   DATABASE_URL: process.env.DATABASE_URL ?? defaultDockerDatabaseUrl,
 };
 
-const cleanupCommand = 'bash scripts/ops/cleanup.sh --prune-volumes';
+const cleanupCommand = 'bash scripts/pre-flight/cleanup.sh --prune-volumes';
 
 const hasCommand = (command: string): boolean =>
   spawnSync('sh', ['-c', `command -v ${command} >/dev/null 2>&1`], { stdio: 'ignore' }).status ===
@@ -63,10 +63,10 @@ const runWithDockerEnv = (command: string): string =>
 
 const deployWithRetry = (): string => {
   try {
-    return runWithDockerEnv('bash scripts/ops/deploy.sh');
+    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh');
   } catch {
     runWithDockerEnv(cleanupCommand);
-    return runWithDockerEnv('bash scripts/ops/deploy.sh');
+    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh');
   }
 };
 

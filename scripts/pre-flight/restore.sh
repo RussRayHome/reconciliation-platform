@@ -9,7 +9,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/db/restore.sh dev [path/to/dump-file]
+#   bash scripts/pre-flight/restore.sh dev [path/to/dump-file]
 #
 # If no dump file is specified, restores from the most recent .backups/recon-<env>-*.dump.
 #
@@ -120,7 +120,7 @@ docker compose "${compose_args[@]}" exec -T postgres \
 docker compose "${compose_args[@]}" exec -T postgres rm /tmp/restore.dump
 
 printf 'Re-applying user grants...\n'
-bash "$ROOT_DIR/scripts/db/run-users.sh" "$ENVIRONMENT"
+bash "$ROOT_DIR/scripts/pre-flight/run-users.sh" "$ENVIRONMENT"
 
 printf 'Restarting api and web services...\n'
 docker compose "${compose_args[@]}" up -d api web

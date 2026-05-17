@@ -8,7 +8,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/ops/run-migrations.sh
+#   bash scripts/pre-flight/run-migrations.sh
 #
 # Prerequisites: the postgres container must already be running (npm run docker:deploy first).
 # Migrations are also applied automatically on API boot when RUN_DB_MIGRATIONS_ON_BOOT=true.
@@ -70,5 +70,5 @@ elif [[ -f "$FALLBACK_FILE" ]]; then
   compose_args+=(--env-file "$FALLBACK_FILE")
 fi
 
-bash "$ROOT_DIR/scripts/ops/validate-env.sh"
+bash "$ROOT_DIR/scripts/pre-flight/validate-env.sh"
 docker compose "${compose_args[@]}" up --build migrate

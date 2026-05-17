@@ -9,7 +9,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/ops/deploy.sh
+#   bash scripts/pre-flight/deploy.sh
 #
 # Required env vars (set in the env file):
 #   POSTGRES_PASSWORD, COMPOSE_PROJECT_NAME
@@ -98,10 +98,15 @@ elif [[ -f "$FALLBACK_FILE" ]]; then
   compose_args+=(--env-file "$FALLBACK_FILE")
 fi
 
-bash "$ROOT_DIR/scripts/ops/validate-env.sh"
+bash "$ROOT_DIR/scripts/pre-flight/validate-env.sh"
 DEPLOY_ENV="dev"
 if [[ "${DOCKER_COMPOSE_EXTRA_FILE:-}" == *"stage"* ]] || [[ "$ENV_FILE" == *"stage"* ]]; then
   DEPLOY_ENV="stage"
+fi
+
+if [[ "$DEPLOY_ENV" == "dev" || "$DEPLOY_ENV" == "stage" ]]; then
+  export AUX_HEALTH_CHECK_REQUIRED="${AUX_HEALTH_CHECK_REQUIRED:-true}"
+  export AUX_HEALTH_CHECK_RETRIES="${AUX_HEALTH_CHECK_RETRIES:-90}"
 fi
 
 if [[ "${DOCKER_BUILD_NO_CACHE:-false}" == "true" ]]; then
@@ -110,7 +115,7 @@ else
   docker compose "${compose_args[@]}" build
 fi
 docker compose "${compose_args[@]}" up -d postgres
-bash "$ROOT_DIR/scripts/db/run-users.sh" "$DEPLOY_ENV"
+bash "$ROOT_DIR/scripts/pre-flight/run-users.sh" "$DEPLOY_ENV"
 docker compose "${compose_args[@]}" up migrate
 docker compose "${compose_args[@]}" up -d --force-recreate api web
 if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
@@ -131,6 +136,6 @@ if [[ "$api_build_target" == "dev" ]]; then
   fi
 fi
 
-bash "$ROOT_DIR/scripts/ops/health-check.sh"
+bash "$ROOT_DIR/scripts/pre-flight/health-check.sh"
 
 echo "Local stack deployed."

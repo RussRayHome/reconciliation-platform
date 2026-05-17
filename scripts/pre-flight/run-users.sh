@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: bash scripts/db/run-users.sh <dev|stage>
+# Usage: bash scripts/pre-flight/run-users.sh <dev|stage>
 #
 # Runs the dev/stage user creation SQL against the target Docker Compose
 # environment. The postgres container must already be running.

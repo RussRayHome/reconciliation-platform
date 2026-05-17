@@ -154,13 +154,14 @@ npm run docker:cleanup
 
 ### Service topology
 
-| Service    | Role                      | Host port | Environments    |
-|------------|---------------------------|-----------|-----------------|
-| `web`      | NGINX public gateway      | `4173`    | dev, stage      |
-| `api`      | Express API               | internal  | dev, stage      |
-| `postgres` | PostgreSQL data store     | `5432`    | dev, stage      |
-| `migrate`  | One-shot migration runner | none      | dev, stage      |
-| `pgweb`    | Postgres web admin        | `8081`    | dev, stage only |
+| Service    | Role                      | Host port       | Environments    |
+|------------|---------------------------|-----------------|-----------------|
+| `web`      | NGINX public gateway      | `4173`          | dev, stage      |
+| `api`      | Express API               | internal        | dev, stage      |
+| `postgres` | PostgreSQL data store     | `5432`          | dev, stage      |
+| `migrate`  | One-shot migration runner | none            | dev, stage      |
+| `pgweb`    | Postgres web admin        | `8081`          | dev, stage only |
+| `nginx-ui` | NGINX admin UI            | `8082` / `8182` | dev, stage only |
 
 Access points after deploy:
 
@@ -170,6 +171,7 @@ Access points after deploy:
 - Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
 - Dashboard Server runtime payload: `http://127.0.0.1:4173/<environment>/dashboard/server` (for example `dev/dashboard/server`)
 - Postgres Admin (direct port): `http://127.0.0.1:8081`
+- NGINX UI (direct port): `http://127.0.0.1:8082`
 
 ## 7. Preflight checks
 
@@ -196,6 +198,7 @@ Runs checks for:
 - stack startup readiness
 - `/api/health` endpoint reachability via gateway
 - inter-service connectivity probe
+- auxiliary admin service health checks (`pgweb` and `nginx-ui` in dev/stage)
 - graceful shutdown behavior
 - cleanup integrity
 
@@ -231,6 +234,7 @@ Common flags:
 Common flags:
 
 - `API_DATABASE_URL=postgresql://...@postgres:5432/...`
+- `ENABLE_PGAUDIT=true` (dev/stage), `false` (production/default)
 - `RUN_DB_MIGRATIONS_ON_BOOT=false`
 - `ENABLE_DEVELOPER_DIAGNOSTICS=false`
 - `RECONCILIATION_RUN_STORE_PATH=/var/lib/reconciliation/latest-reconciliation-run.json`
@@ -343,7 +347,7 @@ Source of truth: `package.json` scripts at the repository root.
 
 - `docker:validate-env`: validates Docker env files and required variable presence.
 - `docker:preflight`: runs build-time Docker safety checks before stack startup.
-- `docker:build`: runs `docker compose build` for stack images.
+- `docker:build`: runs `docker compose build` for stack images using env-file fallback (`.env.docker.dev` -> `.env.docker.dev.fallback`).
 - `docker:predeploy`: runs compose startup/shutdown and readiness predeploy checks.
 - `docker:db:preflight`: runs DB patch parity, schema integrity, and DB-image vulnerability checks.
 - `docker:gate`: runs `docker:preflight` then `docker:predeploy` as a combined gate.
@@ -352,10 +356,10 @@ Source of truth: `package.json` scripts at the repository root.
 - `docker:deploy`: executes the standard deploy runbook script.
 - `docker:redeploy`: executes cleanup/restart deploy runbook script.
 - `docker:smoke`: runs isolated end-to-end Docker smoke checks, then tears down.
-- `docker:up`: runs `docker compose up --build` directly.
+- `docker:up`: runs `docker compose up --build` using env-file fallback (`.env.docker.dev` -> `.env.docker.dev.fallback`).
 - `docker:cleanup`: runs Docker cleanup script for stack artifacts.
-- `docker:down`: runs `docker compose down --remove-orphans`.
-- `docker:logs`: tails compose logs.
+- `docker:down`: runs `docker compose down --remove-orphans` using env-file fallback (`.env.docker.dev` -> `.env.docker.dev.fallback`).
+- `docker:logs`: tails compose logs using env-file fallback (`.env.docker.dev` -> `.env.docker.dev.fallback`).
 
 ### Build, test, and static quality
 

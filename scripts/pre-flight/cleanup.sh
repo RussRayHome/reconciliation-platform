@@ -9,7 +9,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/ops/cleanup.sh
+#   bash scripts/pre-flight/cleanup.sh
 #
 # WARNING: Removes named volumes (database data). Run only when you want a clean slate.
 set -euo pipefail

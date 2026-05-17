@@ -6,7 +6,7 @@
 #   npm run db:seed:stage
 #
 # Usage (direct):
-#   bash scripts/db/run-seed.sh <dev|stage>
+#   bash scripts/pre-flight/run-seed.sh <dev|stage>
 #
 # The seed is idempotent (ON CONFLICT DO NOTHING) — safe to run multiple times.
 # The postgres container must already be running.

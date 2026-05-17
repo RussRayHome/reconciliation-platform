@@ -9,7 +9,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/ops/db-preflight-checks.sh
+#   bash scripts/pre-flight/db-preflight-checks.sh
 #
 # Checks run (in order):
 #   DB1  — Docker daemon available
@@ -234,7 +234,7 @@ source_environment() {
     return 1
   fi
 
-  bash "$ROOT_DIR/scripts/ops/validate-env.sh" >/dev/null
+  bash "$ROOT_DIR/scripts/pre-flight/validate-env.sh" >/dev/null
 
   set -a
   # shellcheck disable=SC1090
@@ -585,7 +585,7 @@ check_expected_users_exist() {
     return 0
   fi
 
-  record_check "DB12" "Expected database users" "FAIL" "Missing: ${missing_users[*]} — run: bash scripts/db/run-users.sh <dev|stage>"
+  record_check "DB12" "Expected database users" "FAIL" "Missing: ${missing_users[*]} — run: bash scripts/pre-flight/run-users.sh <dev|stage>"
   return 1
 }
 

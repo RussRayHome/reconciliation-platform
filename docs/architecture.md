@@ -32,6 +32,7 @@ The same codebase supports two main runtime shapes.
 - Internal Express API (`api`)
 - Internal PostgreSQL (`postgres`)
 - One-shot migration service (`migrate`) that runs before API startup
+- Auxiliary admin services in dev/stage (`pgweb`, `nginx-ui`)
 
 ## 3. High-level component architecture
 
@@ -177,9 +178,11 @@ Results are cached with configurable TTL/history settings.
 
 Deployment-related guardrails are intentionally externalized to scripts:
 
-- `scripts/ops/preflight-build-checks.sh`
-- `scripts/ops/predeploy-stack-checks.sh`
-- `scripts/ops/db-preflight-checks.sh`
+- `scripts/pre-flight/preflight-build-checks.sh`
+- `scripts/pre-flight/predeploy-stack-checks.sh`
+- `scripts/pre-flight/db-preflight-checks.sh`
+- `scripts/in-flight/in-flight-url-check.sh`
+- `scripts/in-flight/in-flight-db-user-check.sh`
 
 This keeps operational risk checks explicit and repeatable outside the request path.
 

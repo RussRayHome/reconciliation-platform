@@ -9,7 +9,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/ops/health-check.sh
+#   bash scripts/pre-flight/health-check.sh
 #
 # What it checks:
 #   - Gateway HTTP response on PUBLIC_WEB_PORT (nginx reverse proxy)
@@ -69,7 +69,7 @@ append_extra_compose_files() {
 wait_for_http() {
   local label="$1"
   local url="$2"
-  local retries="${HEALTH_CHECK_RETRIES:-30}"
+  local retries="${3:-${HEALTH_CHECK_RETRIES:-30}}"
   local delay_seconds="${HEALTH_CHECK_DELAY_SECONDS:-2}"
   local attempt=1
 
@@ -108,6 +108,17 @@ wait_for_postgres() {
   done
 }
 
+is_truthy() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 compose_args=(-f "$ROOT_DIR/compose.yaml")
 append_extra_compose_files
 if [[ -f "$ENV_FILE" ]]; then
@@ -133,25 +144,39 @@ wait_for_http "API" "http://127.0.0.1:${PUBLIC_WEB_PORT}/api/health"
 wait_for_postgres
 
 pgweb_enabled=false
+pgweb_healthy=false
 if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
-  PGWEB_PORT="${PGWEB_PORT:-8081}"
-  wait_for_http "Postgres Admin" "http://127.0.0.1:${PGWEB_PORT}/"
   pgweb_enabled=true
+  PGWEB_PORT="${PGWEB_PORT:-8081}"
+  if wait_for_http "Postgres Admin" "http://127.0.0.1:${PGWEB_PORT}/" "${AUX_HEALTH_CHECK_RETRIES:-60}"; then
+    pgweb_healthy=true
+  elif is_truthy "${AUX_HEALTH_CHECK_REQUIRED:-false}"; then
+    exit 1
+  else
+    echo "Warning: Postgres Admin health check did not pass at http://127.0.0.1:${PGWEB_PORT}/; continuing because AUX_HEALTH_CHECK_REQUIRED is false."
+  fi
 fi
 
 nginx_ui_enabled=false
+nginx_ui_healthy=false
 if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^nginx-ui$'; then
-  NGINX_UI_HTTP_PORT="${NGINX_UI_HTTP_PORT:-8082}"
-  wait_for_http "Nginx UI" "http://127.0.0.1:${NGINX_UI_HTTP_PORT}/"
   nginx_ui_enabled=true
+  NGINX_UI_HTTP_PORT="${NGINX_UI_HTTP_PORT:-8082}"
+  if wait_for_http "Nginx UI" "http://127.0.0.1:${NGINX_UI_HTTP_PORT}/" "${AUX_HEALTH_CHECK_RETRIES:-60}"; then
+    nginx_ui_healthy=true
+  elif is_truthy "${AUX_HEALTH_CHECK_REQUIRED:-false}"; then
+    exit 1
+  else
+    echo "Warning: Nginx UI health check did not pass at http://127.0.0.1:${NGINX_UI_HTTP_PORT}/; continuing because AUX_HEALTH_CHECK_REQUIRED is false."
+  fi
 fi
 
-if [[ "$pgweb_enabled" == "true" && "$nginx_ui_enabled" == "true" ]]; then
-  echo "Gateway, API, PostgreSQL, Postgres Admin, and Nginx UI health checks passed."
-elif [[ "$pgweb_enabled" == "true" ]]; then
-  echo "Gateway, API, PostgreSQL, and Postgres Admin health checks passed."
-elif [[ "$nginx_ui_enabled" == "true" ]]; then
-  echo "Gateway, API, PostgreSQL, and Nginx UI health checks passed."
-else
-  echo "Gateway, API, and PostgreSQL health checks passed."
+echo "Gateway, API, and PostgreSQL health checks passed."
+
+if [[ "$pgweb_enabled" == "true" && "$pgweb_healthy" == "true" ]]; then
+  echo "Postgres Admin health check passed."
+fi
+
+if [[ "$nginx_ui_enabled" == "true" && "$nginx_ui_healthy" == "true" ]]; then
+  echo "Nginx UI health check passed."
 fi

@@ -9,7 +9,7 @@
 --   Job B — FAILED:    file registration only, simulates pipeline failure
 --
 -- How to run:
---   bash scripts/db/run-seed.sh dev
+--   bash scripts/pre-flight/run-seed.sh dev
 --   npm run db:seed:dev
 -- =============================================================================
 

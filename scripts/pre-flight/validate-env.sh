@@ -8,7 +8,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/ops/validate-env.sh
+#   bash scripts/pre-flight/validate-env.sh
 #
 # Called automatically by deploy.sh, predeploy-stack-checks.sh, and db-preflight-checks.sh
 # before any Docker Compose operations. Exits non-zero with a clear error listing any missing

@@ -40,6 +40,10 @@ services:
       - app
       - data
     restart: unless-stopped
+    mem_limit: ${PGWEB_MEM_LIMIT:-256m}
+    mem_reservation: ${PGWEB_MEM_RESERVATION:-64m}
+    cpus: ${PGWEB_CPUS:-0.50}
+    stop_grace_period: 30s
 
   nginx-ui:
     image: uozi/nginx-ui:latest
@@ -53,6 +57,10 @@ services:
     networks:
       - edge
     restart: unless-stopped
+    mem_limit: ${NGINX_UI_MEM_LIMIT:-512m}
+    mem_reservation: ${NGINX_UI_MEM_RESERVATION:-128m}
+    cpus: ${NGINX_UI_CPUS:-1.00}
+    stop_grace_period: 90s
 
 volumes:
   recon-nginx-ui-data:

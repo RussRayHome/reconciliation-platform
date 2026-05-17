@@ -10,13 +10,13 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/db/backup.sh dev
+#   bash scripts/pre-flight/backup.sh dev
 #
 # Output:
 #   .backups/recon-<env>-<YYYYMMDD-HHMMSS>.dump  (pg_dump custom format, compressed)
 #
 # Restore with:
-#   bash scripts/db/restore.sh <dev|stage> [dump-file]
+#   bash scripts/pre-flight/restore.sh <dev|stage> [dump-file]
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

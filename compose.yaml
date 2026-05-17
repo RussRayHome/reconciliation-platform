@@ -25,7 +25,10 @@ services:
       dockerfile: Dockerfile.postgres
       args:
         POSTGRES_BASE_IMAGE: ${POSTGRES_BASE_IMAGE:-postgres:16.13}
-        ENABLE_PGAUDIT: ${ENABLE_PGAUDIT:-true}
+        ENABLE_PGAUDIT: ${ENABLE_PGAUDIT:-false}
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-data:latest
     environment:
       LANG: en_US.UTF-8
       LANGUAGE: en_US:en
@@ -34,6 +37,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-recon_app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     restart: unless-stopped
+    mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
+    mem_reservation: ${POSTGRES_MEM_RESERVATION:-512m}
+    cpus: ${POSTGRES_CPUS:-1.50}
+    stop_grace_period: 45s
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     expose:
@@ -60,6 +67,12 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate:latest
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api:latest
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api-dev:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +81,10 @@ services:
       RUN_DB_MIGRATIONS_ON_BOOT: "true"
     command: ["node", "apps/api/dist/migrate.cjs"]
     restart: "no"
+    mem_limit: ${MIGRATE_MEM_LIMIT:-768m}
+    mem_reservation: ${MIGRATE_MEM_RESERVATION:-256m}
+    cpus: ${MIGRATE_CPUS:-1.00}
+    stop_grace_period: 45s
     networks:
       - data
     logging: *default-logging
@@ -77,6 +94,12 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api:latest
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api-dev:latest
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,6 +116,10 @@ services:
       - app
       - data
     restart: unless-stopped
+    mem_limit: ${API_MEM_LIMIT:-2g}
+    mem_reservation: ${API_MEM_RESERVATION:-768m}
+    cpus: ${API_CPUS:-2.00}
+    stop_grace_period: 45s
     healthcheck:
       test:
         [
@@ -110,6 +137,10 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_from:
+        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-web:latest
     depends_on:
       api:
         condition: service_healthy
@@ -119,6 +150,10 @@ services:
       - edge
       - app
     restart: unless-stopped
+    mem_limit: ${WEB_MEM_LIMIT:-512m}
+    mem_reservation: ${WEB_MEM_RESERVATION:-128m}
+    cpus: ${WEB_CPUS:-1.00}
+    stop_grace_period: 30s
     healthcheck:
       test:
         [

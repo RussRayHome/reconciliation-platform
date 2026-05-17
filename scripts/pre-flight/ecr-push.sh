@@ -5,7 +5,7 @@
 #   npm run aws:ecr:push
 #
 # Usage (direct):
-#   AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 bash scripts/ops/ecr-push.sh
+#   AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 bash scripts/pre-flight/ecr-push.sh
 #
 # Required env vars:
 #   AWS_ACCOUNT_ID — 12-digit AWS account number

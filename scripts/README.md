@@ -163,9 +163,10 @@ Notes:
 
 ## Database Scripts
 
-The `scripts/db/` directory contains scripts for database user management, backups, restores, and seed data.
+The `scripts/pre-flight/` directory contains Bash entrypoints for database user management, backups, restores, and seed orchestration.
+The `scripts/db/` directory now holds SQL assets consumed by those scripts (for example `dev-stage/*.psql` and `production/*.psql`).
 
-### `db/backup.sh`
+### `pre-flight/backup.sh`
 
 Purpose:
 
@@ -185,7 +186,7 @@ Notes:
 - Output files are written to `.backups/` (gitignored).
 - Take a backup before any destructive schema operation or volume wipe.
 
-### `db/restore.sh`
+### `pre-flight/restore.sh`
 
 Purpose:
 
@@ -198,7 +199,7 @@ How to run:
 ```bash
 npm run db:restore:dev                                            # most recent dev backup
 npm run db:restore:stage                                          # most recent stage backup
-bash scripts/db/restore.sh dev .backups/recon-dev-20260512.dump  # specific file
+bash scripts/pre-flight/restore.sh dev .backups/recon-dev-20260512.dump  # specific file
 ```
 
 Notes:
@@ -215,7 +216,7 @@ Purpose:
 - Covers all 14 tables in the schema.
 - Idempotent: uses `ON CONFLICT DO NOTHING` throughout.
 
-### `db/run-seed.sh`
+### `pre-flight/run-seed.sh`
 
 Purpose:
 
@@ -233,12 +234,12 @@ Notes:
 - The postgres container must be running.
 - Safe to run multiple times.
 
-### `db/run-users.sh`
+### `pre-flight/run-users.sh`
 
 Purpose:
 
 - Creates or updates the `rray` database user (dev/stage only) with full superuser privileges.
-- Called automatically by `scripts/ops/deploy.sh` — no manual run needed on a standard deploy.
+- Called automatically by `scripts/pre-flight/deploy.sh` — no manual run needed on a standard deploy.
 
 How to run manually:
 
@@ -247,7 +248,7 @@ npm run db:users:dev
 npm run db:users:stage
 ```
 
-### `db/run-prod-users.sh`
+### `pre-flight/run-prod-users.sh`
 
 Purpose:
 
@@ -256,46 +257,48 @@ Purpose:
 
 ## Production-Like Docker Runbooks
 
-The `scripts/ops/` directory contains Bash and PowerShell entrypoints for the hardened local deployment flow.
+The `scripts/pre-flight/` directory contains the Bash runbooks used for deployment pre-checks and deployment orchestration.
+The `scripts/in-flight/` directory contains Bash checks intended to run against an already-running stack.
+The `scripts/ops/` directory now contains PowerShell entrypoints plus supporting static assets (for example the DB CVE allowlist and ZAP stage targets).
 
-### `ops/deploy.*`
+### `pre-flight/deploy.sh` and `ops/deploy.ps1`
 
 Purpose:
 
-- Build images, start PostgreSQL, run the dedicated migration service, create database users, then start the API and NGINX gateway. Also starts pgweb when defined in the compose config (dev and stage).
+- Build images, start PostgreSQL, run the dedicated migration service, create database users, then start the API and NGINX gateway. Also starts pgweb and nginx-ui when defined in the compose config (dev and stage).
 
-### `ops/redeploy.*`
+### `pre-flight/redeploy.sh` and `ops/redeploy.ps1`
 
 Purpose:
 
 - Perform a clean cleanup followed by a fresh deploy.
 
-### `ops/run-migrations.*`
+### `pre-flight/run-migrations.sh` and `ops/run-migrations.ps1`
 
 Purpose:
 
 - Execute only the dedicated migration container.
 
-### `ops/health-check.*`
+### `pre-flight/health-check.sh` and `ops/health-check.ps1`
 
 Purpose:
 
-- Verify `/healthz`, `/api/health`, PostgreSQL readiness, and (when present in the compose config) pgweb availability for the containerized stack.
+- Verify `/healthz`, `/api/health`, PostgreSQL readiness, and (when present in the compose config) pgweb/nginx-ui availability for the containerized stack.
 
-### `ops/in-flight-url-check.sh`
+### `in-flight/in-flight-url-check.sh`
 
 Purpose:
 
 - Validate environment-prefixed gateway URLs after test execution.
 - Checks application, docs, developer dashboard, pgweb (when present), and dashboard server runtime endpoints.
 
-### `ops/cleanup.*`
+### `pre-flight/cleanup.sh` and `ops/cleanup.ps1`
 
 Purpose:
 
 - Stop the local production-like stack, with optional volume pruning.
 
-### `ops/validate-env.*`
+### `pre-flight/validate-env.sh` and `ops/validate-env.ps1`
 
 Purpose:
 

@@ -12,6 +12,18 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 - Release documentation artifacts through `CHANGELOG.md` and `RELEASE.md`.
 - Stage PostgreSQL pgAudit enablement for test-stage deployments, including dedicated stage DB preflight command support (`docker:db:preflight:test-stage`).
 
+### Changed (Unreleased)
+
+- Docker runbooks were consolidated under `scripts/pre-flight/` and `scripts/in-flight/`, replacing the previous Bash scripts under `scripts/ops/`.
+- Dev/stage compose overlays now include both auxiliary admin services (`pgweb` and `nginx-ui`) with explicit resource limits and stop grace periods.
+- Base compose now defaults `ENABLE_PGAUDIT=false` for production-safe behavior; dev/stage overlays and env files explicitly enable pgAudit.
+- Testcontainers PostgreSQL integration tests now use `postgres:16.13` to align with the compose stack version.
+- `docker:build`, `docker:up`, `docker:down`, and `docker:logs` scripts now resolve env-file fallback (`.env.docker.dev` -> `.env.docker.dev.fallback`) to prevent compose interpolation failures when local env files are absent.
+
+### Documentation (Unreleased)
+
+- Updated Docker/developer runbook docs to reflect nginx-ui service coverage, auxiliary health-check behavior, and pgAudit environment policy.
+
 ### Stage Operations
 
 - Stage DB preflight now records pgAudit as enabled while temporarily allowlisting unresolved upstream base-image CVEs for non-blocking WARN status.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: bash scripts/db/run-prod-users.sh <prod-rray|prod-rray-admin> \
+# Usage: bash scripts/pre-flight/run-prod-users.sh <prod-rray|prod-rray-admin> \
 #            --host <rds-endpoint> --port 5432 \
 #            --admin-user <admin-username> --admin-password <admin-password>
 #
@@ -28,7 +28,7 @@ usage() {
   printf '  Example:\n'
   printf '    PGHOST=mydb.cluster.us-east-1.rds.amazonaws.com \\\n'
   printf '    PGUSER=postgres PGPASSWORD=secret \\\n'
-  printf '    bash scripts/db/run-prod-users.sh prod-rray\n'
+  printf '    bash scripts/pre-flight/run-prod-users.sh prod-rray\n'
 }
 
 case "$SCRIPT_NAME" in

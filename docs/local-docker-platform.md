@@ -9,6 +9,8 @@ Browser -> web (NGINX gateway) -> api (Express) -> postgres
                               \
                                -> migrate (one-shot, startup only)
                                -> pgweb (dev and stage only)
+
+Browser -> nginx-ui (dev and stage only, direct admin access)
 ```
 
 Key design goals:
@@ -28,6 +30,7 @@ Key design goals:
 | `postgres` | Primary data store           | `5432`          | dev, stage      | Uses `Dockerfile.postgres`            |
 | `migrate`  | One-shot migration runner    | none            | dev, stage      | Runs `node apps/api/dist/migrate.cjs` |
 | `pgweb`    | Postgres web admin           | `8081`          | dev, stage only | Not deployed to production            |
+| `nginx-ui` | NGINX admin UI               | `8082` / `8182` | dev, stage only | Not deployed to production            |
 
 Default values come from `.env.docker` / `.env.docker.dev.fallback`.
 
@@ -38,6 +41,8 @@ Networks:
 - `edge`: gateway ingress
 - `app` (internal): web-to-api only
 - `data` (internal): api/migrate/pgweb-to-postgres only
+
+`nginx-ui` joins the `edge` network directly for local admin access on its host port.
 
 Persistent volumes:
 
@@ -79,6 +84,7 @@ npm run docker:predeploy
 ```
 
 `docker:deploy` automates the full startup sequence including database user creation. No manual user creation step is required.
+For dev/stage deploys, auxiliary admin health checks (`pgweb`, `nginx-ui`) are enforced by default.
 
 Access points after deploy:
 
@@ -90,6 +96,7 @@ Access points after deploy:
 - Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
 - Dashboard Server runtime payload: `http://127.0.0.1:4173/<environment>/dashboard/server` (for example `dev/dashboard/server`)
 - Postgres Admin (direct port): `http://127.0.0.1:8081` (dev and stage only)
+- NGINX UI (direct port): `http://127.0.0.1:8082` (dev default, stage typically `8182`)
 
 ## 6. Environment files
 
@@ -215,8 +222,9 @@ Coverage includes:
 2. stack startup readiness
 3. health endpoint check (`/api/health` through gateway)
 4. inter-service connectivity probe
-5. graceful shutdown verification
-6. cleanup integrity
+5. auxiliary admin service health checks via deploy (`pgweb` and `nginx-ui`, dev/stage)
+6. graceful shutdown verification
+7. cleanup integrity
 
 ### Database phase (`docker:db:preflight`)
 
@@ -265,6 +273,9 @@ Important keys in `.env.docker`:
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
 - `POSTGRES_HOST_PORT`
+- `ENABLE_PGAUDIT`
+- `PGWEB_PORT`
+- `NGINX_UI_HTTP_PORT`
 - `API_DATABASE_URL`
 - `RECON_PERSISTENCE_BACKEND`
 - `RUN_DB_MIGRATIONS_ON_BOOT`

@@ -5,7 +5,7 @@
 #   npm run docker:preflight
 #
 # Usage (direct):
-#   bash scripts/ops/preflight-build-checks.sh
+#   bash scripts/pre-flight/preflight-build-checks.sh
 #
 # What it checks:
 #   - Required host tools are available (bash, docker, docker compose, node, npm, curl)

@@ -6,10 +6,10 @@
 -- Idempotent: safe to run multiple times.
 --
 -- How to run (dev):
---   bash scripts/db/run-users.sh dev
+--   bash scripts/pre-flight/run-users.sh dev
 --
 -- How to run (stage):
---   bash scripts/db/run-users.sh stage
+--   bash scripts/pre-flight/run-users.sh stage
 --
 -- Or manually via psql:
 --   psql -h <host> -p <port> -U <admin-user> -d reconciliation_platform \

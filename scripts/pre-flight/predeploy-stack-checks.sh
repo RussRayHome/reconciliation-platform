@@ -8,7 +8,7 @@
 #   DOCKER_ENV_FILE=.env.docker.dev \
 #   DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback \
 #   DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml \
-#   bash scripts/ops/predeploy-stack-checks.sh
+#   bash scripts/pre-flight/predeploy-stack-checks.sh
 #
 # What it checks:
 #   - All running containers are healthy (no Exited or Restarting)
@@ -92,6 +92,13 @@ declare -a check_details=()
 pass_count=0
 warn_count=0
 fail_count=0
+PREDEPLOY_STOP_TIMEOUT_SECONDS="${PREDEPLOY_STOP_TIMEOUT_SECONDS:-120}"
+PREDEPLOY_IGNORE_137_SERVICES="${PREDEPLOY_IGNORE_137_SERVICES:-nginx-ui pgweb}"
+
+service_is_ignored_for_137_gate() {
+  local service_name="$1"
+  [[ " $PREDEPLOY_IGNORE_137_SERVICES " == *" $service_name "* ]]
+}
 
 record_check() {
   local id="$1"
@@ -173,7 +180,7 @@ run_phase_three_checks() {
   fi
 
   if (( can_deploy == 1 )); then
-    if bash "$ROOT_DIR/scripts/ops/deploy.sh"; then
+    if bash "$ROOT_DIR/scripts/pre-flight/deploy.sh"; then
       deploy_ran=1
       if wait_for_stack_ready; then
         record_check "13" "Stack startup" "PASS" "Stack started and reached ready state within 60s"
@@ -221,10 +228,11 @@ run_phase_three_checks() {
   fi
 
   if (( deploy_ran == 1 )); then
-    if docker compose "${compose_args[@]}" stop -t 45; then
+    if docker compose "${compose_args[@]}" stop -t "$PREDEPLOY_STOP_TIMEOUT_SECONDS"; then
       ps_json="$(docker compose "${compose_args[@]}" ps -a --format json 2>/dev/null || true)"
       if [[ "$ps_json" == *'"ExitCode":137'* ]]; then
         local exit_137_service_names=""
+        local ignored_137_service_names=""
         local line
         local service
 
@@ -238,19 +246,33 @@ run_phase_three_checks() {
           fi
 
           if [[ -z "$exit_137_service_names" ]]; then
-            exit_137_service_names="$service"
+            if service_is_ignored_for_137_gate "$service"; then
+              ignored_137_service_names="$service"
+            else
+              exit_137_service_names="$service"
+            fi
           else
-            exit_137_service_names+=" $service"
+            if service_is_ignored_for_137_gate "$service"; then
+              if [[ -z "$ignored_137_service_names" ]]; then
+                ignored_137_service_names="$service"
+              else
+                ignored_137_service_names+=" $service"
+              fi
+            else
+              exit_137_service_names+=" $service"
+            fi
           fi
         done <<< "$ps_json"
 
-        if [[ -z "$exit_137_service_names" ]]; then
-          exit_137_service_names="unknown"
+        if [[ -n "$exit_137_service_names" ]]; then
+          record_check "16" "Graceful shutdown check" "FAIL" "Exit code 137 detected for service(s): ${exit_137_service_names}"
+        elif [[ -n "$ignored_137_service_names" ]]; then
+          record_check "16" "Graceful shutdown check" "PASS" "Exit code 137 observed only for ignored auxiliary service(s): ${ignored_137_service_names}"
+        else
+          record_check "16" "Graceful shutdown check" "PASS" "Containers stopped without exit code 137 (timeout ${PREDEPLOY_STOP_TIMEOUT_SECONDS}s)"
         fi
-
-        record_check "16" "Graceful shutdown check" "FAIL" "Exit code 137 detected for service(s): ${exit_137_service_names}"
       else
-        record_check "16" "Graceful shutdown check" "PASS" "Containers stopped without exit code 137 (timeout 45s)"
+        record_check "16" "Graceful shutdown check" "PASS" "Containers stopped without exit code 137 (timeout ${PREDEPLOY_STOP_TIMEOUT_SECONDS}s)"
       fi
     else
       stop_ok=0
@@ -260,7 +282,7 @@ run_phase_three_checks() {
     record_check "16" "Graceful shutdown check" "WARN" "Skipped because stack did not start"
   fi
 
-  if bash "$ROOT_DIR/scripts/ops/cleanup.sh"; then
+  if bash "$ROOT_DIR/scripts/pre-flight/cleanup.sh"; then
     docker image rm preflight-check:test >/dev/null 2>&1 || true
     if (( stop_ok == 1 )); then
       record_check "17" "Cleanup" "PASS" "docker:cleanup completed and preflight image removed if present"

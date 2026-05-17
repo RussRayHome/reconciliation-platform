@@ -259,7 +259,7 @@ const countQueriesDuring = async <T>(
 describe('PostgresReconciliationLifecycleStore', () => {
   beforeAll(async () => {
     try {
-      container = await new GenericContainer('postgres:16-alpine')
+      container = await new GenericContainer('postgres:16.13')
         .withEnvironment({
           POSTGRES_DB: 'recon_test',
           POSTGRES_USER: 'recon',
