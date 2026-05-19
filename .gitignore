@@ -17,3 +17,6 @@ apps/api/tmp
 .backups/
 .vscode/settings.json
 github-recovery-codes.txt
+playwright-browsers/
+apps/api/Dockerfile.bak
+reviews/
