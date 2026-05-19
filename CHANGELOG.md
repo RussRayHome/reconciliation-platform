@@ -31,6 +31,10 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 
 ### Fixed (Unreleased)
 
+- Stage tools container was missing the `default` network, causing all four security-scan components to report SKIPPED in the Stage Developer Dashboard; Trivy could not download its vulnerability DB and npm audit could not reach the registry. `compose.stage.yaml` now includes `default` in the tools service network list, matching `compose.dev.yaml`.
+- Stage tools container was missing `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` env vars, causing git safe-directory failures when the host `.git` directory is mounted. These vars are now set in `compose.stage.yaml` to match the dev overlay.
+- Stage E2E tests failed with `browserType.launch: Executable doesn't exist` because the stage tools container was running a stale image (built before the playwright 1.53.0 → 1.59.1 upgrade) that contained `chromium_headless_shell-1178` instead of revision 1217. Force-recreating the stage tools service pulled the current `reconciliation-platform-tools:latest` image.
+
 - NGINX configuration test (`nginx-config.test.ts`) failed when executed inside the tools container because the container-local temp file path was invisible to the host Docker daemon. Stdin piping (`-i` + `execSync input:`) resolves this without any volume mount, and works identically on host and in container.
 - Static analysis (`lint` + `typecheck`) produced 242 errors from `packages/infra` CDK code that references `aws-cdk-lib`, which is not hoisted to the monorepo root. Both `eslint.config.mjs` and `tsconfig.typecheck.json` now exclude `packages/infra/**`.
 - All four security-scan components (API, Database, Container Component, Web Server) reported SKIPPED because Trivy was not present in the tools image. The `dev` Dockerfile stage now copies the binary from an `aquasec/trivy:0.70.0` build stage.

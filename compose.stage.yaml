@@ -28,6 +28,9 @@ services:
       - recon-app-state:/var/lib/reconciliation
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: "safe.directory"
+      GIT_CONFIG_VALUE_0: "/app"
       NODE_ENV: test
       PORT: "4001"
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -43,6 +46,7 @@ services:
     ports:
       - "${TOOLS_PORT:-4002}:4001"
     networks:
+      - default
       - app
       - data
     restart: unless-stopped
