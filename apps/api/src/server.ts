@@ -35,6 +35,7 @@ const shouldRunMigrationsOnBoot = (): boolean => {
   return process.env.NODE_ENV !== 'production';
 };
 
+/** Fully initialized server context returned by `createServerRuntime`. */
 export type ServerRuntime = {
   app: ReturnType<typeof createApp>;
   port: number;
@@ -140,6 +141,10 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
   };
 };
 
+/**
+ * Bootstraps the full server runtime: initializes persistence stores, runs optional
+ * migrations, binds the HTTP server, and registers SIGTERM/SIGINT shutdown handlers.
+ */
 export const startServer = async (): Promise<void> => {
   const runtime = await createServerRuntime();
 

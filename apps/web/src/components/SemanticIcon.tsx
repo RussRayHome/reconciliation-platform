@@ -1,5 +1,6 @@
 import type { SVGProps } from 'react';
 
+/** Union of all recognized icon slot names used across the application. */
 export type SemanticIconName =
   | 'upload'
   | 'rules'
@@ -198,6 +199,7 @@ const renderIconPath = (name: SemanticIconName) => {
   }
 };
 
+/** Renders the SVG icon that corresponds to `name`, passing through any additional SVG props. */
 export function SemanticIcon({ name, className, ...rest }: Readonly<SemanticIconProps>) {
   return (
     <svg

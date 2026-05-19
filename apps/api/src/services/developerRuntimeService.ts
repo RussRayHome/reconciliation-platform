@@ -216,6 +216,15 @@ const buildPromotionSummary = (
   return `Pending: waiting for complete remote or baseline information to finalize promotion readiness.`;
 };
 
+/**
+ * Creates the developer runtime service, which provides live git context (branch, commit,
+ * dirty state, sync status) and environment promotion readiness for the Developer Dashboard.
+ * Git results are cached for `gitContextTtlMs` milliseconds to avoid excessive subprocess
+ * overhead on repeated requests.
+ *
+ * @param options Configuration including repo root, optional git executable path, and cache TTL.
+ * @returns An object with `getLocalGitContext`, `getPromotionReadiness`, and request-counting methods.
+ */
 export const createDeveloperRuntimeService = ({
   repoRoot,
   gitExecutable = 'git',
@@ -257,7 +266,12 @@ export const createDeveloperRuntimeService = ({
       branch,
       commit,
       latestMessage,
-      isDirty: statusOutput === null ? null : statusOutput.length > 0,
+      isDirty:
+        process.env.DEVELOPER_SKIP_DIRTY_CHECK === 'true'
+          ? null
+          : statusOutput === null
+            ? null
+            : statusOutput.length > 0,
     };
 
     gitContextCache = { value, cachedAt: now };

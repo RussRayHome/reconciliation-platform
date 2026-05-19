@@ -22,18 +22,27 @@ export const reconciliationJobStates = [
   'CANCELLED',
 ] as const;
 
+/** Union of all valid reconciliation job state strings. */
 export type ReconciliationJobState = (typeof reconciliationJobStates)[number];
 
+/** Accepted upload file formats for source workbooks. */
 export const reconciliationSourceFormats = ['xlsx', 'csv'] as const;
+/** Union of accepted upload file format strings. */
 export type ReconciliationSourceFormat = (typeof reconciliationSourceFormats)[number];
 
+/** Valid states for a file-import batch row. */
 export const importBatchStates = ['PENDING', 'IMPORTING', 'IMPORTED', 'FAILED'] as const;
+/** Union of valid import batch state strings. */
 export type ImportBatchState = (typeof importBatchStates)[number];
 
+/** Valid states for a workbook export record. */
 export const exportStates = ['READY', 'FAILED'] as const;
+/** Union of valid export state strings. */
 export type ReconciliationExportState = (typeof exportStates)[number];
 
+/** Valid match-result bucket labels stored in the `reconciliation_result` table. */
 export const resultBuckets = ['MATCH', 'PROBABLE'] as const;
+/** Union of valid result bucket strings. */
 export type ReconciliationResultBucket = (typeof resultBuckets)[number];
 
 const transitionGraph: Readonly<Record<ReconciliationJobState, readonly ReconciliationJobState[]>> = {

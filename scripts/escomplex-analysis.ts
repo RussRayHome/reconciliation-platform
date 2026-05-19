@@ -1,3 +1,9 @@
+/**
+ * Runs escomplex AST-based complexity analysis across all TypeScript source files under
+ * `apps/` and `packages/` and reports cyclomatic complexity, maintainability index, and
+ * Halstead metrics. Exits non-zero when thresholds are exceeded.
+ * Invoked via `npm run analyze:complexity`.
+ */
 import { createRequire } from 'node:module';
 import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';

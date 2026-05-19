@@ -1,3 +1,8 @@
+/**
+ * Higher-level Docker stack lifecycle operations: startup sequences, graceful shutdown,
+ * health verification, and auxiliary service management. Builds on the primitives in
+ * `docker-runtime.ts`. Invoked by the `docker:deploy`, `docker:cleanup`, and related npm scripts.
+ */
 import {
   composePs,
   composeStop,

@@ -2,6 +2,7 @@ import type { NormalizedTransaction } from '@recon/domain';
 
 import { dateDifferenceDays } from '../matching/similarity';
 
+/** Inferred transaction direction or instrument type used for timing-compatibility checks. */
 export type TransactionKind =
   | 'deposit'
   | 'withdrawal'
@@ -10,6 +11,7 @@ export type TransactionKind =
   | 'check'
   | 'unknown';
 
+/** Parses an ISO date string (`YYYY-MM-DD`) to a midnight UTC `Date`, or returns `undefined` for invalid input. */
 export const parseIsoDate = (value?: string): Date | undefined => {
   if (!value) {
     return undefined;
@@ -19,6 +21,7 @@ export const parseIsoDate = (value?: string): Date | undefined => {
   return Number.isNaN(parsed.valueOf()) ? undefined : parsed;
 };
 
+/** Builds a frequency map of transaction amounts, used to identify distinctive vs. common amounts. */
 export const buildAmountFrequency = (
   transactions: NormalizedTransaction[],
 ): Map<number, number> => {
@@ -35,6 +38,7 @@ export const buildAmountFrequency = (
   return frequency;
 };
 
+/** Returns `true` when the QBO transaction has a check number, serial number, or a type string containing "check". */
 export const isCheckLikeQboTransaction = (transaction: NormalizedTransaction): boolean => {
   const transactionType = (transaction.transactionType ?? '').toLowerCase();
   return (
@@ -46,6 +50,7 @@ export const isCheckLikeQboTransaction = (transaction: NormalizedTransaction): b
 const normalizeTransactionType = (value: string | undefined): string =>
   value?.trim().toLowerCase() ?? '';
 
+/** Sums the `amount` field across all transactions in the array; amounts must be non-null. */
 export const sumTransactionAmounts = (
   transactions: Array<NormalizedTransaction & { amount: number }>,
 ): number => transactions.reduce((total, transaction) => total + transaction.amount, 0);
@@ -58,17 +63,21 @@ const dedupeKinds = (transactions: NormalizedTransaction[]): string[] => [
   ),
 ];
 
+/** Returns a comma-separated string of distinct inferred transaction kinds (excluding `'unknown'`). */
 export const formatKinds = (transactions: NormalizedTransaction[]): string => {
   const kinds = dedupeKinds(transactions);
   return kinds.length ? kinds.join(', ') : 'unknown';
 };
 
+/** Flattens normalized comparison tokens from multiple transactions into a single array for grouped similarity scoring. */
 export const mergeComparisonTokens = (transactions: NormalizedTransaction[]): string[] =>
   transactions.flatMap((transaction) => transaction.normalizedComparisonTokens);
 
+/** Flattens normalized reference tokens from multiple transactions into a single array for grouped reference scoring. */
 export const mergeReferenceTokens = (transactions: NormalizedTransaction[]): string[] =>
   transactions.flatMap((transaction) => transaction.normalizedReferenceTokens);
 
+/** Infers the transaction kind from the raw transaction type string, description, and check/serial number fields. */
 export const inferTransactionKind = (transaction: NormalizedTransaction): TransactionKind => {
   const transactionType = normalizeTransactionType(transaction.transactionType);
   const description = normalizeTransactionType(transaction.description);
@@ -108,6 +117,7 @@ export const inferTransactionKind = (transaction: NormalizedTransaction): Transa
   return 'unknown';
 };
 
+/** Returns `true` when the inferred kinds of two transactions are directionally compatible for timing classification. */
 export const areTimingKindsCompatible = (
   bankTransaction: NormalizedTransaction,
   qboTransaction: NormalizedTransaction,
@@ -129,9 +139,11 @@ export const areTimingKindsCompatible = (
   );
 };
 
+/** Returns `true` for kinds that can represent an inflow (deposit, transfer, journal, or unknown). */
 export const isDepositLikeKind = (kind: TransactionKind): boolean =>
   kind === 'deposit' || kind === 'transfer' || kind === 'journal' || kind === 'unknown';
 
+/** Returns `true` when every anchor/counterpart transaction pair has compatible inferred kinds for grouped matching. */
 export const areGroupedTransactionsCompatible = (
   anchorTransactions: NormalizedTransaction[],
   counterpartTransactions: NormalizedTransaction[],
@@ -142,6 +154,7 @@ export const areGroupedTransactionsCompatible = (
     ),
   );
 
+/** Returns the maximum pairwise date difference (in days) across all bank/QBO transaction combinations, or `null` if any date is missing. */
 export const calculateGroupedDateDifference = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],
@@ -167,6 +180,7 @@ export const calculateGroupedDateDifference = (
   return maxDifference;
 };
 
+/** Generates all sub-arrays of `transactions` whose length is between `minimumSize` and `maximumSize` inclusive. */
 export const generateTransactionCombinations = <T>(
   transactions: T[],
   minimumSize: number,

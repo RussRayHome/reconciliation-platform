@@ -148,6 +148,7 @@ type ExportRow = {
   tab_names_json: unknown;
 };
 
+/** Page of exception items with total count and pagination cursor for the exceptions list endpoint. */
 export type PaginatedExceptionsResult = {
   items: ExceptionItem[];
   total: number;
@@ -339,6 +340,10 @@ const mapRunStatus = (row: ReconciliationJobRow): ReconciliationRunReport['statu
   return 'Running';
 };
 
+/**
+ * PostgreSQL-backed read-model store for reconciliation runs, exceptions, exports, and
+ * reviewer decisions. Used by the API to serve report and dashboard queries.
+ */
 export class PostgresReconciliationReadModelStore {
   constructor(private readonly pool: Pool) {}
 

@@ -1,3 +1,8 @@
+/**
+ * Generates representative sample bank and QBO reconciliation workbooks and writes them
+ * to `docs/sample-files/`. Used to produce reference artifacts for documentation and
+ * manual testing. Invoked via `npm run fixtures:generate`.
+ */
 import {
   createAllExceptionsBankWorkbook,
   createAllExceptionsQboWorkbook,

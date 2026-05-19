@@ -154,14 +154,17 @@ npm run docker:cleanup
 
 ### Service topology
 
-| Service    | Role                      | Host port       | Environments    |
-|------------|---------------------------|-----------------|-----------------|
-| `web`      | NGINX public gateway      | `4173`          | dev, stage      |
-| `api`      | Express API               | internal        | dev, stage      |
-| `postgres` | PostgreSQL data store     | `5432`          | dev, stage      |
-| `migrate`  | One-shot migration runner | none            | dev, stage      |
-| `pgweb`    | Postgres web admin        | `8081`          | dev, stage only |
-| `nginx-ui` | NGINX admin UI            | `8082` / `8182` | dev, stage only |
+| Service    | Role                                    | Host port       | Environments    |
+|------------|-----------------------------------------|-----------------|-----------------|
+| `web`      | NGINX public gateway                    | `4173`          | dev, stage      |
+| `api`      | Express API                             | internal        | dev, stage      |
+| `postgres` | PostgreSQL data store                   | `5432`          | dev, stage      |
+| `migrate`  | One-shot migration runner               | none            | dev, stage      |
+| `tools`    | Test runner / quality gate container    | `4001`          | dev, stage      |
+| `pgweb`    | Postgres web admin                      | `8081`          | dev, stage only |
+| `nginx-ui` | NGINX admin UI                          | `8082` / `8182` | dev, stage only |
+
+The `tools` container runs the full test and quality gate suite (unit, integration, E2E, lint, typecheck, coverage, security scans) against the live stack. It has access to the Docker socket for container-level operations and Trivy for CVE scanning, and joins `default`, `app`, and `data` networks so it can reach both internal services and external registries.
 
 Access points after deploy:
 
@@ -306,6 +309,22 @@ Ensure Playwright browsers are installed and stack is stable:
 ```bash
 npx playwright install
 npm run test:e2e
+```
+
+If E2E tests pass but complete in 3–4 ms (all skipped), the Playwright browser version does not match the installed binary. The tools image uses pre-downloaded Linux binaries from `playwright-browsers/`. Check that the revision in the image and the revision in the volume agree:
+
+```bash
+# check which revision the installed playwright expects
+docker exec <tools-container> node -e "const { chromium } = require('@playwright/test'); console.log(chromium.executablePath())"
+```
+
+If the paths show different revision numbers (e.g. `chromium-1217` vs `chromium-1178`), rebuild the tools image after confirming `PLAYWRIGHT_VERSION` in the Dockerfile matches the version in `package.json`, then update `playwright-browsers/` with the correct Linux binaries using:
+
+```bash
+docker run --rm -v "$PWD/playwright-browsers:/ms-playwright" \
+  -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+  node:26.1.0-bookworm-slim \
+  bash -c "npm install -g @playwright/test@<version> && playwright install chromium"
 ```
 
 ## 11. Pull request quality baseline

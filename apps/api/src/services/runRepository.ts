@@ -2,6 +2,7 @@ import type { OutputWorkbook, ReconciliationRun, ReviewerDecision } from '@recon
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+/** Storage abstraction for reconciliation runs and reviewer decisions, implemented by in-memory and file-backed variants. */
 export interface RunRepository {
   save(run: ReconciliationRun): ReconciliationRun;
   findById(id: string): ReconciliationRun | undefined;

@@ -112,6 +112,7 @@ export interface NormalizedTransaction {
   reviewerNotes?: string;
 }
 
+/** Outcome of a single matching rule applied to one bank/QBO transaction pair candidate. */
 export interface RuleEvaluation {
   ruleId: string;
   ruleName: string;
@@ -122,6 +123,7 @@ export interface RuleEvaluation {
   candidateTransactionId?: string;
 }
 
+/** A proposed bank/QBO pair produced by the scoring phase, before the highest-scoring candidate is selected. */
 export interface MatchCandidate {
   bankTransactionId: string;
   qboTransactionId: string;
@@ -160,8 +162,10 @@ export interface MatchResult {
   reviewerNotes?: string;
 }
 
+/** Disposition assigned to a many-to-many grouped match result. */
 export type GroupedMatchDisposition = 'GroupedExactMatch' | 'GroupedReviewMatch';
 
+/** One transaction participant within a many-to-many grouped match, with display-level detail. */
 export interface GroupedMatchMember {
   transactionId: string;
   source: SourceSystem;
@@ -193,6 +197,7 @@ export interface GroupedMatchResult {
   evidence: string[];
 }
 
+/** Minimal reference to a counterpart transaction stored in an exception trace for display. */
 export interface CounterpartTrace {
   source?: SourceSystem;
   spreadsheetFileName?: string;
@@ -200,6 +205,7 @@ export interface CounterpartTrace {
   transactionId?: string;
 }
 
+/** Diagnostic trace of the rule evaluation that produced a specific exception classification. */
 export interface ExceptionRuleTrace {
   ruleId: string;
   ruleName: string;
@@ -235,11 +241,13 @@ export interface ExceptionItem {
   relatedTransactionIds: string[];
 }
 
+/** A single labelled value within a chart series. */
 export interface ChartMetricDatum {
   label: string;
   value: number;
 }
 
+/** A named series of chart data points included in the reconciliation summary. */
 export interface ChartSeries {
   id: ChartIdentifier;
   title: string;
@@ -276,6 +284,7 @@ export interface SummaryMetrics {
   charts: ChartSeries[];
 }
 
+/** Generated reconciliation workbook including the binary XLSX buffer. */
 export interface OutputWorkbook {
   fileName: string;
   generatedAt: string;
@@ -283,8 +292,10 @@ export interface OutputWorkbook {
   binary: Uint8Array;
 }
 
+/** Workbook metadata without the binary payload, used in API list responses. */
 export type OutputWorkbookManifest = Omit<OutputWorkbook, 'binary'>;
 
+/** A system-generated or rule-triggered observation attached to a reconciliation run for reviewer attention. */
 export interface ReviewerObservation {
   id: string;
   runId: string;
@@ -296,17 +307,20 @@ export interface ReviewerObservation {
   relatedTransactionIds: string[];
 }
 
+/** The kind of item a reviewer decision targets. */
 export type ReviewerDecisionTargetType =
   | 'ProbableMatch'
   | 'AmbiguousReview'
   | 'ExceptionItem';
 
+/** The verdict a reviewer records for the targeted item. */
 export type ReviewerDecisionOutcome =
   | 'ApprovedMatch'
   | 'RejectedMatch'
   | 'ConfirmedException'
   | 'ReclassifiedException';
 
+/** A human reviewer's recorded decision for a probable match, ambiguous review item, or exception. */
 export interface ReviewerDecision {
   id: string;
   runId: string;
@@ -321,14 +335,17 @@ export interface ReviewerDecision {
   updatedAt: string;
 }
 
+/** Reporting period cadence used to interpret date-tolerance and stale-check thresholds. */
 export type ReconciliationFrequency = 'Monthly' | 'Annual';
 
+/** An immutable audit trail entry attached to a reconciliation run. */
 export interface AuditEvent {
   timestamp: string;
   action: string;
   details: Record<string, string | number | boolean | null>;
 }
 
+/** Full in-memory reconciliation run object including all processing artifacts. */
 export interface ReconciliationRun {
   id: string;
   correlationId: string;
@@ -352,6 +369,7 @@ export interface ReconciliationRun {
   auditEvents: AuditEvent[];
 }
 
+/** API-facing report view of a completed reconciliation run, omitting raw/normalized transaction arrays. */
 export interface ReconciliationRunReport {
   id: string;
   correlationId: string;
@@ -371,8 +389,10 @@ export interface ReconciliationRunReport {
   outputWorkbook?: OutputWorkbookManifest;
 }
 
+/** Maps each canonical business field to the list of accepted spreadsheet column header aliases. */
 export type ColumnAliasMap = Record<BusinessField, string[]>;
 
+/** Per-source (bank or QBO) parsing and column-mapping configuration for a reconciliation run. */
 export interface SourceReconciliationConfig {
   headerRow: number;
   transactionStartRow: number;
@@ -384,6 +404,7 @@ export interface SourceReconciliationConfig {
   columnAliases: ColumnAliasMap;
 }
 
+/** Controls how raw description and merchant text is normalized before similarity scoring. */
 export interface TextNormalizationConfig {
   uppercase: boolean;
   stripPunctuation: boolean;
@@ -392,6 +413,7 @@ export interface TextNormalizationConfig {
   stopWords: string[];
 }
 
+/** Numeric thresholds and window sizes that control the matching engine's scoring and classification decisions. */
 export interface MatchingConfig {
   amountTolerance: number;
   dateToleranceDays: number;
@@ -408,6 +430,7 @@ export interface MatchingConfig {
   amountMismatchTextSimilarityThreshold: number;
 }
 
+/** Controls exception sort order and the severity level assigned to each exception category. */
 export interface ReportingConfig {
   exceptionSortOrder: Array<'severity' | 'source' | 'transactionDate' | 'lineNumber'>;
   severityByCategory: Record<ErrorCategory, SeverityLevel>;
@@ -417,6 +440,7 @@ type SourceConfigOverride = Omit<Partial<SourceReconciliationConfig>, 'columnAli
   columnAliases?: Partial<ColumnAliasMap>;
 };
 
+/** Per-account config overrides applied on top of the base config when the account identifier matches. */
 export interface AccountOverrideConfig {
   accountIdentifier: string;
   bank?: SourceConfigOverride;

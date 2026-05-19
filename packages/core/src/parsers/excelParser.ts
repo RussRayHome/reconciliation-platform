@@ -193,6 +193,7 @@ const isBeginningBalanceRow = (
   );
 };
 
+/** Input required to parse a bank or QBO Excel/CSV workbook. */
 export interface ParseWorkbookInput {
   source: SourceSystem;
   sourceFileId?: string;
@@ -203,11 +204,16 @@ export interface ParseWorkbookInput {
   config: SourceReconciliationConfig;
 }
 
+/** Parsed output: the resolved source-file metadata and the extracted raw transaction rows. */
 export interface ParsedWorkbook {
   sourceFile: SourceFile;
   rawRows: RawTransactionRow[];
 }
 
+/**
+ * Parses a bank or QBO workbook buffer into raw transaction rows using the provided
+ * reconciliation config for header resolution and column mapping.
+ */
 export const parseWorkbook = async ({
   source,
   sourceFileId,

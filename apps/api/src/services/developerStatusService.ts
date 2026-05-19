@@ -363,6 +363,15 @@ const buildStatusSnapshot = (payload: DeveloperStatusPayload): DeveloperStatusSn
   };
 };
 
+/**
+ * Creates the developer status service, which orchestrates all quality-gate checks
+ * (lint, typecheck, unit/integration/e2e tests, coverage, security scans) and caches
+ * the resulting payload for the Developer Dashboard.
+ *
+ * @param options Configuration options including the repo root path, database URL, cache
+ * TTL, and history limit.
+ * @returns An object with `getStatus` and `clearCache` methods.
+ */
 export const createDeveloperStatusService = ({
   repoRoot,
   defaultDatabaseUrl,

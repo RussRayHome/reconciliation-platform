@@ -23,6 +23,11 @@ const countExceptionCases = (
       .map((item) => buildExceptionCaseKey(item)),
   ).size;
 
+/**
+ * Builds the full summary metrics object from the match engine output and classified
+ * exceptions: transaction counts by source, match category totals, exception case
+ * counts, and financial exposure figures.
+ */
 export const buildSummaryMetrics = (
   normalizedTransactions: NormalizedTransaction[],
   matchResults: MatchResult[],

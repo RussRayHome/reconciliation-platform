@@ -278,6 +278,7 @@ const renderInlineMarkdown = (text: string) =>
       return <span key={`${part}-${index}`}>{part}</span>;
     });
 
+/** Renders the Documentation Hub: sidebar navigation, category filters, and Markdown content viewer. */
 export function DocsOverview({
   appHref = '/',
   docsHref = '/docs',

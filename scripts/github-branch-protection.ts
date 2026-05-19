@@ -1,3 +1,8 @@
+/**
+ * Applies required GitHub branch-protection rules (status checks, review requirements,
+ * linear history) to the configured repository's main branch via the GitHub CLI (`gh`).
+ * Invoked via `npm run github:protect-main`.
+ */
 import { execFileSync } from 'node:child_process';
 
 type CliOptions = {

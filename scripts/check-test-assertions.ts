@@ -1,3 +1,9 @@
+/**
+ * Scans all test files under `apps/` and `packages/` and fails with a non-zero exit code
+ * if any test file contains no assertion patterns (`expect`, `assert`, `toBe`, etc.).
+ * Prevents empty or trivially passing test suites from inflating coverage counts.
+ * Invoked via `npm run analyze:test-quality`.
+ */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 

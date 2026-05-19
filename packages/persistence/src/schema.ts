@@ -9,12 +9,14 @@ import {
 const asSqlStringList = (values: readonly string[]): string =>
   values.map((value) => `'${value}'`).join(', ');
 
+/** A numbered, named SQL migration script applied by the migration runner at startup. */
 export type SqlMigration = {
   version: number;
   name: string;
   sql: string;
 };
 
+/** Ordered list of all SQL migrations that define the reconciliation platform schema. */
 export const postgresMigrations: readonly SqlMigration[] = [
   {
     version: 1,

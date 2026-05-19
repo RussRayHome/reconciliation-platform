@@ -2,6 +2,7 @@ import type { MatchingConfig, NormalizedTransaction } from '@recon/domain';
 
 import { currencyEquals, dateDifferenceDays } from './similarity';
 
+/** A proposed many-to-many grouped match candidate with its constituent bank and QBO transactions. */
 export interface GroupedReservationCandidate {
   category: 'DepositGroupingIssue' | 'LikelySplitCombineIssue';
   ruleId: 'grouped-deposit-reserved' | 'grouped-split-combine-reserved';
@@ -294,12 +295,18 @@ const findGroupedReservationCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
+/** Output of `reserveGroupedTransactionIds`: the selected candidates and the ID sets reserved from further matching. */
 export interface GroupedReservationResult {
   reservedBankTransactionIds: Set<string>;
   reservedQboTransactionIds: Set<string>;
   selectedCandidates: GroupedReservationCandidate[];
 }
 
+/**
+ * Identifies and reserves transaction IDs that participate in grouped (many-to-many) matches.
+ * Returns the best non-overlapping set of grouped candidates and the corresponding reserved ID sets,
+ * so the standard one-to-one matching phase can skip these transactions.
+ */
 export const reserveGroupedTransactionIds = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],

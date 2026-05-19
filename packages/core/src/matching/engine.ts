@@ -439,6 +439,7 @@ const rankCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
+/** All match output sets produced by a single `reconcileMatches` pass. */
 export interface MatchEngineResult {
   matchResults: MatchResult[];
   groupedMatchResults: GroupedMatchResult[];
@@ -448,6 +449,11 @@ export interface MatchEngineResult {
   duplicateTransactionIds: Set<string>;
 }
 
+/**
+ * Runs the full matching pipeline: exact matching, grouped/split matching, probable
+ * matching, and duplicate detection. Returns all categorized match sets and unmatched ID
+ * sets needed by the exception classifier and summary builder.
+ */
 export const reconcileMatches = (
   transactions: NormalizedTransaction[],
   config: MatchingConfig,

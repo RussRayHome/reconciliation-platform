@@ -258,6 +258,7 @@ const addSummaryCharts = (
   });
 };
 
+/** All inputs needed to generate the multi-tab reconciliation workbook export. */
 export interface WorkbookExportInput {
   runId: string;
   accountIdentifier?: string;
@@ -270,6 +271,11 @@ export interface WorkbookExportInput {
   normalizedTransactions: NormalizedTransaction[];
 }
 
+/**
+ * Generates the multi-tab XLSX reconciliation workbook: Summary, Probable Matches,
+ * Exceptions, Transaction Detail, and embedded charts. Returns a buffer suitable for
+ * HTTP response or file write.
+ */
 export const exportWorkbook = async ({
   runId,
   accountIdentifier,

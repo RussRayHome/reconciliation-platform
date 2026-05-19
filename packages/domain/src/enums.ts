@@ -1,9 +1,11 @@
 /** The two transaction sources the reconciliation engine compares. */
 export const sourceSystems = ['bank', 'qbo'] as const;
+/** Union of the two transaction source identifiers: `'bank'` or `'qbo'`. */
 export type SourceSystem = (typeof sourceSystems)[number];
 
 /** Lifecycle status of a reconciliation run stored in the database. */
 export const runStatuses = ['Pending', 'Running', 'Completed', 'Failed'] as const;
+/** Union of valid reconciliation run lifecycle statuses. */
 export type ReconciliationRunStatus = (typeof runStatuses)[number];
 
 /**
@@ -26,6 +28,7 @@ export const matchConfidenceLevels = [
   'Ambiguous',
   'Unmatched',
 ] as const;
+/** Union of all match confidence level strings ordered from strongest to weakest. */
 export type MatchConfidence = (typeof matchConfidenceLevels)[number];
 
 /**
@@ -45,10 +48,12 @@ export const matchDispositions = [
   'InvalidData',
   'AmbiguousReview',
 ] as const;
+/** Union of all match disposition strings stored on each pairwise result. */
 export type MatchDisposition = (typeof matchDispositions)[number];
 
 /** Risk rating assigned to each exception item; drives sort order in the exception report. */
 export const severityLevels = ['Critical', 'High', 'Medium', 'Low'] as const;
+/** Union of risk rating strings assigned to exception items. */
 export type SeverityLevel = (typeof severityLevels)[number];
 
 /**
@@ -73,8 +78,10 @@ export const errorCategories = [
   'InvalidOrMissingData',
   'AmbiguousMatchRequiringReview',
 ] as const;
+/** Union of all assignable exception category strings. */
 export type ErrorCategory = (typeof errorCategories)[number];
 
 /** Identifiers for the two pre-built chart series included in every reconciliation summary. */
 export const chartIdentifiers = ['countByCategory', 'exposureByCategory'] as const;
+/** Union of the two chart series identifiers included in every reconciliation summary. */
 export type ChartIdentifier = (typeof chartIdentifiers)[number];

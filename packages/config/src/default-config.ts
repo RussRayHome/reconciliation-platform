@@ -81,6 +81,7 @@ const reportingConfig: ReportingConfig = {
   severityByCategory: defaultSeverityByCategory,
 };
 
+/** Default reconciliation configuration used when no account-specific override matches. */
 export const defaultReconciliationConfig: ReconciliationConfig = {
   bank: createSourceConfig('bank', {
     amountSignConvention: 'debitCreditColumns',
@@ -139,6 +140,11 @@ const mergeSourceConfig = (
     override?.beginningBalancePatterns ?? base.beginningBalancePatterns,
 });
 
+/**
+ * Returns the reconciliation config for the given account identifier by merging any
+ * matching account override on top of the default config. Returns the default config
+ * unchanged when no identifier is provided or no override matches.
+ */
 export const resolveReconciliationConfig = (
   accountIdentifier?: string,
   overrides: AccountOverrideConfig[] = defaultReconciliationConfig.accountOverrides,

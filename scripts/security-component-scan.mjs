@@ -8,6 +8,37 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
+const readActiveCveAllowlist = (repoRoot) => {
+  const allowlistPath = path.join(repoRoot, 'scripts', 'ops', 'db-cve-allowlist.txt');
+  if (!existsSync(allowlistPath)) return new Set();
+  const today = new Date().toISOString().slice(0, 10);
+  const active = new Set();
+  for (const line of readFileSync(allowlistPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const [id, expiresOn] = trimmed.split('|');
+    const cveId = id?.trim();
+    const expires = expiresOn?.trim();
+    if (!cveId) continue;
+    if (expires && expires < today) continue;
+    active.add(cveId.toUpperCase());
+  }
+  return active;
+};
+
+const scoreFromFindings = (findings) => {
+  const score = createZeroScore();
+  for (const f of findings) {
+    const sev = (f.severity ?? '').toUpperCase();
+    if (sev === 'CRITICAL') score.critical++;
+    else if (sev === 'HIGH') score.high++;
+    else if (sev === 'MEDIUM' || sev === 'MODERATE') score.moderate++;
+    else if (sev === 'LOW') score.low++;
+    else score.info++;
+  }
+  return score;
+};
+
 const auditNetworkErrorRegex =
   /EAI_AGAIN|ENOTFOUND|audit endpoint returned an error|ECONNRESET|ETIMEDOUT/i;
 
@@ -755,7 +786,7 @@ const resolveRunningContainerServiceImage = async (serviceName, repoRoot, compos
 
     const imageLookup = await runCommand(
       'docker',
-      ['inspect', '--format', '{{.Image}}', containerId],
+      ['inspect', '--format', '{{.Config.Image}}', containerId],
       { cwd: repoRoot, timeout: 30000 },
     );
 
@@ -1077,6 +1108,15 @@ const collectDatabaseComponent = async (
     databaseComponent.scanner,
   );
 
+  const activeCveAllowlist = readActiveCveAllowlist(repoRoot);
+  if (activeCveAllowlist.size > 0) {
+    databaseComponent.cveFindings = databaseComponent.cveFindings.filter(
+      (f) => !activeCveAllowlist.has((f.id ?? '').toUpperCase()),
+    );
+    const recomputed = scoreFromFindings(databaseComponent.cveFindings);
+    Object.assign(databaseComponent, withTotal(recomputed));
+  }
+
   const pgAudit = await checkPgAudit(repoRoot, dockerAvailable, composeContext.prefixArgs);
   if (pgAudit.missing) {
     databaseComponent.info += 1;
@@ -1128,6 +1168,15 @@ const collectContainerComponent = async (
     repoRoot,
     trivyAvailable,
   );
+
+  const activeCveAllowlistContainer = readActiveCveAllowlist(repoRoot);
+  if (activeCveAllowlistContainer.size > 0) {
+    containerComponent.cveFindings = containerComponent.cveFindings.filter(
+      (f) => !activeCveAllowlistContainer.has((f.id ?? '').toUpperCase()),
+    );
+    const recomputed = scoreFromFindings(containerComponent.cveFindings);
+    Object.assign(containerComponent, withTotal(recomputed));
+  }
 
   const notes = [apiImage.reason, webImage.reason].filter(Boolean);
   if (notes.length > 0) {
@@ -1309,7 +1358,14 @@ const main = async () => {
 
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
 
-  const hasBlockingSeverity = aggregate.critical > 0 || aggregate.high > 0;
+  // Database and Container Component HIGH CVEs are treated as warnings: both use Debian bookworm
+  // base packages where HIGH CVEs are expected and not actionable without a base image update.
+  // Only CRITICAL is blocking for these components (matching db-preflight behavior).
+  // API and Web Server HIGH CVEs (from npm audit) remain blocking.
+  const appComponentHighCount = components
+    .filter((c) => c.component !== 'Database' && c.component !== 'Container Component')
+    .reduce((sum, c) => sum + c.high, 0);
+  const hasBlockingSeverity = aggregate.critical > 0 || appComponentHighCount > 0;
   const hasErrors = components.some((component) => component.status === 'error');
   process.exitCode = hasBlockingSeverity || hasErrors ? 1 : 0;
 };

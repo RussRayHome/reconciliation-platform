@@ -1411,6 +1411,7 @@ const classifyResidualStages = (params: ResidualStageParams): ResidualStageState
   return stageState;
 };
 
+/** All inputs required to run the multi-stage exception classification pipeline. */
 export interface ExceptionClassifierInput {
   runId: string;
   sourceFiles: SourceFile[];
@@ -1424,11 +1425,18 @@ export interface ExceptionClassifierInput {
   reconciliationFrequency?: ReconciliationFrequency;
 }
 
+/** Classified exceptions and reviewer observations produced by `classifyExceptions`. */
 export interface ExceptionClassifierOutput {
   exceptions: ExceptionItem[];
   reviewerObservations: ReviewerObservation[];
 }
 
+/**
+ * Runs the multi-stage exception classification pipeline: data quality, exact/grouped
+ * unmatched, timing differences, amount mismatches, reference/description variances,
+ * likely miscodings, and stale outstanding checks. Returns all classified exceptions and
+ * reviewer observations.
+ */
 export const classifyExceptions = ({
   runId,
   sourceFiles,

@@ -5,6 +5,10 @@ import {
   type SummaryMetrics,
 } from '@recon/domain';
 
+/**
+ * Builds the two chart series (count-by-category and dollar-exposure-by-category)
+ * from the summary metrics, filtering out zero-count categories.
+ */
 export const buildChartSeries = (summary: SummaryMetrics): ChartSeries[] => [
   {
     id: 'countByCategory',

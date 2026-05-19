@@ -16,6 +16,7 @@ const architectureDocWithResolvedAssets = architectureDoc
   .replaceAll('images/application-architecture.png', architectureDiagramSvgUrl)
   .replaceAll('images/application-architecture.svg', architectureDiagramSvgUrl);
 
+/** Metadata and Markdown content for one entry in the in-app Documentation Hub. */
 export type ProjectDocument = {
   id: string;
   title: string;
@@ -26,6 +27,7 @@ export type ProjectDocument = {
   content: string;
 };
 
+/** Ordered list of all project documents served by the Documentation Hub. */
 export const projectDocuments: ProjectDocument[] = [
   {
     id: 'readme',
@@ -149,4 +151,5 @@ export const projectDocuments: ProjectDocument[] = [
   },
 ];
 
+/** Fast O(1) lookup map from document ID to `ProjectDocument`, used by the docs viewer routing. */
 export const docsById = new Map(projectDocuments.map((document) => [document.id, document]));

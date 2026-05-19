@@ -11,6 +11,11 @@ Browser -> web (NGINX gateway) -> api (Express) -> postgres
                                -> pgweb (dev and stage only)
 
 Browser -> nginx-ui (dev and stage only, direct admin access)
+
+tools (test runner) -> api (integration + E2E)
+                    -> postgres (integration via DATABASE_URL)
+                    -> Docker daemon socket (container-level Trivy scans, nginx-config validation)
+                    -> external (npm audit registry, Trivy CVE database)
 ```
 
 Key design goals:
@@ -23,14 +28,15 @@ Key design goals:
 
 ## 2. Services and ports
 
-| Service    | Role                         | Host port       | Environments    | Notes                                 |
-|------------|------------------------------|-----------------|-----------------|---------------------------------------|
-| `web`      | Public gateway and static UI | `4173`          | dev, stage      | Proxies `/api/*` to internal API      |
-| `api`      | Reconciliation API           | none (internal) | dev, stage      | Exposed only to compose networks      |
-| `postgres` | Primary data store           | `5432`          | dev, stage      | Uses `Dockerfile.postgres`            |
-| `migrate`  | One-shot migration runner    | none            | dev, stage      | Runs `node apps/api/dist/migrate.cjs` |
-| `pgweb`    | Postgres web admin           | `8081`          | dev, stage only | Not deployed to production            |
-| `nginx-ui` | NGINX admin UI               | `8082` / `8182` | dev, stage only | Not deployed to production            |
+| Service    | Role                         | Host port       | Environments    | Notes                                               |
+|------------|------------------------------|-----------------|-----------------|-----------------------------------------------------|
+| `web`      | Public gateway and static UI | `4173`          | dev, stage      | Proxies `/api/*` to internal API                    |
+| `api`      | Reconciliation API           | none (internal) | dev, stage      | Exposed only to compose networks; `.git` mounted ro |
+| `postgres` | Primary data store           | `5432`          | dev, stage      | Uses `Dockerfile.postgres`                          |
+| `migrate`  | One-shot migration runner    | none            | dev, stage      | Runs `node apps/api/dist/migrate.cjs`               |
+| `tools`    | Test runner / quality gate   | `4001`          | dev, stage      | Trivy + Docker CLI + git; waits for `api` healthy   |
+| `pgweb`    | Postgres web admin           | `8081`          | dev, stage only | Not deployed to production                          |
+| `nginx-ui` | NGINX admin UI               | `8082` / `8182` | dev, stage only | Not deployed to production                          |
 
 Default values come from `.env.docker` / `.env.docker.dev.fallback`.
 
@@ -41,8 +47,11 @@ Networks:
 - `edge`: gateway ingress
 - `app` (internal): web-to-api only
 - `data` (internal): api/migrate/pgweb-to-postgres only
+- `default` (bridge): external internet access; joined by `tools` for npm audit registry and Trivy CVE database downloads
 
 `nginx-ui` joins the `edge` network directly for local admin access on its host port.
+
+`tools` joins `default`, `app`, and `data` so it can reach internal services and make outbound HTTPS connections to external registries.
 
 Persistent volumes:
 
@@ -261,6 +270,19 @@ Behavior:
 - expired allowlist entries are ignored
 - non-expired allowlisted CVEs are reported but excluded from blocking counts
 - for stage usage, temporary allowlist entries should be removed after upstream fixes; validate with `npm run docker:db:preflight:stage` and confirm `ALLOWLISTED=0`
+
+### Security scan components (Developer Dashboard)
+
+The `tools` container runs Trivy scans for all four security components visible in the Developer Dashboard:
+
+| Component         | Trivy scan target          | Blocking severity |
+|-------------------|----------------------------|-------------------|
+| API               | api image (`dev` stage)    | HIGH+             |
+| Database          | postgres image             | informational     |
+| Container         | base OS layer of api image | informational     |
+| Web Server        | `apps/web/nginx.conf`      | HIGH+             |
+
+Each component produces an independent CVE count. The dashboard summary row totals across all components. The presence of CVEs does not fail the quality gate unless the component's blocking threshold is exceeded. The tools container must have external internet access (via the `default` network) to download the Trivy vulnerability database on first scan.
 
 ## 9. Environment configuration
 

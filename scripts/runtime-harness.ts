@@ -1,3 +1,8 @@
+/**
+ * Manages the fixed-port local API and web dev harness. Provides start, stop, restart,
+ * and status commands for predictable port binding (API: 4000, web: 4173) outside of
+ * Docker. Invoked via `npm run harness:start|stop|restart|status`.
+ */
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';

@@ -44,8 +44,10 @@ import {
 
 import type { ErrorCategory } from '@recon/domain';
 
+/** Raw spreadsheet rows: each outer array is a row, each inner element is a cell value. */
 export type WorkbookRows = Array<Array<string | number>>;
 
+/** Fixture for a single exception scenario: one expected category with an expected occurrence count. */
 export interface ExceptionScenarioFixture {
   name: string;
   expectedCategory: ErrorCategory;
@@ -54,6 +56,7 @@ export interface ExceptionScenarioFixture {
   qboRows: WorkbookRows;
 }
 
+/** Fixture for an exception edge case that may produce multiple categories or none at all. */
 export interface ExceptionEdgeCaseFixture {
   name: string;
   bankRows: WorkbookRows;
@@ -62,6 +65,7 @@ export interface ExceptionEdgeCaseFixture {
   expectedAbsent: ErrorCategory[];
 }
 
+/** Fixture for verifying classification precedence: some categories must be present, others must not. */
 export interface ExceptionPrecedenceFixture {
   name: string;
   bankRows: WorkbookRows;
@@ -70,6 +74,7 @@ export interface ExceptionPrecedenceFixture {
   expectedAbsent: ErrorCategory[];
 }
 
+/** All single-category exception scenario fixtures, one per `ErrorCategory`. */
 export const exceptionScenarioFixtures: ExceptionScenarioFixture[] = [
   {
     name: 'missing-from-qbo',
@@ -185,8 +190,10 @@ export const exceptionScenarioFixtures: ExceptionScenarioFixture[] = [
   },
 ];
 
+/** Ordered list of every `ErrorCategory` covered by `exceptionScenarioFixtures`. */
 export const allExceptionCategories = exceptionScenarioFixtures.map((fixture) => fixture.expectedCategory);
 
+/** Fixtures for edge cases that produce multiple or zero exception categories. */
 export const exceptionEdgeCaseFixtures: ExceptionEdgeCaseFixture[] = [
   {
     name: 'grouped-near-miss-falls-back-to-missing',
@@ -231,6 +238,7 @@ export const exceptionEdgeCaseFixtures: ExceptionEdgeCaseFixture[] = [
   },
 ];
 
+/** Fixtures for verifying that high-precedence classifiers suppress lower-precedence categories. */
 export const exceptionPrecedenceFixtures: ExceptionPrecedenceFixture[] = [
   {
     name: 'invalid-data-wins-over-missing-fallback',
@@ -334,6 +342,7 @@ const rowsToCombinedRecord = (
 const recordToRow = (record: RowRecord, columns: string[]): Array<string | number> =>
   columns.map((column) => record[column] ?? '');
 
+/** Merges all scenario fixture rows into a single bank/QBO row set covering every exception category. */
 export const buildAllExceptionsCombinedRows = (): { bankRows: WorkbookRows; qboRows: WorkbookRows } => {
   const bankRecords = exceptionScenarioFixtures.flatMap((fixture) =>
     rowsToCombinedRecord(fixture.bankRows, BANK_COLUMN_BY_NORMALIZED_HEADER),
@@ -348,16 +357,19 @@ export const buildAllExceptionsCombinedRows = (): { bankRows: WorkbookRows; qboR
   };
 };
 
+/** Aggregated expected exception counts keyed by `ErrorCategory` across all scenario fixtures. */
 export const allExceptionsExpectedCounts = exceptionScenarioFixtures.reduce<Record<ErrorCategory, number>>((counts, fixture) => {
   counts[fixture.expectedCategory] = (counts[fixture.expectedCategory] ?? 0) + fixture.expectedCount;
   return counts;
 }, {} as Record<ErrorCategory, number>);
 
+/** Creates an Excel workbook buffer containing bank rows for every exception scenario combined. */
 export const createAllExceptionsBankWorkbook = async (): Promise<Buffer> => {
   const { bankRows } = buildAllExceptionsCombinedRows();
   return createWorkbookFromRows(bankRows);
 };
 
+/** Creates an Excel workbook buffer containing QBO rows for every exception scenario combined. */
 export const createAllExceptionsQboWorkbook = async (): Promise<Buffer> => {
   const { qboRows } = buildAllExceptionsCombinedRows();
   return createWorkbookFromRows(qboRows);

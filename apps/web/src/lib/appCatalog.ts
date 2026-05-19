@@ -2,13 +2,16 @@ import type { ReconciliationRunReport } from '@recon/domain';
 
 import type { SemanticIconName } from '../components/SemanticIcon';
 
+/** Union of main app tab identifiers. */
 export type AppTab = 'upload' | 'rules' | 'exceptions' | 'reports';
+/** Union of sub-view identifiers within the Reports tab. */
 export type ReportView =
   | 'run-summary'
   | 'probable-match-review'
   | 'exception-report'
   | 'export-artifacts';
 
+/** Metadata for one matching rule entry in the Rules Catalog tab. */
 export type RuleCatalogItem = {
   id: string;
   name: string;
@@ -16,14 +19,17 @@ export type RuleCatalogItem = {
   lastChange: string;
 };
 
+/** Metadata for one report view entry in the Reports tab. */
 export type ReportCatalogItem = {
   id: ReportView;
   name: string;
   description: string;
 };
 
+/** Colour tone variants for stat card backgrounds. */
 export type StatCardTone = 'default' | 'positive' | 'warning' | 'critical';
 
+/** Definition for a summary stat card: label, display value accessor, tone, and icon. */
 export type SummaryStatDefinition = {
   id: string;
   label: string;
@@ -34,6 +40,7 @@ export type SummaryStatDefinition = {
   value: (summary: ReconciliationRunReport['summary']) => string | number;
 };
 
+/** Metadata for one top-level navigation tab including its icon and description. */
 export type TabNavigationItem = {
   id: AppTab;
   label: string;
@@ -41,6 +48,7 @@ export type TabNavigationItem = {
   icon: SemanticIconName;
 };
 
+/** Ordered catalog of all matching rules shown in the Rules Catalog tab. */
 export const rulesCatalog: RuleCatalogItem[] = [
   {
     id: 'reference-amount-match',
@@ -142,6 +150,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
   },
 ];
 
+/** Ordered catalog of all report views available in the Reports tab. */
 export const reportCatalog: ReportCatalogItem[] = [
   {
     id: 'run-summary',
@@ -165,6 +174,7 @@ export const reportCatalog: ReportCatalogItem[] = [
   },
 ];
 
+/** Ordered definitions for all summary stat cards shown in the Run Summary view. */
 export const summaryStatDefinitions: SummaryStatDefinition[] = [
   {
     id: 'total-reviewed',
@@ -265,6 +275,7 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
   },
 ];
 
+/** Builds the tab navigation item array with live badge counts for rules, exceptions, and reports. */
 export const buildTabNavigationItems = ({
   ruleCount,
   exceptionCount,

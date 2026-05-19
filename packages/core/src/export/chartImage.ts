@@ -175,6 +175,7 @@ const roundUpToNiceNumber = (value: number): number => {
   return 10 * magnitude;
 };
 
+/** Optional dimensions and colour overrides for `createBarChartPng`. */
 export interface BarChartImageOptions {
   width?: number;
   height?: number;
@@ -182,6 +183,10 @@ export interface BarChartImageOptions {
   accentColor?: Rgba;
 }
 
+/**
+ * Renders a horizontal bar chart from `ChartMetricDatum` values and returns a PNG buffer
+ * suitable for embedding in an Excel workbook via ExcelJS `addImage`.
+ */
 export const createBarChartPng = (
   inputData: ChartMetricDatum[],
   options: BarChartImageOptions = {},

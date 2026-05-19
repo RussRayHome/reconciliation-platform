@@ -1,7 +1,9 @@
 import type { ReconciliationRunReport } from '@recon/domain';
 
+/** Alias for the full reconciliation run report returned by the API. */
 export type ReconciliationRunResponse = ReconciliationRunReport;
 
+/** Form payload sent to `POST /api/reconciliation/run`. */
 export interface RunReconciliationPayload {
   bankFile: File;
   qboFile: File;
@@ -21,6 +23,7 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
   return (await response.json()) as T;
 };
 
+/** Submits a reconciliation run request with bank and QBO file uploads and optional metadata. */
 export const runReconciliationRequest = async ({
   bankFile,
   qboFile,
@@ -49,10 +52,12 @@ export const runReconciliationRequest = async ({
   return parseResponse<ReconciliationRunResponse>(response);
 };
 
+/** Fetches the most recently completed reconciliation run report. */
 export const getLatestReconciliationRunRequest = async (): Promise<ReconciliationRunResponse> => {
   const response = await fetch('/api/reconciliation/latest');
   return parseResponse<ReconciliationRunResponse>(response);
 };
 
+/** Returns the workbook download URL for the given run ID. */
 export const downloadWorkbookUrl = (runId: string): string =>
   `/api/reconciliation/${runId}/export/workbook`;

@@ -19,6 +19,7 @@ import { ChartsPanel } from './ChartsPanel';
 import { ExceptionTable } from './ExceptionTable';
 import { SemanticIcon } from './SemanticIcon';
 
+/** A single step in the process progress stepper displayed during reconciliation submission. */
 export type ProgressStep = {
   id: string;
   label: string;
@@ -370,6 +371,7 @@ function ExportArtifactsContent({
   );
 }
 
+/** Panel that renders the Reports tab content: run summary, probable match review, exception report, and export artifacts. */
 export function ReportsSection({
   run,
   activeReport,
@@ -483,6 +485,7 @@ export function ReportsSection({
   );
 }
 
+/** Panel that renders the Rules Catalog tab: searchable list of all matching rules with descriptions. */
 export function RulesCatalogSection({
   rules,
 }: Readonly<{
@@ -527,6 +530,7 @@ export function RulesCatalogSection({
   );
 }
 
+/** Panel that shows the step-by-step progress stepper while a reconciliation run is in flight. */
 export function ProcessProgressSection({
   overallProgressPercent,
   progressSteps,
@@ -581,6 +585,7 @@ export function ProcessProgressSection({
   );
 }
 
+/** Panel that renders the completed run results workspace with tab navigation and sub-views. */
 export function RunResultsSection({
   run,
   onDownloadWorkbook,

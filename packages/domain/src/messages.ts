@@ -1,5 +1,6 @@
 import type { ErrorCategory } from './enums';
 
+/** Human-readable display label for each exception category used in the UI and workbook export. */
 export const errorCategoryDisplayNames: Record<ErrorCategory, string> = {
   MissingFromBank: 'Missing from Bank',
   MissingFromQBO: 'Missing from QBO',
@@ -19,6 +20,7 @@ export const errorCategoryDisplayNames: Record<ErrorCategory, string> = {
   AmbiguousMatchRequiringReview: 'Ambiguous Match Requiring Review',
 };
 
+/** Full professional explanatory message for each exception category shown in the exception report. */
 export const professionalErrorMessages: Record<ErrorCategory, string> = {
   MissingFromBank:
     'Transaction appears in QuickBooks Online activity but no corresponding bank entry was identified within the permitted date and amount tolerance.',
@@ -54,6 +56,7 @@ export const professionalErrorMessages: Record<ErrorCategory, string> = {
     'Multiple plausible counterparts were identified and the system will not force a weak match without reviewer confirmation.',
 };
 
+/** Ordered list of recommended next-action steps shown to reviewers for each exception category. */
 export const recommendedNextActionsByCategory: Record<ErrorCategory, string[]> = {
   MissingFromBank: [
     'Inspect the bank statement around the transaction date for an omitted, reversed, or delayed posting.',

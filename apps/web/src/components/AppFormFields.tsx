@@ -55,6 +55,7 @@ function FieldGroupShell({
   );
 }
 
+/** A file input field with an accessible label, help text, and open/closed accordion behaviour. */
 export function HelpedFileField({
   accept,
   fieldId,
@@ -98,6 +99,7 @@ export function HelpedFileField({
   );
 }
 
+/** A text input field with an accessible label, help text, and validation feedback slot. */
 export function HelpedTextField({
   fieldId,
   helpText,
@@ -142,6 +144,7 @@ export function HelpedTextField({
   );
 }
 
+/** A `<select>` field with an accessible label, help text, and inline option list. */
 export function HelpedSelectField({
   fieldId,
   helpText,
@@ -198,6 +201,7 @@ export function HelpedSelectField({
   );
 }
 
+/** A read-only label field that shows a derived value with accessible hint text and validation state. */
 export function HelpedLabelField({
   hintId,
   isInvalid,

@@ -105,6 +105,11 @@ const buildFingerprint = (parts: Array<string | number | undefined | null>): str
     .update(parts.filter((part) => part !== undefined && part !== null).join('|'))
     .digest('hex');
 
+/**
+ * Transforms raw parsed spreadsheet rows into normalized transaction objects ready for matching.
+ * Applies text normalization, computes comparison tokens, deduplicated reference tokens, and
+ * attaches a context fingerprint used for duplicate detection.
+ */
 export const normalizeTransactions = (
   runId: string,
   rawRows: RawTransactionRow[],

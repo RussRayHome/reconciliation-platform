@@ -1,3 +1,9 @@
+/**
+ * Raw spreadsheet row arrays for every exception scenario and edge case used across unit,
+ * integration, and E2E test suites. Each named export is a self-contained set of header +
+ * data rows for a specific bank or QBO file. Workbook factory helpers at the bottom of the
+ * file convert any row array into an ExcelJS buffer.
+ */
 import { Buffer } from 'node:buffer';
 import ExcelJS from 'exceljs';
 
@@ -277,7 +283,10 @@ const buildWorkbookBuffer = async (rows: Array<Array<string | number>>): Promise
   throw new TypeError('Unsupported workbook buffer type from exceljs writeBuffer().');
 };
 
+/** Creates an Excel workbook buffer from the default sample bank rows. */
 export const createSampleBankWorkbook = () => buildWorkbookBuffer(sampleBankRows);
+/** Creates an Excel workbook buffer from the default sample QBO rows. */
 export const createSampleQboWorkbook = () => buildWorkbookBuffer(sampleQboRows);
 
+/** Creates an Excel workbook buffer from arbitrary row data. */
 export const createWorkbookFromRows = (rows: Array<Array<string | number>>) => buildWorkbookBuffer(rows);

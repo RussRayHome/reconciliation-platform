@@ -78,6 +78,7 @@ const toDisplayItem = (item: ExceptionItem): ExceptionDisplayItem => ({
   fileLineLabel: `${item.spreadsheetFileName} / ${item.lineNumber}`,
 });
 
+/** Sortable, filterable table of reconciliation exception items with category pills, severity, and evidence. */
 export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');

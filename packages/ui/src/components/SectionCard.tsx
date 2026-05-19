@@ -6,6 +6,7 @@ interface SectionCardProps extends PropsWithChildren {
   actions?: ReactNode;
 }
 
+/** Titled content card with an optional description and action slot, used to group related UI sections. */
 export const SectionCard = ({ title, description, actions, children }: SectionCardProps) => (
   <section className="section-card">
     <div className="section-card__header">

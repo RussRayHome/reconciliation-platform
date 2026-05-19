@@ -6,6 +6,7 @@ interface ChartsPanelProps {
   summary: SummaryMetrics;
 }
 
+/** Renders the count-by-category and dollar-exposure-by-category bar charts from reconciliation summary data. */
 export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
   const countChart = summary.charts.find((chart) => chart.id === 'countByCategory');
   const exposureChart = summary.charts.find((chart) => chart.id === 'exposureByCategory');

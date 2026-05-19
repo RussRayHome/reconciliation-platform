@@ -70,18 +70,22 @@ const toStackPreview = (stack?: string): string[] | undefined => {
   return lines.length > 0 ? lines : undefined;
 };
 
+/** Updates the last-seen request timestamp to the current time. */
 export const noteRequestSeen = (): void => {
   lastRequestAt = new Date().toISOString();
 };
 
+/** Sets the server start timestamp, used to compute uptime in runtime summaries. */
 export const markServerStarted = (timestamp = new Date().toISOString()): void => {
   startedAt = timestamp;
 };
 
+/** Prepends a failed-request entry to the bounded in-memory ring buffer. */
 export const recordFailedRequest = (entry: RuntimeFailedRequest): void => {
   pushBounded(failedRequests, entry, MAX_FAILED_REQUESTS);
 };
 
+/** Prepends an exception entry (with optional stack preview) to the bounded in-memory ring buffer. */
 export const recordException = (
   entry: Omit<RuntimeException, 'stackPreview'> & { stack?: string },
 ): void => {
@@ -95,10 +99,12 @@ export const recordException = (
   );
 };
 
+/** Prepends a reconciliation run outcome to the bounded in-memory ring buffer. */
 export const recordReconciliationRun = (entry: RuntimeReconciliationRun): void => {
   pushBounded(reconciliationRuns, entry, MAX_RECONCILIATION_RUNS);
 };
 
+/** Returns a current snapshot of API reachability, uptime, and recent activity counts. */
 export const getRuntimeSummary = () => {
   const recentFailedRequestCount = failedRequests.filter((item) =>
     withinWindow(item.timestamp, RECENT_WINDOW_MS),
@@ -119,11 +125,14 @@ export const getRuntimeSummary = () => {
   };
 };
 
+/** Returns the most recent failed requests, capped at 100 entries. */
 export const listFailedRequests = (limit = 10): RuntimeFailedRequest[] =>
   failedRequests.slice(0, Math.max(1, Math.min(limit, 100)));
 
+/** Returns the most recent runtime exceptions, capped at 100 entries. */
 export const listExceptions = (limit = 10): RuntimeException[] =>
   exceptions.slice(0, Math.max(1, Math.min(limit, 100)));
 
+/** Returns the most recent reconciliation run outcomes, capped at 50 entries. */
 export const listReconciliationRuns = (limit = 10): RuntimeReconciliationRun[] =>
   reconciliationRuns.slice(0, Math.max(1, Math.min(limit, 50)));

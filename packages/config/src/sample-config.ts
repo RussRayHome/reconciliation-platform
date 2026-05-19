@@ -1,5 +1,6 @@
 import type { AccountOverrideConfig } from '@recon/domain';
 
+/** Example account-specific overrides demonstrating custom column aliases and matching thresholds. */
 export const sampleAccountOverrides: AccountOverrideConfig[] = [
   {
     accountIdentifier: '5703',

@@ -1,3 +1,8 @@
+/**
+ * Runs reconciliation sensitivity analysis across amount tolerance, date variance, and
+ * similarity threshold windows to help calibrate matching configuration values.
+ * Invoked via `npm run analyze:reconciliation`.
+ */
 import {
   normalizeTransactions,
   parseWorkbook,

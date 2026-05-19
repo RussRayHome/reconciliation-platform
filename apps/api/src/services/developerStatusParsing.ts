@@ -8,9 +8,11 @@ import type {
   SecuritySeverityScore,
 } from './developerStatusTypes';
 
+/** Formats a command and its arguments into a single display string for check labels. */
 export const formatCommand = (command: string, args: string[]): string =>
   [command, ...args].join(' ');
 
+/** Truncates long command output to `limit` characters, preserving the head and tail with a truncation marker. */
 export const truncateOutput = (value: string, limit = 24000): string => {
   if (value.length <= limit) {
     return value;
@@ -42,6 +44,7 @@ const parseSummaryCounts = (value: string): { passed: number; failed: number } |
   return { passed, failed };
 };
 
+/** Extracts pass/fail/total counts from Vitest or Playwright test runner stdout. Returns `null` if no counts are found. */
 export const parseTestMetrics = (
   output: string,
 ): { passed: number; failed: number; total: number } | null => {
@@ -74,6 +77,7 @@ export const parseTestMetrics = (
   return null;
 };
 
+/** Produces a one-line test summary string (e.g. "Passed: 23, Failed: 0") from raw test runner stdout. */
 export const summarizeTestOutput = (stdout: string): string => {
   const metrics = parseTestMetrics(stdout);
   if (metrics) {
@@ -95,6 +99,7 @@ export const summarizeTestOutput = (stdout: string): string => {
   return 'Completed successfully';
 };
 
+/** Extracts the problem count from ESLint stdout and returns a concise summary string. */
 export const summarizeLintOutput = (stdout: string): string => {
   const problemsMatch = /(\d+) problems?/i.exec(stdout);
   if (problemsMatch) {
@@ -105,8 +110,10 @@ export const summarizeLintOutput = (stdout: string): string => {
   return 'No lint problems';
 };
 
+/** Returns a fixed summary string for a successful typecheck run (tsc exits 0 with no output). */
 export const summarizeTypecheckOutput = (): string => 'No type errors';
 
+/** Parses Vitest coverage table output and returns statement/branch/function/line percentages, or `null` if absent. */
 export const parseCoverageMetrics = (output: string): CoverageMetrics | null => {
   const clean = stripAnsi(output);
   const allFilesMatch =
@@ -371,6 +378,7 @@ const readLegacyAuditScore = (output: string): SecuritySeverityScore | null => {
   return normalizeSecurityScore(vulnerabilities);
 };
 
+/** Produces a one-line security summary string from multi-component scan output or legacy npm audit output. */
 export const parseAuditSummary = (output: string): string => {
   const securityScanPayload = readSecurityScanPayload(output);
   const aggregateScore = normalizeSecurityScore(securityScanPayload?.aggregate);
@@ -390,6 +398,7 @@ export const parseAuditSummary = (output: string): string => {
   return `Vulnerabilities: total ${legacyScore.total} (critical ${legacyScore.critical}, high ${legacyScore.high}, moderate ${legacyScore.moderate}, low ${legacyScore.low}, info ${legacyScore.info})`;
 };
 
+/** Returns a set of severity-count highlight strings (e.g. "Critical: 0") for the security check card. */
 export const parseSecurityHighlights = (output: string): string[] => {
   const securityScanPayload = readSecurityScanPayload(output);
   if (Array.isArray(securityScanPayload?.components) && securityScanPayload.components.length > 0) {
@@ -417,6 +426,7 @@ export const parseSecurityHighlights = (output: string): string[] => {
   ];
 };
 
+/** Parses multi-component Trivy/npm-audit scan output into per-component scores, CVE findings, and aggregate totals. */
 export const parseSecurityMetadata = (output: string): Partial<DeveloperCheck> => {
   const securityScanPayload = readSecurityScanPayload(output);
   const payload = securityScanPayload ?? {};
@@ -483,6 +493,7 @@ export const parseSecurityMetadata = (output: string): Partial<DeveloperCheck> =
   };
 };
 
+/** Extracts up to 3 failure highlight strings (failing test name, timeout/error message, trace path) from test output. */
 export const parseTestHighlights = (output: string): string[] => {
   const clean = stripAnsi(output);
   const highlights: string[] = [];
@@ -512,6 +523,7 @@ export const parseTestHighlights = (output: string): string[] => {
   return highlights.slice(0, 3);
 };
 
+/** Returns a curried function that extracts test-type metadata (pass/fail counts and area label) from runner output. */
 export const parseTestMetadata =
   (testType: 'unit' | 'integration' | 'e2e' | 'postgres', areaLabel: string) =>
   (output: string): Partial<DeveloperCheck> => {
@@ -533,6 +545,7 @@ const coverageThresholds: Record<CoverageBenchmarkKey, number> = {
   L: 40,
 };
 
+/** Builds per-dimension coverage benchmark objects from check output or the coverage-summary JSON fallback. */
 export const buildCoverageBenchmarks = (
   output: string,
   readCoverageSummaryMetrics: () => CoverageMetrics | null,

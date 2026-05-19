@@ -1,3 +1,8 @@
+/**
+ * Prints the current API and web runtime mode (harness vs Docker vs dev server) along
+ * with active port listeners. Used for quick local environment diagnostics.
+ * Invoked via `npm run runtime:status`.
+ */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 

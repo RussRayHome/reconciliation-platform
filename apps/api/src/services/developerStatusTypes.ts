@@ -1,5 +1,7 @@
+/** Single-character key identifying a coverage dimension: Statements, Branches, Functions, Lines. */
 export type CoverageBenchmarkKey = 'S' | 'B' | 'F' | 'L';
 
+/** Coverage percentage for one dimension along with its threshold and pass/fail status. */
 export type CoverageBenchmark = {
   key: CoverageBenchmarkKey;
   label: string;
@@ -8,6 +10,7 @@ export type CoverageBenchmark = {
   meetsThreshold: boolean;
 };
 
+/** Aggregated CVE counts across all severity levels for a single scanner result. */
 export type SecuritySeverityScore = {
   critical: number;
   high: number;
@@ -17,6 +20,7 @@ export type SecuritySeverityScore = {
   total: number;
 };
 
+/** Severity counts and metadata for one scanned component (API, Database, Container, Web Server). */
 export type SecurityComponentScore = SecuritySeverityScore & {
   component: string;
   scanner: string;
@@ -25,6 +29,7 @@ export type SecurityComponentScore = SecuritySeverityScore & {
   cveFindings?: SecurityCveFinding[];
 };
 
+/** A single CVE finding from Trivy or npm audit, attributed to a component and scanner. */
 export type SecurityCveFinding = {
   id: string;
   description: string;
@@ -33,6 +38,7 @@ export type SecurityCveFinding = {
   scanner: string;
 };
 
+/** Full result for one quality-gate check including exit code, timing, and optional metadata. */
 export type DeveloperCheck = {
   name: string;
   command: string;
@@ -53,6 +59,7 @@ export type DeveloperCheck = {
   securityCveFindings?: SecurityCveFinding[];
 };
 
+/** Pass/fail counts for one test suite type within a status snapshot. */
 export type TestBreakdown = {
   type: 'unit' | 'integration' | 'e2e' | 'postgres';
   label: string;
@@ -61,6 +68,7 @@ export type TestBreakdown = {
   total: number;
 };
 
+/** Aggregated test totals across all suite types for a single status snapshot. */
 export type DeveloperHistoryTestTotals = {
   passed: number;
   failed: number;
@@ -68,6 +76,7 @@ export type DeveloperHistoryTestTotals = {
   byType: TestBreakdown[];
 };
 
+/** Condensed historical record of one status run, stored in the trailing history array. */
 export type DeveloperStatusSnapshot = {
   generatedAt: string;
   overallStatus: 'healthy' | 'attention-needed';
@@ -80,6 +89,7 @@ export type DeveloperStatusSnapshot = {
   checks: Array<Pick<DeveloperCheck, 'name' | 'ok' | 'durationMs' | 'summary'>>;
 };
 
+/** Full status payload returned by `GET /api/developer/status`. */
 export type DeveloperStatusPayload = {
   generatedAt: string;
   repositoryPath: string;
@@ -92,6 +102,7 @@ export type DeveloperStatusPayload = {
   history: DeveloperStatusSnapshot[];
 };
 
+/** Raw percentage strings for each coverage dimension parsed from the coverage summary JSON. */
 export type CoverageMetrics = {
   statements: string;
   branches: string;
@@ -99,17 +110,20 @@ export type CoverageMetrics = {
   lines: string;
 };
 
+/** Cache metadata attached to each status response so callers can detect stale results. */
 export type DeveloperStatusCacheInfo = {
   ttlMs: number;
   ageMs: number;
   fromCache: boolean;
 };
 
+/** Combined return value from `getStatus`, pairing the payload with cache metadata. */
 export type DeveloperStatusResult = {
   payload: DeveloperStatusPayload;
   cache: DeveloperStatusCacheInfo;
 };
 
+/** Constructor options for `createDeveloperStatusService`. */
 export type CreateDeveloperStatusServiceOptions = {
   repoRoot: string;
   defaultDatabaseUrl: string;

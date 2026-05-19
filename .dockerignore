@@ -29,3 +29,6 @@ tests
 .DS_Store
 **/.DS_Store
 docs/sample-files
+packages/infra
+.env.docker.*
+CLAUDE.md
