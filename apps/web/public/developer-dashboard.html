@@ -501,6 +501,51 @@
         font-size: 0.8rem;
       }
 
+      .penetration-testing-card {
+        margin-top: 10px;
+        background: #f8fbff;
+      }
+
+      .penetration-testing-table-wrap {
+        margin-top: 10px;
+        border: 1px solid #d9e2ec;
+        border-radius: 8px;
+        background: #ffffff;
+        overflow-x: auto;
+      }
+
+      .penetration-testing-table {
+        width: 100%;
+        min-width: 640px;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+      }
+
+      .penetration-testing-table th,
+      .penetration-testing-table td {
+        text-align: left;
+        vertical-align: top;
+        padding: 8px 10px;
+        border-bottom: 1px solid #eef2f7;
+      }
+
+      .penetration-testing-table th {
+        background: #f7fbff;
+        color: #486581;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        font-size: 0.68rem;
+      }
+
+      .penetration-testing-name {
+        font-weight: 700;
+        color: #102a43;
+      }
+
+      .penetration-testing-note {
+        color: #52606d;
+      }
+
       .history-list {
         margin: 0;
         padding: 0;
@@ -621,6 +666,19 @@
         overflow-x: auto;
         font-size: 0.8rem;
       }
+
+      pre .cv-g {
+        color: #4ade80;
+        font-weight: 700;
+      }
+      pre .cv-a {
+        color: #fbbf24;
+        font-weight: 700;
+      }
+      pre .cv-r {
+        color: #f87171;
+        font-weight: 700;
+      }
     </style>
   </head>
   <body>
@@ -636,6 +694,7 @@
         <div class="actions">
           <button id="refresh" class="button">Refresh checks</button>
           <button id="force-refresh" class="button">Force refresh</button>
+          <a class="button" href="docs#api-reference-generated">API docs</a>
           <a class="button" href="docs">Documents</a>
           <a class="button" href=".">Open application</a>
         </div>
@@ -987,6 +1046,43 @@
         }
 
         return text.trim() || 'No additional output';
+      };
+
+      const colorizeV8Coverage = (rawText) => {
+        let inV8Table = false;
+        return rawText
+          .split('\n')
+          .map((line) => {
+            if (/% Coverage report from v8/i.test(line)) {
+              inV8Table = true;
+            }
+            if (!inV8Table || !line.includes('|')) {
+              return escapeHtml(line);
+            }
+            // Header and separator rows — escape only
+            if (/File\s*\|/i.test(line) || /^[\s\-|]+$/.test(line)) {
+              return escapeHtml(line);
+            }
+            const parts = line.split('|');
+            const colored = parts.map((cell, i) => {
+              // Columns 1–4 are % Stmts, % Branch, % Funcs, % Lines
+              if (i < 1 || i > 4) return escapeHtml(cell);
+              const trimmed = cell.trim();
+              const n = parseFloat(trimmed);
+              if (!Number.isFinite(n) || trimmed === '') return escapeHtml(cell);
+              let cls = 'cv-r';
+              if (n >= 80) {
+                cls = 'cv-g';
+              } else if (n >= 50) {
+                cls = 'cv-a';
+              }
+              const lead = cell.length - cell.trimStart().length;
+              const trail = cell.length - cell.trimEnd().length;
+              return `${' '.repeat(lead)}<span class="${cls}">${escapeHtml(trimmed)}</span>${' '.repeat(trail)}`;
+            });
+            return colored.join('|');
+          })
+          .join('\n');
       };
 
       const getPostgresPreflightDisplayText = (value) => {
@@ -1618,6 +1714,122 @@
         }
 
         return `<section class="security-component-stack">${componentRows}</section>`;
+      };
+
+      const normalizePenetrationTestStatuses = (check) => {
+        const sourceRows = Array.isArray(check?.penetrationTestStatuses)
+          ? check.penetrationTestStatuses
+          : [];
+
+        if (sourceRows.length === 0) {
+          return [
+            {
+              testName: 'OWASP ZAP Baseline (Stage Web)',
+              testType: 'Web frontend',
+              status: 'not-run',
+              note: 'Not run in this workspace.',
+            },
+            {
+              testName: 'OWASP ZAP Baseline (Stage API)',
+              testType: 'API endpoints',
+              status: 'not-run',
+              note: 'Not run in this workspace.',
+            },
+          ];
+        }
+
+        return sourceRows.map((item) => {
+          const rawStatus = String(item?.status || 'not-run')
+            .trim()
+            .toLowerCase();
+          const status =
+            rawStatus === 'passed' || rawStatus === 'failed' || rawStatus === 'not-run'
+              ? rawStatus
+              : 'not-run';
+
+          return {
+            testName: String(item?.testName || 'Unnamed test').trim() || 'Unnamed test',
+            testType: String(item?.testType || 'Unknown').trim() || 'Unknown',
+            status,
+            note:
+              String(item?.note || '').trim() ||
+              (status === 'not-run' ? 'Not run in this workspace.' : '-'),
+          };
+        });
+      };
+
+      const resolvePenetrationStatusPresentation = (status) => {
+        if (status === 'passed') {
+          return { label: 'PASSED', className: 'ok' };
+        }
+
+        if (status === 'failed') {
+          return { label: 'FAILED', className: 'bad' };
+        }
+
+        return { label: 'NOT RUN', className: 'warn' };
+      };
+
+      const buildPenetrationTestingCard = (check) => {
+        if (check?.name !== 'Security vulnerabilities') {
+          return null;
+        }
+
+        const rows = normalizePenetrationTestStatuses(check);
+        const failedCount = rows.filter((item) => item.status === 'failed').length;
+        const passedCount = rows.filter((item) => item.status === 'passed').length;
+        const notRunCount = rows.filter((item) => item.status === 'not-run').length;
+
+        let overall = { label: 'NOT RUN', className: 'warn' };
+        let summary = 'Penetration tests have not been run in this workspace.';
+
+        if (failedCount > 0) {
+          overall = { label: 'FAILED', className: 'bad' };
+          summary = `${failedCount} penetration test suite${failedCount === 1 ? '' : 's'} failed.`;
+        } else if (passedCount === rows.length && rows.length > 0) {
+          overall = { label: 'PASSED', className: 'ok' };
+          summary = 'All penetration test suites passed.';
+        } else if (passedCount > 0 || notRunCount > 0) {
+          overall = { label: 'NOT RUN', className: 'warn' };
+          summary = `${passedCount} passed, ${notRunCount} not run.`;
+        }
+
+        const card = document.createElement('article');
+        card.className = 'card penetration-testing-card';
+        card.innerHTML = `
+          <div class="card-top">
+            <h3>Penetration Testing</h3>
+            <span class="pill ${escapeHtml(overall.className)}">${escapeHtml(overall.label)}</span>
+          </div>
+          <div class="details">
+            <div><strong>Summary:</strong> ${escapeHtml(summary)}</div>
+          </div>
+          <div class="penetration-testing-table-wrap">
+            <table class="penetration-testing-table">
+              <thead>
+                <tr>
+                  <th>Test Name</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>${rows
+                .map((item) => {
+                  const presentation = resolvePenetrationStatusPresentation(item.status);
+                  return `<tr>
+                    <td class="penetration-testing-name">${escapeHtml(item.testName)}</td>
+                    <td>${escapeHtml(item.testType)}</td>
+                    <td><span class="pill ${escapeHtml(presentation.className)}">${escapeHtml(presentation.label)}</span></td>
+                    <td class="penetration-testing-note">${escapeHtml(item.note)}</td>
+                  </tr>`;
+                })
+                .join('')}</tbody>
+            </table>
+          </div>
+        `;
+
+        return card;
       };
 
       const renderHistory = (items) => {
@@ -2293,7 +2505,14 @@
         } else if (isPostgresCheck) {
           checkDetails = getPostgresPreflightDisplayText(check.details);
         }
-        const outputMarkup = isSecurityCheck ? '' : `<pre>${escapeHtml(checkDetails)}</pre>`;
+        let outputMarkup = '';
+        if (!isSecurityCheck) {
+          if (isCoverageCheck) {
+            outputMarkup = `<pre>${colorizeV8Coverage(checkDetails)}</pre>`;
+          } else {
+            outputMarkup = `<pre>${escapeHtml(checkDetails)}</pre>`;
+          }
+        }
         const detailsMarkup = `<div class="details">
             ${summaryHtml}
             <div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>
@@ -2320,6 +2539,11 @@
         const checksForDisplay = mergeChecksForDisplay(checks);
         for (const check of checksForDisplay) {
           cards.appendChild(buildRepoCheckCard(check));
+
+          const penetrationTestingCard = buildPenetrationTestingCard(check);
+          if (penetrationTestingCard) {
+            cards.appendChild(penetrationTestingCard);
+          }
         }
       };
 

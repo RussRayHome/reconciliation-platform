@@ -6,14 +6,29 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import type { Construct } from 'constructs';
 import { APP, DB_USER } from './config.js';
 
+/**
+ * Long-lived infrastructure resources shared across ephemeral environment deployments.
+ *
+ * This stack provisions durable repositories, storage, IAM roles, and database credentials
+ * that are referenced by runtime stacks and retained across teardown/recreate cycles.
+ */
 export class PersistentStack extends cdk.Stack {
+  /** ECR repository used for API image pushes and deployments. */
   readonly apiRepo: ecr.Repository;
+  /** ECR repository used for web image pushes and deployments. */
   readonly webRepo: ecr.Repository;
+  /** S3 bucket for uploaded source workbooks and related artifacts. */
   readonly uploadsBucket: s3.Bucket;
+  /** ECS execution role used for pulling images and publishing container logs. */
   readonly executionRole: iam.Role;
+  /** ECS task role used by application containers for runtime AWS permissions. */
   readonly taskRole: iam.Role;
+  /** Secret containing persisted database credentials used by runtime stacks. */
   readonly dbSecret: secretsmanager.Secret;
 
+  /**
+   * Creates the persistent baseline infrastructure resources for the platform.
+   */
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 

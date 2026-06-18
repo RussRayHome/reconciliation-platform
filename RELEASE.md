@@ -32,6 +32,7 @@ Record the quality checks that were executed for the release candidate.
 Validation run:
 - npm run lint
 - npm run typecheck
+- npm run docs:api:check
 - npm run test
 - npm run test:e2e
 - npm run coverage
@@ -41,6 +42,7 @@ Validation run:
 Result summary:
 - lint: pass/fail
 - typecheck: pass/fail
+- docs-api-check: pass/fail
 - unit/integration: pass/fail
 - e2e: pass/fail
 - coverage: include headline percentages
@@ -126,3 +128,16 @@ Even before a formal deployment process exists, release documentation should not
 - `RELEASE.md` defines the standard for writing higher-signal release notes and validation summaries.
 
 Use both together: update the changelog when behavior changes, and use this file when preparing a release or milestone handoff.
+
+Promote `Unreleased` notes into a dated changelog section with:
+
+```bash
+npm run changelog:promote -- --date YYYY-MM-DD
+```
+
+Generate and enforce implementation API docs coverage for exported classes with:
+
+```bash
+npm run docs:api:generate
+npm run docs:api:check
+```

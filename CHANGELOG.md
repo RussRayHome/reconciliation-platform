@@ -1,10 +1,16 @@
 # Changelog
 
+<!-- markdownlint-configure-file {"MD024": {"siblings_only": true}} -->
+
 All notable changes to this repository should be recorded in this file.
 
 The format is inspired by Keep a Changelog and adapted for a versionless internal application where dated entries may be more useful than semantic version tags.
 
 ## [Unreleased]
+
+_No notable changes recorded yet._
+
+## [2026-06-18]
 
 ### Added
 
@@ -20,7 +26,7 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 - `packages/infra` CDK package excluded from root ESLint config and `tsconfig.typecheck.json`; the package uses its own `tsconfig.json` and `aws-cdk-lib` dependencies not available in the monorepo root.
 - Playwright upgraded from `1.53.0` to `1.59.1` (chromium revision 1217); pre-downloaded Linux browser binaries updated in `playwright-browsers/` to match.
 
-### Changed (Unreleased)
+### Changed
 
 - Docker runbooks were consolidated under `scripts/pre-flight/` and `scripts/in-flight/`, replacing the previous Bash scripts under `scripts/ops/`.
 - Dev/stage compose overlays now include both auxiliary admin services (`pgweb` and `nginx-ui`) with explicit resource limits and stop grace periods.
@@ -30,7 +36,7 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 - `nginx-config.test.ts` switched from `docker run -v` volume mount to `docker run -i` stdin pipe; the previous approach failed inside the tools container because temp paths created in the container are not accessible by the host Docker daemon.
 - `tools` service now joins the `default` compose network in addition to `app` and `data`; external connectivity is required for Trivy database downloads and npm audit registry access.
 
-### Fixed (Unreleased)
+### Fixed
 
 - Stage tools container was missing the `default` network, causing all four security-scan components to report SKIPPED in the Stage Developer Dashboard; Trivy could not download its vulnerability DB and npm audit could not reach the registry. `compose.stage.yaml` now includes `default` in the tools service network list, matching `compose.dev.yaml`.
 - Stage tools container was missing `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0` / `GIT_CONFIG_VALUE_0` env vars, causing git safe-directory failures when the host `.git` directory is mounted. These vars are now set in `compose.stage.yaml` to match the dev overlay.
@@ -43,7 +49,7 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 - Developer Dashboard Environment Promotion Matrix showed PENDING for all git fields because `git` was not installed in the `dev-base` stage and the `.git` directory was not mounted into the API container.
 - E2E tests completed in 3–4 ms (all skipped) due to a Playwright/browser version mismatch: the `tools-node-modules` volume held `@playwright/test@1.59.1` (requiring chromium revision 1217) while the image contained chromium-1178 (built for 1.53.0). Updating `PLAYWRIGHT_VERSION` to `1.59.1` and providing matching Linux binaries in `playwright-browsers/` restored real browser execution.
 
-### Documentation (Unreleased)
+### Documentation
 
 - Updated Docker/developer runbook docs to reflect nginx-ui service coverage, auxiliary health-check behavior, and pgAudit environment policy.
 

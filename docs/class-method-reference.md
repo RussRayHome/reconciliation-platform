@@ -172,7 +172,7 @@ Module: apps/api/src/services/reconciliationService.ts
     - accountIdentifier?: string
     - periodLabel?: string
 - Output:
-  - Promise<ReconciliationRun>
+  - `Promise<ReconciliationRun>`
 - State before:
 
 ```ts
@@ -275,7 +275,7 @@ Module: packages/core/src/parsers/excelParser.ts
     - buffer: Uint8Array
     - config: SourceReconciliationConfig
 - Output:
-  - Promise<ParsedWorkbook>
+  - `Promise<ParsedWorkbook>`
     - sourceFile: SourceFile
     - rawRows: RawTransactionRow[]
 - State before:
@@ -667,7 +667,7 @@ Module: packages/core/src/export/workbookExporter.ts
     - reviewerObservations
     - normalizedTransactions
 - Output:
-  - Promise<OutputWorkbook>
+  - `Promise<OutputWorkbook>`
 - State before:
 
 ```ts
@@ -708,7 +708,7 @@ Module: packages/core/src/reconcile.ts
 - Inputs:
   - ReconciliationInput
 - Output:
-  - Promise<ReconciliationOutput>
+  - `Promise<ReconciliationOutput>`
 - State before:
 
 ```ts

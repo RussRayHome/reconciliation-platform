@@ -488,7 +488,7 @@ export interface ReconciliationInput {
 /** Full output produced by `runReconciliation`; persisted to PostgreSQL by the lifecycle store. */
 /**
  * A learned mapping from a bank description pattern to a canonical QBO payee name.
- * Stored in the `payee_alias` table and loaded at runtime to boost matching for
+ * Stored in the `reconciliation_payee_alias` table and loaded at runtime to boost matching for
  * bank entries whose raw text similarity to the QBO payee would otherwise be low.
  */
 export interface PayeeAlias {

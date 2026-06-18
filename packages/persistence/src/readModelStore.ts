@@ -267,7 +267,10 @@ const mapException = (runId: string, row: ExceptionRow): ExceptionItem => ({
   relatedTransactionIds: asStringArray(row.related_transaction_ids),
 });
 
-const mapReviewerObservation = (runId: string, row: ReviewerObservationRow): ReviewerObservation => ({
+const mapReviewerObservation = (
+  runId: string,
+  row: ReviewerObservationRow,
+): ReviewerObservation => ({
   id: row.id,
   runId,
   category: row.category,
@@ -346,8 +349,14 @@ const mapRunStatus = (row: ReconciliationJobRow): ReconciliationRunReport['statu
  * reviewer decisions. Used by the API to serve report and dashboard queries.
  */
 export class PostgresReconciliationReadModelStore {
+  /**
+   * Creates a read-model store backed by a PostgreSQL connection pool.
+   */
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Returns the most recently completed reconciliation run report.
+   */
   async findLatestRunReport(): Promise<ReconciliationRunReport | undefined> {
     const result = await this.pool.query<{ id: string }>(
       `SELECT id
@@ -365,6 +374,9 @@ export class PostgresReconciliationReadModelStore {
     return this.findRunReportById(runId);
   }
 
+  /**
+   * Loads a full reconciliation report, including files, matches, exceptions, and summary.
+   */
   async findRunReportById(runId: string): Promise<ReconciliationRunReport | undefined> {
     const jobResult = await this.pool.query<ReconciliationJobRow>(
       `SELECT id, correlation_id, account_identifier, period_label, reconciliation_frequency, current_state, started_at, completed_at
@@ -378,7 +390,16 @@ export class PostgresReconciliationReadModelStore {
       return undefined;
     }
 
-    const [sourceFiles, groupedMatchResults, probableMatches, exceptions, summary, reviewerObservations, reviewerDecisions, outputWorkbook] = await Promise.all([
+    const [
+      sourceFiles,
+      groupedMatchResults,
+      probableMatches,
+      exceptions,
+      summary,
+      reviewerObservations,
+      reviewerDecisions,
+      outputWorkbook,
+    ] = await Promise.all([
       this.listSourceFiles(runId),
       this.listGroupedMatchResults(runId),
       this.listProbableMatches(runId),
@@ -432,6 +453,9 @@ export class PostgresReconciliationReadModelStore {
     };
   }
 
+  /**
+   * Loads summary metrics for a specific reconciliation run.
+   */
   async findRunSummaryById(runId: string): Promise<SummaryMetrics | undefined> {
     const result = await this.pool.query<SummaryRow>(
       `SELECT total_records_reviewed, bank_records, qbo_records, exact_matches, probable_matches,
@@ -449,6 +473,9 @@ export class PostgresReconciliationReadModelStore {
     return row ? mapSummary(row) : undefined;
   }
 
+  /**
+   * Lists all exceptions captured for the given run in deterministic line/id order.
+   */
   async listRunExceptions(runId: string): Promise<ExceptionItem[]> {
     const result = await this.pool.query<ExceptionRow>(
       `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
@@ -464,7 +491,14 @@ export class PostgresReconciliationReadModelStore {
     return result.rows.map((row) => mapException(runId, row));
   }
 
-  async listRunExceptionsPage(runId: string, limit: number, offset: number): Promise<PaginatedExceptionsResult> {
+  /**
+   * Lists a paginated slice of exceptions and total count metadata.
+   */
+  async listRunExceptionsPage(
+    runId: string,
+    limit: number,
+    offset: number,
+  ): Promise<PaginatedExceptionsResult> {
     const [itemsResult, countResult] = await Promise.all([
       this.pool.query<ExceptionRow>(
         `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
@@ -495,6 +529,9 @@ export class PostgresReconciliationReadModelStore {
     };
   }
 
+  /**
+   * Lists reviewer decisions for the given run ordered by creation time.
+   */
   async listReviewerDecisions(runId: string): Promise<ReviewerDecision[]> {
     const result = await this.pool.query<ReviewerDecisionRow>(
       `SELECT id, target_type, target_id, outcome, final_category, notes, reviewer_id, reviewer_name, created_at, updated_at
@@ -609,13 +646,23 @@ export interface CreatePayeeAliasInput {
 
 /** Fields that may be patched on an existing payee alias. */
 export type UpdatePayeeAliasInput = Partial<
-  Pick<CreatePayeeAliasInput, 'bankPattern' | 'canonicalPayeeName' | 'normalizedTokens' | 'sourceDirection' | 'matchConfidence'>
+  Pick<
+    CreatePayeeAliasInput,
+    | 'bankPattern'
+    | 'canonicalPayeeName'
+    | 'normalizedTokens'
+    | 'sourceDirection'
+    | 'matchConfidence'
+  >
 >;
 
 /** Creates a new active payee alias and returns the persisted record. */
-export const createPayeeAlias = async (pool: Pool, input: CreatePayeeAliasInput): Promise<PayeeAlias> => {
+export const createPayeeAlias = async (
+  pool: Pool,
+  input: CreatePayeeAliasInput,
+): Promise<PayeeAlias> => {
   const result = await pool.query<PayeeAliasRow>(
-    `INSERT INTO payee_alias
+    `INSERT INTO reconciliation_payee_alias
        (account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
@@ -625,7 +672,7 @@ export const createPayeeAlias = async (pool: Pool, input: CreatePayeeAliasInput)
       input.canonicalPayeeName,
       input.normalizedTokens,
       input.sourceDirection ?? 'bank_to_qbo',
-      input.matchConfidence ?? 1.0,
+      input.matchConfidence ?? 1,
     ],
   );
   const row = result.rows[0];
@@ -677,7 +724,7 @@ export const updatePayeeAlias = async (
   values.push(id);
 
   const result = await pool.query<PayeeAliasRow>(
-    `UPDATE payee_alias
+    `UPDATE reconciliation_payee_alias
         SET ${setClauses.join(', ')}
       WHERE id = $${paramIndex}
   RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
@@ -692,7 +739,7 @@ export const updatePayeeAlias = async (
  */
 export const deactivatePayeeAlias = async (pool: Pool, id: string): Promise<boolean> => {
   const result = await pool.query(
-    `UPDATE payee_alias SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+    `UPDATE reconciliation_payee_alias SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
     [id],
   );
   return (result.rowCount ?? 0) > 0;
@@ -709,7 +756,7 @@ export const loadPayeeAliases = async (
   const result = await pool.query<PayeeAliasRow>(
     `SELECT id, account_identifier, bank_pattern, canonical_payee_name,
             normalized_tokens, source_direction, match_confidence, is_active
-       FROM payee_alias
+       FROM reconciliation_payee_alias
       WHERE is_active = TRUE
         AND (account_identifier IS NULL OR account_identifier = $1)
       ORDER BY account_identifier NULLS LAST, canonical_payee_name ASC`,

@@ -38,6 +38,15 @@ export type SecurityCveFinding = {
   scanner: string;
 };
 
+/** Status record for one penetration-test suite shown under Security Vulnerabilities. */
+export type PenetrationTestStatus = {
+  testName: string;
+  testType: string;
+  status: 'passed' | 'failed' | 'not-run';
+  note?: string;
+  source?: string;
+};
+
 /** Full result for one quality-gate check including exit code, timing, and optional metadata. */
 export type DeveloperCheck = {
   name: string;
@@ -57,6 +66,7 @@ export type DeveloperCheck = {
   securityComponentScores?: SecurityComponentScore[];
   securityAggregateScore?: SecuritySeverityScore;
   securityCveFindings?: SecurityCveFinding[];
+  penetrationTestStatuses?: PenetrationTestStatus[];
 };
 
 /** Pass/fail counts for one test suite type within a status snapshot. */

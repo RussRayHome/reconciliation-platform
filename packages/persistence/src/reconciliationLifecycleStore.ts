@@ -139,7 +139,10 @@ const hashJson = (value: unknown): string =>
 export const computeSha256Hex = (value: Uint8Array | Buffer | string): string =>
   createHash('sha256').update(value).digest('hex');
 
-const withTransaction = async <T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> => {
+const withTransaction = async <T>(
+  pool: Pool,
+  callback: (client: PoolClient) => Promise<T>,
+): Promise<T> => {
   const client = await pool.connect();
 
   try {
@@ -159,7 +162,10 @@ const lockJob = async (client: PoolClient, jobId: string): Promise<void> => {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [jobId]);
 };
 
-const getCurrentState = async (client: PoolClient, jobId: string): Promise<ReconciliationJobState> => {
+const getCurrentState = async (
+  client: PoolClient,
+  jobId: string,
+): Promise<ReconciliationJobState> => {
   const result = await client.query<{ current_state: ReconciliationJobState }>(
     'SELECT current_state FROM reconciliation_job WHERE id = $1 FOR UPDATE',
     [jobId],
@@ -211,7 +217,10 @@ const transitionJobState = async (
   await insertAuditEvent(client, jobId, 'job.state.transitioned', details, currentState, nextState);
 };
 
-const upsertSourceFileDetails = async (client: PoolClient, sourceFiles: SourceFile[]): Promise<void> => {
+const upsertSourceFileDetails = async (
+  client: PoolClient,
+  sourceFiles: SourceFile[],
+): Promise<void> => {
   for (const sourceFile of sourceFiles) {
     await client.query(
       `UPDATE reconciliation_source_file
@@ -309,6 +318,9 @@ const toNullableDate = (value?: string): string | null => value ?? null;
  *   6. `persistExportAndFinalize` — insert export record + audit events → FINALIZED
  */
 export class PostgresReconciliationLifecycleStore {
+  /**
+   * Creates a lifecycle store with optional batch-size tuning for bulk inserts.
+   */
   constructor(
     private readonly pool: Pool,
     private readonly options: {
@@ -319,6 +331,9 @@ export class PostgresReconciliationLifecycleStore {
     } = {},
   ) {}
 
+  /**
+   * Persists a new reconciliation job and its registered source files.
+   */
   async createJob(input: CreateReconciliationJobInput): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       await client.query(
@@ -338,18 +353,21 @@ export class PostgresReconciliationLifecycleStore {
         ],
       );
 
-      const sourceFileRows = input.sourceFiles.map((sourceFile) => [
-        sourceFile.id,
-        input.jobId,
-        sourceFile.sourceSystem,
-        sourceFile.sourceFormat,
-        sourceFile.fileName,
-        sourceFile.mimeType,
-        sourceFile.sizeBytes,
-        sourceFile.sha256,
-        sourceFile.storageUri ?? null,
-        sourceFile.uploadedAt,
-      ] as const);
+      const sourceFileRows = input.sourceFiles.map(
+        (sourceFile) =>
+          [
+            sourceFile.id,
+            input.jobId,
+            sourceFile.sourceSystem,
+            sourceFile.sourceFormat,
+            sourceFile.fileName,
+            sourceFile.mimeType,
+            sourceFile.sizeBytes,
+            sourceFile.sha256,
+            sourceFile.storageUri ?? null,
+            sourceFile.uploadedAt,
+          ] as const,
+      );
 
       const insertSourceFiles = buildInsertStatement(
         'reconciliation_source_file',
@@ -376,7 +394,14 @@ export class PostgresReconciliationLifecycleStore {
     });
   }
 
-  async persistParsedRows(jobId: string, sourceFiles: SourceFile[], rawRows: RawTransactionRow[]): Promise<void> {
+  /**
+   * Persists parsed raw spreadsheet rows and source-file import batch metadata.
+   */
+  async persistParsedRows(
+    jobId: string,
+    sourceFiles: SourceFile[],
+    rawRows: RawTransactionRow[],
+  ): Promise<void> {
     const rawRowBatchSize = this.options.rawRowBatchSize ?? DEFAULT_BATCH_SIZE;
 
     await withTransaction(this.pool, async (client) => {
@@ -410,32 +435,35 @@ export class PostgresReconciliationLifecycleStore {
             ],
           );
 
-          const rawRowValues = batchRows.map((row) => [
-            row.id,
-            jobId,
-            row.sourceFileId,
-            batchId,
-            row.source,
-            row.lineNumber,
-            hashJson(row.rawValues),
-            JSON.stringify(row.rawValues),
-            row.transactionDateRaw ?? null,
-            row.postingDateRaw ?? null,
-            row.transactionTypeRaw ?? null,
-            row.checkNumberRaw ?? null,
-            row.serialNumberRaw ?? null,
-            row.referenceNumberRaw ?? null,
-            row.descriptionRaw ?? null,
-            row.merchantNameRaw ?? null,
-            row.payeeNameRaw ?? null,
-            row.amountRaw ?? null,
-            row.debitRaw ?? null,
-            row.creditRaw ?? null,
-            row.runningBalanceRaw ?? null,
-            row.excluded,
-            row.exclusionReason ?? null,
-            JSON.stringify(row.parsingIssues),
-          ] as const);
+          const rawRowValues = batchRows.map(
+            (row) =>
+              [
+                row.id,
+                jobId,
+                row.sourceFileId,
+                batchId,
+                row.source,
+                row.lineNumber,
+                hashJson(row.rawValues),
+                JSON.stringify(row.rawValues),
+                row.transactionDateRaw ?? null,
+                row.postingDateRaw ?? null,
+                row.transactionTypeRaw ?? null,
+                row.checkNumberRaw ?? null,
+                row.serialNumberRaw ?? null,
+                row.referenceNumberRaw ?? null,
+                row.descriptionRaw ?? null,
+                row.merchantNameRaw ?? null,
+                row.payeeNameRaw ?? null,
+                row.amountRaw ?? null,
+                row.debitRaw ?? null,
+                row.creditRaw ?? null,
+                row.runningBalanceRaw ?? null,
+                row.excluded,
+                row.exclusionReason ?? null,
+                JSON.stringify(row.parsingIssues),
+              ] as const,
+          );
 
           if (rawRowValues.length > 0) {
             const rawRowInsert = buildInsertStatement(
@@ -477,7 +505,13 @@ export class PostgresReconciliationLifecycleStore {
     });
   }
 
-  async persistNormalizedRows(jobId: string, normalizedTransactions: NormalizedTransaction[]): Promise<void> {
+  /**
+   * Persists normalized canonical transactions derived from raw imported rows.
+   */
+  async persistNormalizedRows(
+    jobId: string,
+    normalizedTransactions: NormalizedTransaction[],
+  ): Promise<void> {
     const canonicalRowBatchSize = this.options.canonicalRowBatchSize ?? DEFAULT_BATCH_SIZE;
 
     await withTransaction(this.pool, async (client) => {
@@ -487,40 +521,43 @@ export class PostgresReconciliationLifecycleStore {
       });
 
       for (const batch of chunk(normalizedTransactions, canonicalRowBatchSize)) {
-        const rows = batch.map((transaction) => [
-          transaction.id,
-          jobId,
-          transaction.rawRowId,
-          transaction.sourceFileId,
-          transaction.source,
-          transaction.spreadsheetFileName,
-          transaction.worksheetName,
-          transaction.lineNumber,
-          toNullableDate(transaction.transactionDate),
-          toNullableDate(transaction.postingDate),
-          transaction.transactionType ?? null,
-          transaction.checkNumber ?? null,
-          transaction.serialNumber ?? null,
-          transaction.referenceNumber ?? null,
-          transaction.description ?? null,
-          transaction.merchantName ?? null,
-          transaction.payeeName ?? null,
-          transaction.amount,
-          transaction.debit,
-          transaction.credit,
-          transaction.runningBalance,
-          transaction.normalizedComparisonText,
-          transaction.normalizedComparisonTokens,
-          transaction.normalizedReferenceTokens,
-          JSON.stringify(transaction.rawSourceValues),
-          JSON.stringify(transaction.dataQualityIssues),
-          transaction.isExcluded,
-          transaction.exclusionReason ?? null,
-          transaction.isZeroAmount,
-          transaction.contextFingerprint,
-          transaction.accountIdentifier ?? null,
-          transaction.reviewerNotes ?? null,
-        ] as const);
+        const rows = batch.map(
+          (transaction) =>
+            [
+              transaction.id,
+              jobId,
+              transaction.rawRowId,
+              transaction.sourceFileId,
+              transaction.source,
+              transaction.spreadsheetFileName,
+              transaction.worksheetName,
+              transaction.lineNumber,
+              toNullableDate(transaction.transactionDate),
+              toNullableDate(transaction.postingDate),
+              transaction.transactionType ?? null,
+              transaction.checkNumber ?? null,
+              transaction.serialNumber ?? null,
+              transaction.referenceNumber ?? null,
+              transaction.description ?? null,
+              transaction.merchantName ?? null,
+              transaction.payeeName ?? null,
+              transaction.amount,
+              transaction.debit,
+              transaction.credit,
+              transaction.runningBalance,
+              transaction.normalizedComparisonText,
+              transaction.normalizedComparisonTokens,
+              transaction.normalizedReferenceTokens,
+              JSON.stringify(transaction.rawSourceValues),
+              JSON.stringify(transaction.dataQualityIssues),
+              transaction.isExcluded,
+              transaction.exclusionReason ?? null,
+              transaction.isZeroAmount,
+              transaction.contextFingerprint,
+              transaction.accountIdentifier ?? null,
+              transaction.reviewerNotes ?? null,
+            ] as const,
+        );
 
         const insert = buildInsertStatement(
           'reconciliation_canonical_row',
@@ -569,6 +606,9 @@ export class PostgresReconciliationLifecycleStore {
     });
   }
 
+  /**
+   * Persists grouped and pairwise match artifacts plus derived rule-evaluation records.
+   */
   async persistMatchingArtifacts(input: PersistMatchingArtifactsInput): Promise<void> {
     const resultBatchSize = this.options.resultBatchSize ?? DEFAULT_BATCH_SIZE;
 
@@ -581,24 +621,27 @@ export class PostgresReconciliationLifecycleStore {
       });
 
       if (input.groupedMatchResults.length > 0) {
-        const groupRows = input.groupedMatchResults.map((result) => [
-          result.id,
-          input.jobId,
-          result.disposition,
-          result.confidence,
-          result.category ?? null,
-          result.bankTransactionIds,
-          result.qboTransactionIds,
-          JSON.stringify(result.bankMembers),
-          JSON.stringify(result.qboMembers),
-          result.totalAmount,
-          result.dateDifferenceDays ?? null,
-          result.score,
-          result.ruleId,
-          result.ruleName,
-          result.reason,
-          JSON.stringify(result.evidence),
-        ] as const);
+        const groupRows = input.groupedMatchResults.map(
+          (result) =>
+            [
+              result.id,
+              input.jobId,
+              result.disposition,
+              result.confidence,
+              result.category ?? null,
+              result.bankTransactionIds,
+              result.qboTransactionIds,
+              JSON.stringify(result.bankMembers),
+              JSON.stringify(result.qboMembers),
+              result.totalAmount,
+              result.dateDifferenceDays ?? null,
+              result.score,
+              result.ruleId,
+              result.ruleName,
+              result.reason,
+              JSON.stringify(result.evidence),
+            ] as const,
+        );
 
         const insertGroups = buildInsertStatement(
           'reconciliation_match_group',
@@ -634,24 +677,27 @@ export class PostgresReconciliationLifecycleStore {
       ];
 
       for (const batch of chunk(pairwiseRows, resultBatchSize)) {
-        const values = batch.map(({ result, bucket }) => [
-          result.id,
-          input.jobId,
-          bucket,
-          result.bankTransactionId ?? null,
-          result.qboTransactionId ?? null,
-          result.disposition,
-          result.confidence,
-          result.ruleId ?? null,
-          result.ruleName,
-          result.reason ?? null,
-          result.score,
-          result.amountDifference,
-          result.dateDifferenceDays ?? null,
-          JSON.stringify(result.evidence),
-          result.likelyMatchingReference ?? null,
-          result.exceptionCategory ?? null,
-        ] as const);
+        const values = batch.map(
+          ({ result, bucket }) =>
+            [
+              result.id,
+              input.jobId,
+              bucket,
+              result.bankTransactionId ?? null,
+              result.qboTransactionId ?? null,
+              result.disposition,
+              result.confidence,
+              result.ruleId ?? null,
+              result.ruleName,
+              result.reason ?? null,
+              result.score,
+              result.amountDifference,
+              result.dateDifferenceDays ?? null,
+              JSON.stringify(result.evidence),
+              result.likelyMatchingReference ?? null,
+              result.exceptionCategory ?? null,
+            ] as const,
+        );
 
         const insert = buildInsertStatement(
           'reconciliation_match_result',
@@ -684,20 +730,23 @@ export class PostgresReconciliationLifecycleStore {
         input.groupedMatchResults,
       );
       if (ruleResults.length > 0) {
-        const ruleRows = ruleResults.map((ruleResult) => [
-          ruleResult.id,
-          input.jobId,
-          ruleResult.targetKind,
-          ruleResult.targetId,
-          ruleResult.ruleId,
-          ruleResult.ruleName,
-          ruleResult.passed,
-          ruleResult.score,
-          ruleResult.reason,
-          JSON.stringify(ruleResult.evidence),
-          ruleResult.candidateTransactionId ?? null,
-          ruleResult.evaluationOrder,
-        ] as const);
+        const ruleRows = ruleResults.map(
+          (ruleResult) =>
+            [
+              ruleResult.id,
+              input.jobId,
+              ruleResult.targetKind,
+              ruleResult.targetId,
+              ruleResult.ruleId,
+              ruleResult.ruleName,
+              ruleResult.passed,
+              ruleResult.score,
+              ruleResult.reason,
+              JSON.stringify(ruleResult.evidence),
+              ruleResult.candidateTransactionId ?? null,
+              ruleResult.evaluationOrder,
+            ] as const,
+        );
 
         const insertRules = buildInsertStatement(
           'reconciliation_rule_result',
@@ -728,6 +777,9 @@ export class PostgresReconciliationLifecycleStore {
     });
   }
 
+  /**
+   * Persists exception/review artifacts and upserts run summary metrics.
+   */
   async persistReviewArtifacts(input: PersistReviewArtifactsInput): Promise<void> {
     const resultBatchSize = this.options.resultBatchSize ?? DEFAULT_BATCH_SIZE;
 
@@ -738,27 +790,30 @@ export class PostgresReconciliationLifecycleStore {
       });
 
       for (const batch of chunk(input.exceptions, resultBatchSize)) {
-        const values = batch.map((exception) => [
-          exception.id,
-          input.jobId,
-          exception.relatedTransactionIds[0] ?? null,
-          exception.category,
-          exception.severity,
-          exception.source,
-          exception.spreadsheetFileName,
-          exception.lineNumber,
-          toNullableDate(exception.transactionDate),
-          exception.amount,
-          exception.errorMessage,
-          exception.ruleTrace ? JSON.stringify(exception.ruleTrace) : null,
-          JSON.stringify(exception.priorRuleTraces ?? []),
-          exception.recommendedNextActions,
-          exception.likelyMatchingReference ?? null,
-          exception.reviewerNotes ?? null,
-          exception.matchConfidence ?? null,
-          exception.normalizedComparisonTokens,
-          exception.relatedTransactionIds,
-        ] as const);
+        const values = batch.map(
+          (exception) =>
+            [
+              exception.id,
+              input.jobId,
+              exception.relatedTransactionIds[0] ?? null,
+              exception.category,
+              exception.severity,
+              exception.source,
+              exception.spreadsheetFileName,
+              exception.lineNumber,
+              toNullableDate(exception.transactionDate),
+              exception.amount,
+              exception.errorMessage,
+              exception.ruleTrace ? JSON.stringify(exception.ruleTrace) : null,
+              JSON.stringify(exception.priorRuleTraces ?? []),
+              exception.recommendedNextActions,
+              exception.likelyMatchingReference ?? null,
+              exception.reviewerNotes ?? null,
+              exception.matchConfidence ?? null,
+              exception.normalizedComparisonTokens,
+              exception.relatedTransactionIds,
+            ] as const,
+        );
 
         const insert = buildInsertStatement(
           'reconciliation_exception',
@@ -789,16 +844,19 @@ export class PostgresReconciliationLifecycleStore {
       }
 
       if (input.reviewerObservations.length > 0) {
-        const observationRows = input.reviewerObservations.map((observation) => [
-          observation.id,
-          input.jobId,
-          observation.category,
-          observation.title,
-          observation.message,
-          observation.severity,
-          observation.relatedTransactionIds,
-          observation.createdAt,
-        ] as const);
+        const observationRows = input.reviewerObservations.map(
+          (observation) =>
+            [
+              observation.id,
+              input.jobId,
+              observation.category,
+              observation.title,
+              observation.message,
+              observation.severity,
+              observation.relatedTransactionIds,
+              observation.createdAt,
+            ] as const,
+        );
         const insertObservations = buildInsertStatement(
           'reconciliation_review_observation',
           [
@@ -818,20 +876,23 @@ export class PostgresReconciliationLifecycleStore {
 
       const ruleResults = buildRuleResultsFromExceptions(input.exceptions);
       if (ruleResults.length > 0) {
-        const ruleRows = ruleResults.map((ruleResult) => [
-          ruleResult.id,
-          input.jobId,
-          ruleResult.targetKind,
-          ruleResult.targetId,
-          ruleResult.ruleId,
-          ruleResult.ruleName,
-          ruleResult.passed,
-          ruleResult.score,
-          ruleResult.reason,
-          JSON.stringify(ruleResult.evidence),
-          ruleResult.candidateTransactionId ?? null,
-          ruleResult.evaluationOrder,
-        ] as const);
+        const ruleRows = ruleResults.map(
+          (ruleResult) =>
+            [
+              ruleResult.id,
+              input.jobId,
+              ruleResult.targetKind,
+              ruleResult.targetId,
+              ruleResult.ruleId,
+              ruleResult.ruleName,
+              ruleResult.passed,
+              ruleResult.score,
+              ruleResult.reason,
+              JSON.stringify(ruleResult.evidence),
+              ruleResult.candidateTransactionId ?? null,
+              ruleResult.evaluationOrder,
+            ] as const,
+        );
         const insertRules = buildInsertStatement(
           'reconciliation_rule_result',
           [
@@ -942,6 +1003,9 @@ export class PostgresReconciliationLifecycleStore {
     });
   }
 
+  /**
+   * Persists export metadata, appends audit events, and finalizes the reconciliation job.
+   */
   async persistExportAndFinalize(input: PersistExportArtifactsInput): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, input.jobId);
@@ -983,6 +1047,9 @@ export class PostgresReconciliationLifecycleStore {
     });
   }
 
+  /**
+   * Persists or updates a reviewer decision for a run target and records an audit event.
+   */
   async persistReviewerDecision(decision: ReviewerDecision): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, decision.runId);
@@ -1021,6 +1088,9 @@ export class PostgresReconciliationLifecycleStore {
     });
   }
 
+  /**
+   * Marks a reconciliation job as failed (or retry-pending) with failure diagnostics.
+   */
   async markFailed(input: MarkJobFailedInput): Promise<void> {
     const nextState = input.nextState ?? 'FAILED';
 

@@ -111,7 +111,10 @@
     "github:protect-main": "NODE_OPTIONS=--no-deprecation tsx scripts/github-branch-protection.ts --branch main",
     "fixtures:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-fixtures.ts",
     "analyze:reconciliation": "NODE_OPTIONS=--no-deprecation tsx scripts/analyze-reconciliation.ts",
-    "compare:workbooks": "python3 scripts/workbook-compare.py"
+    "compare:workbooks": "python3 scripts/workbook-compare.py",
+    "changelog:promote": "NODE_OPTIONS=--no-deprecation tsx scripts/changelog-promote.ts",
+    "docs:api:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-api-docs.ts",
+    "docs:api:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-api-docs.ts --check"
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",

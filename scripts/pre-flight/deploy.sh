@@ -124,6 +124,9 @@ fi
 if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^nginx-ui$'; then
   docker compose "${compose_args[@]}" up -d nginx-ui
 fi
+if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^tools$'; then
+  docker compose "${compose_args[@]}" up -d tools
+fi
 
 api_build_target="$(resolve_service_build_target "api")"
 if [[ "$api_build_target" == "dev" ]]; then

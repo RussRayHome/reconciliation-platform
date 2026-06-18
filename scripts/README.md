@@ -91,6 +91,25 @@ Notes:
 
 - This is the preferred way to regenerate sample workbooks. Do not hand-edit the generated files and assume they remain canonical.
 
+### `generate-api-docs.ts`
+
+Purpose:
+
+- Generates `docs/api-reference-generated.md` from exported TypeScript classes.
+- Enforces documentation coverage for exported classes, constructors, methods, and non-private properties.
+
+How to run:
+
+```bash
+npm run docs:api:generate
+npm run docs:api:check
+```
+
+Notes:
+
+- `docs:api:generate` writes the generated markdown used by the Documentation Hub and Developer Dashboard API docs link.
+- `docs:api:check` performs coverage validation without writing files and exits non-zero when documentation is missing.
+
 ### `docker-ops.ts`
 
 Purpose:

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -7,6 +7,7 @@ import type {
   CoverageMetrics,
   DeveloperCheck,
   DeveloperHistoryTestTotals,
+  PenetrationTestStatus,
   DeveloperStatusPayload,
   DeveloperStatusResult,
   DeveloperStatusSnapshot,
@@ -67,6 +68,265 @@ type HostPreflightTotals = {
   pass: number;
   warn: number;
   fail: number;
+};
+
+type ZapReportSummary = {
+  alertCount: number;
+  failureAlerts: number;
+  warningAlerts: number;
+  parseError?: string;
+};
+
+type ZapApiCsvSummary = {
+  totalTargets: number;
+  passedTargets: number;
+  warningTargets: number;
+  failedTargets: number;
+  errorTargets: number;
+  invalidRows: number;
+};
+
+const parseZapRiskCode = (value: unknown): number | null => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.trunc(value) : null;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const pluralize = (count: number, singular: string, plural = `${singular}s`): string =>
+  count === 1 ? singular : plural;
+
+const readZapReportSummary = (reportPath: string): ZapReportSummary | null => {
+  if (!existsSync(reportPath)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(readFileSync(reportPath, 'utf8')) as {
+      site?: Array<{ alerts?: Array<{ riskcode?: unknown }> }>;
+    };
+    const sites = Array.isArray(payload.site) ? payload.site : [];
+    let alertCount = 0;
+    let failureAlerts = 0;
+    let warningAlerts = 0;
+
+    for (const site of sites) {
+      const alerts = Array.isArray(site?.alerts) ? site.alerts : [];
+      for (const alert of alerts) {
+        alertCount += 1;
+
+        const riskCode = parseZapRiskCode(alert?.riskcode);
+        if (riskCode !== null && riskCode >= 2) {
+          failureAlerts += 1;
+          continue;
+        }
+
+        if (riskCode === 1) {
+          warningAlerts += 1;
+        }
+      }
+    }
+
+    return {
+      alertCount,
+      failureAlerts,
+      warningAlerts,
+    };
+  } catch {
+    return {
+      alertCount: 0,
+      failureAlerts: 0,
+      warningAlerts: 0,
+      parseError: 'Unable to parse ZAP report JSON.',
+    };
+  }
+};
+
+const readZapApiCsvSummary = (summaryPath: string): ZapApiCsvSummary | null => {
+  if (!existsSync(summaryPath)) {
+    return null;
+  }
+
+  try {
+    const lines = readFileSync(summaryPath, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length <= 1) {
+      return {
+        totalTargets: 0,
+        passedTargets: 0,
+        warningTargets: 0,
+        failedTargets: 0,
+        errorTargets: 0,
+        invalidRows: 0,
+      };
+    }
+
+    let totalTargets = 0;
+    let passedTargets = 0;
+    let warningTargets = 0;
+    let failedTargets = 0;
+    let errorTargets = 0;
+    let invalidRows = 0;
+
+    for (const line of lines.slice(1)) {
+      const firstComma = line.indexOf(',');
+      const secondComma = line.indexOf(',', firstComma + 1);
+
+      if (firstComma === -1 || secondComma === -1) {
+        invalidRows += 1;
+        continue;
+      }
+
+      const exitCodeRaw = line.slice(firstComma + 1, secondComma).trim();
+      const exitCode = Number.parseInt(exitCodeRaw, 10);
+      totalTargets += 1;
+
+      if (!Number.isFinite(exitCode)) {
+        invalidRows += 1;
+        continue;
+      }
+
+      if (exitCode === 0) {
+        passedTargets += 1;
+      } else if (exitCode === 2) {
+        warningTargets += 1;
+      } else if (exitCode === 1) {
+        failedTargets += 1;
+      } else if (exitCode === 3) {
+        errorTargets += 1;
+      } else {
+        invalidRows += 1;
+      }
+    }
+
+    return {
+      totalTargets,
+      passedTargets,
+      warningTargets,
+      failedTargets,
+      errorTargets,
+      invalidRows,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const readZapApiTargetSummaries = (apiReportDir: string): ZapReportSummary[] => {
+  if (!existsSync(apiReportDir)) {
+    return [];
+  }
+
+  try {
+    const entries = readdirSync(apiReportDir, { withFileTypes: true });
+
+    return entries
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('target-'))
+      .map((entry) => readZapReportSummary(join(apiReportDir, entry.name, 'zap-report.json')))
+      .filter((summary): summary is ZapReportSummary => summary !== null);
+  } catch {
+    return [];
+  }
+};
+
+const collectPenetrationTestStatuses = (repoRoot: string): PenetrationTestStatus[] => {
+  const securityReportRoot = join(repoRoot, 'test-results', 'security');
+  const webReportPath = join(securityReportRoot, 'zap-web-stage', 'zap-report.json');
+  const apiReportDir = join(securityReportRoot, 'zap-api-stage');
+  const apiSummaryCsvPath = join(apiReportDir, 'scan-summary.csv');
+
+  const webStatus: PenetrationTestStatus = {
+    testName: 'OWASP ZAP Baseline (Stage Web)',
+    testType: 'Web frontend',
+    status: 'not-run',
+    note: 'Not run in this workspace.',
+    source: 'test-results/security/zap-web-stage',
+  };
+
+  const webSummary = readZapReportSummary(webReportPath);
+  if (webSummary) {
+    if (webSummary.parseError) {
+      webStatus.status = 'failed';
+      webStatus.note = webSummary.parseError;
+    } else if (webSummary.failureAlerts > 0) {
+      webStatus.status = 'failed';
+      webStatus.note = `${webSummary.failureAlerts} medium/high ${pluralize(webSummary.failureAlerts, 'alert')} detected.`;
+    } else if (webSummary.warningAlerts > 0) {
+      webStatus.status = 'passed';
+      webStatus.note = `No medium/high alerts. ${webSummary.warningAlerts} low-risk ${pluralize(webSummary.warningAlerts, 'alert')} detected.`;
+    } else {
+      webStatus.status = 'passed';
+      webStatus.note = `No alerts detected across ${webSummary.alertCount} reported ${pluralize(webSummary.alertCount, 'item')}.`;
+    }
+  }
+
+  const apiStatus: PenetrationTestStatus = {
+    testName: 'OWASP ZAP Baseline (Stage API)',
+    testType: 'API endpoints',
+    status: 'not-run',
+    note: 'Not run in this workspace.',
+    source: 'test-results/security/zap-api-stage',
+  };
+
+  const apiCsvSummary = readZapApiCsvSummary(apiSummaryCsvPath);
+  if (apiCsvSummary) {
+    if (apiCsvSummary.totalTargets === 0) {
+      apiStatus.status = 'not-run';
+      apiStatus.note = 'Summary file exists but no API targets were scanned.';
+    } else if (
+      apiCsvSummary.failedTargets > 0 ||
+      apiCsvSummary.errorTargets > 0 ||
+      apiCsvSummary.invalidRows > 0
+    ) {
+      apiStatus.status = 'failed';
+      apiStatus.note = [
+        `Targets: ${apiCsvSummary.totalTargets}`,
+        `Fail: ${apiCsvSummary.failedTargets}`,
+        `Error: ${apiCsvSummary.errorTargets}`,
+        `Invalid rows: ${apiCsvSummary.invalidRows}`,
+      ].join(' | ');
+    } else {
+      apiStatus.status = 'passed';
+      apiStatus.note = [
+        `Targets: ${apiCsvSummary.totalTargets}`,
+        `Pass: ${apiCsvSummary.passedTargets}`,
+        `Warn: ${apiCsvSummary.warningTargets}`,
+      ].join(' | ');
+    }
+  } else {
+    const apiTargetSummaries = readZapApiTargetSummaries(apiReportDir);
+    if (apiTargetSummaries.length > 0) {
+      const parseErrors = apiTargetSummaries.filter((item) => item.parseError).length;
+      const failureAlerts = apiTargetSummaries.reduce((sum, item) => sum + item.failureAlerts, 0);
+      const warningAlerts = apiTargetSummaries.reduce((sum, item) => sum + item.warningAlerts, 0);
+
+      if (parseErrors > 0) {
+        apiStatus.status = 'failed';
+        apiStatus.note = `${parseErrors} target ${pluralize(parseErrors, 'report')} could not be parsed.`;
+      } else if (failureAlerts > 0) {
+        apiStatus.status = 'failed';
+        apiStatus.note = `${failureAlerts} medium/high ${pluralize(failureAlerts, 'alert')} detected across ${apiTargetSummaries.length} targets.`;
+      } else {
+        apiStatus.status = 'passed';
+        apiStatus.note = [
+          `Targets: ${apiTargetSummaries.length}`,
+          `No medium/high alerts`,
+          `Low-risk alerts: ${warningAlerts}`,
+        ].join(' | ');
+      }
+    }
+  }
+
+  return [webStatus, apiStatus];
 };
 
 const readHostDevPostgresPreflightLog = (): string | null => {
@@ -555,6 +815,8 @@ export const createDeveloperStatusService = ({
   };
 
   const collectDeveloperStatus = async (): Promise<DeveloperStatusPayload> => {
+    const penetrationTestStatuses = collectPenetrationTestStatuses(repoRoot);
+
     const unitTests = await runDeveloperCheck(
       'Unit tests',
       ['run', 'test:unit'],
@@ -578,7 +840,7 @@ export const createDeveloperStatusService = ({
       ['run', 'test:e2e'],
       (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
       parseTestHighlights,
-      420000,
+      90000,
       parseTestMetadata('e2e', 'E2E'),
     );
 
@@ -621,7 +883,7 @@ export const createDeveloperStatusService = ({
       }),
     );
 
-    const security = await runDeveloperCheck(
+    const securityBase = await runDeveloperCheck(
       'Security vulnerabilities',
       ['run', 'security:scan:components', '--silent'],
       (stdout, stderr) => parseAuditSummary(stdout || stderr),
@@ -629,6 +891,11 @@ export const createDeveloperStatusService = ({
       420000,
       (output) => ({ areaLabel: 'Security', ...parseSecurityMetadata(output) }),
     );
+
+    const security: DeveloperCheck = {
+      ...securityBase,
+      penetrationTestStatuses,
+    };
 
     const checks = [
       unitTests,

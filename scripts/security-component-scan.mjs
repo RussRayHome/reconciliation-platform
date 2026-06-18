@@ -76,6 +76,14 @@ const createComponentResult = (component, scanner) => ({
 });
 
 const cveIdRegex = /CVE-\d{4}-\d+/iu;
+const ghsaIdRegex = /GHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}/iu;
+const githubAdvisoryApiBaseUrl = 'https://api.github.com/advisories/';
+const githubAdvisoryRequestHeaders = {
+  accept: 'application/vnd.github+json',
+  'user-agent': 'reconciliation-platform-security-scan',
+};
+const githubAdvisoryLookupTimeoutMs = 8000;
+const ghsaToCveCache = new Map();
 
 const severityRankByLabel = {
   CRITICAL: 0,
@@ -113,6 +121,68 @@ const normalizeCveId = (value) => {
   const match = cveIdRegex.exec(collapseWhitespace(value).toUpperCase());
 
   return match ? match[0] : null;
+};
+
+const normalizeGhsaId = (value) => {
+  const match = ghsaIdRegex.exec(collapseWhitespace(value).toUpperCase());
+
+  return match ? match[0] : null;
+};
+
+const resolveCveIdFromGhsa = async (value) => {
+  const ghsaId = normalizeGhsaId(value);
+  if (!ghsaId) {
+    return null;
+  }
+
+  if (ghsaToCveCache.has(ghsaId)) {
+    return ghsaToCveCache.get(ghsaId) ?? null;
+  }
+
+  if (typeof globalThis.fetch !== 'function') {
+    ghsaToCveCache.set(ghsaId, null);
+    return null;
+  }
+
+  const abortController = new globalThis.AbortController();
+  const timeoutHandle = globalThis.setTimeout(
+    () => abortController.abort(),
+    githubAdvisoryLookupTimeoutMs,
+  );
+
+  try {
+    const response = await globalThis.fetch(`${githubAdvisoryApiBaseUrl}${ghsaId}`, {
+      headers: githubAdvisoryRequestHeaders,
+      signal: abortController.signal,
+    });
+
+    if (!response.ok) {
+      ghsaToCveCache.set(ghsaId, null);
+      return null;
+    }
+
+    const advisory = await response.json();
+    const cveIdFromIdentifiers = Array.isArray(advisory?.identifiers)
+      ? advisory.identifiers
+          .map((identifier) => normalizeCveId(identifier?.value))
+          .find((identifier) => Boolean(identifier))
+      : null;
+    const cveIdFromReferences = Array.isArray(advisory?.references)
+      ? advisory.references
+          .map((reference) => normalizeCveId(reference))
+          .find((identifier) => Boolean(identifier))
+      : null;
+    const resolvedCveId =
+      normalizeCveId(advisory?.cve_id) ?? cveIdFromIdentifiers ?? cveIdFromReferences ?? null;
+
+    ghsaToCveCache.set(ghsaId, resolvedCveId);
+    return resolvedCveId;
+  } catch {
+    ghsaToCveCache.set(ghsaId, null);
+    return null;
+  } finally {
+    globalThis.clearTimeout(timeoutHandle);
+  }
 };
 
 const collapseWhitespace = (value) =>
@@ -574,16 +644,32 @@ const parseNpmAuditScore = (output) => {
   });
 };
 
-const buildNpmCveFinding = (viaItem, packageName, packageSeverity, component, scanner) => {
+const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, component, scanner) => {
   if (typeof viaItem === 'string') {
     const id = normalizeCveId(viaItem);
-    if (!id) {
+    if (id) {
+      return {
+        id,
+        description: `Vulnerability reported for ${packageName}.`,
+        severity: packageSeverity,
+        component,
+        scanner,
+      };
+    }
+
+    const ghsaId = normalizeGhsaId(viaItem);
+    if (!ghsaId) {
+      return null;
+    }
+
+    const resolvedCveId = await resolveCveIdFromGhsa(ghsaId);
+    if (!resolvedCveId) {
       return null;
     }
 
     return {
-      id,
-      description: `Vulnerability reported for ${packageName}.`,
+      id: resolvedCveId,
+      description: `Vulnerability reported for ${packageName} (${ghsaId}).`,
       severity: packageSeverity,
       component,
       scanner,
@@ -601,31 +687,71 @@ const buildNpmCveFinding = (viaItem, packageName, packageSeverity, component, sc
     normalizeCveId(via.name) ??
     normalizeCveId(via.title) ??
     normalizeCveId(via.source);
-  if (!id) {
+  if (id) {
+    return {
+      id,
+      description:
+        clipText(via.title || via.name || via.url, 180) ||
+        `Vulnerability reported for ${packageName}.`,
+      severity: normalizeSeverityLabel(via.severity ?? packageSeverity),
+      component,
+      scanner,
+    };
+  }
+
+  const ghsaId =
+    normalizeGhsaId(via.id) ??
+    normalizeGhsaId(via.url) ??
+    normalizeGhsaId(via.name) ??
+    normalizeGhsaId(via.title) ??
+    normalizeGhsaId(via.source);
+  if (!ghsaId) {
+    return null;
+  }
+
+  const resolvedCveId = await resolveCveIdFromGhsa(ghsaId);
+  if (!resolvedCveId) {
     return null;
   }
 
   return {
-    id,
+    id: resolvedCveId,
     description:
       clipText(via.title || via.name || via.url, 180) ||
-      `Vulnerability reported for ${packageName}.`,
+      `Vulnerability reported for ${packageName} (${ghsaId}).`,
     severity: normalizeSeverityLabel(via.severity ?? packageSeverity),
     component,
     scanner,
   };
 };
 
-const extractNpmPackageCveFindings = (packageName, packageVulnerability, component, scanner) => {
+const extractNpmPackageCveFindings = async (
+  packageName,
+  packageVulnerability,
+  component,
+  scanner,
+) => {
   const viaItems = Array.isArray(packageVulnerability.via) ? packageVulnerability.via : [];
   const packageSeverity = normalizeSeverityLabel(packageVulnerability.severity);
+  const findings = [];
 
-  return viaItems
-    .map((viaItem) => buildNpmCveFinding(viaItem, packageName, packageSeverity, component, scanner))
-    .filter(Boolean);
+  for (const viaItem of viaItems) {
+    const finding = await buildNpmCveFinding(
+      viaItem,
+      packageName,
+      packageSeverity,
+      component,
+      scanner,
+    );
+    if (finding) {
+      findings.push(finding);
+    }
+  }
+
+  return findings;
 };
 
-const parseNpmAuditCveFindings = (output, component, scanner) => {
+const parseNpmAuditCveFindings = async (output, component, scanner) => {
   const payload = parseJsonFromOutput(output);
   if (!payload || typeof payload !== 'object') {
     return [];
@@ -643,7 +769,9 @@ const parseNpmAuditCveFindings = (output, component, scanner) => {
       continue;
     }
 
-    findings.push(...extractNpmPackageCveFindings(packageName, packageValue, component, scanner));
+    findings.push(
+      ...(await extractNpmPackageCveFindings(packageName, packageValue, component, scanner)),
+    );
   }
 
   return dedupeAndSortCveFindings(findings, component, scanner);
@@ -732,7 +860,7 @@ const scanNpmWorkspaceComponent = async (component, workspace, repoRoot) => {
 
   const output = `${response.stdout}\n${response.stderr}`.trim();
   const score = parseNpmAuditScore(output);
-  result.cveFindings = parseNpmAuditCveFindings(output, component, result.scanner);
+  result.cveFindings = await parseNpmAuditCveFindings(output, component, result.scanner);
 
   if (score) {
     Object.assign(result, score);

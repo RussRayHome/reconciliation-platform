@@ -12,7 +12,16 @@ interface EphemeralStackProps extends cdk.StackProps {
   persistent: PersistentStack;
 }
 
+/**
+ * Ephemeral runtime infrastructure stack for deployable API/Web services and database compute.
+ *
+ * This stack depends on `PersistentStack` for shared resources while allowing the runtime
+ * environment to be safely recreated or restored from snapshots.
+ */
 export class EphemeralStack extends cdk.Stack {
+  /**
+   * Creates runtime networking, database, ECS services, and load-balancer routing.
+   */
   constructor(scope: Construct, id: string, props: EphemeralStackProps) {
     super(scope, id, props);
 

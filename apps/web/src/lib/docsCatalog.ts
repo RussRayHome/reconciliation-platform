@@ -1,9 +1,12 @@
 import apiDoc from '../../../../docs/api.md?raw';
+import apiReferenceGeneratedDoc from '../../../../docs/api-reference-generated.md?raw';
 import architectureDoc from '../../../../docs/architecture.md?raw';
 import architectureDiagramSvgUrl from '../../../../docs/images/application-architecture.svg?url';
 import changelogDoc from '../../../../CHANGELOG.md?raw';
 import classMethodReferenceDoc from '../../../../docs/class-method-reference.md?raw';
 import developerSetupDoc from '../../../../docs/developer-setup.md?raw';
+import entityRelationshipDiagramDoc from '../../../../docs/erd.md?raw';
+import entityRelationshipDiagramSvgUrl from '../../../../docs/images/erd-schema.svg?url';
 import localDockerPlatformDoc from '../../../../docs/local-docker-platform.md?raw';
 import projectReadmeDoc from '../../../../README.md?raw';
 import reconciliationRulesDoc from '../../../../docs/reconciliation-rules.md?raw';
@@ -15,6 +18,11 @@ import testStrategyDoc from '../../../../docs/test-strategy.md?raw';
 const architectureDocWithResolvedAssets = architectureDoc
   .replaceAll('images/application-architecture.png', architectureDiagramSvgUrl)
   .replaceAll('images/application-architecture.svg', architectureDiagramSvgUrl);
+
+const erdDocWithResolvedAssets = entityRelationshipDiagramDoc.replaceAll(
+  'images/erd-schema.svg',
+  entityRelationshipDiagramSvgUrl,
+);
 
 /** Metadata and Markdown content for one entry in the in-app Documentation Hub. */
 export type ProjectDocument = {
@@ -50,6 +58,16 @@ export const projectDocuments: ProjectDocument[] = [
     content: architectureDocWithResolvedAssets,
   },
   {
+    id: 'erd',
+    title: 'Entity Relationship Diagram',
+    category: 'Architecture',
+    summary:
+      'Provides the PostgreSQL entity relationship diagram for persistence tables and foreign-key links.',
+    audience: 'Engineers working on schema design and persistence behavior',
+    pathLabel: 'docs/erd.md',
+    content: erdDocWithResolvedAssets,
+  },
+  {
     id: 'api',
     title: 'API Reference',
     category: 'Reference',
@@ -58,6 +76,16 @@ export const projectDocuments: ProjectDocument[] = [
     audience: 'Backend and integration engineers',
     pathLabel: 'docs/api.md',
     content: apiDoc,
+  },
+  {
+    id: 'api-reference-generated',
+    title: 'API Reference (Generated)',
+    category: 'Reference',
+    summary:
+      'Generated class, method, and property documentation coverage and API reference for exported TypeScript classes.',
+    audience: 'Engineers validating implementation-level API contracts',
+    pathLabel: 'docs/api-reference-generated.md',
+    content: apiReferenceGeneratedDoc,
   },
   {
     id: 'developer-setup',
@@ -133,8 +161,7 @@ export const projectDocuments: ProjectDocument[] = [
     id: 'changelog',
     title: 'Changelog',
     category: 'Operations',
-    summary:
-      'Tracks notable repository changes and milestone-level release history.',
+    summary: 'Tracks notable repository changes and milestone-level release history.',
     audience: 'Release reviewers and maintainers',
     pathLabel: 'CHANGELOG.md',
     content: changelogDoc,
@@ -143,8 +170,7 @@ export const projectDocuments: ProjectDocument[] = [
     id: 'release-guide',
     title: 'Release Guide',
     category: 'Operations',
-    summary:
-      'Defines release note expectations, validation evidence, and rollback metadata.',
+    summary: 'Defines release note expectations, validation evidence, and rollback metadata.',
     audience: 'Engineers preparing handoff or release notes',
     pathLabel: 'RELEASE.md',
     content: releaseDoc,

@@ -123,6 +123,10 @@ export class InMemoryRunRepository implements RunRepository {
     return this.runs.get(this.latestRunId);
   }
 
+  /**
+   * Upserts a reviewer decision for a run and returns the persisted decision payload.
+   * Existing decisions for the same target are replaced while preserving original identity fields.
+   */
   saveReviewerDecision(runId: string, decision: ReviewerDecision): ReviewerDecision {
     const run = this.findById(runId);
 
@@ -145,7 +149,10 @@ export class InMemoryRunRepository implements RunRepository {
       ...run,
       reviewerDecisions: [
         ...run.reviewerDecisions.filter(
-          (item) => !(item.targetType === nextDecision.targetType && item.targetId === nextDecision.targetId),
+          (item) =>
+            !(
+              item.targetType === nextDecision.targetType && item.targetId === nextDecision.targetId
+            ),
         ),
         nextDecision,
       ],
@@ -155,6 +162,9 @@ export class InMemoryRunRepository implements RunRepository {
     return nextDecision;
   }
 
+  /**
+   * Lists reviewer decisions for a run, or an empty array when the run is not found.
+   */
   listReviewerDecisions(runId: string): ReviewerDecision[] {
     return this.findById(runId)?.reviewerDecisions ?? [];
   }
@@ -167,6 +177,11 @@ export class InMemoryRunRepository implements RunRepository {
 export class FileBackedRunRepository extends InMemoryRunRepository {
   private hydrated = false;
 
+  /**
+   * Creates a file-backed repository that persists the latest run snapshot to disk.
+   *
+   * @param filePath Absolute or repository-relative path to the snapshot JSON file.
+   */
   constructor(private readonly filePath: string) {
     super();
   }
