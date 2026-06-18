@@ -20,6 +20,7 @@ export type BusinessField =
   | 'merchantName'
   | 'payeeName'
   | 'amount'
+  | 'splitAmount'
   | 'debit'
   | 'credit'
   | 'runningBalance'
@@ -62,6 +63,7 @@ export interface RawTransactionRow {
   merchantNameRaw?: string;
   payeeNameRaw?: string;
   amountRaw?: string;
+  splitAmountRaw?: string;
   debitRaw?: string;
   creditRaw?: string;
   runningBalanceRaw?: string;
@@ -96,6 +98,7 @@ export interface NormalizedTransaction {
   merchantName?: string;
   payeeName?: string;
   amount: number | null;
+  splitAmount: number | null;
   debit: number | null;
   credit: number | null;
   runningBalance: number | null;
@@ -183,7 +186,7 @@ export interface GroupedMatchResult {
   id: string;
   disposition: GroupedMatchDisposition;
   confidence: MatchConfidence;
-  category?: 'DepositGroupingIssue' | 'LikelySplitCombineIssue';
+  category?: 'DepositGroupingIssue' | 'LikelySplitCombineIssue' | 'FeeNettingMatch' | 'PartialPaymentMatch' | 'PayrollBatchMatch' | 'BankServiceChargeAmortization' | 'LoanPaymentSplit';
   bankTransactionIds: string[];
   qboTransactionIds: string[];
   bankMembers: GroupedMatchMember[];
@@ -428,6 +431,10 @@ export interface MatchingConfig {
   duplicateDateWindowDays: number;
   duplicateSimilarityThreshold: number;
   amountMismatchTextSimilarityThreshold: number;
+  reversalWindowDays: number;
+  depositInTransitDays: number;
+  partialPaymentWindowDays: number;
+  wireFeeTolerance: number;
 }
 
 /** Controls exception sort order and the severity level assigned to each exception category. */
@@ -479,6 +486,22 @@ export interface ReconciliationInput {
 }
 
 /** Full output produced by `runReconciliation`; persisted to PostgreSQL by the lifecycle store. */
+/**
+ * A learned mapping from a bank description pattern to a canonical QBO payee name.
+ * Stored in the `payee_alias` table and loaded at runtime to boost matching for
+ * bank entries whose raw text similarity to the QBO payee would otherwise be low.
+ */
+export interface PayeeAlias {
+  id: string;
+  accountIdentifier?: string;
+  bankPattern: string;
+  canonicalPayeeName: string;
+  normalizedTokens: string[];
+  sourceDirection: 'bank_to_qbo' | 'bidirectional';
+  matchConfidence: number;
+  isActive: boolean;
+}
+
 export interface ReconciliationOutput {
   normalizedTransactions: NormalizedTransaction[];
   matchResults: MatchResult[];

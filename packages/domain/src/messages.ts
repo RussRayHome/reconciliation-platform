@@ -16,8 +16,22 @@ export const errorCategoryDisplayNames: Record<ErrorCategory, string> = {
   ReferenceNumberMismatch: 'Reference Number Mismatch',
   DescriptionMerchantVariance: 'Description/Merchant Variance',
   StaleOutstandingCheck: 'Stale Outstanding Check',
+  OutstandingCheck: 'Outstanding Check',
+  FeeNettingMatch: 'Fee Netting Match',
+  PartialPaymentMatch: 'Partial Payment Match',
+  PayrollBatchMatch: 'Payroll Batch Match',
+  BankServiceChargeAmortization: 'Bank Service Charge (Amortized)',
+  LoanPaymentSplit: 'Loan Payment Split',
+  NSFReturnedDeposit: 'NSF / Returned Deposit',
+  VoidedCheckCleared: 'Voided Check Cleared',
   InvalidOrMissingData: 'Invalid or Missing Data',
   AmbiguousMatchRequiringReview: 'Ambiguous Match Requiring Review',
+  ReversalVoid: 'Reversal / Void Pair',
+  ACHReturn: 'ACH Return / NSF',
+  DepositInTransit: 'Deposit in Transit',
+  ChargebackReturn: 'Chargeback / Returned Item',
+  InterestIncome: 'Interest Income',
+  IntercompanyMismatch: 'Intercompany / Entity Mismatch',
 };
 
 /** Full professional explanatory message for each exception category shown in the exception report. */
@@ -50,10 +64,38 @@ export const professionalErrorMessages: Record<ErrorCategory, string> = {
     'Transactions appear related but contain materially different merchant, payee, or description wording and should be reviewed.',
   StaleOutstandingCheck:
     'A QBO check or check-like disbursement remains unmatched in bank activity past the stale-date threshold and should be investigated for voiding, reissue, or clearance status.',
+  OutstandingCheck:
+    'A QBO check or check-like disbursement has not yet cleared the bank within the current statement period. This is a normal reconciling item; carry it forward and confirm clearance in the next cycle.',
+  FeeNettingMatch:
+    'A bank credit matches the net of a QBO revenue entry and a fee expense entry, indicating a payment processor or merchant aggregator deducted its fee before remitting. The net amount reconciles correctly; no action is required unless the gross amounts need to be restated.',
+  PartialPaymentMatch:
+    'Multiple bank debits together equal a single QBO disbursement, indicating a single invoice was paid in installments or split across separate bank runs. Review to confirm all installments are accounted for and no partial payment remains outstanding.',
+  PayrollBatchMatch:
+    'A single bank payroll ACH debit matches the aggregate of multiple QBO individual payroll expense entries. This is expected behavior for batch payroll processing; confirm the QBO entries cover all employees in the pay run.',
+  BankServiceChargeAmortization:
+    'A bank service charge is split across multiple QBO fee expense lines, indicating the charge was amortized or allocated across account categories. Confirm the QBO allocation totals match the bank charge and that all categories are correct.',
+  LoanPaymentSplit:
+    'A single bank loan payment debit corresponds to multiple QBO entries recording principal reduction and interest expense for the same obligation. This is expected for amortizing loans but requires confirmation that the allocations are correct.',
+  NSFReturnedDeposit:
+    'A bank debit contains indicators of a non-sufficient-funds (NSF) return or returned deposited check. The corresponding customer payment recorded in QBO may need to be reversed.',
+  VoidedCheckCleared:
+    'A bank check debit has no corresponding QBO entry. This may indicate the check was voided in QBO but still cleared the bank, or it was issued but never recorded. Either scenario requires immediate review.',
   InvalidOrMissingData:
     'Critical matching fields are incomplete, preventing reliable reconciliation.',
   AmbiguousMatchRequiringReview:
     'Multiple plausible counterparts were identified and the system will not force a weak match without reviewer confirmation.',
+  ReversalVoid:
+    'Bank records show a matched debit and credit that net to zero, indicating a reversal or void. Confirm whether a corresponding QBO void entry exists.',
+  ACHReturn:
+    'An ACH debit was returned by the bank (NSF or other return code). The original QBO expense remains unreverted and requires a correcting entry.',
+  DepositInTransit:
+    'A QBO deposit is recorded near the statement period end with no corresponding bank entry, consistent with a deposit in transit that will clear in the next cycle.',
+  ChargebackReturn:
+    'A bank debit with chargeback or return keywords offsets a previously reconciled bank credit of the same amount. A corresponding QBO reversal entry is likely missing.',
+  InterestIncome:
+    'A bank interest credit has no corresponding QBO entry. Interest income earned during the period should be recorded to the appropriate income account.',
+  IntercompanyMismatch:
+    'Transaction contains intercompany or entity-transfer indicators but has no counterpart in the other source. Confirm whether this belongs to a different entity or account.',
 };
 
 /** Ordered list of recommended next-action steps shown to reviewers for each exception category. */
@@ -114,6 +156,38 @@ export const recommendedNextActionsByCategory: Record<ErrorCategory, string[]> =
     'Determine whether the check should be voided, reissued, or left outstanding based on current status.',
     'Update the books and reconciliation support for stale-dated check treatment.',
   ],
+  OutstandingCheck: [
+    'Verify the check has not been lost, stopped, or returned.',
+    'Carry as an outstanding item on the reconciliation support schedule and confirm clearance in the next cycle.',
+  ],
+  FeeNettingMatch: [
+    'Confirm the gross revenue and fee amounts in QBO agree with the payment processor remittance detail.',
+    'If gross amounts need to be restated, reclassify the fee to a dedicated bank charge account and record the full revenue separately.',
+  ],
+  PartialPaymentMatch: [
+    'Verify all installment bank debits are recorded in QBO and that the total equals the invoice amount.',
+    'Confirm no remaining balance is outstanding on the original QBO payable.',
+  ],
+  PayrollBatchMatch: [
+    'Cross-reference the QBO payroll line items against the payroll processor run report to confirm every employee is included.',
+    'If any employees are missing from QBO, post the correcting entries and rerun the payroll reconciliation.',
+  ],
+  BankServiceChargeAmortization: [
+    'Verify the sum of all QBO fee expense lines equals the bank service charge amount.',
+    'Confirm each QBO line is allocated to the correct account or cost center.',
+  ],
+  LoanPaymentSplit: [
+    'Confirm that the QBO principal and interest allocation matches the lender\'s amortization schedule for the period.',
+    'Verify the outstanding loan balance on the balance sheet reflects the correct principal reduction.',
+  ],
+  NSFReturnedDeposit: [
+    'Void or reverse the original customer payment in QBO to remove the credit from accounts receivable.',
+    'Contact the customer to arrange re-payment or reissuance of the returned check.',
+  ],
+  VoidedCheckCleared: [
+    'Verify whether this check number was voided in QBO; if so, restore the disbursement entry because the bank honored it.',
+    'If the check was never recorded, create the QBO expense entry and allocate it to the appropriate account.',
+  ],
   InvalidOrMissingData: [
     'Repair the missing or malformed source fields before relying on automated matching output.',
     'Obtain the original export or source document if the current row cannot be corrected confidently.',
@@ -121,5 +195,29 @@ export const recommendedNextActionsByCategory: Record<ErrorCategory, string[]> =
   AmbiguousMatchRequiringReview: [
     'Compare the candidate counterparts manually and select the correct match before sign-off.',
     'Document the reviewer decision so the final reconciliation trail is explicit.',
+  ],
+  ReversalVoid: [
+    'Confirm whether a QBO void or reversal entry was posted for the matched bank pair.',
+    'If no QBO entry exists, post a reversing journal entry and document the bank-side resolution.',
+  ],
+  ACHReturn: [
+    'Verify the ACH return reason code and determine whether to re-submit or write off the expense.',
+    'Post a reversal entry in QBO to offset the original expense and update cash records.',
+  ],
+  DepositInTransit: [
+    'Confirm the deposit clears in the bank statement for the next reconciliation period.',
+    'Carry forward as a deposit-in-transit on the reconciliation support schedule.',
+  ],
+  ChargebackReturn: [
+    'Confirm whether a chargeback reversal entry was recorded in QBO to offset the original income.',
+    'Post a reversing journal entry in QBO if the chargeback has not yet been recorded.',
+  ],
+  InterestIncome: [
+    'Record the interest income in QBO to the appropriate interest income account.',
+    'Confirm the amount matches the bank statement interest credit and attach the source detail.',
+  ],
+  IntercompanyMismatch: [
+    'Verify whether this transaction belongs to a different legal entity or QBO company file.',
+    'If intercompany, record the due-to/due-from entry in both entity files to balance the intercompany accounts.',
   ],
 };

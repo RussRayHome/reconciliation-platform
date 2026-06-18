@@ -171,6 +171,7 @@ export const normalizeTransactions = (
       merchantName: row.merchantNameRaw,
       payeeName: row.payeeNameRaw,
       amount,
+      splitAmount: parseNumber(row.splitAmountRaw),
       debit,
       credit,
       runningBalance: parseNumber(row.runningBalanceRaw),

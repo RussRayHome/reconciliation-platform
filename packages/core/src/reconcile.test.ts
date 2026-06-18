@@ -543,7 +543,7 @@ describe('runReconciliation', () => {
     });
 
     expect(defaultOutput.exceptions.some((item) => item.category === 'StaleOutstandingCheck')).toBe(false);
-    expect(defaultOutput.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(1);
+    expect(defaultOutput.exceptions.filter((item) => item.category === 'OutstandingCheck')).toHaveLength(1);
     expect(overrideOutput.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
     expect(overrideOutput.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });

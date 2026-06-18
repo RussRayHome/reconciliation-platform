@@ -138,6 +138,13 @@ Guidelines:
 
 ## 6. Coverage scope
 
+Repository coverage gates are enforced in `vitest.config.ts` with minimum thresholds of:
+
+- statements: `80%`
+- branches: `80%`
+- functions: `80%`
+- lines: `80%`
+
 The current suite verifies key reconciliation behavior including:
 
 - beginning-balance exclusion

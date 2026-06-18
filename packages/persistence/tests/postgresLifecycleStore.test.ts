@@ -77,6 +77,7 @@ const buildCanonicalRow = (
   lineNumber,
   transactionDate: '2025-01-01',
   amount: lineNumber * 10,
+  splitAmount: null,
   debit: null,
   credit: null,
   runningBalance: null,

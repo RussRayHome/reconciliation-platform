@@ -2,6 +2,8 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { SectionCard } from '@recon/ui';
 import { docsById, projectDocuments } from '../lib/docsCatalog';
+import { type HeadingLink, type MarkdownBlock, parseMarkdown } from '../lib/docsMarkdown';
+import { MarkdownArticle } from './MarkdownArticle';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 
 type DocsOverviewProps = {
@@ -10,19 +12,6 @@ type DocsOverviewProps = {
   showDeveloperDashboardLink: boolean;
   developerDashboardHref?: string;
 };
-
-type HeadingLink = {
-  text: string;
-  anchorId: string;
-};
-
-type MarkdownBlock =
-  | { type: 'heading'; level: 1 | 2 | 3; text: string; anchorId: string }
-  | { type: 'paragraph'; text: string }
-  | { type: 'list'; ordered: boolean; items: string[] }
-  | { type: 'image'; src: string; alt: string }
-  | { type: 'link'; href: string; text: string }
-  | { type: 'code'; code: string };
 
 const categoryOrder = ['Overview', 'Architecture', 'Setup', 'Reference', 'Operations'] as const;
 const categoryIconNames: Record<(typeof categoryOrder)[number], SemanticIconName> = {
@@ -33,62 +22,9 @@ const categoryIconNames: Record<(typeof categoryOrder)[number], SemanticIconName
   Operations: 'operations',
 };
 const docsHashSeparator = '::';
-const headingExpression = /^(#{1,3})\s+(.+)$/;
-const bulletExpression = /^[-*]\s+(.+)$/;
-const orderedExpression = /^\d+\.\s+(.+)$/;
-const markdownImageExpression = /^!\[([^\]]*)\]\(([^)]+)\)$/;
-const markdownLinkExpression = /^\[([^\]]+)\]\(([^)]+)\)$/;
-const inlineTokenExpression = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
-const htmlImageExpression = /^<img\s+[^>]*src=["']([^"']+)["'][^>]*>$/i;
-const htmlImageAltExpression = /\salt=["']([^"']*)["']/i;
 
 const resolveCategoryIconName = (category: (typeof categoryOrder)[number]): SemanticIconName =>
   categoryIconNames[category];
-
-const parseSpecialMarkdownBlock = (trimmedLine: string): MarkdownBlock | null => {
-  const markdownImageMatch = markdownImageExpression.exec(trimmedLine);
-  if (markdownImageMatch) {
-    return {
-      type: 'image',
-      alt: markdownImageMatch[1]?.trim() ?? '',
-      src: markdownImageMatch[2]?.trim() ?? '',
-    };
-  }
-
-  const htmlImageMatch = htmlImageExpression.exec(trimmedLine);
-  if (htmlImageMatch) {
-    const altMatch = htmlImageAltExpression.exec(trimmedLine);
-    return {
-      type: 'image',
-      alt: altMatch?.[1]?.trim() ?? '',
-      src: htmlImageMatch[1]?.trim() ?? '',
-    };
-  }
-
-  const markdownLinkMatch = markdownLinkExpression.exec(trimmedLine);
-  if (markdownLinkMatch) {
-    return {
-      type: 'link',
-      text: markdownLinkMatch[1]?.trim() ?? '',
-      href: markdownLinkMatch[2]?.trim() ?? '',
-    };
-  }
-
-  return null;
-};
-
-const slugifyHeading = (text: string): string =>
-  text
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, '-')
-    .replaceAll(/^-+|-+$/g, '')
-    .slice(0, 60);
-
-const buildHeadingAnchorId = (
-  documentId: string,
-  headingText: string,
-  occurrence: number,
-): string => `${documentId}-${slugifyHeading(headingText) || 'section'}-${occurrence}`;
 
 const resolveInitialLocationState = (): {
   documentId: string;
@@ -126,157 +62,6 @@ const writeDocsLocation = (
   const hash = sectionAnchorId ? `${documentId}${docsHashSeparator}${sectionAnchorId}` : documentId;
   globalThis.history.replaceState({}, '', `${docsHref}#${hash}`);
 };
-
-const parseMarkdown = (content: string, documentId: string): MarkdownBlock[] => {
-  const blocks: MarkdownBlock[] = [];
-  const lines = content.replaceAll('\r\n', '\n').split('\n');
-  const headingOccurrences = new Map<string, number>();
-  let paragraphLines: string[] = [];
-  let listState: { ordered: boolean; items: string[] } | null = null;
-  let codeLines: string[] | null = null;
-
-  const flushParagraph = () => {
-    if (paragraphLines.length === 0) {
-      return;
-    }
-
-    blocks.push({ type: 'paragraph', text: paragraphLines.join(' ') });
-    paragraphLines = [];
-  };
-
-  const flushList = () => {
-    if (!listState) {
-      return;
-    }
-
-    blocks.push({ type: 'list', ordered: listState.ordered, items: listState.items });
-    listState = null;
-  };
-
-  const flushCode = () => {
-    if (!codeLines) {
-      return;
-    }
-
-    blocks.push({ type: 'code', code: codeLines.join('\n') });
-    codeLines = null;
-  };
-
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    const headingMatch = headingExpression.exec(line);
-    const bulletMatch = bulletExpression.exec(line);
-    const orderedMatch = orderedExpression.exec(line);
-    const specialBlock = parseSpecialMarkdownBlock(trimmed);
-
-    if (trimmed.startsWith('```')) {
-      flushParagraph();
-      flushList();
-
-      if (codeLines) {
-        flushCode();
-      } else {
-        codeLines = [];
-      }
-
-      return;
-    }
-
-    if (codeLines) {
-      codeLines.push(line);
-      return;
-    }
-
-    if (headingMatch) {
-      const headingDepth = headingMatch[1]?.length ?? 1;
-      const headingText = headingMatch[2]?.trim() ?? '';
-      const nextOccurrence = (headingOccurrences.get(headingText) ?? 0) + 1;
-
-      headingOccurrences.set(headingText, nextOccurrence);
-
-      flushParagraph();
-      flushList();
-      blocks.push({
-        type: 'heading',
-        level: Math.min(headingDepth, 3) as 1 | 2 | 3,
-        anchorId: buildHeadingAnchorId(documentId, headingText, nextOccurrence),
-        text: headingText,
-      });
-      return;
-    }
-
-    if (specialBlock) {
-      flushParagraph();
-      flushList();
-      blocks.push(specialBlock);
-      return;
-    }
-
-    if (!trimmed) {
-      flushParagraph();
-      flushList();
-      return;
-    }
-
-    if (bulletMatch) {
-      flushParagraph();
-
-      if (!listState || listState.ordered) {
-        flushList();
-        listState = { ordered: false, items: [] };
-      }
-
-      listState.items.push(bulletMatch[1] ?? '');
-      return;
-    }
-
-    if (orderedMatch) {
-      flushParagraph();
-
-      if (listState?.ordered !== true) {
-        flushList();
-        listState = { ordered: true, items: [] };
-      }
-
-      listState.items.push(orderedMatch[1] ?? '');
-      return;
-    }
-
-    flushList();
-    paragraphLines.push(trimmed);
-  });
-
-  flushParagraph();
-  flushList();
-  flushCode();
-
-  return blocks;
-};
-
-const renderInlineMarkdown = (text: string) =>
-  text
-    .split(inlineTokenExpression)
-    .filter((part) => part.length > 0)
-    .map((part, index) => {
-      if (part.startsWith('`') && part.endsWith('`')) {
-        return <code key={`${part}-${index}`}>{part.slice(1, -1)}</code>;
-      }
-
-      const linkMatch = markdownLinkExpression.exec(part);
-      if (linkMatch) {
-        return (
-          <a key={`${part}-${index}`} href={linkMatch[2]}>
-            {linkMatch[1]}
-          </a>
-        );
-      }
-
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
-      }
-
-      return <span key={`${part}-${index}`}>{part}</span>;
-    });
 
 /** Renders the Documentation Hub: sidebar navigation, category filters, and Markdown content viewer. */
 export function DocsOverview({
@@ -599,94 +384,7 @@ export function DocsOverview({
                   </div>
                 ) : null}
 
-                <article className="docs-markdown" aria-label="Selected document preview">
-                  {parsedBlocks.map((block, index) => {
-                    if (block.type === 'heading') {
-                      if (block.level === 1) {
-                        return (
-                          <h1 id={block.anchorId} key={`${block.text}-${index}`}>
-                            {block.text}
-                          </h1>
-                        );
-                      }
-
-                      if (block.level === 2) {
-                        return (
-                          <h2 id={block.anchorId} key={`${block.text}-${index}`}>
-                            {block.text}
-                          </h2>
-                        );
-                      }
-
-                      return (
-                        <h3 id={block.anchorId} key={`${block.text}-${index}`}>
-                          {block.text}
-                        </h3>
-                      );
-                    }
-
-                    if (block.type === 'code') {
-                      return (
-                        <pre
-                          key={`${block.code.slice(0, 20)}-${index}`}
-                          className="docs-code-block"
-                        >
-                          <code>{block.code}</code>
-                        </pre>
-                      );
-                    }
-
-                    if (block.type === 'image') {
-                      return (
-                        <figure key={`${block.src}-${index}`} className="docs-markdown-image-shell">
-                          <button
-                            type="button"
-                            className="docs-image-zoom-trigger"
-                            aria-label={
-                              block.alt
-                                ? `Open enlarged image: ${block.alt}`
-                                : 'Open enlarged image'
-                            }
-                            onClick={() => openImageModal(block.src, block.alt)}
-                          >
-                            <img
-                              src={block.src}
-                              alt={block.alt}
-                              className="docs-markdown-image"
-                              loading="lazy"
-                            />
-                          </button>
-                        </figure>
-                      );
-                    }
-
-                    if (block.type === 'link') {
-                      return (
-                        <p key={`${block.href}-${index}`}>
-                          <a href={block.href}>{block.text}</a>
-                        </p>
-                      );
-                    }
-
-                    if (block.type === 'list') {
-                      const ListTag = block.ordered ? 'ol' : 'ul';
-
-                      return (
-                        <ListTag key={`${block.items[0] ?? 'list'}-${index}`}>
-                          {block.items.map((item) => (
-                            <li key={item}>{renderInlineMarkdown(item)}</li>
-                          ))}
-                        </ListTag>
-                      );
-                    }
-
-                    return (
-                      <p key={`${block.text.slice(0, 20)}-${index}`}>
-                        {renderInlineMarkdown(block.text)}
-                      </p>
-                    );
-                  })}
-                </article>
+                <MarkdownArticle blocks={parsedBlocks} onOpenImage={openImageModal} />
               </>
             ) : (
               <p>No documents matched the current filter.</p>

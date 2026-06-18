@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { NormalizedTransaction } from '@recon/domain';
+import type { NormalizedTransaction, PayeeAlias } from '@recon/domain';
 import { defaultReconciliationConfig } from '@recon/config';
 import { reconcileMatches } from './engine';
 
@@ -22,6 +22,7 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
   description: overrides.description,
   payeeName: overrides.payeeName,
   amount: overrides.amount ?? 0,
+  splitAmount: overrides.splitAmount ?? null,
   debit: overrides.debit ?? null,
   credit: overrides.credit ?? null,
   runningBalance: overrides.runningBalance ?? null,
@@ -414,5 +415,200 @@ describe('reconcileMatches', () => {
       'qbo-grouped-alpha',
       'qbo-grouped-beta',
     ]);
+  });
+
+  it('emits CheckNumberMismatch when check numbers match but amounts differ', () => {
+    const bank = buildTransaction({
+      id: 'bank-check-amt',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-04-10',
+      checkNumber: '1234',
+      normalizedComparisonTokens: ['ACME', 'SUPPLIES'],
+      normalizedReferenceTokens: ['1234'],
+      amount: -525,
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-check-amt',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-04-10',
+      checkNumber: '1234',
+      normalizedComparisonTokens: ['ACME', 'SUPPLIES'],
+      normalizedReferenceTokens: ['1234'],
+      amount: -500,
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Check Number Amount Mismatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('CheckNumberMismatch');
+    expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
+  });
+
+  it('emits DateVariance with check context when check numbers match but posting dates diverge', () => {
+    const bank = buildTransaction({
+      id: 'bank-check-date',
+      source: 'bank',
+      lineNumber: 3,
+      transactionDate: '2025-04-01',
+      checkNumber: '5678',
+      normalizedComparisonTokens: ['VENDOR'],
+      normalizedReferenceTokens: ['5678'],
+      amount: -750,
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-check-date',
+      source: 'qbo',
+      lineNumber: 4,
+      transactionDate: '2025-04-12',
+      checkNumber: '5678',
+      normalizedComparisonTokens: ['VENDOR'],
+      normalizedReferenceTokens: ['5678'],
+      amount: -750,
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Check Number Date Variance');
+    expect(result.matchResults[0]?.disposition).toBe('DateVariance');
+  });
+
+  it('applies Historical Pattern Match when a payee alias boosts text similarity above threshold', () => {
+    const alias: PayeeAlias = {
+      id: crypto.randomUUID(),
+      bankPattern: 'AMZN MKTP US',
+      canonicalPayeeName: 'Amazon',
+      normalizedTokens: ['AMZN', 'MKTP'],
+      sourceDirection: 'bank_to_qbo',
+      matchConfidence: 1.0,
+      isActive: true,
+    };
+
+    const bank = buildTransaction({
+      id: 'bank-amazon',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-03-10',
+      description: 'AMZN MKTP US*AB12345',
+      normalizedComparisonTokens: ['AMZN', 'MKTP', 'AB12345'],
+      amount: -49.99,
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-amazon',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-03-10',
+      description: 'Amazon',
+      normalizedComparisonTokens: ['AMAZON'],
+      amount: -49.99,
+    });
+
+    const result = reconcileMatches(
+      [bank, qbo],
+      defaultReconciliationConfig.matching,
+      [alias],
+    );
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Historical Pattern Match');
+    expect(result.matchResults[0]?.disposition).toBe('ExactMatch');
+    expect(result.unmatchedBankTransactionIds.size).toBe(0);
+    expect(result.unmatchedQboTransactionIds.size).toBe(0);
+  });
+
+  it('classifies a wire where bank received less than QBO recorded as Wire Correspondent Fee Deduction', () => {
+    const bank = buildTransaction({
+      id: 'bank-wire',
+      source: 'bank',
+      lineNumber: 5,
+      transactionDate: '2025-06-01',
+      description: 'WIRE TRANSFER ACB INTERNATIONAL BANK',
+      normalizedComparisonTokens: ['WIRE', 'TRANSFER', 'ACB', 'INTERNATIONAL'],
+      amount: 9850,
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-wire',
+      source: 'qbo',
+      lineNumber: 6,
+      transactionDate: '2025-06-01',
+      description: 'ACB International Invoice Wire',
+      normalizedComparisonTokens: ['WIRE', 'ACB', 'INTERNATIONAL', 'INVOICE'],
+      amount: 10000,
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Wire Correspondent Fee Deduction');
+    expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('AmountMismatch');
+  });
+
+  it('classifies a cross-currency transaction where amounts differ by FX rate as FX Rate Variance', () => {
+    const bank = buildTransaction({
+      id: 'bank-fx',
+      source: 'bank',
+      lineNumber: 7,
+      transactionDate: '2025-06-10',
+      description: 'GLOBAL SUPPLIER PAYMENT EUR',
+      normalizedComparisonTokens: ['GLOBAL', 'SUPPLIER', 'PAYMENT', 'EUR'],
+      amount: -5800,
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-fx',
+      source: 'qbo',
+      lineNumber: 8,
+      transactionDate: '2025-06-10',
+      description: 'Global Supplier Invoice EUR',
+      normalizedComparisonTokens: ['GLOBAL', 'SUPPLIER', 'INVOICE', 'EUR'],
+      amount: -5000,
+    });
+
+    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('FX Rate Variance');
+    expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('AmountMismatch');
+  });
+
+  it('ignores inactive aliases', () => {
+    const alias: PayeeAlias = {
+      id: crypto.randomUUID(),
+      bankPattern: 'AMZN MKTP US',
+      canonicalPayeeName: 'Amazon',
+      normalizedTokens: ['AMZN', 'MKTP'],
+      sourceDirection: 'bank_to_qbo',
+      matchConfidence: 1.0,
+      isActive: false,
+    };
+
+    const bank = buildTransaction({
+      id: 'bank-amazon-inactive',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-03-10',
+      normalizedComparisonTokens: ['AMZN', 'MKTP', 'AB12345'],
+      amount: -49.99,
+    });
+    const qbo = buildTransaction({
+      id: 'qbo-amazon-inactive',
+      source: 'qbo',
+      lineNumber: 2,
+      transactionDate: '2025-03-10',
+      normalizedComparisonTokens: ['AMAZON'],
+      amount: -49.99,
+    });
+
+    const result = reconcileMatches(
+      [bank, qbo],
+      defaultReconciliationConfig.matching,
+      [alias],
+    );
+
+    expect(result.matchResults.some((m) => m.ruleName === 'Historical Pattern Match')).toBe(false);
   });
 });

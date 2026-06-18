@@ -5,6 +5,7 @@ import type {
   MatchResult,
   MatchingConfig,
   NormalizedTransaction,
+  PayeeAlias,
 } from '@recon/domain';
 import { amountDifference, currencyEquals, dateDifferenceDays, tokenSimilarity } from './similarity';
 import {
@@ -19,6 +20,45 @@ interface DuplicateFinding {
 }
 
 const SHORT_CONTEXT_TOKEN_LIMIT = 2;
+const ALIAS_PATTERN_MATCH_THRESHOLD = 0.5;
+
+/**
+ * For a bank transaction, finds the best-matching alias by comparing its
+ * `normalizedTokens` against the bank's `normalizedComparisonTokens`.
+ * Returns the alias and the canonical payee tokens when the pattern similarity
+ * meets `ALIAS_PATTERN_MATCH_THRESHOLD`; otherwise returns null.
+ */
+const findMatchingAlias = (
+  bankTokens: string[],
+  aliases: PayeeAlias[],
+): { alias: PayeeAlias; canonicalTokens: string[] } | null => {
+  let bestAlias: PayeeAlias | null = null;
+  let bestSimilarity = ALIAS_PATTERN_MATCH_THRESHOLD - Number.EPSILON;
+
+  for (const alias of aliases) {
+    if (!alias.isActive || alias.normalizedTokens.length === 0) {
+      continue;
+    }
+
+    const similarity = tokenSimilarity(bankTokens, alias.normalizedTokens);
+    if (similarity > bestSimilarity) {
+      bestSimilarity = similarity;
+      bestAlias = alias;
+    }
+  }
+
+  if (!bestAlias) {
+    return null;
+  }
+
+  return {
+    alias: bestAlias,
+    canonicalTokens: bestAlias.canonicalPayeeName
+      .toUpperCase()
+      .split(/\s+/)
+      .filter(Boolean),
+  };
+};
 
 const buildAmountFrequency = (transactions: NormalizedTransaction[]): Map<number, number> => {
   const frequency = new Map<number, number>();
@@ -267,11 +307,23 @@ const rankCandidates = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],
   config: MatchingConfig,
+  aliases: PayeeAlias[] = [],
 ): MatchCandidate[] => {
   const candidates: MatchCandidate[] = [];
   const bankAmountFrequency = buildAmountFrequency(bankTransactions);
   const qboAmountFrequency = buildAmountFrequency(qboTransactions);
   const amountDrivenMatching = config.textSimilarityThreshold <= 0.12;
+
+  // Pre-compute per-bank alias hits once to avoid repeated scanning in the inner loop.
+  const bankAliasHits = new Map<string, ReturnType<typeof findMatchingAlias>>();
+  if (aliases.length > 0) {
+    for (const bankTransaction of bankTransactions) {
+      bankAliasHits.set(
+        bankTransaction.id,
+        findMatchingAlias(bankTransaction.normalizedComparisonTokens, aliases),
+      );
+    }
+  }
 
   for (const bankTransaction of bankTransactions) {
     for (const qboTransaction of qboTransactions) {
@@ -313,6 +365,56 @@ const rankCandidates = (
         );
       const reviewSimilarityThreshold = Math.min(config.probableTextSimilarityThreshold, 0.4);
 
+      // When both sides carry a check number and reference similarity confirms the same check,
+      // handle the amount-mismatch and extended-date cases before the generic Reference + Amount
+      // Match rule so that check-specific evidence is preserved in the exception category.
+      if (
+        bankTransaction.checkNumber &&
+        qboTransaction.checkNumber &&
+        referenceSimilarity >= config.referenceSimilarityThreshold
+      ) {
+        if (!sameAmount && (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays) {
+          candidates.push(
+            buildCandidate(
+              bankTransaction,
+              qboTransaction,
+              'Check Number Amount Mismatch',
+              0.86,
+              'AmountMismatch',
+              [
+                `Check #${bankTransaction.checkNumber} matches across both sources.`,
+                'Recorded amounts differ beyond configured tolerance — likely a posting error or partial payment.',
+              ],
+              'CheckNumberMismatch',
+            ),
+          );
+          continue;
+        }
+
+        if (
+          sameAmount &&
+          (dateDifference ?? Number.POSITIVE_INFINITY) > config.dateToleranceDays &&
+          (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
+        ) {
+          candidates.push(
+            buildCandidate(
+              bankTransaction,
+              qboTransaction,
+              'Check Number Date Variance',
+              0.87,
+              'DateVariance',
+              [
+                `Check #${bankTransaction.checkNumber} matches across both sources.`,
+                'Amounts agree within configured tolerance.',
+                'Posting date variance exceeds the primary window — check may have been recorded in a different period.',
+              ],
+              'DateVariance',
+            ),
+          );
+          continue;
+        }
+      }
+
       if (sameAmount && referenceSimilarity >= config.referenceSimilarityThreshold) {
         candidates.push(
           buildCandidate(bankTransaction, qboTransaction, 'Reference + Amount Match', 1, 'Exact', [
@@ -321,6 +423,36 @@ const rankCandidates = (
           ]),
         );
         continue;
+      }
+
+      const aliasHit = bankAliasHits.get(bankTransaction.id) ?? null;
+      if (
+        aliasHit &&
+        sameAmount &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
+      ) {
+        const aliasSimilarity = tokenSimilarity(aliasHit.canonicalTokens, qboTransaction.normalizedComparisonTokens);
+        const effectiveSimilarity = aliasSimilarity * aliasHit.alias.matchConfidence;
+
+        if (effectiveSimilarity >= config.textSimilarityThreshold) {
+          const withinPrimaryWindow = (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays;
+          candidates.push(
+            buildCandidate(
+              bankTransaction,
+              qboTransaction,
+              'Historical Pattern Match',
+              withinPrimaryWindow ? 0.88 : 0.8,
+              withinPrimaryWindow ? 'Exact' : 'DateVariance',
+              [
+                `Bank description matched learned alias "${aliasHit.alias.bankPattern}" → "${aliasHit.alias.canonicalPayeeName}".`,
+                `Alias confidence ${(aliasHit.alias.matchConfidence * 100).toFixed(0)}%; effective similarity ${(effectiveSimilarity * 100).toFixed(0)}%.`,
+                'Amounts agree within configured tolerance.',
+              ],
+              withinPrimaryWindow ? undefined : 'DateVariance',
+            ),
+          );
+          continue;
+        }
       }
 
       if (sameAmount && isMonthEndTransferProbable(bankTransaction, qboTransaction, dateDifference)) {
@@ -420,6 +552,64 @@ const rankCandidates = (
         continue;
       }
 
+      // Wire Correspondent Fee: same direction, small absolute amount difference, strong text match.
+      if (
+        !sameAmount &&
+        Math.sign(bankTransaction.amount) === Math.sign(qboTransaction.amount) &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        Math.abs(bankTransaction.amount - qboTransaction.amount) <= config.wireFeeTolerance &&
+        textSimilarity >= config.textSimilarityThreshold
+      ) {
+        const feeDeducted = Math.abs(bankTransaction.amount - qboTransaction.amount);
+        candidates.push(
+          buildCandidate(
+            bankTransaction,
+            qboTransaction,
+            'Wire Correspondent Fee Deduction',
+            0.77,
+            'AmountMismatch',
+            [
+              `Bank amount of ${bankTransaction.amount.toFixed(2)} and QBO amount of ${qboTransaction.amount.toFixed(2)} differ by ${feeDeducted.toFixed(2)}.`,
+              'Amounts share the same sign and the difference is within the wire-fee tolerance, suggesting a correspondent bank or processing fee was deducted in transit.',
+              'Reviewer should confirm against wire advice or settlement detail.',
+            ],
+            'AmountMismatch',
+          ),
+        );
+        continue;
+      }
+
+      // FX Rate Variance: same direction, percentage amount difference 0.5%–15%, strong text match.
+      const FX_VARIANCE_MIN_PCT = 0.005;
+      const FX_VARIANCE_MAX_PCT = 0.15;
+      if (
+        !sameAmount &&
+        Math.sign(bankTransaction.amount) === Math.sign(qboTransaction.amount) &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        textSimilarity >= config.textSimilarityThreshold
+      ) {
+        const larger = Math.max(Math.abs(bankTransaction.amount), Math.abs(qboTransaction.amount));
+        const diffPct = larger > 0 ? Math.abs(bankTransaction.amount - qboTransaction.amount) / larger : 0;
+        if (diffPct >= FX_VARIANCE_MIN_PCT && diffPct <= FX_VARIANCE_MAX_PCT) {
+          candidates.push(
+            buildCandidate(
+              bankTransaction,
+              qboTransaction,
+              'FX Rate Variance',
+              0.74,
+              'AmountMismatch',
+              [
+                `Bank amount of ${bankTransaction.amount.toFixed(2)} and QBO amount of ${qboTransaction.amount.toFixed(2)} differ by ${(diffPct * 100).toFixed(2)}%.`,
+                'The percentage variance is consistent with a foreign exchange rate difference or a processing discount.',
+                'Reviewer should confirm the FX rate or discount applied and record an adjusting entry if needed.',
+              ],
+              'AmountMismatch',
+            ),
+          );
+          continue;
+        }
+      }
+
       if (
         !sameAmount &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
@@ -453,10 +643,16 @@ export interface MatchEngineResult {
  * Runs the full matching pipeline: exact matching, grouped/split matching, probable
  * matching, and duplicate detection. Returns all categorized match sets and unmatched ID
  * sets needed by the exception classifier and summary builder.
+ *
+ * @param aliases Optional payee alias table rows loaded from the database. When provided,
+ *   the engine applies Historical Pattern Match for bank transactions whose description
+ *   matches a known alias pattern, boosting match confidence where raw text similarity
+ *   would otherwise be below threshold.
  */
 export const reconcileMatches = (
   transactions: NormalizedTransaction[],
   config: MatchingConfig,
+  aliases: PayeeAlias[] = [],
 ): MatchEngineResult => {
   const activeTransactions = transactions.filter(
     (transaction) => !transaction.isExcluded && transaction.dataQualityIssues.length === 0,
@@ -474,7 +670,7 @@ export const reconcileMatches = (
   const remainingBank = bankTransactions.filter((transaction) => !duplicateIds.has(transaction.id));
   const remainingQbo = qboTransactions.filter((transaction) => !duplicateIds.has(transaction.id));
 
-  const candidates = rankCandidates(remainingBank, remainingQbo, config);
+  const candidates = rankCandidates(remainingBank, remainingQbo, config, aliases);
   const exactMatchedBank = new Set<string>();
   const exactMatchedQbo = new Set<string>();
   const reviewedBank = new Set<string>();
@@ -540,7 +736,9 @@ export const reconcileMatches = (
       exceptionCategory = 'TimingDifference';
     } else if (candidate.confidence === 'AmountMismatch') {
       disposition = 'AmountMismatch';
-      exceptionCategory = 'AmountMismatch';
+      // Preserve a more specific exception category (e.g. CheckNumberMismatch) if the
+      // rule already set one; fall back to the generic AmountMismatch only when unset.
+      exceptionCategory = candidate.exceptionCategory ?? 'AmountMismatch';
     }
 
     const result = createMatchResult(candidate, disposition, exceptionCategory);

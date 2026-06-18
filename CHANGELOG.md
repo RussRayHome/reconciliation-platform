@@ -8,6 +8,7 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 
 ### Added
 
+- `splitAmount` added as a first-class `BusinessField`. `RawTransactionRow` gains `splitAmountRaw`, `NormalizedTransaction` gains `splitAmount: number | null`, the Excel parser maps it via configurable column aliases (`split amount`, `split amt`, `line amount`, `line amt`, `distribution amount`), and `normalizeTransactions` parses it with the same signed-currency logic as `amount`. This field carries the individual line amount from QBO split transactions, enabling Fee Netting and deep Split Expense rule implementations.
 - Targeted TSDoc on the main backend entry points to improve near-code maintainability.
 - Release documentation artifacts through `CHANGELOG.md` and `RELEASE.md`.
 - Stage PostgreSQL pgAudit enablement for test-stage deployments, including dedicated stage DB preflight command support (`docker:db:preflight:test-stage`).

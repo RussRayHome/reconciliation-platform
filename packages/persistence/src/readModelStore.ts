@@ -5,6 +5,7 @@ import type {
   GroupedMatchResult,
   MatchResult,
   OutputWorkbookManifest,
+  PayeeAlias,
   ReconciliationRunReport,
   ReviewerDecision,
   ReviewerObservation,
@@ -573,3 +574,147 @@ export class PostgresReconciliationReadModelStore {
     return mapOutputWorkbook(result.rows[0]);
   }
 }
+
+type PayeeAliasRow = {
+  id: string;
+  account_identifier: string | null;
+  bank_pattern: string;
+  canonical_payee_name: string;
+  normalized_tokens: string[] | null;
+  source_direction: 'bank_to_qbo' | 'bidirectional';
+  match_confidence: number;
+  is_active: boolean;
+};
+
+const mapPayeeAlias = (row: PayeeAliasRow): PayeeAlias => ({
+  id: row.id,
+  accountIdentifier: row.account_identifier ?? undefined,
+  bankPattern: row.bank_pattern,
+  canonicalPayeeName: row.canonical_payee_name,
+  normalizedTokens: row.normalized_tokens ?? [],
+  sourceDirection: row.source_direction,
+  matchConfidence: row.match_confidence,
+  isActive: row.is_active,
+});
+
+/** Input fields accepted when creating a new payee alias. */
+export interface CreatePayeeAliasInput {
+  accountIdentifier?: string;
+  bankPattern: string;
+  canonicalPayeeName: string;
+  normalizedTokens: string[];
+  sourceDirection?: 'bank_to_qbo' | 'bidirectional';
+  matchConfidence?: number;
+}
+
+/** Fields that may be patched on an existing payee alias. */
+export type UpdatePayeeAliasInput = Partial<
+  Pick<CreatePayeeAliasInput, 'bankPattern' | 'canonicalPayeeName' | 'normalizedTokens' | 'sourceDirection' | 'matchConfidence'>
+>;
+
+/** Creates a new active payee alias and returns the persisted record. */
+export const createPayeeAlias = async (pool: Pool, input: CreatePayeeAliasInput): Promise<PayeeAlias> => {
+  const result = await pool.query<PayeeAliasRow>(
+    `INSERT INTO payee_alias
+       (account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
+    [
+      input.accountIdentifier ?? null,
+      input.bankPattern,
+      input.canonicalPayeeName,
+      input.normalizedTokens,
+      input.sourceDirection ?? 'bank_to_qbo',
+      input.matchConfidence ?? 1.0,
+    ],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error('createPayeeAlias: INSERT returned no row');
+  }
+  return mapPayeeAlias(row);
+};
+
+/**
+ * Updates writable fields on an existing payee alias. Returns the updated record, or
+ * `undefined` when no alias with the given id was found.
+ */
+export const updatePayeeAlias = async (
+  pool: Pool,
+  id: string,
+  input: UpdatePayeeAliasInput,
+): Promise<PayeeAlias | undefined> => {
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let paramIndex = 1;
+
+  if (input.bankPattern !== undefined) {
+    setClauses.push(`bank_pattern = $${paramIndex++}`);
+    values.push(input.bankPattern);
+  }
+  if (input.canonicalPayeeName !== undefined) {
+    setClauses.push(`canonical_payee_name = $${paramIndex++}`);
+    values.push(input.canonicalPayeeName);
+  }
+  if (input.normalizedTokens !== undefined) {
+    setClauses.push(`normalized_tokens = $${paramIndex++}`);
+    values.push(input.normalizedTokens);
+  }
+  if (input.sourceDirection !== undefined) {
+    setClauses.push(`source_direction = $${paramIndex++}`);
+    values.push(input.sourceDirection);
+  }
+  if (input.matchConfidence !== undefined) {
+    setClauses.push(`match_confidence = $${paramIndex++}`);
+    values.push(input.matchConfidence);
+  }
+
+  if (setClauses.length === 0) {
+    return undefined;
+  }
+
+  setClauses.push(`updated_at = NOW()`);
+  values.push(id);
+
+  const result = await pool.query<PayeeAliasRow>(
+    `UPDATE payee_alias
+        SET ${setClauses.join(', ')}
+      WHERE id = $${paramIndex}
+  RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
+    values,
+  );
+  return result.rows[0] ? mapPayeeAlias(result.rows[0]) : undefined;
+};
+
+/**
+ * Soft-deletes an alias by setting `is_active = false`. Returns `true` when the alias
+ * was found and deactivated, `false` when no row matched.
+ */
+export const deactivatePayeeAlias = async (pool: Pool, id: string): Promise<boolean> => {
+  const result = await pool.query(
+    `UPDATE payee_alias SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+    [id],
+  );
+  return (result.rowCount ?? 0) > 0;
+};
+
+/**
+ * Loads active payee aliases from the database, optionally scoped to an account identifier.
+ * Global aliases (no `account_identifier`) are always included alongside account-specific ones.
+ */
+export const loadPayeeAliases = async (
+  pool: Pool,
+  accountIdentifier?: string,
+): Promise<PayeeAlias[]> => {
+  const result = await pool.query<PayeeAliasRow>(
+    `SELECT id, account_identifier, bank_pattern, canonical_payee_name,
+            normalized_tokens, source_direction, match_confidence, is_active
+       FROM payee_alias
+      WHERE is_active = TRUE
+        AND (account_identifier IS NULL OR account_identifier = $1)
+      ORDER BY account_identifier NULLS LAST, canonical_payee_name ASC`,
+    [accountIdentifier ?? null],
+  );
+
+  return result.rows.map(mapPayeeAlias);
+};

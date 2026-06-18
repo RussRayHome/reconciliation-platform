@@ -1055,6 +1055,34 @@
 
       let latestRuntimePayload = null;
 
+      const resolveCoverageBand = (score) => {
+        if (!Number.isFinite(score)) {
+          return {
+            colorClass: 'cov-red',
+            helper: '0-49% (Red)',
+          };
+        }
+
+        if (score >= 80) {
+          return {
+            colorClass: 'cov-green',
+            helper: '80%+ (Green)',
+          };
+        }
+
+        if (score >= 50) {
+          return {
+            colorClass: 'cov-amber',
+            helper: '50-79% (Yellow)',
+          };
+        }
+
+        return {
+          colorClass: 'cov-red',
+          helper: '0-49% (Red)',
+        };
+      };
+
       const getCoverageMetricBoxes = (check) => {
         if (check?.name !== 'Coverage') {
           return [];
@@ -1064,17 +1092,13 @@
           return check.coverageBenchmarks
             .map((metric) => {
               const value = Number.parseFloat(metric.value);
-              const threshold = Number.parseFloat(metric.threshold);
-              const meetsThreshold =
-                typeof metric.meetsThreshold === 'boolean'
-                  ? metric.meetsThreshold
-                  : Number.isFinite(value) && Number.isFinite(threshold) && value >= threshold;
+              const band = resolveCoverageBand(value);
 
               return {
                 label: metric.label,
                 value: `${metric.value}%`,
-                helper: `Target ${metric.threshold}% | ${meetsThreshold ? 'Pass' : 'Below target'}`,
-                colorClass: meetsThreshold ? 'cov-green' : 'cov-red',
+                helper: band.helper,
+                colorClass: band.colorClass,
               };
             })
             .filter(Boolean);
@@ -1106,21 +1130,13 @@
             }
 
             const pct = Number.parseFloat(metricValue);
-            let colorClass = 'cov-red';
-            let helper = 'Low';
-            if (pct >= 90) {
-              colorClass = 'cov-green';
-              helper = 'Strong';
-            } else if (pct >= 80) {
-              colorClass = 'cov-amber';
-              helper = 'Watch';
-            }
+            const band = resolveCoverageBand(pct);
 
             return {
               label: metricLabel,
               value: metricValue,
-              helper,
-              colorClass,
+              helper: band.helper,
+              colorClass: band.colorClass,
             };
           })
           .filter(Boolean);
@@ -2268,7 +2284,7 @@
         const isPostgresCheck = check?.name === 'Postgres DB tests';
         const statusClass = check.ok ? 'ok' : 'bad';
         const statusText = check.ok ? 'PASS' : 'FAIL';
-        const metricBoxes = isCoverageCheck ? [] : resolveCheckMetricBoxes(check);
+        const metricBoxes = resolveCheckMetricBoxes(check);
         const securityComponentRowsHtml = buildSecurityComponentRowsMarkup(check);
         const summaryHtml = buildCheckSummaryHtml(check, metricBoxes);
         let checkDetails = check.details || 'No additional output';

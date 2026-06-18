@@ -9,6 +9,7 @@ import { SectionCard, StatCard } from '@recon/ui';
 import { downloadWorkbookUrl } from '../lib/api';
 import {
   reportCatalog,
+  rulesCatalogLastRefresh,
   summaryStatDefinitions,
   type AppTab,
   type ReportCatalogItem,
@@ -505,8 +506,8 @@ export function RulesCatalogSection({
           />
           <OverviewCard
             eyebrow="Last rulebook refresh"
-            title="2026-04-04"
-            description="Date variance handling, deterministic classifier rules, and structured exception trace metadata are included in this catalog."
+            title={rulesCatalogLastRefresh}
+            description="Matching stages, grouped reservation behaviors, and exception-classification categories are all represented in this catalog."
           />
         </div>
 

@@ -105,10 +105,10 @@ export const depositGroupingOversizedBankRows = [
 
 export const depositGroupingOversizedQboRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-  ['2025-08-11', 'Deposit', '', 'Customer A', 'Batch receipt A', '1000.00'],
-  ['2025-08-12', 'Deposit', '', 'Customer B', 'Batch receipt B', '800.00'],
-  ['2025-08-12', 'Deposit', '', 'Customer C', 'Batch receipt C', '700.00'],
-  ['2025-08-12', 'Deposit', '', 'Customer D', 'Batch receipt D', '700.00'],
+  ['2025-08-01', 'Deposit', '', 'Customer A', 'Batch receipt A', '1000.00'],
+  ['2025-08-01', 'Deposit', '', 'Customer B', 'Batch receipt B', '800.00'],
+  ['2025-08-01', 'Deposit', '', 'Customer C', 'Batch receipt C', '700.00'],
+  ['2025-08-01', 'Deposit', '', 'Customer D', 'Batch receipt D', '700.00'],
 ];
 
 export const ambiguousBankRows = [
@@ -133,7 +133,7 @@ export const missingFromBankBankRows = bankHeaderOnlyRows;
 
 export const missingFromBankQboRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-  ['2025-09-03', 'Deposit', '', 'North Client', 'Client receipt not yet on statement', '450.00'],
+  ['2025-09-03', 'Expense', '', 'North Vendor', 'Vendor payment missing from bank', '-450.00'],
 ];
 
 export const duplicateInBankBankRows = [
@@ -198,6 +198,16 @@ export const descriptionVarianceQboRows = [
   ['2025-02-18', 'Expense', '', 'Office Depot', 'Client charge', '-245.00'],
 ];
 
+export const outstandingCheckBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-11-15', 'MONTH-END OPERATING', '', '350.00', '', '9000.00'],
+];
+
+export const outstandingCheckQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-11-07', 'Check', '1201', 'Vendor B', 'Normal uncleared check', '-273.50'],
+];
+
 export const staleOutstandingBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-03-31', 'OPERATING ACTIVITY', '', '200.00', '', '800.00'],
@@ -256,6 +266,137 @@ export const nonStandardHeaderQboRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-01-02', 'Expense', '', 'Acme Office Supply', 'ACME OFFICE SUPPLY', '-125.50'],
   ['2025-01-05', 'Deposit', '', 'North Client', 'CLIENT PAYMENT NORTH', '3200.00'],
+];
+
+export const reversalVoidBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-10-01', 'BANK DEBIT JOURNAL ENTRY', '', '500.00', '', '9500.00'],
+  ['2025-10-02', 'BANK CREDIT JOURNAL ENTRY', '', '', '500.00', '10000.00'],
+];
+
+export const reversalVoidQboRows = qboHeaderOnlyRows;
+
+export const achReturnBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-10-10', 'ACH DEBIT VENDOR GAMMA', '', '300.00', '', '9700.00'],
+  ['2025-10-11', 'NSF RETURN ACH VENDOR GAMMA', '', '', '300.00', '10000.00'],
+];
+
+export const achReturnQboRows = qboHeaderOnlyRows;
+
+export const depositInTransitBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-11-15', 'OPERATING EXPENSE UNMATCHED', '', '100.00', '', '9900.00'],
+];
+
+export const depositInTransitQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-11-12', 'Deposit', '', 'Remote Client', 'Client deposit in transit', '250.00'],
+];
+
+export const chargebackReturnBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-09-20', 'CLIENT INVOICE SETTLEMENT ALPHA', '', '', '750.00', '10750.00'],
+  ['2025-10-25', 'CHARGEBACK DISPUTED CLIENT ALPHA', '', '750.00', '', '10000.00'],
+];
+
+export const chargebackReturnQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-09-20', 'Income', '', 'Client Alpha', 'Client invoice settlement alpha', '750.00'],
+];
+
+export const interestIncomeBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-09-30', 'INTEREST EARNED SAVINGS', '', '', '12.50', '10012.50'],
+];
+
+export const interestIncomeQboRows = qboHeaderOnlyRows;
+
+export const intercompanyMismatchBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-09-25', 'DUE FROM SUBSIDIARY ALPHA', '', '1000.00', '', '9000.00'],
+];
+
+export const intercompanyMismatchQboRows = qboHeaderOnlyRows;
+
+// FeeNettingMatch: bank credit = QBO revenue + QBO fee
+export const feeNettingMatchBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-10-01', 'STRIPE PAYOUT NET', '', '', '93.17', '10093.17'],
+];
+
+export const feeNettingMatchQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-10-01', 'Sales Receipt', '', 'Stripe', 'Stripe gross revenue payout', '101.80'],
+  ['2025-10-01', 'Expense', '', 'Stripe', 'Stripe processing fee', '-8.63'],
+];
+
+// PartialPaymentMatch: two bank debits sum to one QBO debit
+export const partialPaymentMatchBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-10-05', 'INSTALLMENT VENDOR DELTA INV-992 PART 1', '', '150.75', '', '9849.25'],
+  ['2025-10-09', 'INSTALLMENT VENDOR DELTA INV-992 PART 2', '', '150.75', '', '9698.50'],
+];
+
+export const partialPaymentMatchQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-10-05', 'Bill Payment', '', 'Vendor Delta', 'Vendor delta inv 992 installment plan', '-301.50'],
+];
+
+// PayrollBatchMatch: one bank payroll debit matches multiple QBO payroll lines
+export const payrollBatchMatchBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-11-01', 'PAYROLL DIRECT DEPOSIT BATCH', '', '5001.00', '', '4999.00'],
+];
+
+export const payrollBatchMatchQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-11-01', 'Expense', '', 'Employee A', 'Payroll employee a salary nov', '-3001.00'],
+  ['2025-11-01', 'Expense', '', 'Employee B', 'Payroll employee b salary nov', '-2000.00'],
+];
+
+// BankServiceChargeAmortization: one bank fee debit matches multiple QBO expense lines
+export const bankServiceChargeAmortizationBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-10-15', 'MONTHLY SERVICE FEE ACCOUNT MAINTENANCE', '', '121.00', '', '9879.00'],
+];
+
+export const bankServiceChargeAmortizationQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-10-15', 'Expense', '', 'Bank', 'Bank fee admin account maintenance', '-61.00'],
+  ['2025-10-15', 'Expense', '', 'Bank', 'Bank fee wire transfer services', '-60.00'],
+];
+
+// LoanPaymentSplit: one bank mortgage debit matches two QBO principal+interest lines
+export const loanPaymentSplitBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-11-10', 'MORTGAGE PAYMENT WELLS FARGO', '', '1250.00', '', '8750.00'],
+];
+
+export const loanPaymentSplitQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-11-10', 'Expense', '', 'Wells Fargo', 'Mortgage loan principal reduction', '-1000.00'],
+  ['2025-11-10', 'Expense', '', 'Wells Fargo', 'Mortgage loan interest expense', '-250.00'],
+];
+
+// NSFReturnedDeposit: bank debit with NSF keywords and no QBO counterpart
+export const nsfReturnedDepositBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-11-08', 'NSF RETURNED CHECK CUSTOMER ALPHA', '', '317.89', '', '9682.11'],
+];
+
+export const nsfReturnedDepositQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+];
+
+// VoidedCheckCleared: bank check debit with check number and no QBO counterpart
+export const voidedCheckClearedBankRows = [
+  ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  ['2025-11-12', 'CHECK', '1042', '657.33', '', '9342.67'],
+];
+
+export const voidedCheckClearedQboRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
 ];
 
 const buildWorkbookBuffer = async (rows: Array<Array<string | number>>): Promise<Buffer> => {

@@ -8,10 +8,16 @@ import type {
 } from '@recon/domain';
 import {
   computeSha256Hex,
+  createPayeeAlias,
+  deactivatePayeeAlias,
+  loadPayeeAliases,
+  updatePayeeAlias,
+  type CreatePayeeAliasInput,
   type PaginatedExceptionsResult,
   type PostgresReconciliationLifecycleStore,
   type PostgresReconciliationReadModelStore,
 } from '@recon/persistence';
+import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { createDeveloperStatusService } from './services/developerStatusService';
@@ -326,6 +332,7 @@ const runReconciliationWorkflow = async (input: {
   requestLog: express.Request['log'];
   repository: InMemoryRunRepository;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
+  pool?: Pool;
 }): Promise<ReconciliationWorkflowResult> => {
   const { accountIdentifier, periodLabel, reconciliationFrequency } =
     parseReconciliationRequestInput(input.body);
@@ -343,6 +350,10 @@ const runReconciliationWorkflow = async (input: {
 
   input.requestLog.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
 
+  const aliases = input.pool
+    ? await loadPayeeAliases(input.pool, accountIdentifier)
+    : [];
+
   const run = await executeReconciliation({
     correlationId,
     runId: lifecycleContext.runId,
@@ -356,6 +367,7 @@ const runReconciliationWorkflow = async (input: {
     accountIdentifier,
     reconciliationFrequency,
     periodLabel,
+    aliases,
   });
 
   input.repository.save(run);
@@ -533,6 +545,7 @@ export const createApp = (
   repository = new InMemoryRunRepository(),
   lifecycleStore?: PostgresReconciliationLifecycleStore,
   readModelStore?: PostgresReconciliationReadModelStore,
+  pool?: Pool,
 ) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
@@ -766,6 +779,7 @@ export const createApp = (
           requestLog: request.log,
           repository,
           lifecycleStore,
+          pool,
         });
         persistenceJobId = workflowResult.persistenceJobId;
 
@@ -953,6 +967,119 @@ export const createApp = (
         await lifecycleStore.persistReviewerDecision(savedDecision);
       }
       response.status(201).json(savedDecision);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  const requirePool = (response: express.Response): boolean => {
+    if (!pool) {
+      response.status(501).json({ message: 'Alias management requires a database connection.' });
+      return false;
+    }
+    return true;
+  };
+
+  app.get('/api/aliases', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const accountIdentifier =
+        typeof request.query.accountIdentifier === 'string'
+          ? request.query.accountIdentifier
+          : undefined;
+      const aliases = await loadPayeeAliases(pool!, accountIdentifier);
+      response.json(aliases);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/aliases', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const body = (request.body ?? {}) as Record<string, unknown>;
+
+      if (typeof body.bankPattern !== 'string' || body.bankPattern.trim().length === 0) {
+        response.status(400).json({ message: 'bankPattern is required.' });
+        return;
+      }
+      if (typeof body.canonicalPayeeName !== 'string' || body.canonicalPayeeName.trim().length === 0) {
+        response.status(400).json({ message: 'canonicalPayeeName is required.' });
+        return;
+      }
+
+      const normalizedTokens = Array.isArray(body.normalizedTokens)
+        ? (body.normalizedTokens as unknown[]).filter((t): t is string => typeof t === 'string')
+        : [];
+
+      const input: CreatePayeeAliasInput = {
+        bankPattern: body.bankPattern.trim(),
+        canonicalPayeeName: body.canonicalPayeeName.trim(),
+        normalizedTokens,
+        accountIdentifier:
+          typeof body.accountIdentifier === 'string' ? body.accountIdentifier : undefined,
+        sourceDirection:
+          body.sourceDirection === 'bidirectional' ? 'bidirectional' : 'bank_to_qbo',
+        matchConfidence:
+          typeof body.matchConfidence === 'number' && body.matchConfidence >= 0 && body.matchConfidence <= 1
+            ? body.matchConfidence
+            : 1.0,
+      };
+
+      const alias = await createPayeeAlias(pool!, input);
+      response.status(201).json(alias);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put('/api/aliases/:id', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const normalizedTokens =
+        Array.isArray(body.normalizedTokens)
+          ? (body.normalizedTokens as unknown[]).filter((t): t is string => typeof t === 'string')
+          : undefined;
+
+      const alias = await updatePayeeAlias(pool!, request.params.id, {
+        bankPattern:
+          typeof body.bankPattern === 'string' ? body.bankPattern.trim() : undefined,
+        canonicalPayeeName:
+          typeof body.canonicalPayeeName === 'string' ? body.canonicalPayeeName.trim() : undefined,
+        normalizedTokens,
+        sourceDirection:
+          body.sourceDirection === 'bidirectional'
+            ? 'bidirectional'
+            : body.sourceDirection === 'bank_to_qbo'
+              ? 'bank_to_qbo'
+              : undefined,
+        matchConfidence:
+          typeof body.matchConfidence === 'number' && body.matchConfidence >= 0 && body.matchConfidence <= 1
+            ? body.matchConfidence
+            : undefined,
+      });
+
+      if (!alias) {
+        response.status(404).json({ message: 'Alias not found.' });
+        return;
+      }
+
+      response.json(alias);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/aliases/:id', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const deactivated = await deactivatePayeeAlias(pool!, request.params.id);
+      if (!deactivated) {
+        response.status(404).json({ message: 'Alias not found.' });
+        return;
+      }
+      response.status(204).send();
     } catch (error) {
       next(error);
     }

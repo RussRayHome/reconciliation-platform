@@ -14,7 +14,7 @@ import {
 
 import type { PostgresReconciliationLifecycleStore } from '@recon/persistence';
 
-import type { AuditEvent, ReconciliationRun } from '@recon/domain';
+import type { AuditEvent, PayeeAlias, ReconciliationRun } from '@recon/domain';
 import pino from 'pino';
 import { randomUUID } from 'node:crypto';
 import { resolveLogLevelAtLeastInfo } from './logLevel';
@@ -47,6 +47,7 @@ export interface ExecuteReconciliationInput {
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
+  aliases?: PayeeAlias[];
 }
 
 /**
@@ -66,6 +67,7 @@ export const executeReconciliation = async ({
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
+  aliases = [],
 }: ExecuteReconciliationInput): Promise<ReconciliationRun> => {
   const log = serviceLogger.child({ correlationId, accountIdentifier });
   const t0 = Date.now();
@@ -206,7 +208,7 @@ export const executeReconciliation = async ({
       await lifecycleStore.persistNormalizedRows(runId, normalizedTransactions);
     }
 
-    matching = reconcileMatches(normalizedTransactions, config.matching);
+    matching = reconcileMatches(normalizedTransactions, config.matching, aliases);
     appendAuditEvent('reconciliation.match.completed', {
       matchResultCount: matching.matchResults.length,
       groupedMatchResultCount: matching.groupedMatchResults.length,
@@ -230,6 +232,7 @@ export const executeReconciliation = async ({
       unmatchedBankTransactionIds: matching.unmatchedBankTransactionIds,
       unmatchedQboTransactionIds: matching.unmatchedQboTransactionIds,
       duplicateTransactionIds: matching.duplicateTransactionIds,
+      groupedMatchResults: matching.groupedMatchResults,
       reporting: config.reporting,
       matching: config.matching,
       reconciliationFrequency,

@@ -23,6 +23,7 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
   merchantName: overrides.merchantName,
   payeeName: overrides.payeeName,
   amount: overrides.amount ?? 0,
+  splitAmount: overrides.splitAmount ?? null,
   debit: overrides.debit ?? null,
   credit: overrides.credit ?? null,
   runningBalance: overrides.runningBalance ?? null,

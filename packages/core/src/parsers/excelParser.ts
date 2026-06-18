@@ -300,6 +300,7 @@ export const parseWorkbook = async ({
       merchantNameRaw: cellValueByIndex(row, columnIndexes.merchantName),
       payeeNameRaw: cellValueByIndex(row, columnIndexes.payeeName),
       amountRaw: cellValueByIndex(row, columnIndexes.amount),
+      splitAmountRaw: cellValueByIndex(row, columnIndexes.splitAmount),
       debitRaw: cellValueByIndex(row, columnIndexes.debit),
       creditRaw: cellValueByIndex(row, columnIndexes.credit),
       runningBalanceRaw: cellValueByIndex(row, columnIndexes.runningBalance),

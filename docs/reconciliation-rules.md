@@ -40,6 +40,7 @@ The application executes reconciliation in this order:
 ### Normalization
 
 - Amount parsing supports currency symbols, commas, parentheses negatives, trailing minus, and `CR`/`DR` suffixes.
+- `splitAmount` is parsed from a dedicated column (default aliases: `split amount`, `split amt`, `line amount`, `line amt`, `distribution amount`) and stored as a signed number on `NormalizedTransaction`. It represents the individual line amount on a QBO split transaction, as distinct from the parent transaction `amount`. When no split column is present, `splitAmount` is `null`.
 - Date parsing supports standard date strings and Excel serial values.
 - Signed amount behavior depends on source config (`signedAmount` vs `debitCreditColumns`).
 - Comparison tokens use text normalization and stop-word removal.
@@ -66,6 +67,10 @@ The default matching and reporting profile is defined in `packages/config/src/de
 | primary date tolerance                    | `5` days  |
 | timing-difference window                  | `21` days |
 | stale outstanding check threshold         | `45` days |
+| reversal detection window                 | `7` days  |
+| deposit-in-transit window                 | `7` days  |
+| partial payment window                    | `90` days |
+| wire fee tolerance                        | `500.00`  |
 | exact text similarity threshold           | `0.70`    |
 | probable text similarity threshold        | `0.62`    |
 | reference similarity threshold            | `0.90`    |
@@ -138,6 +143,15 @@ Before finalizing advisory one-to-one results, the engine reserves grouped candi
 
 Selected grouped candidates are emitted as `groupedMatchResults` and their member ids are reserved so lower-confidence one-to-one candidates do not consume them.
 
+The reservation stage currently emits both general grouped and specialized grouped review categories:
+
+- general grouped: `LikelySplitCombineIssue`, `DepositGroupingIssue`
+- specialized grouped: `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`
+
+`LoanPaymentSplit` matches a single bank loan or mortgage debit against two to three QBO debits (principal reduction and interest expense) whose amounts sum to the bank total within the primary date tolerance window. Subset combination search is used so additional QBO debits in the date window do not prevent a valid match.
+
+Because grouped candidates reserve overlapping members, one selected grouped candidate can suppress another candidate that shares the same bank/QBO lines.
+
 ### Match result consumption rules
 
 - Exact matches consume both sides and are removed from unmatched pools.
@@ -153,10 +167,19 @@ Classification combines unmatched transactions, duplicate flags, and advisory ma
 Residual staging currently executes in this order:
 
 1. stale outstanding check detection
-2. likely miscoding detection
-3. grouped residual detection
-4. timing difference detection
-5. missing-item fallback (`MissingFromQBO` / `MissingFromBank`)
+2. outstanding check detection
+3. ACH return detection
+4. NSF returned deposit detection
+5. reversal/void pair detection
+6. chargeback return detection
+7. interest income detection
+8. intercompany mismatch detection
+9. likely miscoding detection
+10. engine-reserved grouped category projection (`FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`)
+11. grouped residual detection
+12. timing difference detection
+13. voided check cleared detection
+14. missing-item fallback (`MissingFromQBO` / `MissingFromBank` / `DepositInTransit`)
 
 ### Advisory-protected categories
 
@@ -170,33 +193,50 @@ Transactions tied to these advisory categories are removed from residual missing
 
 ### Category generation highlights
 
-- `InvalidOrMissingData`: data-quality issue rows.
-- `DuplicateInBank` / `DuplicateInQBO`: same-source duplicates.
-- `StaleOutstandingCheck`: unmatched, check-like, negative QBO items older than stale threshold.
-- `LikelyMiscoding`: distinctive same-amount near-date pairs with strong narrative/reference conflict.
-- `LikelySplitCombineIssue` / `DepositGroupingIssue`: balanced residual grouped sets.
-- `TimingDifference`: residual timing-compatible same-amount pairs in the extended window.
-- `MissingFromQBO` / `MissingFromBank`: final unmatched fallback.
+- `InvalidOrMissingData`: rows with missing or malformed amount, date, or other data-quality failures.
+- `DuplicateInBank` / `DuplicateInQBO`: same-source duplicates detected by amount equality, date proximity, and description similarity.
+- `StaleOutstandingCheck`: unmatched, check-like, negative QBO items older than the stale outstanding threshold (default 45 days).
+- `OutstandingCheck`: unmatched, check-like, negative QBO items within the stale threshold but not yet cleared in bank.
+- `ACHReturn`: paired bank debit and credit that net to zero within the reversal window, with ACH or NSF indicators in the description; both sides are classified.
+- `NSFReturnedDeposit`: unmatched bank debit containing NSF or returned-check keywords (`nsf`, `returned check`, `insufficient funds`, etc.) with no corresponding pair; runs after ACH return detection so paired NSF credits are not double-classified.
+- `ReversalVoid`: unmatched bank debit paired with a same-amount bank credit within the reversal window, indicating a reversal or void; both sides are classified.
+- `ChargebackReturn`: unmatched bank debit with chargeback keywords paired with a same-amount bank credit within the reversal window.
+- `InterestIncome`: unmatched bank credit with interest-income keywords and no QBO counterpart.
+- `IntercompanyMismatch`: unmatched bank or QBO transaction with intercompany, entity-transfer, due-to/due-from, or subsidiary keywords and no counterpart.
+- `FeeNettingMatch`: a bank credit equals QBO revenue net of a QBO fee line.
+- `PartialPaymentMatch`: multiple bank debits accumulate to one QBO payable amount.
+- `PayrollBatchMatch`: one payroll bank debit equals multiple QBO payroll expense lines.
+- `BankServiceChargeAmortization`: one service-charge bank debit equals multiple QBO fee allocations.
+- `LoanPaymentSplit`: a single bank loan or mortgage debit matches two to three QBO debits (principal reduction and interest expense) whose amounts sum to the bank total.
+- `LikelyMiscoding`: distinctive same-amount near-date pairs with strong narrative/reference conflict suggesting an account miscoding.
+- `LikelySplitCombineIssue` / `DepositGroupingIssue`: balanced residual grouped sets where amounts match but split or combined posting is suspected.
+- `TimingDifference`: residual timing-compatible same-amount pairs in the extended window (default 21 days).
+- `VoidedCheckCleared`: unmatched bank debit identified as check-like (check number present, `serialNumber` set, or description contains `check`/`chk`) with no QBO counterpart; runs after all other stages so legitimate matches are not misclassified.
+- `DepositInTransit`: unmatched QBO credit recorded near the statement period end (within the deposit-in-transit window, default 7 days) with no bank counterpart; not check-like.
+- `MissingFromQBO` / `MissingFromBank`: final unmatched fallback after all prior stages have been applied.
 - Match-result-derived categories: `DateVariance`, `TimingDifference`, `AmountMismatch`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `DescriptionMerchantVariance`, `AmbiguousMatchRequiringReview`.
 
-For `DateVariance` match results, classifier post-processing can upgrade category to `LikelyMiscoding` or `TimingDifference` when evidence supports the stronger interpretation.
+For `DateVariance` match results, classifier post-processing can upgrade the category to `LikelyMiscoding` or `TimingDifference` when evidence supports the stronger interpretation.
 
 ### Category precedence
 
-When more than one category could apply to the same transaction key, precedence is:
+When more than one category could apply to the same transaction key, the lower precedence number wins:
 
-1. `InvalidOrMissingData`
-2. `DuplicateInBank`, `DuplicateInQBO`
-3. `AmountMismatch`
-4. `LikelySplitCombineIssue`, `DepositGroupingIssue`
-5. `LikelyMiscoding`
-6. `CheckNumberMismatch`, `ReferenceNumberMismatch`
-7. `DateVariance`
-8. `TimingDifference`
-9. `DescriptionMerchantVariance`
-10. `AmbiguousMatchRequiringReview`
-11. `StaleOutstandingCheck`
-12. `MissingFromQBO`, `MissingFromBank`
+| Level | Categories                                                                                                                                                                                                    |
+|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1     | `InvalidOrMissingData`                                                                                                                                                                                        |
+| 2     | `DuplicateInBank`, `DuplicateInQBO`                                                                                                                                                                           |
+| 3     | `AmountMismatch`, `ACHReturn`, `NSFReturnedDeposit`, `ChargebackReturn`                                                                                                                                       |
+| 4     | `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`, `LikelySplitCombineIssue`, `DepositGroupingIssue`, `ReversalVoid`, `IntercompanyMismatch` |
+| 5     | `LikelyMiscoding`                                                                                                                                                                                             |
+| 6     | `CheckNumberMismatch`, `ReferenceNumberMismatch`                                                                                                                                                              |
+| 7     | `DateVariance`                                                                                                                                                                                                |
+| 8     | `TimingDifference`                                                                                                                                                                                            |
+| 9     | `DescriptionMerchantVariance`                                                                                                                                                                                 |
+| 10    | `AmbiguousMatchRequiringReview`                                                                                                                                                                               |
+| 11    | `StaleOutstandingCheck`                                                                                                                                                                                       |
+| 12    | `OutstandingCheck`, `DepositInTransit`, `VoidedCheckCleared`                                                                                                                                                  |
+| 13    | `MissingFromQBO`, `MissingFromBank`, `InterestIncome`                                                                                                                                                         |
 
 ## 7. Severity, messaging, and sort order
 
@@ -205,9 +245,9 @@ Default severity mapping is supplied by `reporting.severityByCategory` in config
 Default severity groups:
 
 - `Critical`: `InvalidOrMissingData`
-- `High`: missing items, duplicates, amount mismatch, grouped categories, likely miscoding
-- `Medium`: date/timing/reference/check/ambiguous/stale-outstanding
-- `Low`: `DescriptionMerchantVariance`
+- `High`: `MissingFromBank`, `MissingFromQBO`, `AmountMismatch`, `DuplicateInBank`, `DuplicateInQBO`, `LikelySplitCombineIssue`, `DepositGroupingIssue`, `LikelyMiscoding`, `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`, `NSFReturnedDeposit`, `VoidedCheckCleared`, `ACHReturn`, `ChargebackReturn`, `IntercompanyMismatch`
+- `Medium`: `DateVariance`, `TimingDifference`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `StaleOutstandingCheck`, `AmbiguousMatchRequiringReview`, `ReversalVoid`
+- `Low`: `DescriptionMerchantVariance`, `OutstandingCheck`, `DepositInTransit`, `InterestIncome`
 
 User-facing exception text and recommended follow-up actions are sourced from:
 
@@ -237,14 +277,67 @@ Reviewer observations are also generated for:
 - timing-difference detection
 - annual mode month-coverage gaps by source file
 
-## 9. Change management guidance
+## 9. GAAP alignment and bank reconciliation standard coverage
+
+Bank-to-QBO reconciliation is governed primarily by **ASC 305 (Cash and Cash Equivalents)** and **ASC 230 (Statement of Cash Flows)**. A complete bank reconciliation under GAAP requires that every difference between the bank statement balance and the general-ledger book balance is identified, explained, and resolved before period close.
+
+### Standard bank reconciliation items — full coverage map
+
+| Standard reconciling item | GAAP basis | System category | How detected |
+|---|---|---|---|
+| Outstanding checks — normal clearing window | ASC 305-10 | `OutstandingCheck` | Unmatched negative QBO check items within the stale threshold |
+| Outstanding checks — aged beyond policy | ASC 305-10 | `StaleOutstandingCheck` | Same as above, age exceeds `staleOutstandingCheckDays` (default 45 d) |
+| Deposits in transit | ASC 305-10 | `DepositInTransit` | Unmatched QBO credit near period end within `depositInTransitDays` (default 7 d), not check-like |
+| NSF / returned checks | ASC 310-10 | `NSFReturnedDeposit` | Bank debit with NSF or returned-check keywords, no paired bank credit |
+| Bank service charges and fees | ASC 305-10 | `BankServiceChargeAmortization` | Bank debit with service-charge keywords equals sum of 2–6 QBO fee lines |
+| Interest income credited by bank | ASC 305-10 | `InterestIncome` | Bank credit with interest keywords, no QBO counterpart |
+| ACH / EFT returns | ASC 310-10 | `ACHReturn` | Paired same-amount bank debit and credit (net zero) with ACH or NSF indicators within reversal window |
+| Reversed or voided entries | ASC 305-10 | `ReversalVoid` | Paired same-amount bank debit and credit with no ACH indicators, within reversal window |
+| Check voided in books but cleared bank | ASC 305-10 | `VoidedCheckCleared` | Bank check debit (check number or “check”/”chk” description) with no QBO counterpart |
+| Chargeback / disputed item returned | ASC 606-10 | `ChargebackReturn` | Bank debit with chargeback keywords paired with same-amount bank credit |
+| Loan payment — principal + interest split | ASC 470-10 | `LoanPaymentSplit` | Single bank loan debit matched against 2–3 QBO debits (principal + interest) summing to bank total |
+| Intercompany / entity transfer | ASC 810-10 | `IntercompanyMismatch` | Bank or QBO item with intercompany, due-to/from, or subsidiary keywords and no counterpart |
+| Payroll batch posting | ASC 718-10 | `PayrollBatchMatch` | Single bank payroll debit equals sum of multiple QBO payroll expense lines |
+| Fee netting (revenue net of bank fee) | ASC 606-10 | `FeeNettingMatch` | Bank credit equals QBO revenue line minus QBO fee line |
+| Partial payment accumulation | ASC 310-10 | `PartialPaymentMatch` | Multiple bank debits accumulate to a single QBO payable amount |
+| Timing difference (posting-date lag) | ASC 230-10 | `TimingDifference` | Same-amount pair within the extended timing window (`timingDifferenceDays`, default 21 d) but outside primary window |
+| Date variance (extended window match) | ASC 230-10 | `DateVariance` | Matched pair with date difference exceeding primary tolerance but within timing window |
+| Amount mismatch | ASC 305-10 | `AmountMismatch` | Matched pair where amounts differ beyond `amountTolerance` with high description similarity |
+| Likely miscoding | ASC 820-10 | `LikelyMiscoding` | Distinctive same-amount near-date pair where description/reference conflict suggests wrong account |
+| Duplicate bank posting | ASC 305-10 | `DuplicateInBank` | Same-source same-amount duplicate within `duplicateDateWindowDays` |
+| Duplicate book entry | ASC 305-10 | `DuplicateInQBO` | Same-source same-amount duplicate in QBO within duplicate window |
+| Split transaction / grouped deposit | ASC 230-10 | `LikelySplitCombineIssue`, `DepositGroupingIssue` | Balanced residual grouped sets where split or batched posting is likely |
+| Check number mismatch | ASC 305-10 | `CheckNumberMismatch` | Amount and text align but check numbers differ |
+| Reference number mismatch | ASC 305-10 | `ReferenceNumberMismatch` | Amount and text align but reference numbers differ |
+| Description / merchant variance | ASC 305-10 | `DescriptionMerchantVariance` | Amount and date match but description similarity is in the grey zone |
+| Ambiguous match requiring review | ASC 305-10 | `AmbiguousMatchRequiringReview` | Multiple near-equal candidates exist for the same transaction |
+| Missing from QBO (book) | ASC 305-10 | `MissingFromQBO` | Bank transaction has no book counterpart after all other stages |
+| Missing from bank | ASC 305-10 | `MissingFromBank` | QBO transaction has no bank counterpart after all other stages |
+| Invalid or missing data | ASC 855-10 | `InvalidOrMissingData` | Amount, date, or other required field is absent or malformed |
+
+### GAAP assertion coverage
+
+| GAAP assertion (ASC 315-10 / PCAOB AS 2315) | Coverage status | Supporting categories |
+|---|---|---|
+| Existence — recorded cash events occurred | Covered | `ExactMatch`, `ProbableMatch`, all grouped categories |
+| Completeness — all cash events are recorded | Covered | `MissingFromQBO`, `MissingFromBank`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck` |
+| Accuracy — amounts and periods are correct | Covered | `AmountMismatch`, `DateVariance`, `TimingDifference`, `InvalidOrMissingData`, `DuplicateInBank`, `DuplicateInQBO` |
+| Cutoff — transactions in the right period | Covered | `DateVariance`, `TimingDifference`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck` |
+| Classification — correct account assignment | Partially covered | `LikelyMiscoding`, `IntercompanyMismatch`, `LoanPaymentSplit`, `BankServiceChargeAmortization`, `CheckNumberMismatch`, `ReferenceNumberMismatch` |
+| Presentation — output is auditable | Partially covered | Summary metrics, exception export workbook, reviewer observations, rule traces stored per exception |
+| Rights and obligations | Not covered | Requires legal-entity and policy controls outside pattern matching |
+
+**Scope boundary:** this engine fully covers the transaction-level detection tier for bank-to-QBO cash reconciliation (all 30 categories map to a standard reconciling item above). Full period-close GAAP compliance also requires chart-of-accounts governance, management review sign-off, journal entry controls, and external audit procedures that are outside the scope of automated matching.
+
+## 10. Change management guidance
 
 When rule behavior changes, update these artifacts together:
 
 1. matching/classification implementation and tests in `packages/core`
 2. config defaults and overrides in `packages/config`
 3. shared category/messages/types in `packages/domain`
-4. API contract docs in `docs/api.md`
-5. test strategy and fixtures in `docs/test-strategy.md` and `packages/test-fixtures`
+4. database schema migration in `packages/persistence/src/schema.ts` (new migration to update the `reconciliation_exception_category_check` constraint)
+5. API contract docs in `docs/api.md`
+6. test strategy and fixtures in `docs/test-strategy.md` and `packages/test-fixtures`
 
 Implementation-level class and method details are maintained in `docs/class-method-reference.md`.

@@ -128,6 +128,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
     new FileBackedRunRepository(persistedRunPath),
     lifecycleStore,
     readModelStore,
+    postgresPool,
   );
   const port = Number(process.env.PORT ?? '4000');
 

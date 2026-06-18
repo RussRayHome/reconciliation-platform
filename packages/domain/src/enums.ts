@@ -75,8 +75,22 @@ export const errorCategories = [
   'ReferenceNumberMismatch',
   'DescriptionMerchantVariance',
   'StaleOutstandingCheck',
+  'OutstandingCheck',
+  'FeeNettingMatch',
+  'PartialPaymentMatch',
+  'PayrollBatchMatch',
+  'BankServiceChargeAmortization',
+  'LoanPaymentSplit',
+  'NSFReturnedDeposit',
+  'VoidedCheckCleared',
   'InvalidOrMissingData',
   'AmbiguousMatchRequiringReview',
+  'ReversalVoid',
+  'ACHReturn',
+  'DepositInTransit',
+  'ChargebackReturn',
+  'InterestIncome',
+  'IntercompanyMismatch',
 ] as const;
 /** Union of all assignable exception category strings. */
 export type ErrorCategory = (typeof errorCategories)[number];

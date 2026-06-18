@@ -387,6 +387,7 @@ Module: packages/core/src/normalization/transactions.ts
     {
       id: string,
       amount: number | null,
+      splitAmount: number | null,
       normalizedComparisonTokens: string[],
       dataQualityIssues: string[]
     }
@@ -542,14 +543,26 @@ Module: packages/core/src/matching/engine.ts
 
 Module: packages/core/src/reporting/exceptionClassifier.ts
 
+Supporting modules used internally by this method:
+
+- packages/core/src/reporting/exceptionClassifierStages.ts
+- packages/core/src/reporting/exceptionClassifierCandidates.ts
+- packages/core/src/reporting/exceptionClassifierTraces.ts
+- packages/core/src/reporting/exceptionClassifierTypes.ts
+
 - Inputs:
   - ExceptionClassifierInput
+    - runId
+    - sourceFiles
     - normalizedTransactions
     - matchResults
     - unmatchedBankTransactionIds
     - unmatchedQboTransactionIds
     - duplicateTransactionIds
+    - groupedMatchResults
     - reporting config
+    - matching config
+    - reconciliationFrequency
 - Output:
   - ExceptionClassifierOutput
     - exceptions: ExceptionItem[]
@@ -570,6 +583,8 @@ Module: packages/core/src/reporting/exceptionClassifier.ts
 {
   exceptions: ExceptionItem[],
   reviewerObservations: ReviewerObservation[],
+  groupedCategoryProjectionApplied: boolean,
+  residualStagesAppliedInOrder: true,
   exceptionsSortedBy: ['severity', 'source', 'transactionDate', 'lineNumber']
 }
 ```
@@ -979,10 +994,15 @@ sequenceDiagram
 sequenceDiagram
   participant Caller
   participant C as classifyExceptions
+  participant Stages as classifyResidualStages
+  participant Match as match-result classification
   participant Msg as error message templates
   Caller->>C: classifyExceptions(input)
-  C->>C: map unmatched ids to exception categories
-  C->>C: map duplicates and mismatches
+  C->>Stages: run ordered residual stages
+  Stages-->>C: stage state + miscoding thresholds
+  C->>Match: classify match-result derived categories
+  Match-->>C: category targets + traces
+  C->>C: upsert by precedence per transaction key
   C->>Msg: resolve professional messages
   Msg-->>C: formatted messages
   C->>C: sort by severity/source/date/line
