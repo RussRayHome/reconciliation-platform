@@ -4,7 +4,7 @@ import type * as ApiModule from './lib/api';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import App from './App';
 import userEvent from '@testing-library/user-event';
@@ -541,6 +541,27 @@ describe('App', () => {
     expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
     expect(screen.getByText('Likely Miscoding')).toBeInTheDocument();
     expect(screen.getAllByText(/Last Change/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Variance thresholds').length).toBeGreaterThan(0);
+
+    expect(
+      screen.getByRole('slider', {
+        name: /Reference \+ Amount Match Dollar tolerance/i,
+      }),
+    ).toBeDisabled();
+
+    const dateVarianceCard = screen
+      .getByRole('heading', { name: 'Date Variance' })
+      .closest('article');
+    if (!dateVarianceCard) {
+      throw new Error('Date Variance rule card not found.');
+    }
+
+    expect(
+      within(dateVarianceCard).getByRole('slider', {
+        name: /Date Variance Timing variance window/i,
+      }),
+    ).toBeDisabled();
+    expect(within(dateVarianceCard).getByText('21 days')).toBeInTheDocument();
   });
 
   it('shows an empty exceptions state before any reconciliation run exists', () => {

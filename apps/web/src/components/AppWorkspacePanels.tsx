@@ -15,6 +15,7 @@ import {
   type ReportCatalogItem,
   type ReportView,
   type RuleCatalogItem,
+  type RuleVarianceMetric,
 } from '../lib/appCatalog';
 import { ChartsPanel } from './ChartsPanel';
 import { ExceptionTable } from './ExceptionTable';
@@ -76,6 +77,66 @@ const buildCategorySummaryRows = (run: RunData): CategorySummaryRow[] => {
 
   return [...knownRows, ...unknownRows];
 };
+
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const formatVarianceValue = (value: number, unit: RuleVarianceMetric['unit']): string => {
+  if (unit === 'days') {
+    return `${value} day${value === 1 ? '' : 's'}`;
+  }
+
+  if (unit === 'usd') {
+    return currencyFormatter.format(value);
+  }
+
+  return `${Number.isInteger(value) ? value : value.toFixed(2)}%`;
+};
+
+function RuleVarianceSliders({
+  rule,
+}: Readonly<{
+  rule: RuleCatalogItem;
+}>) {
+  if (!rule.varianceMetrics?.length) {
+    return null;
+  }
+
+  return (
+    <section className="rule-variance" aria-label={`${rule.name} variance thresholds`}>
+      <h4>Variance thresholds</h4>
+      <ul className="rule-variance-list">
+        {rule.varianceMetrics.map((metric) => (
+          <li key={metric.id} className="rule-variance-item">
+            <div className="rule-variance-item__head">
+              <span>{metric.label}</span>
+              <strong>{formatVarianceValue(metric.value, metric.unit)}</strong>
+            </div>
+            <input
+              type="range"
+              className="rule-variance-slider"
+              min={metric.min}
+              max={metric.max}
+              step={metric.step}
+              value={metric.value}
+              readOnly
+              disabled
+              aria-label={`${rule.name} ${metric.label}`}
+            />
+            <div className="rule-variance-item__scale" aria-hidden="true">
+              <span>{formatVarianceValue(metric.min, metric.unit)}</span>
+              <span>{formatVarianceValue(metric.max, metric.unit)}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function ExceptionCategoryBreakdown({
   run,
@@ -519,6 +580,7 @@ export function RulesCatalogSection({
                 <span className="rule-card__pill">Active</span>
               </div>
               <p>{rule.description}</p>
+              <RuleVarianceSliders rule={rule} />
               <div className="rule-card__meta">
                 <span>Last Change</span>
                 <strong>{rule.lastChange}</strong>

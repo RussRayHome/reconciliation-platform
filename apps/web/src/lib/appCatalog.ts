@@ -1,4 +1,5 @@
 import type { ReconciliationRunReport } from '@recon/domain';
+import { defaultReconciliationConfig } from '@recon/config';
 
 import type { SemanticIconName } from '../components/SemanticIcon';
 
@@ -12,11 +13,22 @@ export type ReportView =
   | 'export-artifacts';
 
 /** Metadata for one matching rule entry in the Rules Catalog tab. */
+export type RuleVarianceMetric = {
+  id: string;
+  label: string;
+  unit: 'days' | 'usd' | 'percent';
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+};
+
 export type RuleCatalogItem = {
   id: string;
   name: string;
   description: string;
   lastChange: string;
+  varianceMetrics?: RuleVarianceMetric[];
 };
 
 /** Metadata for one report view entry in the Reports tab. */
@@ -52,6 +64,139 @@ export type TabNavigationItem = {
 export const rulesCatalogLastRefresh = '2026-06-18';
 
 const fullRulebookRefresh = `${rulesCatalogLastRefresh} | Expanded to include full matching, grouped, and classifier rule set`;
+const matchingConfig = defaultReconciliationConfig.matching;
+
+const toPercent = (value: number): number => Number((value * 100).toFixed(2));
+
+const amountToleranceMetric: RuleVarianceMetric = {
+  id: 'amount-tolerance',
+  label: 'Dollar tolerance',
+  unit: 'usd',
+  min: 0,
+  max: 1,
+  step: 0.01,
+  value: matchingConfig.amountTolerance,
+};
+
+const dateToleranceMetric: RuleVarianceMetric = {
+  id: 'date-tolerance-days',
+  label: 'Date tolerance window',
+  unit: 'days',
+  min: 0,
+  max: 31,
+  step: 1,
+  value: matchingConfig.dateToleranceDays,
+};
+
+const timingDifferenceMetric: RuleVarianceMetric = {
+  id: 'timing-difference-days',
+  label: 'Timing variance window',
+  unit: 'days',
+  min: 0,
+  max: 90,
+  step: 1,
+  value: matchingConfig.timingDifferenceDays,
+};
+
+const staleOutstandingMetric: RuleVarianceMetric = {
+  id: 'stale-outstanding-days',
+  label: 'Stale threshold',
+  unit: 'days',
+  min: 0,
+  max: 120,
+  step: 1,
+  value: matchingConfig.staleOutstandingCheckDays,
+};
+
+const textSimilarityMetric: RuleVarianceMetric = {
+  id: 'text-similarity-threshold',
+  label: 'Text similarity threshold',
+  unit: 'percent',
+  min: 0,
+  max: 100,
+  step: 1,
+  value: toPercent(matchingConfig.textSimilarityThreshold),
+};
+
+const probableTextSimilarityMetric: RuleVarianceMetric = {
+  id: 'probable-text-similarity-threshold',
+  label: 'Probable similarity threshold',
+  unit: 'percent',
+  min: 0,
+  max: 100,
+  step: 1,
+  value: toPercent(matchingConfig.probableTextSimilarityThreshold),
+};
+
+const referenceSimilarityMetric: RuleVarianceMetric = {
+  id: 'reference-similarity-threshold',
+  label: 'Reference similarity threshold',
+  unit: 'percent',
+  min: 0,
+  max: 100,
+  step: 1,
+  value: toPercent(matchingConfig.referenceSimilarityThreshold),
+};
+
+const duplicateDateWindowMetric: RuleVarianceMetric = {
+  id: 'duplicate-date-window-days',
+  label: 'Duplicate date window',
+  unit: 'days',
+  min: 0,
+  max: 31,
+  step: 1,
+  value: matchingConfig.duplicateDateWindowDays,
+};
+
+const duplicateSimilarityMetric: RuleVarianceMetric = {
+  id: 'duplicate-similarity-threshold',
+  label: 'Duplicate similarity threshold',
+  unit: 'percent',
+  min: 0,
+  max: 100,
+  step: 1,
+  value: toPercent(matchingConfig.duplicateSimilarityThreshold),
+};
+
+const amountMismatchSimilarityMetric: RuleVarianceMetric = {
+  id: 'amount-mismatch-similarity-threshold',
+  label: 'Amount mismatch similarity threshold',
+  unit: 'percent',
+  min: 0,
+  max: 100,
+  step: 1,
+  value: toPercent(matchingConfig.amountMismatchTextSimilarityThreshold),
+};
+
+const reversalWindowMetric: RuleVarianceMetric = {
+  id: 'reversal-window-days',
+  label: 'Reversal window',
+  unit: 'days',
+  min: 0,
+  max: 30,
+  step: 1,
+  value: matchingConfig.reversalWindowDays,
+};
+
+const depositInTransitMetric: RuleVarianceMetric = {
+  id: 'deposit-in-transit-days',
+  label: 'Deposit-in-transit window',
+  unit: 'days',
+  min: 0,
+  max: 30,
+  step: 1,
+  value: matchingConfig.depositInTransitDays,
+};
+
+const partialPaymentWindowMetric: RuleVarianceMetric = {
+  id: 'partial-payment-window-days',
+  label: 'Partial-payment window',
+  unit: 'days',
+  min: 0,
+  max: 180,
+  step: 1,
+  value: matchingConfig.partialPaymentWindowDays,
+};
 
 export const rulesCatalog: RuleCatalogItem[] = [
   {
@@ -60,6 +205,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Pairs bank and QBO transactions when amounts agree within tolerance and reference similarity meets the configured threshold.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, referenceSimilarityMetric],
   },
   {
     id: 'month-end-transfer-review',
@@ -67,6 +213,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Flags month-end transfer patterns as probable-review candidates when amount, month, and journal-entry context align but should not be forced into an exact match.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [timingDifferenceMetric],
   },
   {
     id: 'text-reference-variance',
@@ -74,6 +221,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Creates a review candidate when amount, date, and description align but check or reference identifiers conflict.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric, referenceSimilarityMetric],
   },
   {
     id: 'amount-date-text-match',
@@ -81,6 +229,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Promotes transactions into a clean match when amount, date, and normalized text context align strongly enough for exact matching.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric, textSimilarityMetric],
   },
   {
     id: 'description-variance',
@@ -88,6 +237,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Sends same-amount, same-window pairs with weaker narrative similarity into review instead of exact matching.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric, textSimilarityMetric],
   },
   {
     id: 'extended-date-window',
@@ -95,6 +245,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Creates a date-variance candidate when amounts agree but date drift falls outside the primary tolerance and inside the extended review window.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric, timingDifferenceMetric],
   },
   {
     id: 'possible-amount-mismatch',
@@ -102,6 +253,11 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Marks near-date, high-similarity pairs for amount-mismatch review when narrative context aligns but recorded amounts differ.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [
+      amountToleranceMetric,
+      timingDifferenceMetric,
+      amountMismatchSimilarityMetric,
+    ],
   },
   {
     id: 'amount-driven-mode',
@@ -109,6 +265,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'When text similarity threshold is configured very low, narrative-heavy review heuristics are bypassed and ambiguous candidate escalation is suppressed.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [textSimilarityMetric],
   },
   {
     id: 'ambiguous-review-escalation',
@@ -116,6 +273,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Converts close competing pairings into Ambiguous Review when confidence is below hard thresholds and reference confidence is insufficient.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [probableTextSimilarityMetric, referenceSimilarityMetric],
   },
   {
     id: 'grouped-reservation-selection',
@@ -123,6 +281,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Evaluates one-to-many and many-to-one combinations with amount, sign, and date-window constraints before finalizing one-to-one candidate usage.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, timingDifferenceMetric],
   },
   {
     id: 'grouped-member-reservation',
@@ -151,6 +310,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Detects same-source duplicates before cross-source matching using amount equality, close dates, and similar description or reference context.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, duplicateDateWindowMetric, duplicateSimilarityMetric],
   },
   {
     id: 'invalid-or-missing-data',
@@ -165,6 +325,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Promotes unmatched aged QBO check-like disbursements into a dedicated stale-check exception instead of generic missing-from-bank treatment.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [staleOutstandingMetric],
   },
   {
     id: 'outstanding-check',
@@ -172,6 +333,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies unmatched recent check-like QBO disbursements as outstanding checks before broader missing-item fallback logic.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [staleOutstandingMetric],
   },
   {
     id: 'ach-return',
@@ -179,6 +341,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Detects offsetting debit-credit bank pairs with ACH or NSF indicators within reversal windows and classifies both sides as ACH returns.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, reversalWindowMetric],
   },
   {
     id: 'nsf-returned-deposit',
@@ -193,6 +356,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Identifies same-amount opposite-sign unmatched bank pairs inside reversal windows and classifies both as reversal or void events.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, reversalWindowMetric],
   },
   {
     id: 'chargeback-return',
@@ -221,6 +385,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies grouped scenarios where a bank net receipt equals QBO gross revenue minus one or more fee entries.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, timingDifferenceMetric],
   },
   {
     id: 'partial-payment-match',
@@ -228,6 +393,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies grouped scenarios where multiple bank debits roll up to a single QBO payable amount within tolerance windows.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, partialPaymentWindowMetric],
   },
   {
     id: 'payroll-batch-match',
@@ -235,6 +401,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies grouped payroll scenarios where one bank payroll debit corresponds to multiple QBO payroll expense rows.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
   {
     id: 'bank-service-charge-amortization',
@@ -242,6 +409,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies grouped fee scenarios where one bank service charge maps to multiple QBO expense allocations.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
   {
     id: 'loan-payment-split',
@@ -249,6 +417,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies grouped loan payment scenarios where one bank debit corresponds to principal and interest components in QBO.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
   {
     id: 'likely-split-combine-issue',
@@ -277,6 +446,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies residual same-amount timing-compatible pairs that fall outside the primary date tolerance but inside timing windows.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [dateToleranceMetric, timingDifferenceMetric],
   },
   {
     id: 'voided-check-cleared',
@@ -291,6 +461,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies unmatched near-period-end QBO credits as deposits in transit before generic missing-item fallback applies.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [depositInTransitMetric],
   },
   {
     id: 'missing-from-qbo',
@@ -312,6 +483,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Escalates high-confidence candidates into review when amount and date align but check identifiers conflict materially.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
   {
     id: 'reference-number-mismatch',
@@ -319,6 +491,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Escalates high-confidence candidates into review when amount and date align but reference identifiers conflict materially.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
   {
     id: 'description-merchant-variance',
@@ -326,6 +499,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Escalates same-amount same-window candidates into review when merchant or narrative similarity is below exact-match confidence.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric, textSimilarityMetric],
   },
   {
     id: 'date-variance',
@@ -333,6 +507,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     description:
       'Classifies same-amount candidate pairs that reconcile narratively but exceed primary posting-date tolerance windows.',
     lastChange: fullRulebookRefresh,
+    varianceMetrics: [amountToleranceMetric, dateToleranceMetric, timingDifferenceMetric],
   },
   {
     id: 'ambiguous-review',
