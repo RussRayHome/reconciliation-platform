@@ -815,7 +815,8 @@ export const createDeveloperStatusService = ({
   };
 
   const collectDeveloperStatus = async (): Promise<DeveloperStatusPayload> => {
-    const penetrationTestStatuses = collectPenetrationTestStatuses(repoRoot);
+    const penetrationTestStatuses =
+      process.env.DEPLOY_ENV === 'stage' ? collectPenetrationTestStatuses(repoRoot) : undefined;
 
     const unitTests = await runDeveloperCheck(
       'Unit tests',

@@ -32,6 +32,7 @@ services:
       GIT_CONFIG_KEY_0: "safe.directory"
       GIT_CONFIG_VALUE_0: "/app"
       NODE_ENV: test
+      DEPLOY_ENV: stage
       PORT: "4001"
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
