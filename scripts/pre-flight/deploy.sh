@@ -73,6 +73,14 @@ append_extra_compose_files() {
   done
 }
 
+has_compose_service() {
+  local service_name="$1"
+  local service_list
+
+  service_list="$(docker compose "${compose_args[@]}" config --services 2>/dev/null)" || return 1
+  grep -qx "$service_name" <<< "$service_list"
+}
+
 extract_service_block_from_compose_config() {
   local service_name="$1"
   docker compose "${compose_args[@]}" config 2>/dev/null | awk -v service="$service_name" '
@@ -118,13 +126,13 @@ docker compose "${compose_args[@]}" up -d postgres
 bash "$ROOT_DIR/scripts/pre-flight/run-users.sh" "$DEPLOY_ENV"
 docker compose "${compose_args[@]}" up migrate
 docker compose "${compose_args[@]}" up -d --force-recreate api web
-if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
+if has_compose_service "pgweb"; then
   docker compose "${compose_args[@]}" up -d pgweb
 fi
-if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^nginx-ui$'; then
+if has_compose_service "nginx-ui"; then
   docker compose "${compose_args[@]}" up -d nginx-ui
 fi
-if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^tools$'; then
+if has_compose_service "tools"; then
   docker compose "${compose_args[@]}" up -d tools
 fi
 

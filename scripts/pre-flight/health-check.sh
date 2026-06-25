@@ -66,6 +66,14 @@ append_extra_compose_files() {
   done
 }
 
+has_compose_service() {
+  local service_name="$1"
+  local service_list
+
+  service_list="$(docker compose "${compose_args[@]}" config --services 2>/dev/null)" || return 1
+  grep -qx "$service_name" <<< "$service_list"
+}
+
 wait_for_http() {
   local label="$1"
   local url="$2"
@@ -108,6 +116,11 @@ wait_for_postgres() {
   done
 }
 
+is_service_running() {
+  local service_name="$1"
+  docker compose "${compose_args[@]}" ps --services --status running | grep -qx "$service_name"
+}
+
 is_truthy() {
   case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)
@@ -145,10 +158,17 @@ wait_for_postgres
 
 pgweb_enabled=false
 pgweb_healthy=false
-if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
+if has_compose_service "pgweb"; then
   pgweb_enabled=true
   PGWEB_PORT="${PGWEB_PORT:-8081}"
-  if wait_for_http "Postgres Admin" "http://127.0.0.1:${PGWEB_PORT}/" "${AUX_HEALTH_CHECK_RETRIES:-60}"; then
+  if ! is_service_running "pgweb"; then
+    if is_truthy "${AUX_HEALTH_CHECK_REQUIRED:-false}"; then
+      echo "Postgres Admin service (pgweb) is configured but not running." >&2
+      exit 1
+    else
+      echo "Warning: Postgres Admin service (pgweb) is configured but not running; skipping health check because AUX_HEALTH_CHECK_REQUIRED is false."
+    fi
+  elif wait_for_http "Postgres Admin" "http://127.0.0.1:${PGWEB_PORT}/" "${AUX_HEALTH_CHECK_RETRIES:-60}"; then
     pgweb_healthy=true
   elif is_truthy "${AUX_HEALTH_CHECK_REQUIRED:-false}"; then
     exit 1
@@ -159,10 +179,17 @@ fi
 
 nginx_ui_enabled=false
 nginx_ui_healthy=false
-if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^nginx-ui$'; then
+if has_compose_service "nginx-ui"; then
   nginx_ui_enabled=true
   NGINX_UI_HTTP_PORT="${NGINX_UI_HTTP_PORT:-8082}"
-  if wait_for_http "Nginx UI" "http://127.0.0.1:${NGINX_UI_HTTP_PORT}/" "${AUX_HEALTH_CHECK_RETRIES:-60}"; then
+  if ! is_service_running "nginx-ui"; then
+    if is_truthy "${AUX_HEALTH_CHECK_REQUIRED:-false}"; then
+      echo "Nginx UI service (nginx-ui) is configured but not running." >&2
+      exit 1
+    else
+      echo "Warning: Nginx UI service (nginx-ui) is configured but not running; skipping health check because AUX_HEALTH_CHECK_REQUIRED is false."
+    fi
+  elif wait_for_http "Nginx UI" "http://127.0.0.1:${NGINX_UI_HTTP_PORT}/" "${AUX_HEALTH_CHECK_RETRIES:-60}"; then
     nginx_ui_healthy=true
   elif is_truthy "${AUX_HEALTH_CHECK_REQUIRED:-false}"; then
     exit 1
