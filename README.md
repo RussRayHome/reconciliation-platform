@@ -59,8 +59,12 @@ packages/
   ui/           Shared UI models and utilities
 scripts/
   ops/          Deploy, health, preflight, cleanup runbooks
+database/
+   postgresql/   PostgreSQL DDL/bootstrap assets (source-of-truth DB artifacts)
 docs/           Architecture, API, rules, testing, and operations guides
 ```
+
+The repository intentionally uses PostgreSQL only; no MSSQL scaffold is maintained.
 
 ## End-to-end workflow
 

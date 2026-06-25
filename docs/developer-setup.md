@@ -154,15 +154,15 @@ npm run docker:cleanup
 
 ### Service topology
 
-| Service    | Role                                    | Host port       | Environments    |
-|------------|-----------------------------------------|-----------------|-----------------|
-| `web`      | NGINX public gateway                    | `4173`          | dev, stage      |
-| `api`      | Express API                             | internal        | dev, stage      |
-| `postgres` | PostgreSQL data store                   | `5432`          | dev, stage      |
-| `migrate`  | One-shot migration runner               | none            | dev, stage      |
-| `tools`    | Test runner / quality gate container    | `4001`          | dev, stage      |
-| `pgweb`    | Postgres web admin                      | `8081`          | dev, stage only |
-| `nginx-ui` | NGINX admin UI                          | `8082` / `8182` | dev, stage only |
+| Service    | Role                                 | Host port       | Environments    |
+|------------|--------------------------------------|-----------------|-----------------|
+| `web`      | NGINX public gateway                 | `4173`          | dev, stage      |
+| `api`      | Express API                          | internal        | dev, stage      |
+| `postgres` | PostgreSQL data store                | `5432`          | dev, stage      |
+| `migrate`  | One-shot migration runner            | none            | dev, stage      |
+| `tools`    | Test runner / quality gate container | `4001`          | dev, stage      |
+| `pgweb`    | Postgres web admin                   | `8081`          | dev, stage only |
+| `nginx-ui` | NGINX admin UI                       | `8082` / `8182` | dev, stage only |
 
 The `tools` container runs the full test and quality gate suite (unit, integration, E2E, lint, typecheck, coverage, security scans) against the live stack. It has access to the Docker socket for container-level operations and Trivy for CVE scanning, and joins `default`, `app`, and `data` networks so it can reach both internal services and external registries.
 
@@ -392,7 +392,9 @@ Source of truth: `package.json` scripts at the repository root.
 - `analyze:static`: runs full static quality chain (`lint`, test-quality, deps, unused exports, complexity).
 - `analyze:deps`: runs dependency-cruiser boundary/cycle analysis.
 - `analyze:test-quality`: fails tests that do not contain assertion patterns.
-- `analyze:unused-exports`: runs `ts-prune` against typecheck project config.
+- `analyze:unused-exports`: runs the unused-export triage gate (ts-prune output compared against `scripts/unused-exports.baseline.txt`; fails only on untriaged findings).
+- `analyze:unused-exports:raw`: runs raw `ts-prune` against typecheck project config.
+- `analyze:unused-exports:baseline:update`: refreshes the triage baseline after intentional export-surface changes.
 - `analyze:complexity`: runs `escomplex` analysis with configured thresholds.
 - `format`: runs Prettier write formatting across the repository.
 - `typecheck`: runs TypeScript typecheck (`tsc -p tsconfig.typecheck.json`).

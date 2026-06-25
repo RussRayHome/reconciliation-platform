@@ -110,6 +110,27 @@ Notes:
 - `docs:api:generate` writes the generated markdown used by the Documentation Hub and Developer Dashboard API docs link.
 - `docs:api:check` performs coverage validation without writing files and exits non-zero when documentation is missing.
 
+### `triage-unused-exports.ts`
+
+Purpose:
+
+- Runs `ts-prune` and compares the current findings to a committed baseline file.
+- Fails only when new, untriaged unused-export findings are introduced.
+
+How to run:
+
+```bash
+npm run analyze:unused-exports
+npm run analyze:unused-exports:raw
+npm run analyze:unused-exports:baseline:update
+```
+
+Notes:
+
+- Baseline file path: `scripts/unused-exports.baseline.txt`.
+- Use `analyze:unused-exports:raw` to inspect full `ts-prune` output.
+- Use `analyze:unused-exports:baseline:update` only after intentionally accepting the current report.
+
 ### `docker-ops.ts`
 
 Purpose:

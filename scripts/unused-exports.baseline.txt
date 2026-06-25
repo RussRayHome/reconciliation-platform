@@ -1,0 +1,168 @@
+# Unused-export triage baseline
+#
+# This file is generated from ts-prune output via:
+# npm run analyze:unused-exports:baseline:update
+#
+# Each line format: <relative-file-path>:<line> - <export-name>
+# Lines in this file are treated as triaged/expected until cleaned up.
+apps/api/src/server.ts:39 - ServerRuntime (used in module)
+apps/api/src/server.ts:67 - createServerRuntime (used in module)
+apps/api/src/services/developerStatusParsing.ts:48 - parseTestMetrics (used in module)
+apps/api/src/services/developerStatusService.ts:17 - CreateDeveloperStatusServiceOptions (used in module)
+apps/api/src/services/developerStatusService.ts:18 - CoverageBenchmark
+apps/api/src/services/developerStatusService.ts:19 - CoverageBenchmarkKey
+apps/api/src/services/developerStatusService.ts:20 - CoverageMetrics (used in module)
+apps/api/src/services/developerStatusService.ts:21 - DeveloperCheck (used in module)
+apps/api/src/services/developerStatusService.ts:22 - DeveloperStatusPayload (used in module)
+apps/api/src/services/developerStatusService.ts:23 - DeveloperStatusResult (used in module)
+apps/api/src/services/developerStatusTypes.ts:124 - DeveloperStatusCacheInfo (used in module)
+apps/api/src/services/reconciliationService.ts:40 - ExecuteReconciliationInput (used in module)
+apps/api/src/services/runRepository.ts:6 - RunRepository (used in module)
+apps/api/tsup.config.ts:3 - default
+apps/web/src/components/AppWorkspacePanels.tsx:24 - ProgressStep (used in module)
+apps/web/src/lib/appCatalog.ts:30 - StatCardTone (used in module)
+apps/web/src/lib/appCatalog.ts:33 - SummaryStatDefinition (used in module)
+apps/web/src/lib/appCatalog.ts:44 - TabNavigationItem (used in module)
+apps/web/src/lib/docsCatalog.ts:28 - ProjectDocument (used in module)
+apps/web/vite.config.ts:48 - default
+packages/core/src/export/chartImage.ts:179 - BarChartImageOptions (used in module)
+packages/core/src/index.ts:10 - normalizeText
+packages/core/src/index.ts:12 - buildChartSeries
+packages/core/src/index.ts:197 - ParseWorkbookInput
+packages/core/src/index.ts:20 - amountDifference
+packages/core/src/index.ts:208 - ParsedWorkbook
+packages/core/src/index.ts:24 - runReconciliation
+packages/core/src/index.ts:262 - WorkbookExportInput
+packages/core/src/index.ts:32 - ExceptionClassifierInput
+packages/core/src/index.ts:33 - dateDifferenceDays
+packages/core/src/index.ts:44 - buildComparisonTokens
+packages/core/src/index.ts:47 - ExceptionClassifierOutput
+packages/core/src/index.ts:633 - MatchEngineResult
+packages/core/src/index.ts:7 - currencyEquals
+packages/core/src/matching/groupedReservations.ts:720 - GroupedReservationResult (used in module)
+packages/core/src/reporting/exceptionClassifierTypes.ts:116 - UpsertTransactionException (used in module)
+packages/core/src/reporting/exceptionClassifierUtils.ts:6 - TransactionKind (used in module)
+packages/domain/src/index.ts:101 - ChartIdentifier
+packages/domain/src/index.ts:119 - RuleEvaluation
+packages/domain/src/index.ts:169 - GroupedMatchDisposition
+packages/domain/src/index.ts:2 - sourceSystems
+packages/domain/src/index.ts:22 - matchConfidenceLevels
+packages/domain/src/index.ts:32 - MatchConfidence
+packages/domain/src/index.ts:39 - matchDispositions
+packages/domain/src/index.ts:55 - severityLevels
+packages/domain/src/index.ts:7 - runStatuses
+packages/domain/src/index.ts:9 - ReconciliationRunStatus
+packages/domain/src/index.ts:99 - chartIdentifiers
+packages/persistence/src/index.ts:14 - SqlMigration
+packages/persistence/src/index.ts:21 - postgresMigrations
+packages/persistence/src/index.ts:26 - ReconciliationJobState
+packages/persistence/src/index.ts:29 - reconciliationSourceFormats
+packages/persistence/src/index.ts:31 - ReconciliationSourceFormat
+packages/persistence/src/index.ts:34 - importBatchStates
+packages/persistence/src/index.ts:36 - CreateReconciliationJobInput
+packages/persistence/src/index.ts:36 - ImportBatchState
+packages/persistence/src/index.ts:39 - exportStates
+packages/persistence/src/index.ts:41 - ReconciliationExportState
+packages/persistence/src/index.ts:44 - resultBuckets
+packages/persistence/src/index.ts:46 - ReconciliationResultBucket
+packages/persistence/src/index.ts:49 - PersistMatchingArtifactsInput
+packages/persistence/src/index.ts:57 - PersistReviewArtifactsInput
+packages/persistence/src/index.ts:6 - PostgresPersistenceConfig
+packages/persistence/src/index.ts:648 - UpdatePayeeAliasInput
+packages/persistence/src/index.ts:65 - PersistExportArtifactsInput
+packages/persistence/src/index.ts:66 - canTransitionJobState
+packages/persistence/src/index.ts:76 - assertValidJobTransition
+packages/persistence/src/index.ts:77 - MarkJobFailedInput
+packages/persistence/src/index.ts:8 - reconciliationJobStates
+packages/test-fixtures/src/index.ts:10 - bankHeaderOnlyRows
+packages/test-fixtures/src/index.ts:101 - depositGroupingOversizedBankRows
+packages/test-fixtures/src/index.ts:106 - depositGroupingOversizedQboRows
+packages/test-fixtures/src/index.ts:106 - exceptionScenarioFixtures
+packages/test-fixtures/src/index.ts:114 - ambiguousBankRows
+packages/test-fixtures/src/index.ts:119 - ambiguousQboRows
+packages/test-fixtures/src/index.ts:125 - missingFromQboBankRows
+packages/test-fixtures/src/index.ts:130 - missingFromQboQboRows
+packages/test-fixtures/src/index.ts:132 - missingFromBankBankRows
+packages/test-fixtures/src/index.ts:134 - missingFromBankQboRows
+packages/test-fixtures/src/index.ts:139 - duplicateInBankBankRows
+packages/test-fixtures/src/index.ts:14 - qboHeaderOnlyRows
+packages/test-fixtures/src/index.ts:145 - duplicateInBankQboRows
+packages/test-fixtures/src/index.ts:150 - duplicateInQboBankRows
+packages/test-fixtures/src/index.ts:155 - duplicateInQboQboRows
+packages/test-fixtures/src/index.ts:161 - likelyMiscodingBankRows
+packages/test-fixtures/src/index.ts:166 - likelyMiscodingQboRows
+packages/test-fixtures/src/index.ts:171 - dateVarianceBankRows
+packages/test-fixtures/src/index.ts:176 - dateVarianceQboRows
+packages/test-fixtures/src/index.ts:18 - sampleBankRows
+packages/test-fixtures/src/index.ts:181 - referenceNumberMismatchBankRows
+packages/test-fixtures/src/index.ts:186 - referenceNumberMismatchQboRows
+packages/test-fixtures/src/index.ts:191 - descriptionVarianceBankRows
+packages/test-fixtures/src/index.ts:196 - descriptionVarianceQboRows
+packages/test-fixtures/src/index.ts:201 - outstandingCheckBankRows
+packages/test-fixtures/src/index.ts:206 - outstandingCheckQboRows
+packages/test-fixtures/src/index.ts:211 - staleOutstandingBankRows
+packages/test-fixtures/src/index.ts:217 - staleOutstandingQboRows
+packages/test-fixtures/src/index.ts:222 - staleOutstandingBelowThresholdBankRows
+packages/test-fixtures/src/index.ts:227 - staleOutstandingBelowThresholdQboRows
+packages/test-fixtures/src/index.ts:232 - staleOutstandingMixedResidualBankRows
+packages/test-fixtures/src/index.ts:238 - staleOutstandingMixedResidualQboRows
+packages/test-fixtures/src/index.ts:243 - invalidDataBankRows
+packages/test-fixtures/src/index.ts:248 - invalidDataQboRows
+packages/test-fixtures/src/index.ts:253 - nonStandardHeaderBankRows
+packages/test-fixtures/src/index.ts:265 - nonStandardHeaderQboRows
+packages/test-fixtures/src/index.ts:271 - reversalVoidBankRows
+packages/test-fixtures/src/index.ts:277 - reversalVoidQboRows
+packages/test-fixtures/src/index.ts:279 - achReturnBankRows
+packages/test-fixtures/src/index.ts:28 - sampleQboRows
+packages/test-fixtures/src/index.ts:285 - achReturnQboRows
+packages/test-fixtures/src/index.ts:287 - depositInTransitBankRows
+packages/test-fixtures/src/index.ts:292 - depositInTransitQboRows
+packages/test-fixtures/src/index.ts:297 - chargebackReturnBankRows
+packages/test-fixtures/src/index.ts:303 - chargebackReturnQboRows
+packages/test-fixtures/src/index.ts:308 - interestIncomeBankRows
+packages/test-fixtures/src/index.ts:313 - interestIncomeQboRows
+packages/test-fixtures/src/index.ts:315 - intercompanyMismatchBankRows
+packages/test-fixtures/src/index.ts:320 - allExceptionCategories
+packages/test-fixtures/src/index.ts:320 - intercompanyMismatchQboRows
+packages/test-fixtures/src/index.ts:323 - exceptionEdgeCaseFixtures
+packages/test-fixtures/src/index.ts:323 - feeNettingMatchBankRows
+packages/test-fixtures/src/index.ts:328 - feeNettingMatchQboRows
+packages/test-fixtures/src/index.ts:335 - partialPaymentMatchBankRows
+packages/test-fixtures/src/index.ts:341 - partialPaymentMatchQboRows
+packages/test-fixtures/src/index.ts:347 - payrollBatchMatchBankRows
+packages/test-fixtures/src/index.ts:352 - payrollBatchMatchQboRows
+packages/test-fixtures/src/index.ts:359 - bankServiceChargeAmortizationBankRows
+packages/test-fixtures/src/index.ts:364 - bankServiceChargeAmortizationQboRows
+packages/test-fixtures/src/index.ts:368 - exceptionPrecedenceFixtures
+packages/test-fixtures/src/index.ts:371 - loanPaymentSplitBankRows
+packages/test-fixtures/src/index.ts:376 - loanPaymentSplitQboRows
+packages/test-fixtures/src/index.ts:38 - referenceMismatchBankRows
+packages/test-fixtures/src/index.ts:383 - nsfReturnedDepositBankRows
+packages/test-fixtures/src/index.ts:388 - nsfReturnedDepositQboRows
+packages/test-fixtures/src/index.ts:393 - voidedCheckClearedBankRows
+packages/test-fixtures/src/index.ts:398 - voidedCheckClearedQboRows
+packages/test-fixtures/src/index.ts:43 - referenceMismatchQboRows
+packages/test-fixtures/src/index.ts:433 - createWorkbookFromRows
+packages/test-fixtures/src/index.ts:472 - buildAllExceptionsCombinedRows
+packages/test-fixtures/src/index.ts:48 - amountMismatchBankRows
+packages/test-fixtures/src/index.ts:487 - allExceptionsExpectedCounts
+packages/test-fixtures/src/index.ts:53 - amountMismatchQboRows
+packages/test-fixtures/src/index.ts:58 - timingDifferenceBankRows
+packages/test-fixtures/src/index.ts:63 - timingDifferenceQboRows
+packages/test-fixtures/src/index.ts:68 - splitCombineBankRows
+packages/test-fixtures/src/index.ts:73 - splitCombineQboRows
+packages/test-fixtures/src/index.ts:76 - WorkbookRows
+packages/test-fixtures/src/index.ts:79 - ExceptionScenarioFixture
+packages/test-fixtures/src/index.ts:79 - depositGroupingBankRows
+packages/test-fixtures/src/index.ts:84 - depositGroupingQboRows
+packages/test-fixtures/src/index.ts:88 - ExceptionEdgeCaseFixture
+packages/test-fixtures/src/index.ts:90 - splitCombineNearMissBankRows
+packages/test-fixtures/src/index.ts:95 - splitCombineNearMissQboRows
+packages/test-fixtures/src/index.ts:97 - ExceptionPrecedenceFixture
+playwright.config.ts:6 - default
+scripts/docker-runtime.ts:28 - resolveDockerEnvFile (used in module)
+scripts/docker-runtime.ts:53 - delay (used in module)
+scripts/docker-runtime.ts:59 - runDockerCommand (used in module)
+scripts/docker-runtime.ts:73 - ensureDockerCli (used in module)
+scripts/docker-runtime.ts:91 - waitForDockerDesktop (used in module)
+vitest.postgres.config.ts:3 - default

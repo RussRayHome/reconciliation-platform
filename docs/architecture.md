@@ -137,6 +137,8 @@ When `RECON_PERSISTENCE_BACKEND=postgres` and DB connectivity are configured:
 - lifecycle stages and audit events are durable
 - read-model queries power run report, summary, exceptions, and decisions
 
+Database DDL and bootstrap assets are maintained under `database/postgresql/ddl`; the repository does not keep parallel MSSQL scaffolding.
+
 ## Compatibility snapshot
 
 API still keeps a file-backed latest-run snapshot (`RECONCILIATION_RUN_STORE_PATH`) for restart compatibility and local run continuity.
