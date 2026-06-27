@@ -36,6 +36,9 @@ import multer from 'multer';
 import { dirname, join, resolve } from 'node:path';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
+import { RedisStore } from 'rate-limit-redis';
+import { createClient } from 'redis';
+import { createApiMetrics } from './services/apiMetrics';
 
 const readPackageJson = (
   directory: string,
@@ -584,18 +587,110 @@ const parsePositiveInteger = (
   return Math.min(Math.trunc(parsed), maxValue);
 };
 
-const createApiRateLimiter = () =>
-  rateLimit({
-    windowMs: parsePositiveInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000, 86_400_000),
-    limit: parsePositiveInteger(process.env.RATE_LIMIT_MAX_REQUESTS, 120, 50_000),
-    standardHeaders: 'draft-8',
-    legacyHeaders: false,
-    validate: {
-      trustProxy: false,
-    },
-    skip: (request) => request.path === '/health',
-    message: { message: 'Too many requests. Please try again later.' },
-  });
+type ApiRateLimiter = {
+  middleware: ReturnType<typeof rateLimit>;
+  redisClient: {
+    isOpen: boolean;
+    quit: () => Promise<unknown>;
+  } | null;
+};
+
+const resolveRateLimitRedisConfiguration = (): {
+  enabled: boolean;
+  url: string | null;
+  prefix: string;
+} => {
+  const enabledFlag = parseBooleanFlag(process.env.RATE_LIMIT_USE_REDIS);
+  const configuredUrl = process.env.RATE_LIMIT_REDIS_URL?.trim();
+
+  return {
+    enabled: enabledFlag === true || (enabledFlag === null && Boolean(configuredUrl)),
+    url: configuredUrl && configuredUrl.length > 0 ? configuredUrl : null,
+    prefix: process.env.RATE_LIMIT_REDIS_PREFIX?.trim() || 'recon:rate-limit:',
+  };
+};
+
+const createApiRateLimiter = (logger: pino.Logger): ApiRateLimiter => {
+  const redisConfiguration = resolveRateLimitRedisConfiguration();
+  let redisClient: ApiRateLimiter['redisClient'] = null;
+  let redisStore: RedisStore | undefined;
+
+  if (redisConfiguration.enabled && redisConfiguration.url) {
+    try {
+      const configuredRedisClient = createClient({ url: redisConfiguration.url });
+      redisClient = configuredRedisClient;
+
+      configuredRedisClient.on('error', (error) => {
+        logger.warn({ action: 'api.rate-limit.redis.error', err: error }, 'Redis client error');
+      });
+
+      void configuredRedisClient
+        .connect()
+        .then(() => {
+          logger.info(
+            { action: 'api.rate-limit.redis.connected' },
+            'Redis-backed rate limiting connected',
+          );
+        })
+        .catch((error: unknown) => {
+          logger.warn(
+            { action: 'api.rate-limit.redis.connect_failed', err: error },
+            'Redis-backed rate limiting failed to connect',
+          );
+        });
+
+      redisStore = new RedisStore({
+        prefix: redisConfiguration.prefix,
+        sendCommand: (...commandArgs: string[]) =>
+          configuredRedisClient.sendCommand(commandArgs) as unknown as Promise<number>,
+      });
+
+      logger.info(
+        {
+          action: 'api.rate-limit.mode',
+          mode: 'redis',
+          redisPrefix: redisConfiguration.prefix,
+        },
+        'Using Redis-backed API rate limiting',
+      );
+    } catch (error) {
+      redisClient = null;
+      logger.warn(
+        { action: 'api.rate-limit.redis.init_failed', err: error },
+        'Failed to initialize Redis-backed rate limiting; falling back to in-memory store',
+      );
+    }
+  } else if (redisConfiguration.enabled && !redisConfiguration.url) {
+    logger.warn(
+      { action: 'api.rate-limit.redis.url_missing' },
+      'RATE_LIMIT_USE_REDIS=true but RATE_LIMIT_REDIS_URL is missing; falling back to in-memory store',
+    );
+  }
+
+  if (!redisStore) {
+    logger.info(
+      { action: 'api.rate-limit.mode', mode: 'memory' },
+      'Using in-memory API rate limiting',
+    );
+  }
+
+  return {
+    redisClient,
+    middleware: rateLimit({
+      windowMs: parsePositiveInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000, 86_400_000),
+      limit: parsePositiveInteger(process.env.RATE_LIMIT_MAX_REQUESTS, 120, 50_000),
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      validate: {
+        trustProxy: false,
+      },
+      store: redisStore,
+      passOnStoreError: true,
+      skip: (request) => request.path === '/api/health' || request.path === '/api/metrics',
+      message: { message: 'Too many requests. Please try again later.' },
+    }),
+  };
+};
 
 const isDeveloperDiagnosticsEnabled = (): boolean => {
   const override = parseBooleanFlag(process.env.ENABLE_DEVELOPER_DIAGNOSTICS);
@@ -624,6 +719,9 @@ export const createApp = (
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
   const developerDiagnosticsEnabled = isDeveloperDiagnosticsEnabled();
   const httpLogger = pino({ level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL) });
+  const apiMetricsFlag = parseBooleanFlag(process.env.ENABLE_API_METRICS);
+  const apiMetrics = apiMetricsFlag === true || apiMetricsFlag === null ? createApiMetrics() : null;
+  const apiRateLimiter = createApiRateLimiter(httpLogger);
 
   app.set('trust proxy', true);
   app.use(
@@ -632,8 +730,11 @@ export const createApp = (
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
+  if (apiMetrics) {
+    app.use(apiMetrics.middleware);
+  }
   if (parseBooleanFlag(process.env.DISABLE_API_RATE_LIMIT) !== true) {
-    app.use(createApiRateLimiter());
+    app.use(apiRateLimiter.middleware);
   }
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
@@ -784,6 +885,21 @@ export const createApp = (
 
   app.get('/api/health', (_request, response) => {
     response.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  app.get('/api/metrics', async (_request, response, next) => {
+    if (!apiMetrics) {
+      response.status(404).type('text/plain; charset=utf-8').send('# API metrics are disabled.\n');
+      return;
+    }
+
+    try {
+      const { contentType, body } = await apiMetrics.render();
+      response.setHeader('Content-Type', contentType);
+      response.send(body);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post('/api/auth/login', async (request, response, next) => {
@@ -1268,6 +1384,12 @@ export const createApp = (
       response.status(statusCode).json({ message });
     },
   );
+
+  app.locals.closeResources = async () => {
+    if (apiRateLimiter.redisClient?.isOpen) {
+      await apiRateLimiter.redisClient.quit().catch(() => undefined);
+    }
+  };
 
   return app;
 };

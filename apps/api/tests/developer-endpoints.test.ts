@@ -335,6 +335,52 @@ describe('developer endpoints', () => {
     expect(body.timestamp).toBeTypeOf('string');
   });
 
+  it('returns Prometheus metrics payload', async () => {
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    await request(app).get('/api/health').expect(200);
+
+    const response = await request(app).get('/api/metrics').expect(200);
+
+    expect(response.headers['content-type']).toContain('text/plain');
+    expect(response.text).toContain('recon_api_http_requests_total');
+    expect(response.text).toContain('recon_api_http_request_duration_seconds');
+  });
+
+  it('returns 404 for metrics endpoint when metrics are disabled', async () => {
+    process.env.ENABLE_API_METRICS = 'false';
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    const response = await request(app).get('/api/metrics').expect(404);
+
+    expect(response.text).toContain('API metrics are disabled');
+  });
+
+  it('applies rate limiting to API routes while exempting health and metrics endpoints', async () => {
+    process.env.DISABLE_API_RATE_LIMIT = 'false';
+    process.env.RATE_LIMIT_WINDOW_MS = '60000';
+    process.env.RATE_LIMIT_MAX_REQUESTS = '1';
+    process.env.RATE_LIMIT_USE_REDIS = 'false';
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    await request(app).get('/api/health').expect(200);
+    await request(app).get('/api/health').expect(200);
+
+    await request(app).get('/api/metrics').expect(200);
+    await request(app).get('/api/metrics').expect(200);
+
+    await request(app).get('/api/reconciliation/latest').expect(404);
+    const throttledResponse = await request(app).get('/api/reconciliation/latest').expect(429);
+
+    const throttledBody = throttledResponse.body as ErrorResponseBody;
+    expect(throttledBody.message).toContain('Too many requests');
+  });
+
   it('returns developer status with test totals and cache metadata', async () => {
     const createApp = await importCreateApp();
     const app = createApp();

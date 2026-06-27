@@ -882,6 +882,14 @@
           <p class="metric-label">API uptime</p>
           <p id="api-uptime" class="metric-value" style="font-size: 0.98rem">-</p>
         </article>
+        <article class="metric">
+          <p class="metric-label">Metrics endpoint</p>
+          <p id="metrics-status" class="metric-value" style="font-size: 0.98rem">-</p>
+        </article>
+        <article class="metric">
+          <p class="metric-label">HTTP requests observed</p>
+          <p id="metrics-requests" class="metric-value" style="font-size: 0.98rem">-</p>
+        </article>
       </section>
 
       <section class="sub-strip">
@@ -952,6 +960,8 @@
       const lastRequestAt = document.getElementById('last-request-at');
       const lastRunStatus = document.getElementById('last-run-status');
       const apiUptime = document.getElementById('api-uptime');
+      const metricsStatus = document.getElementById('metrics-status');
+      const metricsRequests = document.getElementById('metrics-requests');
       const exceptionsList = document.getElementById('exceptions-list');
       const requestsList = document.getElementById('requests-list');
       const exceptionsCount = document.getElementById('exceptions-count');
@@ -1013,6 +1023,8 @@
       };
 
       const stripAnsiCodes = (value) => String(value || '').replaceAll(/\u001b\[[0-9;]*m/gu, '');
+
+      const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 
       const fetchWithTimeout = async (url, timeoutMs) => {
         const controller = new AbortController();
@@ -1096,6 +1108,97 @@
 
         const trimmed = text.slice(markerIndex).trim();
         return trimmed || 'No additional output';
+      };
+
+      const collectPrometheusMetricValues = (payload, metricName) => {
+        const values = [];
+        const metricPattern = new RegExp(
+          `^${escapeRegExp(metricName)}(?:\\{[^\\n]*\\})?\\s+([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)\\s*$`,
+          'gmu',
+        );
+
+        for (const match of String(payload || '').matchAll(metricPattern)) {
+          const value = Number.parseFloat(match[1] || '');
+          if (Number.isFinite(value)) {
+            values.push(value);
+          }
+        }
+
+        return values;
+      };
+
+      const summarizeApiMetrics = (payload) => {
+        const normalized = String(payload || '');
+        const requestValues = collectPrometheusMetricValues(
+          normalized,
+          'recon_api_http_requests_total',
+        );
+        const errorValues = collectPrometheusMetricValues(
+          normalized,
+          'recon_api_http_request_errors_total',
+        );
+
+        const requestTotal = requestValues.reduce((sum, value) => sum + value, 0);
+        const errorTotal = errorValues.reduce((sum, value) => sum + value, 0);
+        const hasRequestMetric =
+          requestValues.length > 0 || normalized.includes('# HELP recon_api_http_requests_total');
+
+        return {
+          hasRequestMetric,
+          requestTotal,
+          errorTotal,
+        };
+      };
+
+      const renderApiMetricsSummary = (summary) => {
+        if (!metricsStatus || !metricsRequests) {
+          return;
+        }
+
+        if (!summary?.available) {
+          metricsStatus.textContent = 'Unavailable';
+          metricsStatus.className = 'metric-value bad';
+          metricsStatus.title = summary?.note || 'Metrics endpoint unavailable.';
+
+          metricsRequests.textContent = '-';
+          metricsRequests.className = 'metric-value';
+          metricsRequests.title = summary?.note || 'No metrics data available.';
+          return;
+        }
+
+        metricsStatus.textContent = 'Reachable';
+        metricsStatus.className = 'metric-value ok';
+        metricsStatus.title = 'Metrics endpoint is reachable.';
+
+        const requestTotal = Number.isFinite(summary.requestTotal)
+          ? Math.round(summary.requestTotal)
+          : 0;
+        const errorTotal = Number.isFinite(summary.errorTotal) ? Math.round(summary.errorTotal) : 0;
+        metricsRequests.textContent = `${requestTotal.toLocaleString()} total | 5xx ${errorTotal.toLocaleString()}`;
+        metricsRequests.className = `metric-value ${errorTotal > 0 ? 'warn' : 'ok'}`;
+        metricsRequests.title = summary.hasRequestMetric
+          ? 'Derived from API Prometheus counters.'
+          : 'Metrics endpoint is reachable but request counters are not present yet.';
+      };
+
+      const loadApiMetricsSummary = async () => {
+        try {
+          const response = await fetchWithTimeout('/api/metrics', 15000);
+          if (!response.ok) {
+            throw new Error(`Metrics request failed with status ${response.status}.`);
+          }
+
+          const metricsBody = await response.text();
+          return {
+            available: true,
+            ...summarizeApiMetrics(metricsBody),
+          };
+        } catch (error) {
+          return {
+            available: false,
+            note: error instanceof Error ? error.message : 'Failed to load API metrics.',
+          };
+        }
       };
 
       let busyTicker = null;
@@ -2615,9 +2718,11 @@
       const loadRuntime = async () => {
         const response = await fetchWithTimeout('/api/developer/runtime', 30000);
         const payload = await readJsonOrThrow(response, 'Failed to load runtime diagnostics.');
+        const metricsSummary = await loadApiMetricsSummary();
         latestRuntimePayload = payload;
         renderRuntimePanels(payload);
         renderPromotionReadiness(payload);
+        renderApiMetricsSummary(metricsSummary);
         return payload;
       };
 
