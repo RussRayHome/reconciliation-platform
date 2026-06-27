@@ -212,6 +212,11 @@ export const startServer = async (): Promise<void> => {
 
       await closeHttpServer(server);
 
+      const closeResources = runtime.app.locals.closeResources as (() => Promise<void>) | undefined;
+      if (closeResources) {
+        await closeResources();
+      }
+
       if (runtime.postgresPool) {
         await runtime.postgresPool.end();
       }

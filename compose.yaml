@@ -14,10 +14,36 @@ x-api-environment: &api-environment
   PG_POOL_MAX: ${PG_POOL_MAX:-10}
   PG_IDLE_TIMEOUT_MS: ${PG_IDLE_TIMEOUT_MS:-30000}
   PG_STATEMENT_TIMEOUT_MS: ${PG_STATEMENT_TIMEOUT_MS:-60000}
+  ENABLE_API_METRICS: ${ENABLE_API_METRICS:-true}
+  RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+  RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-120}
+  RATE_LIMIT_USE_REDIS: ${RATE_LIMIT_USE_REDIS:-true}
+  RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379}
+  RATE_LIMIT_REDIS_PREFIX: ${RATE_LIMIT_REDIS_PREFIX:-recon:rate-limit:}
   ENABLE_DEVELOPER_DIAGNOSTICS: ${ENABLE_DEVELOPER_DIAGNOSTICS:-false}
   RECONCILIATION_RUN_STORE_PATH: ${RECONCILIATION_RUN_STORE_PATH:-/var/lib/reconciliation/latest-reconciliation-run.json}
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    mem_reservation: ${REDIS_MEM_RESERVATION:-64m}
+    cpus: ${REDIS_CPUS:-0.50}
+    stop_grace_period: 30s
+    volumes:
+      - recon-redis-data:/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    logging: *default-logging
+
   postgres:
     image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-data
     build:
@@ -74,6 +100,8 @@ services:
         - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api:latest
         - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api-dev:latest
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     environment:
@@ -101,6 +129,8 @@ services:
         - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api-dev:latest
         - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate:latest
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       migrate:
@@ -167,6 +197,7 @@ services:
     logging: *default-logging
 
 volumes:
+  recon-redis-data:
   recon-postgres-data:
   recon-app-state:
 
