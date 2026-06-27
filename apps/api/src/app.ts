@@ -29,7 +29,9 @@ import cors from 'cors';
 import { errorCategories } from '@recon/domain';
 import { executeReconciliation } from './services/reconciliationService';
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { existsSync, readFileSync } from 'node:fs';
+import helmet from 'helmet';
 import multer from 'multer';
 import { dirname, join, resolve } from 'node:path';
 import pino from 'pino';
@@ -569,6 +571,32 @@ const parseBooleanFlag = (value: string | undefined): boolean | null => {
   return null;
 };
 
+const parsePositiveInteger = (
+  value: string | undefined,
+  defaultValue: number,
+  maxValue: number,
+): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return defaultValue;
+  }
+
+  return Math.min(Math.trunc(parsed), maxValue);
+};
+
+const createApiRateLimiter = () =>
+  rateLimit({
+    windowMs: parsePositiveInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000, 86_400_000),
+    limit: parsePositiveInteger(process.env.RATE_LIMIT_MAX_REQUESTS, 120, 50_000),
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    validate: {
+      trustProxy: false,
+    },
+    skip: (request) => request.path === '/health',
+    message: { message: 'Too many requests. Please try again later.' },
+  });
+
 const isDeveloperDiagnosticsEnabled = (): boolean => {
   const override = parseBooleanFlag(process.env.ENABLE_DEVELOPER_DIAGNOSTICS);
   if (override !== null) {
@@ -598,6 +626,15 @@ export const createApp = (
   const httpLogger = pino({ level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL) });
 
   app.set('trust proxy', true);
+  app.use(
+    helmet({
+      // Keep cross-origin workbook downloads and local dev UI interactions working.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
+  if (parseBooleanFlag(process.env.DISABLE_API_RATE_LIMIT) !== true) {
+    app.use(createApiRateLimiter());
+  }
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
   app.use(

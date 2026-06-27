@@ -11,6 +11,7 @@ import type { Pool } from 'pg';
 
 import { FileBackedRunRepository } from './services/runRepository';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
+import { startTelemetry, stopTelemetry } from './telemetry';
 import { createApp } from './app';
 import { createWriteStream } from 'node:fs';
 import { markServerStarted } from './services/runtimeDiagnostics';
@@ -33,6 +34,22 @@ const shouldRunMigrationsOnBoot = (): boolean => {
   }
 
   return process.env.NODE_ENV !== 'production';
+};
+
+const parseBooleanFlag = (value: string | undefined): boolean | null => {
+  if (value === undefined) {
+    return null;
+  }
+
+  if (value === 'true') {
+    return true;
+  }
+
+  if (value === 'false') {
+    return false;
+  }
+
+  return null;
 };
 
 /** Fully initialized server context returned by `createServerRuntime`. */
@@ -94,6 +111,16 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
   }
 
   const logger = pino({ level }, pino.multistream(streams));
+  const telemetryRequired = parseBooleanFlag(process.env.OTEL_REQUIRED) === true;
+
+  try {
+    startTelemetry(logger);
+  } catch (error: unknown) {
+    logger.error({ err: error }, 'Failed to initialize OpenTelemetry tracing');
+    if (telemetryRequired) {
+      throw error;
+    }
+  }
 
   let lifecycleStore: PostgresReconciliationLifecycleStore | undefined;
   let readModelStore: PostgresReconciliationReadModelStore | undefined;
@@ -188,6 +215,8 @@ export const startServer = async (): Promise<void> => {
       if (runtime.postgresPool) {
         await runtime.postgresPool.end();
       }
+
+      await stopTelemetry(runtime.logger);
 
       clearTimeout(shutdownTimeout);
       runtime.logger.info({ signal }, 'Graceful shutdown completed');

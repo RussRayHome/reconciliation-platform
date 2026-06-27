@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const createAppMock = vi.fn(() => ({ listen: vi.fn() }));  // sync on purpose: no async needed in mock factory
+const createAppMock = vi.fn(() => ({ listen: vi.fn() })); // sync on purpose: no async needed in mock factory
 const createPostgresPoolMock = vi.fn(() => ({ end: vi.fn() }));
 const runPostgresMigrationsMock = vi.fn(() => Promise.resolve(undefined));
 const loadPostgresPersistenceConfigFromEnvMock = vi.fn();
@@ -19,12 +19,18 @@ vi.mock('../src/services/runtimeDiagnostics', () => ({
 }));
 
 vi.mock('@recon/persistence', () => ({
-  PostgresReconciliationLifecycleStore: vi.fn().mockImplementation((pool: unknown) => {
+  PostgresReconciliationLifecycleStore: vi.fn().mockImplementation(function (
+    this: unknown,
+    pool: unknown,
+  ) {
     const instance = { pool, kind: 'lifecycle' };
     lifecycleStoreInstances.push(instance);
     return instance;
   }),
-  PostgresReconciliationReadModelStore: vi.fn().mockImplementation((pool: unknown) => {
+  PostgresReconciliationReadModelStore: vi.fn().mockImplementation(function (
+    this: unknown,
+    pool: unknown,
+  ) {
     const instance = { pool, kind: 'read-model' };
     readModelStoreInstances.push(instance);
     return instance;
