@@ -24,12 +24,13 @@ import {
 import {
   ProcessProgressSection,
   ReportsSection,
+  type RuleVarianceDefaultOverrides,
   RulesCatalogSection,
   RunResultsSection,
 } from './components/AppWorkspacePanels';
 import { SemanticIcon } from './components/SemanticIcon';
 import kinneyHighlander from './assets/kinney-highlander.png';
-import { downloadWorkbookUrl, getLatestReconciliationRunRequest } from './lib/api';
+import { downloadWorkbookUrl, getLatestReconciliationRunRequest, loginRequest } from './lib/api';
 import {
   buildTabNavigationItems,
   reportCatalog,
@@ -43,6 +44,23 @@ type ReconciliationFrequency = 'Monthly' | 'Annual';
 type OpenHelpField = string | null;
 type ReconciliationModel = ReturnType<typeof useReconciliationRun>;
 type RunData = NonNullable<ReconciliationModel['data']>;
+type UserRole = 'developer' | 'financial-analyst' | 'admin' | 'superuser';
+type AppUser = {
+  username: string;
+  role: UserRole;
+};
+type AuthenticatedUserSession = {
+  username: string;
+  firstName?: string;
+  lastName?: string;
+};
+type RolePermissions = {
+  canAccessApplication: boolean;
+  canAccessDocumentation: boolean;
+  canAccessDeveloperDashboard: boolean;
+  canAdjustSliderDefaults: boolean;
+};
+
 type ProgressStep = {
   id: string;
   label: string;
@@ -57,6 +75,50 @@ type SelectOption = {
 };
 
 const LAST_SUCCESSFUL_RUN_STORAGE_KEY = 'reconciliation-platform:latest-report-run';
+const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
+const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
+const invalidLoginMessage = 'The user or password does not match.';
+
+const usersByUsername: Record<string, AppUser> = {
+  rray2: { username: 'rray2', role: 'developer' },
+  bray: { username: 'bray', role: 'financial-analyst' },
+  rray3: { username: 'rray3', role: 'admin' },
+  rray: { username: 'rray', role: 'superuser' },
+};
+
+const roleDisplayLabels: Record<UserRole, string> = {
+  developer: 'Developer',
+  'financial-analyst': 'Financial Analyst',
+  admin: 'Admin',
+  superuser: 'SuperUser',
+};
+
+const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
+  developer: {
+    canAccessApplication: false,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: true,
+    canAdjustSliderDefaults: false,
+  },
+  'financial-analyst': {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: false,
+    canAdjustSliderDefaults: false,
+  },
+  admin: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: false,
+    canAdjustSliderDefaults: true,
+  },
+  superuser: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: true,
+    canAdjustSliderDefaults: true,
+  },
+};
 
 const monthsWithinYear = [
   'January',
@@ -88,6 +150,83 @@ const loadPersistedRun = (): RunData | undefined => {
     return JSON.parse(storedRun) as RunData;
   } catch {
     return undefined;
+  }
+};
+
+const isKnownUsername = (value: string): value is keyof typeof usersByUsername =>
+  Object.hasOwn(usersByUsername, value);
+
+const loadAuthenticatedUserSession = (): AuthenticatedUserSession | null => {
+  try {
+    const serializedSession = globalThis.localStorage?.getItem(AUTHENTICATED_USER_STORAGE_KEY);
+
+    if (serializedSession) {
+      const parsedSession = JSON.parse(serializedSession) as AuthenticatedUserSession;
+      const username =
+        typeof parsedSession.username === 'string' ? parsedSession.username.trim() : '';
+
+      if (isKnownUsername(username)) {
+        return {
+          username,
+          firstName:
+            typeof parsedSession.firstName === 'string' ? parsedSession.firstName : undefined,
+          lastName: typeof parsedSession.lastName === 'string' ? parsedSession.lastName : undefined,
+        };
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const persistAuthenticatedUserSession = (session: AuthenticatedUserSession | null): void => {
+  try {
+    if (!session) {
+      globalThis.localStorage?.removeItem(AUTHENTICATED_USER_STORAGE_KEY);
+      return;
+    }
+
+    globalThis.localStorage?.setItem(AUTHENTICATED_USER_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // Ignore storage failures so authentication still works in-memory.
+  }
+};
+
+const loadSliderDefaultOverrides = (): RuleVarianceDefaultOverrides => {
+  try {
+    const raw = globalThis.localStorage?.getItem(SLIDER_DEFAULTS_STORAGE_KEY);
+
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!parsed || typeof parsed !== 'object') {
+      return {};
+    }
+
+    const next: RuleVarianceDefaultOverrides = {};
+
+    for (const [metricId, value] of Object.entries(parsed)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        next[metricId] = value;
+      }
+    }
+
+    return next;
+  } catch {
+    return {};
+  }
+};
+
+const persistSliderDefaultOverrides = (overrides: RuleVarianceDefaultOverrides): void => {
+  try {
+    globalThis.localStorage?.setItem(SLIDER_DEFAULTS_STORAGE_KEY, JSON.stringify(overrides));
+  } catch {
+    // Ignore storage failures so rule slider defaults still update in-memory.
   }
 };
 
@@ -189,8 +328,6 @@ const readEnvString = (value: unknown): string | undefined =>
 function App() {
   const env = import.meta.env as Record<string, unknown>;
   let pathname = globalThis.location.pathname;
-  const showDeveloperDashboardLink =
-    env.DEV === true || readEnvString(env.VITE_ENABLE_DEVELOPER_DASHBOARD) === 'true';
   const configuredEnvironmentPathSegment = (readEnvString(env.VITE_ENVIRONMENT_PATH_SEGMENT) ?? '')
     .trim()
     .replace(/^\/+|\/+$/g, '');
@@ -222,6 +359,74 @@ function App() {
     pathname.startsWith('/docs/') ||
     /^\/[A-Za-z0-9_-]+\/docs(?:\/|$)/.test(pathname);
 
+  const [authenticatedUserSession, setAuthenticatedUserSession] =
+    useState<AuthenticatedUserSession | null>(() => loadAuthenticatedUserSession());
+  const activeUser =
+    authenticatedUserSession && isKnownUsername(authenticatedUserSession.username)
+      ? usersByUsername[authenticatedUserSession.username]
+      : null;
+  const rolePermissions = activeUser ? rolePermissionsByRole[activeUser.role] : null;
+  const showDeveloperDashboardLink =
+    Boolean(activeUser) &&
+    (env.DEV === true || readEnvString(env.VITE_ENABLE_DEVELOPER_DASHBOARD) === 'true') &&
+    Boolean(rolePermissions?.canAccessDeveloperDashboard);
+
+  useEffect(() => {
+    persistAuthenticatedUserSession(authenticatedUserSession);
+  }, [authenticatedUserSession]);
+
+  if (!activeUser || !rolePermissions) {
+    return (
+      <LoginShell
+        onAuthenticated={(session) => {
+          setAuthenticatedUserSession(session);
+        }}
+      />
+    );
+  }
+
+  const displayName = [authenticatedUserSession?.firstName, authenticatedUserSession?.lastName]
+    .map((value) => value?.trim() ?? '')
+    .filter((value) => value.length > 0)
+    .join(' ');
+
+  const controls = (
+    <UserRoleControls
+      activeUser={activeUser}
+      rolePermissions={rolePermissions}
+      displayName={displayName.length > 0 ? displayName : undefined}
+      onSignOut={() => {
+        setAuthenticatedUserSession(null);
+      }}
+    />
+  );
+
+  if (!rolePermissions.canAccessApplication && !isDocsRoute) {
+    return (
+      <AccessDeniedShell
+        title="Application access restricted"
+        description="Your role does not include the reconciliation workspace. Use Documentation and Developer Dashboard links for your assigned scope."
+        docsHref={docsHref}
+        showDeveloperDashboardLink={showDeveloperDashboardLink}
+        developerDashboardHref={developerDashboardHref}
+        controls={controls}
+      />
+    );
+  }
+
+  if (!rolePermissions.canAccessDocumentation && isDocsRoute) {
+    return (
+      <AccessDeniedShell
+        title="Documentation access restricted"
+        description="Your role does not include the Documentation Hub in this environment."
+        appHref={appHref}
+        showDeveloperDashboardLink={showDeveloperDashboardLink}
+        developerDashboardHref={developerDashboardHref}
+        controls={controls}
+      />
+    );
+  }
+
   if (isDocsRoute) {
     return (
       <DocsOverview
@@ -229,6 +434,7 @@ function App() {
         docsHref={docsHref}
         showDeveloperDashboardLink={showDeveloperDashboardLink}
         developerDashboardHref={developerDashboardHref}
+        controls={controls}
       />
     );
   }
@@ -236,6 +442,8 @@ function App() {
   return (
     <ReconciliationApp
       docsHref={docsHref}
+      rolePermissions={rolePermissions}
+      controls={controls}
       showDeveloperDashboardLink={showDeveloperDashboardLink}
       developerDashboardHref={developerDashboardHref}
     />
@@ -244,10 +452,14 @@ function App() {
 
 function ReconciliationApp({
   docsHref,
+  rolePermissions,
+  controls,
   showDeveloperDashboardLink,
   developerDashboardHref,
 }: Readonly<{
   docsHref: string;
+  rolePermissions: RolePermissions;
+  controls: ReactNode;
   showDeveloperDashboardLink: boolean;
   developerDashboardHref: string;
 }>) {
@@ -274,6 +486,8 @@ function ReconciliationApp({
     useState(false);
   const [isHydratingLatestBackendReport, setIsHydratingLatestBackendReport] = useState(false);
   const [latestBackendReportError, setLatestBackendReportError] = useState<string | null>(null);
+  const [varianceDefaultOverrides, setVarianceDefaultOverrides] =
+    useState<RuleVarianceDefaultOverrides>(() => loadSliderDefaultOverrides());
   const [periodLabel, setPeriodLabel] = useState(
     buildDefaultPeriodLabel('Monthly', defaultMonth, annualYear, currentYear),
   );
@@ -288,6 +502,10 @@ function ReconciliationApp({
 
   useSuggestedPeriodLabel(isCustomPeriodLabel, suggestedPeriodLabel, setPeriodLabel);
   useDismissibleFieldHelp(openHelpField, setOpenHelpField);
+
+  useEffect(() => {
+    persistSliderDefaultOverrides(varianceDefaultOverrides);
+  }, [varianceDefaultOverrides]);
 
   useEffect(() => {
     if (run) {
@@ -325,11 +543,34 @@ function ReconciliationApp({
   };
 
   const handleSelectTab = (nextTab: AppTab): void => {
+    if (nextTab !== 'upload' && !rolePermissions.canAccessApplication) {
+      return;
+    }
+
     setActiveTab(nextTab);
 
     if (nextTab === 'reports') {
       hydrateLatestBackendReport();
     }
+  };
+
+  const handleChangeVarianceDefault = (metricId: string, value: number): void => {
+    if (!rolePermissions.canAdjustSliderDefaults) {
+      return;
+    }
+
+    setVarianceDefaultOverrides((current) => ({
+      ...current,
+      [metricId]: value,
+    }));
+  };
+
+  const handleResetVarianceDefaults = (): void => {
+    if (!rolePermissions.canAdjustSliderDefaults) {
+      return;
+    }
+
+    setVarianceDefaultOverrides({});
   };
 
   const trimmedPeriodLabel = periodLabel.trim();
@@ -430,8 +671,10 @@ function ReconciliationApp({
     <div className="app-shell">
       <div className="hero-backdrop" />
       <main className="app-layout">
+        {controls}
         <HeroSection
           docsHref={docsHref}
+          rolePermissions={rolePermissions}
           showDeveloperDashboardLink={showDeveloperDashboardLink}
           developerDashboardHref={developerDashboardHref}
           run={run}
@@ -445,6 +688,7 @@ function ReconciliationApp({
             activeTab={activeTab}
             exceptionCount={run?.exceptions.length ?? 0}
             reportCount={reportCatalog.length}
+            canAccessApplication={rolePermissions.canAccessApplication}
             onSelectTab={handleSelectTab}
           />
 
@@ -478,9 +722,17 @@ function ReconciliationApp({
             />
           ) : null}
 
-          {activeTab === 'rules' ? <RulesCatalogSection rules={rulesCatalog} /> : null}
+          {activeTab === 'rules' && rolePermissions.canAccessApplication ? (
+            <RulesCatalogSection
+              rules={rulesCatalog}
+              varianceOverrides={varianceDefaultOverrides}
+              canAdjustVarianceDefaults={rolePermissions.canAdjustSliderDefaults}
+              onChangeVarianceDefault={handleChangeVarianceDefault}
+              onResetVarianceDefaults={handleResetVarianceDefaults}
+            />
+          ) : null}
 
-          {activeTab === 'exceptions' ? (
+          {activeTab === 'exceptions' && rolePermissions.canAccessApplication ? (
             <RunResultsSection
               run={run}
               onExportJson={() => {
@@ -495,7 +747,7 @@ function ReconciliationApp({
             />
           ) : null}
 
-          {activeTab === 'reports' ? (
+          {activeTab === 'reports' && rolePermissions.canAccessApplication ? (
             <ReportsSection
               run={reportRun}
               activeReport={activeReport}
@@ -535,6 +787,7 @@ function ReconciliationApp({
 
 function HeroSection({
   docsHref,
+  rolePermissions,
   showDeveloperDashboardLink,
   developerDashboardHref,
   run,
@@ -543,6 +796,7 @@ function HeroSection({
   onOpenUploadTab,
 }: Readonly<{
   docsHref: string;
+  rolePermissions: RolePermissions;
   showDeveloperDashboardLink: boolean;
   developerDashboardHref: string;
   run: RunData | undefined;
@@ -572,12 +826,16 @@ function HeroSection({
           rules.
         </p>
         <div className="hero-cta-row">
-          <a className="hero-primary-cta" href="#source-upload-form" onClick={onOpenUploadTab}>
-            Start Reconciliation
-          </a>
-          <a className="hero-primary-cta" href={docsHref}>
-            Documentation
-          </a>
+          {rolePermissions.canAccessApplication ? (
+            <a className="hero-primary-cta" href="#source-upload-form" onClick={onOpenUploadTab}>
+              Start Reconciliation
+            </a>
+          ) : null}
+          {rolePermissions.canAccessDocumentation ? (
+            <a className="hero-primary-cta" href={docsHref}>
+              Documentation
+            </a>
+          ) : null}
           {showDeveloperDashboardLink ? (
             <a className="hero-primary-cta" href={developerDashboardHref}>
               Developer Dashboard
@@ -607,18 +865,20 @@ function TabNavigation({
   activeTab,
   exceptionCount,
   reportCount,
+  canAccessApplication,
   onSelectTab,
 }: Readonly<{
   activeTab: AppTab;
   exceptionCount: number;
   reportCount: number;
+  canAccessApplication: boolean;
   onSelectTab: (tab: AppTab) => void;
 }>) {
   const tabs = buildTabNavigationItems({
     ruleCount: rulesCatalog.length,
     exceptionCount,
     reportCount,
-  });
+  }).filter((tab) => canAccessApplication || tab.id === 'upload');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
 
@@ -899,6 +1159,206 @@ function SourceUploadSection({
         </form>
       </SectionCard>
     </TabPanel>
+  );
+}
+
+function LoginShell({
+  onAuthenticated,
+}: Readonly<{
+  onAuthenticated: (session: AuthenticatedUserSession) => void;
+}>) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = (event: { preventDefault: () => void }): void => {
+    event.preventDefault();
+
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setLoginError(null);
+
+    void loginRequest({ username: username.trim(), password })
+      .then((result) => {
+        if (!isKnownUsername(result.username)) {
+          setLoginError(invalidLoginMessage);
+          return;
+        }
+
+        onAuthenticated({
+          username: result.username,
+          firstName: result.firstName,
+          lastName: result.lastName,
+        });
+      })
+      .catch(() => {
+        setLoginError(invalidLoginMessage);
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
+  };
+
+  return (
+    <div className="app-shell">
+      <div className="hero-backdrop" />
+      <main className="app-layout login-layout">
+        <section className="login-card" aria-label="Login page">
+          <div className="login-brand">
+            <img
+              className="login-brand__logo"
+              src={kinneyHighlander}
+              alt="Small Scottish man in a kilt illustration"
+            />
+            <p className="login-brand__company">Kinney Software Solutions LLC</p>
+          </div>
+
+          <h1>Login</h1>
+
+          <form className="login-form" onSubmit={handleSubmit}>
+            <div className="field-group">
+              <label htmlFor="login-username">Username</label>
+              <input
+                id="login-username"
+                name="username"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                required
+              />
+              {loginError ? (
+                <p className="login-error" role="alert">
+                  {invalidLoginMessage}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="field-group">
+              <label htmlFor="login-password">Password</label>
+              <input
+                id="login-password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </div>
+
+            <div className="login-actions">
+              <button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Submitting...' : 'Submit'}
+              </button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function UserRoleControls({
+  activeUser,
+  rolePermissions,
+  displayName,
+  onSignOut,
+}: Readonly<{
+  activeUser: AppUser;
+  rolePermissions: RolePermissions;
+  displayName?: string;
+  onSignOut: () => void;
+}>) {
+  return (
+    <section className="user-role-shell" aria-label="User access profile">
+      <div className="user-role-shell__identity">
+        <span>Signed in as</span>
+        <strong>{displayName ?? activeUser.username}</strong>
+      </div>
+      <div className="user-role-shell__meta">
+        <strong>{roleDisplayLabels[activeUser.role]}</strong>
+        <span>{activeUser.username}</span>
+      </div>
+      <ul className="user-role-shell__permissions" aria-label="Role permissions">
+        <li>
+          {rolePermissions.canAccessApplication
+            ? 'Application access enabled'
+            : 'Application access blocked'}
+        </li>
+        <li>
+          {rolePermissions.canAccessDocumentation
+            ? 'Documentation access enabled'
+            : 'Documentation access blocked'}
+        </li>
+        <li>
+          {rolePermissions.canAccessDeveloperDashboard
+            ? 'Developer Dashboard access enabled'
+            : 'Developer Dashboard access blocked'}
+        </li>
+        <li>
+          {rolePermissions.canAdjustSliderDefaults
+            ? 'Variance slider default adjustments enabled'
+            : 'Variance slider default adjustments blocked'}
+        </li>
+      </ul>
+      <button
+        type="button"
+        className="secondary-button user-role-shell__signout"
+        onClick={onSignOut}
+      >
+        Log out
+      </button>
+    </section>
+  );
+}
+
+function AccessDeniedShell({
+  title,
+  description,
+  appHref,
+  docsHref,
+  showDeveloperDashboardLink,
+  developerDashboardHref,
+  controls,
+}: Readonly<{
+  title: string;
+  description: string;
+  appHref?: string;
+  docsHref?: string;
+  showDeveloperDashboardLink: boolean;
+  developerDashboardHref: string;
+  controls: ReactNode;
+}>) {
+  return (
+    <div className="app-shell">
+      <div className="hero-backdrop" />
+      <main className="app-layout">
+        {controls}
+        <SectionCard title={title} description={description}>
+          <div className="access-denied-actions">
+            {appHref ? (
+              <a className="hero-primary-cta" href={appHref}>
+                Reconciliation app
+              </a>
+            ) : null}
+            {docsHref ? (
+              <a className="hero-primary-cta" href={docsHref}>
+                Documentation
+              </a>
+            ) : null}
+            {showDeveloperDashboardLink ? (
+              <a className="hero-primary-cta" href={developerDashboardHref}>
+                Developer Dashboard
+              </a>
+            ) : null}
+          </div>
+        </SectionCard>
+      </main>
+    </div>
   );
 }
 

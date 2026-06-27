@@ -376,8 +376,12 @@ const buildPostgresRuntimeSkip = (
 
   if (hostRunLog && hostTotals) {
     const hasFailures = hostTotals.fail > 0;
+    const passedCount = hostTotals.pass + hostTotals.warn;
+    const failedCount = hostTotals.fail;
+    const totalCount = passedCount + failedCount;
 
     return {
+      ...metadata,
       name,
       command,
       ok: !hasFailures,
@@ -390,7 +394,9 @@ const buildPostgresRuntimeSkip = (
         `Totals: PASS=${hostTotals.pass}, WARN=${hostTotals.warn}, FAIL=${hostTotals.fail}`,
         'Run `npm run docker:db:preflight:dev` from host to refresh this snapshot.',
       ],
-      ...metadata,
+      passedCount,
+      failedCount,
+      totalCount,
     };
   }
 

@@ -14,6 +14,7 @@ import releaseDoc from '../../../../RELEASE.md?raw';
 import sampleConfigDoc from '../../../../docs/sample-config.md?raw';
 import scriptsReadmeDoc from '../../../../scripts/README.md?raw';
 import testStrategyDoc from '../../../../docs/test-strategy.md?raw';
+import userQuickstartDoc from '../../../../docs/user-quickstart.md?raw';
 
 const architectureDocWithResolvedAssets = architectureDoc
   .replaceAll('images/application-architecture.png', architectureDiagramSvgUrl)
@@ -25,9 +26,10 @@ const erdDocWithResolvedAssets = entityRelationshipDiagramDoc.replaceAll(
 );
 
 /** Metadata and Markdown content for one entry in the in-app Documentation Hub. */
-export type ProjectDocument = {
+type ProjectDocument = {
   id: string;
   title: string;
+  track: 'Developer' | 'User';
   category: 'Overview' | 'Architecture' | 'Setup' | 'Reference' | 'Operations';
   summary: string;
   audience: string;
@@ -40,6 +42,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'readme',
     title: 'Project Overview',
+    track: 'User',
     category: 'Overview',
     summary:
       'Start here for the product purpose, workspace layout, developer dashboard, and core scripts.',
@@ -50,6 +53,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'architecture',
     title: 'Architecture',
+    track: 'Developer',
     category: 'Architecture',
     summary:
       'Explains the monorepo structure, application boundaries, data flow, and runtime responsibilities.',
@@ -60,6 +64,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'erd',
     title: 'Entity Relationship Diagram',
+    track: 'Developer',
     category: 'Architecture',
     summary:
       'Provides the PostgreSQL entity relationship diagram for persistence tables and foreign-key links.',
@@ -70,6 +75,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'api',
     title: 'API Reference',
+    track: 'Developer',
     category: 'Reference',
     summary:
       'Documents the reconciliation endpoints, developer endpoints, request payloads, and response shapes.',
@@ -80,6 +86,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'api-reference-generated',
     title: 'API Reference (Generated)',
+    track: 'Developer',
     category: 'Reference',
     summary:
       'Generated class, method, and property documentation coverage and API reference for exported TypeScript classes.',
@@ -90,6 +97,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'developer-setup',
     title: 'Developer Setup',
+    track: 'Developer',
     category: 'Setup',
     summary:
       'Covers local environment setup, install steps, dev commands, and expected workflows for contributors.',
@@ -100,6 +108,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'local-docker-platform',
     title: 'Local Docker Platform',
+    track: 'Developer',
     category: 'Operations',
     summary:
       'Describes the hardened Docker Desktop topology, migration flow, health checks, and cleanup path.',
@@ -110,6 +119,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'reconciliation-rules',
     title: 'Reconciliation Rules',
+    track: 'User',
     category: 'Reference',
     summary:
       'Defines the matching heuristics, exception categories, and business logic used by the engine.',
@@ -120,6 +130,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'sample-config',
     title: 'Sample Config',
+    track: 'Developer',
     category: 'Setup',
     summary:
       'Shows example configuration structure and how account-specific overrides are represented.',
@@ -130,6 +141,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'test-strategy',
     title: 'Test Strategy',
+    track: 'Developer',
     category: 'Operations',
     summary:
       'Summarizes the unit, integration, and end-to-end test layers and how quality is validated.',
@@ -140,6 +152,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'class-method-reference',
     title: 'Class and Method Reference',
+    track: 'Developer',
     category: 'Reference',
     summary:
       'Captures API-level class and method responsibilities for the main modules in the system.',
@@ -150,6 +163,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'scripts-guide',
     title: 'Scripts Guide',
+    track: 'Developer',
     category: 'Operations',
     summary:
       'Explains reusable scripts, workbook diagnostics, and how to run local investigation utilities safely.',
@@ -160,6 +174,7 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'changelog',
     title: 'Changelog',
+    track: 'Developer',
     category: 'Operations',
     summary: 'Tracks notable repository changes and milestone-level release history.',
     audience: 'Release reviewers and maintainers',
@@ -169,11 +184,23 @@ export const projectDocuments: ProjectDocument[] = [
   {
     id: 'release-guide',
     title: 'Release Guide',
+    track: 'Developer',
     category: 'Operations',
     summary: 'Defines release note expectations, validation evidence, and rollback metadata.',
     audience: 'Engineers preparing handoff or release notes',
     pathLabel: 'RELEASE.md',
     content: releaseDoc,
+  },
+  {
+    id: 'user-quickstart',
+    title: 'User Quick Start',
+    track: 'User',
+    category: 'Setup',
+    summary:
+      'Walks analysts through running reconciliation, reviewing outcomes, and exporting audit handoff artifacts.',
+    audience: 'Financial analysts and business reviewers',
+    pathLabel: 'docs/user-quickstart.md',
+    content: userQuickstartDoc,
   },
 ];
 

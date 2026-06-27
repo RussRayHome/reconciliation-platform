@@ -11,6 +11,7 @@ const { mockProjectDocuments } = vi.hoisted(() => ({
     {
       id: 'readme',
       title: 'Project Overview',
+      track: 'User',
       category: 'Overview',
       summary: 'Overview summary',
       audience: 'Reviewers',
@@ -20,6 +21,7 @@ const { mockProjectDocuments } = vi.hoisted(() => ({
     {
       id: 'setup',
       title: 'Developer Setup',
+      track: 'Developer',
       category: 'Setup',
       summary: 'Setup summary',
       audience: 'Contributors',
@@ -29,6 +31,7 @@ const { mockProjectDocuments } = vi.hoisted(() => ({
     {
       id: 'architecture',
       title: 'Architecture',
+      track: 'Developer',
       category: 'Architecture',
       summary: 'Architecture summary',
       audience: 'Engineers',
@@ -65,7 +68,7 @@ describe('DocsOverview', () => {
   it('filters the document list and falls back to the first visible document', async () => {
     const user = userEvent.setup();
 
-    render(<DocsOverview showDeveloperDashboardLink={false} />);
+    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
 
     expect(screen.getByRole('button', { name: /view project overview/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Project Overview' })).toBeInTheDocument();
@@ -75,6 +78,36 @@ describe('DocsOverview', () => {
     expect(screen.queryByRole('button', { name: /view project overview/i })).toBeNull();
     expect(screen.getByRole('button', { name: /view developer setup/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Developer Setup' })).toBeInTheDocument();
+  });
+
+  it('filters the navigation by audience track buttons', async () => {
+    const user = userEvent.setup();
+
+    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
+
+    expect(screen.getByRole('button', { name: 'All Docs' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /view project overview/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Developer Docs' }));
+
+    expect(screen.getByRole('button', { name: 'Developer Docs' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.queryByRole('button', { name: /view project overview/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /view developer setup/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'User Docs' }));
+
+    expect(screen.getByRole('button', { name: 'User Docs' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /view project overview/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /view developer setup/i })).toBeNull();
   });
 
   it('updates the location hash and scrolls when a section heading is selected', async () => {
@@ -87,6 +120,7 @@ describe('DocsOverview', () => {
         docsHref="/dev/docs"
         showDeveloperDashboardLink={true}
         developerDashboardHref="/dev/developer-dashboard.html"
+        controls={null}
       />,
     );
 
@@ -107,7 +141,7 @@ describe('DocsOverview', () => {
   it('renders image and link markdown blocks for document content', async () => {
     const user = userEvent.setup();
 
-    render(<DocsOverview showDeveloperDashboardLink={false} />);
+    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
 
     await user.click(screen.getByRole('button', { name: /view architecture/i }));
 
@@ -131,7 +165,7 @@ describe('DocsOverview', () => {
   it('opens and closes an enlarged image modal from the docs diagram', async () => {
     const user = userEvent.setup();
 
-    render(<DocsOverview showDeveloperDashboardLink={false} />);
+    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
 
     await user.click(screen.getByRole('button', { name: /view architecture/i }));
     await user.click(

@@ -44,6 +44,27 @@ const parseSummaryCounts = (value: string): { passed: number; failed: number } |
   return { passed, failed };
 };
 
+const parseDbPreflightCounts = (
+  value: string,
+): { passed: number; failed: number; total: number } | null => {
+  const totalsMatch = /Totals:\s*PASS=(\d+)\s*WARN=(\d+)\s*FAIL=(\d+)/i.exec(value);
+  if (!totalsMatch) {
+    return null;
+  }
+
+  const passCount = Number(totalsMatch[1] ?? '0');
+  const warnCount = Number(totalsMatch[2] ?? '0');
+  const failCount = Number(totalsMatch[3] ?? '0');
+  const passed = passCount + warnCount;
+  const failed = failCount;
+
+  return {
+    passed,
+    failed,
+    total: passed + failed,
+  };
+};
+
 /** Extracts pass/fail/total counts from Vitest or Playwright test runner stdout. Returns `null` if no counts are found. */
 export const parseTestMetrics = (
   output: string,
@@ -72,6 +93,11 @@ export const parseTestMetrics = (
       ...playwrightCounts,
       total: playwrightCounts.passed + playwrightCounts.failed,
     };
+  }
+
+  const dbPreflightCounts = parseDbPreflightCounts(clean);
+  if (dbPreflightCounts) {
+    return dbPreflightCounts;
   }
 
   return null;

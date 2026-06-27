@@ -129,6 +129,11 @@ type ReviewerDecisionRequestBody = {
   reviewerName?: unknown;
 };
 
+type LoginRequestBody = {
+  username?: unknown;
+  password?: unknown;
+};
+
 type ReconciliationRequestInput = {
   accountIdentifier?: string;
   periodLabel?: string;
@@ -163,6 +168,31 @@ const reviewerDecisionOutcomes = new Set<ReviewerDecisionOutcome>([
   'ConfirmedException',
   'ReclassifiedException',
 ]);
+
+const invalidLoginMessage = 'The user or password does not match.';
+
+const localLoginUsers: Record<string, { password: string; firstName: string; lastName: string }> = {
+  rray: {
+    password: 'rray',
+    firstName: 'rray',
+    lastName: '',
+  },
+  rray2: {
+    password: 'rray2',
+    firstName: 'rray2',
+    lastName: '',
+  },
+  rray3: {
+    password: 'rray3',
+    firstName: 'rray3',
+    lastName: '',
+  },
+  bray: {
+    password: 'bray',
+    firstName: 'bray',
+    lastName: '',
+  },
+};
 
 const isErrorCategory = (value: unknown): value is ErrorCategory =>
   typeof value === 'string' && errorCategories.includes(value as ErrorCategory);
@@ -209,6 +239,23 @@ const cleanOptionalText = (value: unknown): string | undefined => {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const authenticateWithLocalUsers = (
+  username: string,
+  password: string,
+): { username: string; firstName: string; lastName: string } | null => {
+  const localUser = localLoginUsers[username];
+
+  if (localUser?.password !== password) {
+    return null;
+  }
+
+  return {
+    username,
+    firstName: localUser.firstName,
+    lastName: localUser.lastName,
+  };
 };
 
 const resolveCorrelationId = (value: unknown): string => {
@@ -350,9 +397,7 @@ const runReconciliationWorkflow = async (input: {
 
   input.requestLog.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
 
-  const aliases = input.pool
-    ? await loadPayeeAliases(input.pool, accountIdentifier)
-    : [];
+  const aliases = input.pool ? await loadPayeeAliases(input.pool, accountIdentifier) : [];
 
   const run = await executeReconciliation({
     correlationId,
@@ -704,6 +749,60 @@ export const createApp = (
     response.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  app.post('/api/auth/login', async (request, response, next) => {
+    try {
+      const body = (request.body ?? {}) as LoginRequestBody;
+      const username = typeof body.username === 'string' ? body.username.trim() : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+
+      if (username.length === 0 || password.length === 0) {
+        response.status(401).json({ message: invalidLoginMessage });
+        return;
+      }
+
+      if (!pool) {
+        const localUser = authenticateWithLocalUsers(username, password);
+
+        if (!localUser) {
+          response.status(401).json({ message: invalidLoginMessage });
+          return;
+        }
+
+        response.json(localUser);
+        return;
+      }
+
+      const authenticatedUser = await pool.query<{
+        user_name: string;
+        first_name: string;
+        last_name: string;
+      }>(
+        `
+          SELECT user_name, first_name, last_name
+          FROM reconciliation_user
+          WHERE user_name = $1 AND password = $2
+          LIMIT 1
+        `,
+        [username, password],
+      );
+
+      const user = authenticatedUser.rows[0];
+
+      if (!user) {
+        response.status(401).json({ message: invalidLoginMessage });
+        return;
+      }
+
+      response.json({
+        username: user.user_name,
+        firstName: user.first_name,
+        lastName: user.last_name,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.use('/api/developer', (_request, response, next) => {
     if (developerDiagnosticsEnabled) {
       next();
@@ -1003,7 +1102,10 @@ export const createApp = (
         response.status(400).json({ message: 'bankPattern is required.' });
         return;
       }
-      if (typeof body.canonicalPayeeName !== 'string' || body.canonicalPayeeName.trim().length === 0) {
+      if (
+        typeof body.canonicalPayeeName !== 'string' ||
+        body.canonicalPayeeName.trim().length === 0
+      ) {
         response.status(400).json({ message: 'canonicalPayeeName is required.' });
         return;
       }
@@ -1018,12 +1120,13 @@ export const createApp = (
         normalizedTokens,
         accountIdentifier:
           typeof body.accountIdentifier === 'string' ? body.accountIdentifier : undefined,
-        sourceDirection:
-          body.sourceDirection === 'bidirectional' ? 'bidirectional' : 'bank_to_qbo',
+        sourceDirection: body.sourceDirection === 'bidirectional' ? 'bidirectional' : 'bank_to_qbo',
         matchConfidence:
-          typeof body.matchConfidence === 'number' && body.matchConfidence >= 0 && body.matchConfidence <= 1
+          typeof body.matchConfidence === 'number' &&
+          body.matchConfidence >= 0 &&
+          body.matchConfidence <= 1
             ? body.matchConfidence
-            : 1.0,
+            : 1,
       };
 
       const alias = await createPayeeAlias(pool!, input);
@@ -1037,25 +1140,24 @@ export const createApp = (
     if (!requirePool(response)) return;
     try {
       const body = (request.body ?? {}) as Record<string, unknown>;
-      const normalizedTokens =
-        Array.isArray(body.normalizedTokens)
-          ? (body.normalizedTokens as unknown[]).filter((t): t is string => typeof t === 'string')
+      const normalizedTokens = Array.isArray(body.normalizedTokens)
+        ? (body.normalizedTokens as unknown[]).filter((t): t is string => typeof t === 'string')
+        : undefined;
+      const sourceDirection =
+        body.sourceDirection === 'bidirectional' || body.sourceDirection === 'bank_to_qbo'
+          ? body.sourceDirection
           : undefined;
 
       const alias = await updatePayeeAlias(pool!, request.params.id, {
-        bankPattern:
-          typeof body.bankPattern === 'string' ? body.bankPattern.trim() : undefined,
+        bankPattern: typeof body.bankPattern === 'string' ? body.bankPattern.trim() : undefined,
         canonicalPayeeName:
           typeof body.canonicalPayeeName === 'string' ? body.canonicalPayeeName.trim() : undefined,
         normalizedTokens,
-        sourceDirection:
-          body.sourceDirection === 'bidirectional'
-            ? 'bidirectional'
-            : body.sourceDirection === 'bank_to_qbo'
-              ? 'bank_to_qbo'
-              : undefined,
+        sourceDirection,
         matchConfidence:
-          typeof body.matchConfidence === 'number' && body.matchConfidence >= 0 && body.matchConfidence <= 1
+          typeof body.matchConfidence === 'number' &&
+          body.matchConfidence >= 0 &&
+          body.matchConfidence <= 1
             ? body.matchConfidence
             : undefined,
       });

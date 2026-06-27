@@ -524,4 +524,35 @@ export const postgresMigrations: readonly SqlMigration[] = [
         RENAME CONSTRAINT payee_alias_pkey TO reconciliation_payee_alias_pkey;
     `,
   },
+  {
+    version: 9,
+    name: 'create_reconciliation_user_table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS reconciliation_user (
+        user_name TEXT PRIMARY KEY,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        password TEXT NOT NULL,
+        last_changed TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE OR REPLACE FUNCTION set_reconciliation_user_last_changed()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        IF NEW.password IS DISTINCT FROM OLD.password THEN
+          NEW.last_changed = NOW();
+        END IF;
+
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_reconciliation_user_password_changed ON reconciliation_user;
+
+      CREATE TRIGGER trg_reconciliation_user_password_changed
+      BEFORE UPDATE ON reconciliation_user
+      FOR EACH ROW
+      EXECUTE FUNCTION set_reconciliation_user_last_changed();
+    `,
+  },
 ];

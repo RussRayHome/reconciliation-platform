@@ -3,6 +3,17 @@ import type { ReconciliationRunReport } from '@recon/domain';
 /** Alias for the full reconciliation run report returned by the API. */
 export type ReconciliationRunResponse = ReconciliationRunReport;
 
+interface LoginPayload {
+  username: string;
+  password: string;
+}
+
+interface LoginResponse {
+  username: string;
+  firstName: string;
+  lastName: string;
+}
+
 /** Form payload sent to `POST /api/reconciliation/run`. */
 export interface RunReconciliationPayload {
   bankFile: File;
@@ -56,6 +67,22 @@ export const runReconciliationRequest = async ({
 export const getLatestReconciliationRunRequest = async (): Promise<ReconciliationRunResponse> => {
   const response = await fetch('/api/reconciliation/latest');
   return parseResponse<ReconciliationRunResponse>(response);
+};
+
+/** Authenticates a user and returns profile details for the active session. */
+export const loginRequest = async ({
+  username,
+  password,
+}: LoginPayload): Promise<LoginResponse> => {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ username, password }),
+  });
+
+  return parseResponse<LoginResponse>(response);
 };
 
 /** Returns the workbook download URL for the given run ID. */

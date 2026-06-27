@@ -64,6 +64,12 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
+const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
+
+const setAuthenticatedUser = (username: string): void => {
+  globalThis.localStorage.setItem(AUTHENTICATED_USER_STORAGE_KEY, JSON.stringify({ username }));
+};
+
 const monthsWithinYear = [
   'January',
   'February',
@@ -341,7 +347,79 @@ const createDeferred = <T,>() => {
 };
 
 describe('App', () => {
+  it('renders the login page when no authenticated user is stored', () => {
+    renderApp();
+
+    expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Username')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
+  });
+
+  it('shows a red login error below username when credentials are invalid', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'The user or password does not match.' }), {
+        status: 401,
+      }),
+    );
+
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'rray' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'wrong-password' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('The user or password does not match.');
+    });
+
+    const usernameFieldGroup = screen.getByLabelText('Username').closest('.field-group');
+    if (!(usernameFieldGroup instanceof HTMLElement)) {
+      throw new TypeError('Username field group was not found.');
+    }
+
+    expect(within(usernameFieldGroup).getByRole('alert')).toHaveTextContent(
+      'The user or password does not match.',
+    );
+  });
+
+  it('lands on the application page after successful login', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          username: 'rray',
+          firstName: 'Ryan',
+          lastName: 'Ray',
+        }),
+        { status: 200 },
+      ),
+    );
+
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'rray' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'rray' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Financial Reconciliation Platform' }),
+      ).toBeInTheDocument();
+    });
+  });
+
   it('uses environment-prefixed docs and dashboard links on an environment root route', () => {
+    setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/dev');
 
     renderApp();
@@ -357,6 +435,7 @@ describe('App', () => {
   });
 
   it('redirects root to /dev when the development environment path segment is configured', () => {
+    setAuthenticatedUser('rray');
     vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'dev');
     globalThis.history.pushState({}, '', '/');
 
@@ -366,6 +445,7 @@ describe('App', () => {
   });
 
   it('renders the documentation hub on the docs route', () => {
+    setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/docs');
 
     renderApp();
@@ -376,6 +456,7 @@ describe('App', () => {
   });
 
   it('renders the documentation hub on an environment-prefixed docs route', () => {
+    setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/dev/docs');
 
     renderApp();
@@ -386,6 +467,7 @@ describe('App', () => {
   });
 
   it('renders the four top-level application tabs and defaults to Upload', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     expect(screen.getByRole('tab', { name: /Upload/i })).toHaveAttribute('aria-selected', 'true');
@@ -400,6 +482,8 @@ describe('App', () => {
 
   it('supports arrow-key navigation across the top-level tabs', async () => {
     const user = userEvent.setup();
+
+    setAuthenticatedUser('rray');
 
     renderApp();
 
@@ -423,6 +507,8 @@ describe('App', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(createRunResponse()), { status: 201 }),
     );
+
+    setAuthenticatedUser('rray');
 
     renderApp();
 
@@ -470,6 +556,7 @@ describe('App', () => {
   });
 
   it('hydrates the Reports tab from the last successful persisted run after remount', () => {
+    setAuthenticatedUser('rray');
     globalThis.localStorage.setItem(
       'reconciliation-platform:latest-report-run',
       JSON.stringify(createRunResponse()),
@@ -488,6 +575,7 @@ describe('App', () => {
 
   it('hydrates the Reports tab from the backend latest-run endpoint when storage is empty', async () => {
     mockedApiState.latestRunResponse = createRunResponse();
+    setAuthenticatedUser('rray');
 
     renderApp();
 
@@ -504,6 +592,7 @@ describe('App', () => {
   it('shows a loading state while hydrating the latest backend report', async () => {
     const deferred = createDeferred<ReturnType<typeof createRunResponse>>();
     mockedApiState.latestRunPromise = deferred.promise;
+    setAuthenticatedUser('rray');
 
     renderApp();
 
@@ -520,6 +609,7 @@ describe('App', () => {
 
   it('shows an alert when latest-run hydration fails', async () => {
     mockedApiState.latestRunError = new Error('Backend unavailable.');
+    setAuthenticatedUser('rray');
 
     renderApp();
 
@@ -533,6 +623,7 @@ describe('App', () => {
   });
 
   it('shows the rules catalog with last-change metadata when the Rules tab is selected', () => {
+    setAuthenticatedUser('bray');
     renderApp();
 
     fireEvent.click(screen.getByRole('tab', { name: /Rules/i }));
@@ -565,6 +656,7 @@ describe('App', () => {
   });
 
   it('shows an empty exceptions state before any reconciliation run exists', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     fireEvent.click(screen.getByRole('tab', { name: /Exceptions/i }));
@@ -578,6 +670,7 @@ describe('App', () => {
   });
 
   it('shows a monthly month picker by default with twelve month options', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     const monthSelect = screen.getByLabelText(/Monthly reconciliation month/i);
@@ -604,6 +697,7 @@ describe('App', () => {
   });
 
   it('shows overall process progress and updates it after file selection', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     const overallMeter = screen.getByLabelText('Overall process progress');
@@ -621,6 +715,7 @@ describe('App', () => {
   });
 
   it('shows an annual year picker with the previous seven years when annual is selected', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     fireEvent.change(screen.getByLabelText('Reconciliation frequency'), {
@@ -644,6 +739,7 @@ describe('App', () => {
   });
 
   it('shows and hides field help text when question-mark buttons are clicked', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     const bankHelpButton = screen.getByRole('button', { name: 'Open help for bank source file' });
@@ -671,6 +767,7 @@ describe('App', () => {
   });
 
   it('closes an open field help popover when clicking outside the field', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open help for bank source file' }));
@@ -694,6 +791,8 @@ describe('App', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(createRunResponse()), { status: 201 }),
     );
+
+    setAuthenticatedUser('rray');
 
     renderApp();
 
@@ -726,6 +825,8 @@ describe('App', () => {
       new Response(JSON.stringify({ message: 'Upload failed.' }), { status: 500 }),
     );
 
+    setAuthenticatedUser('rray');
+
     renderApp();
 
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
@@ -746,6 +847,8 @@ describe('App', () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
+
+    setAuthenticatedUser('rray');
 
     renderApp();
 
@@ -796,6 +899,8 @@ describe('App', () => {
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
 
+    setAuthenticatedUser('rray');
+
     renderApp();
 
     const bankFile = new File(['bank-data'], 'bank.xlsx', {
@@ -833,6 +938,8 @@ describe('App', () => {
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
 
+    setAuthenticatedUser('rray');
+
     renderApp();
 
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
@@ -858,6 +965,7 @@ describe('App', () => {
   });
 
   it('keeps the suggested label hint visible after custom edits', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
@@ -875,6 +983,7 @@ describe('App', () => {
   });
 
   it('disables submit when reconciliation label is blank', () => {
+    setAuthenticatedUser('rray');
     renderApp();
 
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
@@ -891,5 +1000,65 @@ describe('App', () => {
     expect(
       screen.getByText('Reconciliation label is required before running.'),
     ).toBeInTheDocument();
+  });
+
+  it('enforces developer role access scope for rray2', () => {
+    setAuthenticatedUser('rray2');
+
+    renderApp();
+
+    expect(screen.getByText('Application access restricted')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
+    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toHaveAttribute(
+      'href',
+      '/developer-dashboard.html',
+    );
+    expect(screen.queryByRole('link', { name: 'Start Reconciliation' })).toBeNull();
+  });
+
+  it('enforces financial analyst scope for bray with app and docs but no developer dashboard', () => {
+    setAuthenticatedUser('bray');
+
+    renderApp();
+
+    expect(screen.getByRole('link', { name: 'Start Reconciliation' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
+    expect(screen.queryByRole('link', { name: 'Developer Dashboard' })).toBeNull();
+  });
+
+  it('allows admin role to adjust variance slider defaults in Rules', () => {
+    setAuthenticatedUser('rray3');
+
+    renderApp();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Rules/i }));
+
+    const slider = screen.getByRole('slider', {
+      name: /Reference \+ Amount Match Dollar tolerance/i,
+    });
+
+    expect(slider).not.toBeDisabled();
+    expect(screen.getByText(/Admin control mode is enabled\./i)).toBeInTheDocument();
+
+    fireEvent.change(slider, { target: { value: '0.65' } });
+
+    expect(screen.getAllByText('$0.65').length).toBeGreaterThan(0);
+  });
+
+  it('allows superuser to access all scopes and adjust slider defaults', () => {
+    setAuthenticatedUser('rray');
+
+    renderApp();
+
+    expect(screen.getByRole('link', { name: 'Start Reconciliation' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
+    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Rules/i }));
+
+    const slider = screen.getByRole('slider', {
+      name: /Date Variance Timing variance window/i,
+    });
+    expect(slider).not.toBeDisabled();
   });
 });

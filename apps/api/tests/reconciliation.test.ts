@@ -38,6 +38,13 @@ type QueryableReadModelPool = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
 };
 
+type QueryableAuthPool = {
+  query: (
+    text: string,
+    params?: unknown[],
+  ) => Promise<{ rows: Array<{ user_name: string; first_name: string; last_name: string }> }>;
+};
+
 const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
   let queryCount = 0;
   const now = new Date().toISOString();
@@ -820,5 +827,83 @@ describe('reconciliation API', () => {
 
     const missingCategoryPayload = missingCategoryResponse.body as { message: string };
     expect(missingCategoryPayload.message).toContain('finalCategory is required');
+  });
+
+  it('authenticates against local fallback users when a database pool is unavailable', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'rray', password: 'rray' })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      username: 'rray',
+      firstName: 'rray',
+      lastName: '',
+    });
+  });
+
+  it('returns 401 for invalid login credentials', async () => {
+    const authPool: QueryableAuthPool = {
+      query: () => Promise.resolve({ rows: [] }),
+    };
+
+    const app = createApp(
+      undefined,
+      undefined,
+      undefined,
+      authPool as unknown as Parameters<typeof createApp>[3],
+    );
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'rray', password: 'wrong-password' })
+      .expect(401);
+
+    expect((response.body as { message: string }).message).toBe(
+      'The user or password does not match.',
+    );
+  });
+
+  it('returns user profile details for valid login credentials', async () => {
+    const authPool: QueryableAuthPool = {
+      query: (_text, params) => {
+        const username = typeof params?.[0] === 'string' ? params[0] : '';
+        const password = typeof params?.[1] === 'string' ? params[1] : '';
+
+        if (username !== 'rray' || password !== 'rray') {
+          return Promise.resolve({ rows: [] });
+        }
+
+        return Promise.resolve({
+          rows: [
+            {
+              user_name: 'rray',
+              first_name: 'Ryan',
+              last_name: 'Ray',
+            },
+          ],
+        });
+      },
+    };
+
+    const app = createApp(
+      undefined,
+      undefined,
+      undefined,
+      authPool as unknown as Parameters<typeof createApp>[3],
+    );
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'rray', password: 'rray' })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      username: 'rray',
+      firstName: 'Ryan',
+      lastName: 'Ray',
+    });
   });
 });

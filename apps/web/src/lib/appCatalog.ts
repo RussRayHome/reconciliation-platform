@@ -39,10 +39,10 @@ export type ReportCatalogItem = {
 };
 
 /** Colour tone variants for stat card backgrounds. */
-export type StatCardTone = 'default' | 'positive' | 'warning' | 'critical';
+type StatCardTone = 'default' | 'positive' | 'warning' | 'critical';
 
 /** Definition for a summary stat card: label, display value accessor, tone, and icon. */
-export type SummaryStatDefinition = {
+type SummaryStatDefinition = {
   id: string;
   label: string;
   helper: string;
@@ -53,7 +53,7 @@ export type SummaryStatDefinition = {
 };
 
 /** Metadata for one top-level navigation tab including its icon and description. */
-export type TabNavigationItem = {
+type TabNavigationItem = {
   id: AppTab;
   label: string;
   description: string;

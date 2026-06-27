@@ -22,7 +22,7 @@ import { ExceptionTable } from './ExceptionTable';
 import { SemanticIcon } from './SemanticIcon';
 
 /** A single step in the process progress stepper displayed during reconciliation submission. */
-export type ProgressStep = {
+type ProgressStep = {
   id: string;
   label: string;
   description: string;
@@ -39,6 +39,8 @@ type CategorySummaryRow = {
   count: number;
   amount: number;
 };
+
+export type RuleVarianceDefaultOverrides = Record<string, number>;
 
 const resolveStepState = (
   isComplete: boolean,
@@ -99,8 +101,14 @@ const formatVarianceValue = (value: number, unit: RuleVarianceMetric['unit']): s
 
 function RuleVarianceSliders({
   rule,
+  varianceOverrides,
+  canAdjustVarianceDefaults,
+  onChangeVarianceDefault,
 }: Readonly<{
   rule: RuleCatalogItem;
+  varianceOverrides: RuleVarianceDefaultOverrides;
+  canAdjustVarianceDefaults: boolean;
+  onChangeVarianceDefault: (metricId: string, value: number) => void;
 }>) {
   if (!rule.varianceMetrics?.length) {
     return null;
@@ -110,29 +118,40 @@ function RuleVarianceSliders({
     <section className="rule-variance" aria-label={`${rule.name} variance thresholds`}>
       <h4>Variance thresholds</h4>
       <ul className="rule-variance-list">
-        {rule.varianceMetrics.map((metric) => (
-          <li key={metric.id} className="rule-variance-item">
-            <div className="rule-variance-item__head">
-              <span>{metric.label}</span>
-              <strong>{formatVarianceValue(metric.value, metric.unit)}</strong>
-            </div>
-            <input
-              type="range"
-              className="rule-variance-slider"
-              min={metric.min}
-              max={metric.max}
-              step={metric.step}
-              value={metric.value}
-              readOnly
-              disabled
-              aria-label={`${rule.name} ${metric.label}`}
-            />
-            <div className="rule-variance-item__scale" aria-hidden="true">
-              <span>{formatVarianceValue(metric.min, metric.unit)}</span>
-              <span>{formatVarianceValue(metric.max, metric.unit)}</span>
-            </div>
-          </li>
-        ))}
+        {rule.varianceMetrics.map((metric) => {
+          const metricValue = varianceOverrides[metric.id] ?? metric.value;
+
+          return (
+            <li key={metric.id} className="rule-variance-item">
+              <div className="rule-variance-item__head">
+                <span>{metric.label}</span>
+                <strong>{formatVarianceValue(metricValue, metric.unit)}</strong>
+              </div>
+              <input
+                type="range"
+                className="rule-variance-slider"
+                min={metric.min}
+                max={metric.max}
+                step={metric.step}
+                value={metricValue}
+                readOnly={!canAdjustVarianceDefaults}
+                disabled={!canAdjustVarianceDefaults}
+                onChange={(event) => {
+                  if (!canAdjustVarianceDefaults) {
+                    return;
+                  }
+
+                  onChangeVarianceDefault(metric.id, Number(event.target.value));
+                }}
+                aria-label={`${rule.name} ${metric.label}`}
+              />
+              <div className="rule-variance-item__scale" aria-hidden="true">
+                <span>{formatVarianceValue(metric.min, metric.unit)}</span>
+                <span>{formatVarianceValue(metric.max, metric.unit)}</span>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -550,8 +569,16 @@ export function ReportsSection({
 /** Panel that renders the Rules Catalog tab: searchable list of all matching rules with descriptions. */
 export function RulesCatalogSection({
   rules,
+  varianceOverrides,
+  canAdjustVarianceDefaults,
+  onChangeVarianceDefault,
+  onResetVarianceDefaults,
 }: Readonly<{
   rules: RuleCatalogItem[];
+  varianceOverrides: RuleVarianceDefaultOverrides;
+  canAdjustVarianceDefaults: boolean;
+  onChangeVarianceDefault: (metricId: string, value: number) => void;
+  onResetVarianceDefaults: () => void;
 }>) {
   return (
     <WorkspaceTabPanel tabId="rules">
@@ -572,6 +599,16 @@ export function RulesCatalogSection({
           />
         </div>
 
+        {canAdjustVarianceDefaults ? (
+          <div className="rules-admin-controls">
+            <p>Admin control mode is enabled.</p>
+            <p>Slider updates adjust the shared default variance thresholds.</p>
+            <button type="button" className="secondary-button" onClick={onResetVarianceDefaults}>
+              Reset default slider values
+            </button>
+          </div>
+        ) : null}
+
         <div className="rules-grid">
           {rules.map((rule) => (
             <article key={rule.id} className="rule-card">
@@ -580,7 +617,12 @@ export function RulesCatalogSection({
                 <span className="rule-card__pill">Active</span>
               </div>
               <p>{rule.description}</p>
-              <RuleVarianceSliders rule={rule} />
+              <RuleVarianceSliders
+                rule={rule}
+                varianceOverrides={varianceOverrides}
+                canAdjustVarianceDefaults={canAdjustVarianceDefaults}
+                onChangeVarianceDefault={onChangeVarianceDefault}
+              />
               <div className="rule-card__meta">
                 <span>Last Change</span>
                 <strong>{rule.lastChange}</strong>

@@ -58,13 +58,16 @@ CMD ["node", "apps/api/dist/index.cjs"]
 # ── Dev / tools target (Debian — required for Playwright --with-deps) ─────────
 
 # Docker CLI and Trivy binaries copied directly — avoids apt-get overhead (~50s)
-FROM docker:27-cli AS docker-cli-source
-FROM aquasec/trivy:0.70.0 AS trivy-source
+FROM docker:29-cli AS docker-cli-source
+FROM aquasec/trivy:0.71.1 AS trivy-source
 
 FROM node:26.1.0-bookworm-slim AS dev-base
 WORKDIR /app
 ARG NPM_VERSION=11.14.1
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/* && \
+RUN apt-get update && \
+	apt-get -y upgrade && \
+	apt-get install -y --no-install-recommends git ca-certificates && \
+	rm -rf /var/lib/apt/lists/* && \
     npm install -g "npm@${NPM_VERSION}"
 COPY --from=manifests / /app/
 
@@ -98,3 +101,7 @@ USER node
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "fetch('http://127.0.0.1:4000/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["node", "apps/api/dist/index.cjs"]
+
+# Default build target should be the production runtime image.
+FROM runtime AS final
+USER node

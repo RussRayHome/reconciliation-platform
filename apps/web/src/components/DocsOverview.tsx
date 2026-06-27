@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { SectionCard } from '@recon/ui';
 import { docsById, projectDocuments } from '../lib/docsCatalog';
@@ -11,9 +11,27 @@ type DocsOverviewProps = {
   docsHref?: string;
   showDeveloperDashboardLink: boolean;
   developerDashboardHref?: string;
+  controls?: ReactNode;
 };
 
 const categoryOrder = ['Overview', 'Architecture', 'Setup', 'Reference', 'Operations'] as const;
+const trackOrder = ['Developer', 'User'] as const;
+const docsTrackFilterOrder = ['All', ...trackOrder] as const;
+type DocsTrackFilter = (typeof docsTrackFilterOrder)[number];
+const docsTrackFilterLabel: Record<DocsTrackFilter, string> = {
+  All: 'All Docs',
+  Developer: 'Developer Docs',
+  User: 'User Docs',
+};
+const trackSectionTitle: Record<(typeof trackOrder)[number], string> = {
+  Developer: 'Developer Documentation',
+  User: 'User Documentation',
+};
+const trackSectionDescription: Record<(typeof trackOrder)[number], string> = {
+  Developer:
+    'Engineering setup guides, architecture references, API contracts, and operations runbooks.',
+  User: 'Analyst-facing guides for running reconciliation, reviewing outcomes, and exporting handoff artifacts.',
+};
 const categoryIconNames: Record<(typeof categoryOrder)[number], SemanticIconName> = {
   Overview: 'overview',
   Architecture: 'architecture',
@@ -69,10 +87,12 @@ export function DocsOverview({
   docsHref = '/docs',
   showDeveloperDashboardLink,
   developerDashboardHref = '/developer-dashboard.html',
+  controls,
 }: Readonly<DocsOverviewProps>) {
   const initialLocationState = resolveInitialLocationState();
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [activeTrackFilter, setActiveTrackFilter] = useState<DocsTrackFilter>('All');
   const [activeDocumentId, setActiveDocumentId] = useState(initialLocationState.documentId);
   const [activeSectionAnchorId, setActiveSectionAnchorId] = useState<string | null>(
     initialLocationState.sectionAnchorId,
@@ -101,6 +121,14 @@ export function DocsOverview({
     });
   }, [deferredSearchTerm]);
 
+  const visibleDocuments = useMemo(
+    () =>
+      activeTrackFilter === 'All'
+        ? filteredDocuments
+        : filteredDocuments.filter((document) => document.track === activeTrackFilter),
+    [activeTrackFilter, filteredDocuments],
+  );
+
   useEffect(() => {
     const onHashChange = () => {
       const nextLocationState = resolveInitialLocationState();
@@ -119,7 +147,7 @@ export function DocsOverview({
   }, []);
 
   useEffect(() => {
-    const activeStillVisible = filteredDocuments.some(
+    const activeStillVisible = visibleDocuments.some(
       (document) => document.id === activeDocumentId,
     );
 
@@ -127,7 +155,7 @@ export function DocsOverview({
       return;
     }
 
-    const fallbackDocument = filteredDocuments[0] ?? projectDocuments[0];
+    const fallbackDocument = visibleDocuments[0] ?? projectDocuments[0];
 
     if (!fallbackDocument) {
       return;
@@ -136,7 +164,7 @@ export function DocsOverview({
     setActiveDocumentId(fallbackDocument.id);
     setActiveSectionAnchorId(null);
     writeDocsLocation(docsHref, fallbackDocument.id);
-  }, [activeDocumentId, docsHref, filteredDocuments]);
+  }, [activeDocumentId, docsHref, visibleDocuments]);
 
   useEffect(() => {
     document.title = 'Documentation Hub';
@@ -147,7 +175,7 @@ export function DocsOverview({
   }, []);
 
   const activeDocument =
-    filteredDocuments.find((document) => document.id === activeDocumentId) ??
+    visibleDocuments.find((document) => document.id === activeDocumentId) ??
     projectDocuments.find((document) => document.id === activeDocumentId) ??
     projectDocuments[0];
 
@@ -206,15 +234,26 @@ export function DocsOverview({
     };
   }, [zoomedImage]);
 
-  const documentsByCategory = useMemo(
+  const documentsByTrack = useMemo(
     () =>
-      categoryOrder
-        .map((category) => ({
-          category,
-          documents: filteredDocuments.filter((document) => document.category === category),
-        }))
+      trackOrder
+        .map((track) => {
+          const trackDocuments = visibleDocuments.filter((document) => document.track === track);
+          const categories = categoryOrder
+            .map((category) => ({
+              category,
+              documents: trackDocuments.filter((document) => document.category === category),
+            }))
+            .filter((entry) => entry.documents.length > 0);
+
+          return {
+            track,
+            documents: trackDocuments,
+            categories,
+          };
+        })
         .filter((entry) => entry.documents.length > 0),
-    [filteredDocuments],
+    [visibleDocuments],
   );
 
   const onSelectDocument = (documentId: string) => {
@@ -244,6 +283,7 @@ export function DocsOverview({
     <div className="app-shell">
       <div className="hero-backdrop" />
       <main className="app-layout docs-layout">
+        {controls}
         <header className="hero-card docs-hero-card">
           <div>
             <span className="eyebrow">Repository documentation hub</span>
@@ -285,63 +325,103 @@ export function DocsOverview({
           description="Filter the documentation set and choose which project document to inspect."
         >
           <div className="docs-toolbar">
-            <label className="docs-search-field" htmlFor="docs-search-input">
-              <span>Search documents</span>
-              <input
-                id="docs-search-input"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by title, audience, or file path"
-              />
-            </label>
+            <div className="docs-search-controls">
+              <label className="docs-search-field" htmlFor="docs-search-input">
+                <span>Search documents</span>
+                <input
+                  id="docs-search-input"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search by title, audience, or file path"
+                />
+              </label>
+
+              <div className="docs-track-filter" aria-label="Documentation audience filter">
+                {docsTrackFilterOrder.map((trackFilter) => (
+                  <button
+                    key={trackFilter}
+                    type="button"
+                    className={
+                      activeTrackFilter === trackFilter
+                        ? 'docs-track-filter-button docs-track-filter-button--active'
+                        : 'docs-track-filter-button'
+                    }
+                    onClick={() => setActiveTrackFilter(trackFilter)}
+                    aria-pressed={activeTrackFilter === trackFilter}
+                  >
+                    {docsTrackFilterLabel[trackFilter]}
+                  </button>
+                ))}
+              </div>
+            </div>
             <p className="docs-toolbar-note">
-              The hub focuses on the project&apos;s primary guides and operational references.
+              The hub is split into Developer and User sections so each audience can navigate only
+              the relevant docs.
             </p>
           </div>
         </SectionCard>
 
         <section className="docs-hub-grid">
           <div className="docs-directory-column">
-            {documentsByCategory.map((entry) => (
-              <section className="docs-category-group" key={entry.category}>
-                <div className="docs-category-header">
-                  <h2 className="docs-category-title">
-                    <SemanticIcon
-                      name={resolveCategoryIconName(entry.category)}
-                      className="docs-category-title__icon"
-                    />
-                    <span>{entry.category}</span>
-                  </h2>
-                  <span className="docs-category-header__count">{entry.documents.length} docs</span>
-                </div>
+            <div className="docs-track-grid">
+              {documentsByTrack.map((trackEntry) => (
+                <section className="docs-track-group" key={trackEntry.track}>
+                  <header className="docs-track-header">
+                    <h2 className="docs-track-title">{trackSectionTitle[trackEntry.track]}</h2>
+                    <p className="docs-track-description">
+                      {trackSectionDescription[trackEntry.track]}
+                    </p>
+                    <span className="docs-track-count">{trackEntry.documents.length} docs</span>
+                  </header>
 
-                <div className="docs-card-grid">
-                  {entry.documents.map((document) => {
-                    const isActive = document.id === activeDocument?.id;
-
-                    return (
-                      <button
-                        key={document.id}
-                        type="button"
-                        className={`docs-nav-card ${isActive ? 'docs-nav-card--active' : ''}`}
-                        onClick={() => onSelectDocument(document.id)}
-                      >
-                        <span className="docs-nav-card__path">
+                  {trackEntry.categories.map((entry) => (
+                    <section
+                      className="docs-category-group"
+                      key={`${trackEntry.track}-${entry.category}`}
+                    >
+                      <div className="docs-category-header">
+                        <h3 className="docs-category-title">
                           <SemanticIcon
-                            name={resolveCategoryIconName(document.category)}
-                            className="docs-nav-card__path-icon"
+                            name={resolveCategoryIconName(entry.category)}
+                            className="docs-category-title__icon"
                           />
-                          <span>{document.pathLabel}</span>
+                          <span>{entry.category}</span>
+                        </h3>
+                        <span className="docs-category-header__count">
+                          {entry.documents.length} docs
                         </span>
-                        <strong>{`View ${document.title}`}</strong>
-                        <p>{document.summary}</p>
-                        <span className="docs-nav-card__audience">{document.audience}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+                      </div>
+
+                      <div className="docs-card-grid">
+                        {entry.documents.map((document) => {
+                          const isActive = document.id === activeDocument?.id;
+
+                          return (
+                            <button
+                              key={document.id}
+                              type="button"
+                              className={`docs-nav-card ${isActive ? 'docs-nav-card--active' : ''}`}
+                              onClick={() => onSelectDocument(document.id)}
+                            >
+                              <span className="docs-nav-card__path">
+                                <SemanticIcon
+                                  name={resolveCategoryIconName(document.category)}
+                                  className="docs-nav-card__path-icon"
+                                />
+                                <span>{document.pathLabel}</span>
+                              </span>
+                              <strong>{`View ${document.title}`}</strong>
+                              <p>{document.summary}</p>
+                              <span className="docs-nav-card__audience">{document.audience}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </section>
+              ))}
+            </div>
           </div>
 
           <aside className="docs-viewer-card">
@@ -354,6 +434,8 @@ export function DocsOverview({
                         name={resolveCategoryIconName(activeDocument.category)}
                         className="docs-eyebrow__icon"
                       />
+                      <span>{activeDocument.track}</span>
+                      <span aria-hidden="true">•</span>
                       <span>{activeDocument.category}</span>
                     </span>
                     <h2>{activeDocument.title}</h2>

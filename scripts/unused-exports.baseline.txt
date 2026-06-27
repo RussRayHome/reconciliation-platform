@@ -19,11 +19,6 @@ apps/api/src/services/developerStatusTypes.ts:124 - DeveloperStatusCacheInfo (us
 apps/api/src/services/reconciliationService.ts:40 - ExecuteReconciliationInput (used in module)
 apps/api/src/services/runRepository.ts:6 - RunRepository (used in module)
 apps/api/tsup.config.ts:3 - default
-apps/web/src/components/AppWorkspacePanels.tsx:24 - ProgressStep (used in module)
-apps/web/src/lib/appCatalog.ts:30 - StatCardTone (used in module)
-apps/web/src/lib/appCatalog.ts:33 - SummaryStatDefinition (used in module)
-apps/web/src/lib/appCatalog.ts:44 - TabNavigationItem (used in module)
-apps/web/src/lib/docsCatalog.ts:28 - ProjectDocument (used in module)
 apps/web/vite.config.ts:48 - default
 packages/core/src/export/chartImage.ts:179 - BarChartImageOptions (used in module)
 packages/core/src/index.ts:10 - normalizeText
@@ -152,8 +147,8 @@ packages/test-fixtures/src/index.ts:63 - timingDifferenceQboRows
 packages/test-fixtures/src/index.ts:68 - splitCombineBankRows
 packages/test-fixtures/src/index.ts:73 - splitCombineQboRows
 packages/test-fixtures/src/index.ts:76 - WorkbookRows
-packages/test-fixtures/src/index.ts:79 - ExceptionScenarioFixture
 packages/test-fixtures/src/index.ts:79 - depositGroupingBankRows
+packages/test-fixtures/src/index.ts:79 - ExceptionScenarioFixture
 packages/test-fixtures/src/index.ts:84 - depositGroupingQboRows
 packages/test-fixtures/src/index.ts:88 - ExceptionEdgeCaseFixture
 packages/test-fixtures/src/index.ts:90 - splitCombineNearMissBankRows

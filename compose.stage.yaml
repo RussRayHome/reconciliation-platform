@@ -2,7 +2,7 @@ services:
   postgres:
     build:
       args:
-        POSTGRES_BASE_IMAGE: postgres:16.13
+        POSTGRES_BASE_IMAGE: postgres:16.14
         ENABLE_PGAUDIT: "true"
     command:
       - postgres

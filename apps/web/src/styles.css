@@ -116,6 +116,118 @@ select {
   padding: 2rem 1.25rem 4rem;
 }
 
+.login-layout {
+  max-width: 560px;
+  min-height: 100vh;
+  align-content: center;
+}
+
+.login-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.6rem;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-md);
+}
+
+.login-card h1 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.login-brand__logo {
+  width: 46px;
+  height: 64px;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(18, 32, 35, 0.2);
+}
+
+.login-brand__company {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.login-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.login-error {
+  margin: 0.45rem 0 0;
+  color: var(--rose);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.user-role-shell {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(18, 32, 35, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: var(--shadow-sm);
+}
+
+.user-role-shell__identity,
+.user-role-shell__meta {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.user-role-shell__identity span,
+.user-role-shell__meta span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.user-role-shell__identity strong,
+.user-role-shell__meta strong {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.user-role-shell__permissions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.user-role-shell__permissions li {
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.user-role-shell__signout {
+  min-height: 38px;
+  padding: 0.55rem 0.95rem;
+  justify-self: start;
+}
+
+.access-denied-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .hero-card,
 .chart-card {
   background: var(--bg-secondary);
@@ -1343,6 +1455,40 @@ th {
   font-weight: 600;
 }
 
+.docs-search-controls {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.docs-track-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.docs-track-filter-button {
+  min-height: 34px;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(18, 32, 35, 0.18);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 0.82rem;
+}
+
+.docs-track-filter-button:hover,
+.docs-track-filter-button:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.docs-track-filter-button--active {
+  border-color: rgba(15, 118, 110, 0.35);
+  background: rgba(217, 242, 239, 0.84);
+  color: #0d5c55;
+}
+
 .docs-toolbar-note {
   margin: 0;
   padding: 0.95rem 1rem;
@@ -1361,6 +1507,50 @@ th {
 .docs-directory-column {
   display: grid;
   gap: 1.2rem;
+}
+
+.docs-track-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.docs-track-group {
+  display: grid;
+  gap: 0.95rem;
+  padding: 0.95rem;
+  border-radius: 20px;
+  border: 1px solid rgba(18, 32, 35, 0.12);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-sm);
+}
+
+.docs-track-header {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.docs-track-title {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.05rem;
+}
+
+.docs-track-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.docs-track-count {
+  justify-self: start;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(18, 32, 35, 0.08);
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .docs-category-group {
@@ -1697,7 +1887,8 @@ th {
   .reports-browser,
   .artifacts-grid,
   .docs-toolbar,
-  .docs-hub-grid {
+  .docs-hub-grid,
+  .docs-track-grid {
     grid-template-columns: 1fr;
   }
 

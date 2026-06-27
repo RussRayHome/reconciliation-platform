@@ -1,6 +1,16 @@
 import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
 import { expect, test } from '@playwright/test';
 
+import { loginToApplication } from './auth';
+
+test('requires login and lands on the application after successful authentication', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+  await loginToApplication(page);
+});
+
 test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   const currentYear = new Date().getFullYear();
   const [bankBuffer, qboBuffer] = await Promise.all([
@@ -8,7 +18,7 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
     createSampleQboWorkbook(),
   ]);
 
-  await page.goto('/');
+  await loginToApplication(page);
 
   await page.locator('#bank-workbook-input').setInputFiles({
     name: 'bank.xlsx',

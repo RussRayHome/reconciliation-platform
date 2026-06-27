@@ -19,7 +19,13 @@ import {
 } from '@recon/test-fixtures';
 import { expect, type Page, test } from '@playwright/test';
 
+import { loginToApplication } from './auth';
+
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+test.beforeEach(async ({ page }) => {
+  await loginToApplication(page);
+});
 
 async function setWorkbookFiles(page: Page, bankBuffer: Buffer, qboBuffer: Buffer): Promise<void> {
   await page.locator('#bank-workbook-input').setInputFiles({
