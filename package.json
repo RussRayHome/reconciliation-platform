@@ -148,7 +148,7 @@
     "testcontainers": "^11.5.1",
     "ts-prune": "^0.10.3",
     "tsup": "^8.4.0",
-    "tsx": "^4.19.4",
+    "tsx": "^4.22.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.29.1",
     "vite": "^8.0.16",

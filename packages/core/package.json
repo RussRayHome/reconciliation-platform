@@ -13,6 +13,6 @@
     "@recon/config": "0.1.0",
     "@recon/domain": "0.1.0",
     "exceljs": "^4.4.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   }
 }
