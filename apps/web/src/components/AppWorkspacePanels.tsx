@@ -1,10 +1,11 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
 import {
   errorCategories,
   errorCategoryDisplayNames,
   type ReconciliationRunReport,
 } from '@recon/domain';
 import { SectionCard, StatCard } from '@recon/ui';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { downloadWorkbookUrl } from '../lib/api';
 import {
@@ -86,6 +87,8 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+
+const probableMatchVirtualizationThreshold = 120;
 
 const formatVarianceValue = (value: number, unit: RuleVarianceMetric['unit']): string => {
   if (unit === 'days') {
@@ -344,6 +347,18 @@ function ProbableMatchesContent({
 }: Readonly<{
   probableMatches: RunData['probableMatches'];
 }>) {
+  const virtualListRef = useRef<HTMLDivElement | null>(null);
+  const shouldVirtualizeRows = probableMatches.length > probableMatchVirtualizationThreshold;
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: probableMatches.length,
+    getScrollElement: () => virtualListRef.current,
+    estimateSize: () => 148,
+    overscan: 8,
+    enabled: shouldVirtualizeRows,
+  });
+  const virtualRows = virtualizer.getVirtualItems();
+
   if (probableMatches.length === 0) {
     return (
       <EmptyStateCard
@@ -355,34 +370,90 @@ function ProbableMatchesContent({
   }
 
   return (
-    <div className="table-scroll">
-      <table>
-        <caption className="visually-hidden">
-          Probable match candidates to review before final reconciliation.
-        </caption>
-        <thead>
-          <tr>
-            <th>Disposition</th>
-            <th>Confidence</th>
-            <th>Rule</th>
-            <th>Date diff</th>
-            <th>Amount diff</th>
-            <th>Evidence</th>
-          </tr>
-        </thead>
-        <tbody>
-          {probableMatches.map((item) => (
-            <tr key={item.id}>
-              <td>{item.disposition}</td>
-              <td>{item.confidence}</td>
-              <td>{item.ruleName}</td>
-              <td>{item.dateDifferenceDays ?? 'N/A'}</td>
-              <td>{item.amountDifference.toFixed(2)}</td>
-              <td>{item.evidence.join(' | ')}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="probable-match-table-shell">
+      <div className="table-results-meta" aria-live="polite">
+        <span>Showing {probableMatches.length} probable matches.</span>
+        {shouldVirtualizeRows ? (
+          <span>Virtualized view enabled for large probable-match result sets.</span>
+        ) : null}
+      </div>
+      {shouldVirtualizeRows ? (
+        <div className="probable-match-virtual-list" ref={virtualListRef}>
+          <div
+            className="probable-match-virtual-list__canvas"
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+            }}
+          >
+            {virtualRows.map((virtualRow) => {
+              const item = probableMatches[virtualRow.index];
+
+              if (!item) {
+                return null;
+              }
+
+              return (
+                <article
+                  className="probable-match-virtual-card"
+                  key={`probable-virtual-${item.id}`}
+                  style={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div className="probable-match-virtual-card__head">
+                    <strong>{item.ruleName}</strong>
+                    <span>
+                      {item.disposition} • {item.confidence}
+                    </span>
+                  </div>
+                  <div className="probable-match-virtual-card__grid">
+                    <div>
+                      <span>Date diff</span>
+                      <strong>{item.dateDifferenceDays ?? 'N/A'}</strong>
+                    </div>
+                    <div>
+                      <span>Amount diff</span>
+                      <strong>{item.amountDifference.toFixed(2)}</strong>
+                    </div>
+                  </div>
+                  <p>{item.evidence.join(' | ')}</p>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="table-scroll probable-match-table-shell__table">
+          <table>
+            <caption className="visually-hidden">
+              Probable match candidates to review before final reconciliation.
+            </caption>
+            <thead>
+              <tr>
+                <th>Disposition</th>
+                <th>Confidence</th>
+                <th>Rule</th>
+                <th>Date diff</th>
+                <th>Amount diff</th>
+                <th>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {probableMatches.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.disposition}</td>
+                  <td>{item.confidence}</td>
+                  <td>{item.ruleName}</td>
+                  <td>{item.dateDifferenceDays ?? 'N/A'}</td>
+                  <td>{item.amountDifference.toFixed(2)}</td>
+                  <td>{item.evidence.join(' | ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

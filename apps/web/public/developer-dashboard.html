@@ -1024,7 +1024,8 @@
 
       const stripAnsiCodes = (value) => String(value || '').replaceAll(/\u001b\[[0-9;]*m/gu, '');
 
-      const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+      const escapeRegExp = (value) =>
+        String(value).replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
 
       const fetchWithTimeout = async (url, timeoutMs) => {
         const controller = new AbortController();
@@ -1080,7 +1081,7 @@
               // Columns 1–4 are % Stmts, % Branch, % Funcs, % Lines
               if (i < 1 || i > 4) return escapeHtml(cell);
               const trimmed = cell.trim();
-              const n = parseFloat(trimmed);
+              const n = Number.parseFloat(trimmed);
               if (!Number.isFinite(n) || trimmed === '') return escapeHtml(cell);
               let cls = 'cv-r';
               if (n >= 80) {
@@ -1113,7 +1114,7 @@
       const collectPrometheusMetricValues = (payload, metricName) => {
         const values = [];
         const metricPattern = new RegExp(
-          `^${escapeRegExp(metricName)}(?:\\{[^\\n]*\\})?\\s+([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)\\s*$`,
+          String.raw`^${escapeRegExp(metricName)}(?:\{[^\n]*\})?\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$`,
           'gmu',
         );
 
@@ -2483,7 +2484,7 @@
           return '';
         }
 
-        const resolvedTotal = total !== null ? total : (passed || 0) + (failed || 0);
+        const resolvedTotal = total === null ? (passed || 0) + (failed || 0) : total;
 
         return `<div><strong>${escapeHtml(label)}:</strong> Passed: ${escapeHtml(passed === null ? '-' : passed)}, Failed: ${escapeHtml(failed === null ? '-' : failed)}, Total: ${escapeHtml(resolvedTotal)}</div>`;
       };

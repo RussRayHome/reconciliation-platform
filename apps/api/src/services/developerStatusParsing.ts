@@ -3,8 +3,8 @@ import type {
   CoverageBenchmarkKey,
   CoverageMetrics,
   DeveloperCheck,
-  SecurityCveFinding,
   SecurityComponentScore,
+  SecurityCveFinding,
   SecuritySeverityScore,
 } from './developerStatusTypes';
 
@@ -380,9 +380,7 @@ const normalizeSecurityCveFindings = (
 
     const key = `${finding.id}|${finding.component}|${finding.scanner}`;
     const existing = deduped.get(key);
-    if (!existing) {
-      deduped.set(key, finding);
-    } else {
+    if (existing) {
       const existingRank = securityCveSeverityRank[existing.severity];
       const incomingRank = securityCveSeverityRank[finding.severity];
       const description =
@@ -395,7 +393,11 @@ const normalizeSecurityCveFindings = (
         description,
         severity: incomingRank < existingRank ? finding.severity : existing.severity,
       });
+
+      continue;
     }
+
+    deduped.set(key, finding);
   }
 
   return [...deduped.values()].sort((left, right) => {
