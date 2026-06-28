@@ -56,10 +56,19 @@ const runtimeSkippableChecks = new Set([
   'Static analysis (typecheck)',
   'Coverage',
 ]);
+const heavyDeveloperCheckNames = {
+  e2e: 'E2E tests',
+  coverage: 'Coverage',
+  security: 'Security vulnerabilities',
+} as const;
+const deferredHeavyCheckHighlight =
+  'Result reused from the last force refresh. Use Force refresh to run this check now.';
 
 const isProductionRuntime = (): boolean => process.env.NODE_ENV === 'production';
 const isContainerRuntime = (): boolean => existsSync('/.dockerenv');
 const isToolingConstrainedRuntime = (): boolean => isProductionRuntime() || isContainerRuntime();
+const shouldRequireE2EInContainer = (): boolean =>
+  isContainerRuntime() && process.env.NODE_ENV === 'test';
 
 const hostDevPostgresPreflightLogPath = '/var/lib/reconciliation/dev-postgres-preflight.log';
 const hostDevPostgresPreflightTotalsRegex = /Totals:\s*PASS=(\d+)\s*WARN=(\d+)\s*FAIL=(\d+)/i;
@@ -68,6 +77,16 @@ type HostPreflightTotals = {
   pass: number;
   warn: number;
   fail: number;
+};
+
+type CollectDeveloperStatusOptions = {
+  includeHeavyChecks: boolean;
+  cachedPayload?: DeveloperStatusPayload | null;
+};
+
+type DeveloperStatusInFlight = {
+  promise: Promise<DeveloperStatusPayload>;
+  includeHeavyChecks: boolean;
 };
 
 type ZapReportSummary = {
@@ -541,6 +560,27 @@ const buildRuntimeSkipResult = (
   }
 
   if (name === 'E2E tests' && runtimePlaywrightBrowserMissingRegex.test(output)) {
+    if (shouldRequireE2EInContainer()) {
+      return {
+        name,
+        command,
+        ok: false,
+        exitCode: 1,
+        durationMs,
+        summary: 'E2E runtime misconfigured: Playwright browser binaries are missing',
+        details: truncateOutput(
+          output.length > 0
+            ? output
+            : 'Playwright browser binaries are not available in this tools runtime.',
+        ),
+        highlights: [
+          'This tools container is configured to execute E2E checks in-container.',
+          'Run `npx playwright install --with-deps chromium` in the tools container (or restart tools) to install matching browser binaries.',
+        ],
+        ...metadata,
+      };
+    }
+
     return {
       name,
       command,
@@ -641,15 +681,54 @@ const buildStatusSnapshot = (payload: DeveloperStatusPayload): DeveloperStatusSn
 export const createDeveloperStatusService = ({
   repoRoot,
   defaultDatabaseUrl,
-  statusCacheTtlMs = Number(process.env.DEV_STATUS_CACHE_TTL_MS ?? '60000'),
+  statusCacheTtlMs = Number(process.env.DEV_STATUS_CACHE_TTL_MS ?? '600000'),
   statusHistoryLimit = Number(process.env.DEV_STATUS_HISTORY_LIMIT ?? '20'),
 }: CreateDeveloperStatusServiceOptions) => {
   const coverageSummaryPath = join(repoRoot, 'coverage', 'coverage-summary.json');
   const coverageTempPath = join(repoRoot, 'coverage', '.tmp');
 
   let developerStatusCache: { payload: DeveloperStatusPayload; cachedAt: number } | null = null;
-  let developerStatusInFlight: Promise<DeveloperStatusPayload> | null = null;
+  let developerStatusInFlight: DeveloperStatusInFlight | null = null;
   const developerStatusHistory: DeveloperStatusSnapshot[] = [];
+
+  const appendUniqueHighlight = (highlights: string[] | undefined, value: string): string[] => {
+    const next = [...(highlights ?? [])];
+    if (!next.includes(value)) {
+      next.push(value);
+    }
+
+    return next;
+  };
+
+  const cloneDeferredHeavyCheck = (check: DeveloperCheck): DeveloperCheck => ({
+    ...check,
+    durationMs: 0,
+    summary: check.summary.includes('(cached)') ? check.summary : `${check.summary} (cached)`,
+    highlights: appendUniqueHighlight(check.highlights, deferredHeavyCheckHighlight),
+  });
+
+  const resolveDeferredHeavyChecks = (
+    cachedPayload?: DeveloperStatusPayload | null,
+  ): {
+    e2eTests: DeveloperCheck;
+    coverage: DeveloperCheck;
+    security: DeveloperCheck;
+  } | null => {
+    const checksByName = new Map((cachedPayload?.checks ?? []).map((check) => [check.name, check]));
+    const cachedE2e = checksByName.get(heavyDeveloperCheckNames.e2e);
+    const cachedCoverage = checksByName.get(heavyDeveloperCheckNames.coverage);
+    const cachedSecurity = checksByName.get(heavyDeveloperCheckNames.security);
+
+    if (!cachedE2e || !cachedCoverage || !cachedSecurity) {
+      return null;
+    }
+
+    return {
+      e2eTests: cloneDeferredHeavyCheck(cachedE2e),
+      coverage: cloneDeferredHeavyCheck(cachedCoverage),
+      security: cloneDeferredHeavyCheck(cachedSecurity),
+    };
+  };
 
   const readCoverageSummaryMetrics = (): CoverageMetrics | null => {
     if (!existsSync(coverageSummaryPath)) {
@@ -820,7 +899,10 @@ export const createDeveloperStatusService = ({
     }
   };
 
-  const collectDeveloperStatus = async (): Promise<DeveloperStatusPayload> => {
+  const collectDeveloperStatus = async ({
+    includeHeavyChecks,
+    cachedPayload,
+  }: CollectDeveloperStatusOptions): Promise<DeveloperStatusPayload> => {
     const penetrationTestStatuses =
       process.env.DEPLOY_ENV === 'stage' ? collectPenetrationTestStatuses(repoRoot) : undefined;
 
@@ -840,15 +922,6 @@ export const createDeveloperStatusService = ({
       parseTestHighlights,
       240000,
       parseTestMetadata('integration', 'Integration'),
-    );
-
-    const e2eTests = await runDeveloperCheck(
-      'E2E tests',
-      ['run', 'test:e2e'],
-      (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
-      parseTestHighlights,
-      90000,
-      parseTestMetadata('e2e', 'E2E'),
     );
 
     const postgresTests = await runDeveloperCheck(
@@ -878,41 +951,65 @@ export const createDeveloperStatusService = ({
       () => ({ areaLabel: 'Static analysis' }),
     );
 
-    const coverage = await runDeveloperCheck(
-      'Coverage',
-      ['run', 'coverage'],
-      (stdout) => summarizeCoverageOutput(stdout),
-      parseCoverageHighlights,
-      420000,
-      (output) => ({
-        areaLabel: 'Coverage',
-        coverageBenchmarks: buildCoverageBenchmarks(output, readCoverageSummaryMetrics),
-      }),
-    );
+    const runHeavyChecks = async (): Promise<{
+      e2eTests: DeveloperCheck;
+      coverage: DeveloperCheck;
+      security: DeveloperCheck;
+    }> => {
+      const coverage = await runDeveloperCheck(
+        heavyDeveloperCheckNames.coverage,
+        ['run', 'coverage'],
+        (stdout) => summarizeCoverageOutput(stdout),
+        parseCoverageHighlights,
+        420000,
+        (output) => ({
+          areaLabel: 'Coverage',
+          coverageBenchmarks: buildCoverageBenchmarks(output, readCoverageSummaryMetrics),
+        }),
+      );
 
-    const securityBase = await runDeveloperCheck(
-      'Security vulnerabilities',
-      ['run', 'security:scan:components', '--silent'],
-      (stdout, stderr) => parseAuditSummary(stdout || stderr),
-      parseSecurityHighlights,
-      420000,
-      (output) => ({ areaLabel: 'Security', ...parseSecurityMetadata(output) }),
-    );
+      const securityBase = await runDeveloperCheck(
+        heavyDeveloperCheckNames.security,
+        ['run', 'security:scan:components', '--silent'],
+        (stdout, stderr) => parseAuditSummary(stdout || stderr),
+        parseSecurityHighlights,
+        420000,
+        (output) => ({ areaLabel: 'Security', ...parseSecurityMetadata(output) }),
+      );
 
-    const security: DeveloperCheck = {
-      ...securityBase,
-      penetrationTestStatuses,
+      const e2eTests = await runDeveloperCheck(
+        heavyDeveloperCheckNames.e2e,
+        ['run', 'test:e2e'],
+        (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
+        parseTestHighlights,
+        240000,
+        parseTestMetadata('e2e', 'E2E'),
+      );
+
+      return {
+        coverage,
+        security: {
+          ...securityBase,
+          penetrationTestStatuses,
+        },
+        e2eTests,
+      };
     };
+
+    const deferredHeavyChecks = includeHeavyChecks
+      ? null
+      : resolveDeferredHeavyChecks(cachedPayload ?? developerStatusCache?.payload);
+    const { e2eTests, coverage, security } = deferredHeavyChecks ?? (await runHeavyChecks());
 
     const checks = [
       unitTests,
       integrationTests,
-      e2eTests,
       postgresTests,
       lint,
       typecheck,
       coverage,
       security,
+      e2eTests,
     ];
     const failedChecks = checks.filter((item) => !item.ok).length;
     const passedChecks = checks.length - failedChecks;
@@ -942,55 +1039,137 @@ export const createDeveloperStatusService = ({
     return payload;
   };
 
-  const getStatus = async (forceRefresh = false): Promise<DeveloperStatusResult> => {
-    const now = Date.now();
+  const toCachedPayload = (payload: DeveloperStatusPayload): DeveloperStatusPayload => ({
+    ...payload,
+    history: [...developerStatusHistory],
+  });
 
-    if (
-      !forceRefresh &&
-      developerStatusCache &&
-      now - developerStatusCache.cachedAt < statusCacheTtlMs
-    ) {
-      return {
-        payload: {
-          ...developerStatusCache.payload,
-          history: [...developerStatusHistory],
-        },
-        cache: {
-          ttlMs: statusCacheTtlMs,
-          ageMs: now - developerStatusCache.cachedAt,
-          fromCache: true,
-        },
-      };
-    }
+  const createCacheInfo = ({
+    ageMs,
+    fromCache,
+    stale,
+    refreshInProgress,
+  }: {
+    ageMs: number;
+    fromCache: boolean;
+    stale: boolean;
+    refreshInProgress: boolean;
+  }) => ({
+    ttlMs: statusCacheTtlMs,
+    ageMs,
+    fromCache,
+    stale,
+    refreshInProgress,
+  });
 
+  const createWarmupPayload = (): DeveloperStatusPayload => ({
+    generatedAt: new Date().toISOString(),
+    repositoryPath: repoRoot,
+    overallStatus: 'healthy',
+    failedChecks: 0,
+    passedChecks: 0,
+    totalChecks: 0,
+    totalDurationMs: 0,
+    checks: [],
+    history: [...developerStatusHistory],
+  });
+
+  const runRefresh = async (includeHeavyChecks: boolean): Promise<DeveloperStatusPayload> => {
     if (developerStatusInFlight !== null) {
-      const payload = await developerStatusInFlight;
-      return {
-        payload,
-        cache: {
-          ttlMs: statusCacheTtlMs,
-          ageMs: 0,
-          fromCache: false,
-        },
-      };
+      if (!includeHeavyChecks || developerStatusInFlight.includeHeavyChecks) {
+        return developerStatusInFlight.promise;
+      }
+
+      try {
+        await developerStatusInFlight.promise;
+      } catch {
+        // Ignore in-flight failures so a force refresh can retry with heavy checks.
+      }
     }
 
-    developerStatusInFlight = collectDeveloperStatus();
+    const refreshPromise = collectDeveloperStatus({
+      includeHeavyChecks,
+      cachedPayload: developerStatusCache?.payload ?? null,
+    });
+    developerStatusInFlight = {
+      promise: refreshPromise,
+      includeHeavyChecks,
+    };
 
     try {
-      const payload = await developerStatusInFlight;
+      const payload = await refreshPromise;
       developerStatusCache = { payload, cachedAt: Date.now() };
+      return payload;
+    } finally {
+      if (developerStatusInFlight?.promise === refreshPromise) {
+        developerStatusInFlight = null;
+      }
+    }
+  };
+
+  const triggerBackgroundRefresh = (): void => {
+    if (developerStatusInFlight !== null) {
+      return;
+    }
+
+    void runRefresh(false).catch(() => undefined);
+  };
+
+  const getStatus = async (forceRefresh = false): Promise<DeveloperStatusResult> => {
+    const now = Date.now();
+    const cacheAgeMs = developerStatusCache ? now - developerStatusCache.cachedAt : 0;
+    const hasFreshCache = developerStatusCache !== null && cacheAgeMs < statusCacheTtlMs;
+
+    if (!forceRefresh && developerStatusCache && hasFreshCache) {
       return {
-        payload,
-        cache: {
-          ttlMs: statusCacheTtlMs,
+        payload: toCachedPayload(developerStatusCache.payload),
+        cache: createCacheInfo({
+          ageMs: cacheAgeMs,
+          fromCache: true,
+          stale: false,
+          refreshInProgress: developerStatusInFlight !== null,
+        }),
+      };
+    }
+
+    if (!forceRefresh && developerStatusCache) {
+      triggerBackgroundRefresh();
+
+      return {
+        payload: toCachedPayload(developerStatusCache.payload),
+        cache: createCacheInfo({
+          ageMs: cacheAgeMs,
+          fromCache: true,
+          stale: true,
+          refreshInProgress: true,
+        }),
+      };
+    }
+
+    if (!forceRefresh && developerStatusCache === null && isToolingConstrainedRuntime()) {
+      triggerBackgroundRefresh();
+
+      return {
+        payload: createWarmupPayload(),
+        cache: createCacheInfo({
           ageMs: 0,
           fromCache: false,
-        },
+          stale: true,
+          refreshInProgress: true,
+        }),
       };
-    } finally {
-      developerStatusInFlight = null;
     }
+
+    const payload = await runRefresh(true);
+    return {
+      payload,
+      cache: createCacheInfo({
+        ageMs: 0,
+        fromCache: false,
+        stale: false,
+        refreshInProgress: false,
+      }),
+    };
   };
 
   return {

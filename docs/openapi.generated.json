@@ -1,0 +1,271 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Reconciliation Platform API",
+    "version": "0.1.0",
+    "description": "Operational API for authentication, reconciliation execution, run reports, and exports."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current origin"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "API is healthy"
+          }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "summary": "Prometheus API metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus metrics payload"
+          },
+          "404": {
+            "description": "Metrics endpoint disabled"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Authenticate user credentials",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "username",
+                  "password"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated user profile"
+          },
+          "401": {
+            "description": "Authentication failed"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/run": {
+      "post": {
+        "summary": "Run reconciliation synchronously or enqueue a queued run",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "bankFile",
+                  "qboFile"
+                ],
+                "properties": {
+                  "bankFile": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "qboFile": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "accountIdentifier": {
+                    "type": "string"
+                  },
+                  "periodLabel": {
+                    "type": "string"
+                  },
+                  "reconciliationFrequency": {
+                    "type": "string",
+                    "enum": [
+                      "Monthly",
+                      "Annual"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Synchronous reconciliation result"
+          },
+          "202": {
+            "description": "Queued reconciliation accepted"
+          },
+          "400": {
+            "description": "Invalid upload payload"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/jobs/{jobId}": {
+      "get": {
+        "summary": "Get queued reconciliation job status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queued job status payload"
+          },
+          "404": {
+            "description": "Queued job not found"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/latest": {
+      "get": {
+        "summary": "Fetch the latest completed reconciliation run",
+        "responses": {
+          "200": {
+            "description": "Latest run report"
+          },
+          "404": {
+            "description": "No completed run available"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/{id}": {
+      "get": {
+        "summary": "Fetch a reconciliation run report by run ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run report"
+          },
+          "404": {
+            "description": "Run not found"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/{id}/summary": {
+      "get": {
+        "summary": "Fetch run summary by run ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run summary"
+          },
+          "404": {
+            "description": "Run not found"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/{id}/exceptions": {
+      "get": {
+        "summary": "Fetch run exceptions (optionally paginated)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exceptions list or page object"
+          },
+          "404": {
+            "description": "Run not found"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/{id}/export/workbook": {
+      "get": {
+        "summary": "Download output workbook for a reconciliation run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workbook download"
+          },
+          "404": {
+            "description": "Workbook not available for run"
+          }
+        }
+      }
+    }
+  }
+}

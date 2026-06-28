@@ -59,6 +59,9 @@ export type DeveloperCheck = {
   highlights?: string[];
   areaLabel?: string;
   testType?: 'unit' | 'integration' | 'e2e' | 'postgres';
+  passedFileCount?: number;
+  failedFileCount?: number;
+  totalFileCount?: number;
   passedCount?: number;
   failedCount?: number;
   totalCount?: number;
@@ -125,6 +128,8 @@ export type DeveloperStatusCacheInfo = {
   ttlMs: number;
   ageMs: number;
   fromCache: boolean;
+  stale?: boolean;
+  refreshInProgress?: boolean;
 };
 
 /** Combined return value from `getStatus`, pairing the payload with cache metadata. */

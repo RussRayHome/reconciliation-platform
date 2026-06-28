@@ -1,6 +1,7 @@
-import { startTransition, useDeferredValue, useMemo, useState } from 'react';
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import { errorCategoryDisplayNames, type ExceptionItem } from '@recon/domain';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Pill } from '@recon/ui';
 
 interface ExceptionTableProps {
@@ -82,6 +83,14 @@ const toDisplayItem = (item: ExceptionItem): ExceptionDisplayItem => ({
 export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (globalThis.window === undefined) {
+      return true;
+    }
+
+    return globalThis.window.matchMedia('(min-width: 961px)').matches;
+  });
+  const desktopScrollRef = useRef<HTMLDivElement | null>(null);
   const deferredQuery = useDeferredValue(query);
   const categories = useMemo(
     () => ['All', ...new Set(exceptions.map((item) => item.category))],
@@ -105,6 +114,33 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
     [categoryFilter, exceptions, normalizedQuery],
   );
   const displayItems = useMemo(() => filtered.map(toDisplayItem), [filtered]);
+  const shouldVirtualizeDesktopRows = isDesktopViewport && displayItems.length > 150;
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: displayItems.length,
+    getScrollElement: () => desktopScrollRef.current,
+    estimateSize: () => 228,
+    overscan: 6,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+
+  useEffect(() => {
+    if (globalThis.window === undefined) {
+      return undefined;
+    }
+
+    const mediaQueryList = globalThis.window.matchMedia('(min-width: 961px)');
+    const onChange = (event: MediaQueryListEvent): void => {
+      setIsDesktopViewport(event.matches);
+    };
+
+    setIsDesktopViewport(mediaQueryList.matches);
+    mediaQueryList.addEventListener('change', onChange);
+
+    return () => {
+      mediaQueryList.removeEventListener('change', onChange);
+    };
+  }, []);
 
   return (
     <div className="table-shell">
@@ -143,6 +179,9 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
         <span>
           Showing {displayItems.length} of {exceptions.length} exceptions.
         </span>
+        {shouldVirtualizeDesktopRows ? (
+          <span>Virtualized view enabled for large result sets.</span>
+        ) : null}
         {hasActiveFilters ? (
           <button
             type="button"
@@ -164,49 +203,110 @@ export const ExceptionTable = ({ exceptions }: ExceptionTableProps) => {
         </div>
       ) : (
         <>
-          <div className="table-scroll table-scroll--desktop">
-            <table>
-              <caption className="visually-hidden">
-                Exception report with severity, category, source, amount, and source line details.
-              </caption>
-              <thead>
-                <tr>
-                  <th>Severity</th>
-                  <th>Category</th>
-                  <th>Rule</th>
-                  <th>Source</th>
-                  <th>Date</th>
-                  <th>Amount</th>
-                  <th>Reason</th>
-                  <th>Evidence</th>
-                  <th>Next Actions</th>
-                  <th>Counterparts</th>
-                  <th>Rule Lineage</th>
-                  <th>File / Line</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayItems.map((entry) => (
-                  <tr key={entry.item.id}>
-                    <td>
-                      <Pill tone={toneBySeverity[entry.item.severity]}>{entry.item.severity}</Pill>
-                    </td>
-                    <td>{entry.categoryLabel}</td>
-                    <td>{entry.ruleLabel}</td>
-                    <td>{entry.sourceLabel}</td>
-                    <td>{entry.dateLabel}</td>
-                    <td>{entry.amountLabel}</td>
-                    <td>{entry.reasonLabel}</td>
-                    <td>{entry.evidenceLabel}</td>
-                    <td>{entry.nextActionsLabel}</td>
-                    <td>{entry.counterpartLabel}</td>
-                    <td>{entry.ruleLineageLabel}</td>
-                    <td>{entry.fileLineLabel}</td>
+          {shouldVirtualizeDesktopRows ? (
+            <div className="exception-virtual-list table-scroll--desktop" ref={desktopScrollRef}>
+              <div
+                className="exception-virtual-list__canvas"
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                }}
+              >
+                {virtualRows.map((virtualRow) => {
+                  const entry = displayItems[virtualRow.index];
+                  if (!entry) {
+                    return null;
+                  }
+
+                  return (
+                    <article
+                      className="exception-virtual-card"
+                      key={`virtual-${entry.item.id}`}
+                      style={{
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <header className="exception-virtual-card__header">
+                        <Pill tone={toneBySeverity[entry.item.severity]}>
+                          {entry.item.severity}
+                        </Pill>
+                        <strong>{entry.categoryLabel}</strong>
+                      </header>
+                      <div className="exception-virtual-card__grid">
+                        <div>
+                          <span>Rule</span>
+                          <strong>{entry.ruleLabel}</strong>
+                        </div>
+                        <div>
+                          <span>Source</span>
+                          <strong>{entry.sourceLabel}</strong>
+                        </div>
+                        <div>
+                          <span>Date</span>
+                          <strong>{entry.dateLabel}</strong>
+                        </div>
+                        <div>
+                          <span>Amount</span>
+                          <strong>{entry.amountLabel}</strong>
+                        </div>
+                      </div>
+                      <p className="exception-virtual-card__reason">{entry.reasonLabel}</p>
+                      <div className="exception-virtual-card__meta">
+                        <span>{entry.fileLineLabel}</span>
+                        <span>{entry.counterpartLabel}</span>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="table-scroll table-scroll--desktop">
+              <table>
+                <caption className="visually-hidden">
+                  Exception report with severity, category, source, amount, and source line details.
+                </caption>
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>Category</th>
+                    <th>Rule</th>
+                    <th>Source</th>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Reason</th>
+                    <th>Evidence</th>
+                    <th>Next Actions</th>
+                    <th>Counterparts</th>
+                    <th>Rule Lineage</th>
+                    <th>File / Line</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {displayItems.map((entry) => (
+                    <tr key={entry.item.id}>
+                      <td>
+                        <Pill tone={toneBySeverity[entry.item.severity]}>
+                          {entry.item.severity}
+                        </Pill>
+                      </td>
+                      <td>{entry.categoryLabel}</td>
+                      <td>{entry.ruleLabel}</td>
+                      <td>{entry.sourceLabel}</td>
+                      <td>{entry.dateLabel}</td>
+                      <td>{entry.amountLabel}</td>
+                      <td>{entry.reasonLabel}</td>
+                      <td>{entry.evidenceLabel}</td>
+                      <td>{entry.nextActionsLabel}</td>
+                      <td>{entry.counterpartLabel}</td>
+                      <td>{entry.ruleLineageLabel}</td>
+                      <td>{entry.fileLineLabel}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="exception-card-list" aria-label="Exception report cards">
             {displayItems.map((entry) => (
               <article className="exception-card" key={`card-${entry.item.id}`}>

@@ -66,21 +66,53 @@ const parseDbPreflightCounts = (
 };
 
 /** Extracts pass/fail/total counts from Vitest or Playwright test runner stdout. Returns `null` if no counts are found. */
-export const parseTestMetrics = (
-  output: string,
-): { passed: number; failed: number; total: number } | null => {
+type ParsedTestMetrics = {
+  passed: number;
+  failed: number;
+  total: number;
+  passedFileCount?: number;
+  failedFileCount?: number;
+  totalFileCount?: number;
+};
+
+const parseVitestFileMetrics = (lines: string[]): { passed: number; failed: number } | null => {
+  const vitestFilesLine = [...lines].reverse().find((line) => /^Test Files?\b/i.test(line));
+  return vitestFilesLine ? parseSummaryCounts(vitestFilesLine) : null;
+};
+
+export const parseTestMetrics = (output: string): ParsedTestMetrics | null => {
   const clean = stripAnsi(output);
   const lines = clean
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+  const vitestFileCounts = parseVitestFileMetrics(lines);
 
   const vitestTestsLine = [...lines].reverse().find((line) => /^Tests\b/i.test(line));
   const vitestCounts = vitestTestsLine ? parseSummaryCounts(vitestTestsLine) : null;
   if (vitestCounts) {
-    return {
+    const metrics: ParsedTestMetrics = {
       ...vitestCounts,
       total: vitestCounts.passed + vitestCounts.failed,
+    };
+
+    if (vitestFileCounts) {
+      metrics.passedFileCount = vitestFileCounts.passed;
+      metrics.failedFileCount = vitestFileCounts.failed;
+      metrics.totalFileCount = vitestFileCounts.passed + vitestFileCounts.failed;
+    }
+
+    return metrics;
+  }
+
+  if (vitestFileCounts) {
+    return {
+      passed: vitestFileCounts.passed,
+      failed: vitestFileCounts.failed,
+      total: vitestFileCounts.passed + vitestFileCounts.failed,
+      passedFileCount: vitestFileCounts.passed,
+      failedFileCount: vitestFileCounts.failed,
+      totalFileCount: vitestFileCounts.passed + vitestFileCounts.failed,
     };
   }
 
@@ -558,6 +590,9 @@ export const parseTestMetadata =
     return {
       areaLabel,
       testType,
+      passedFileCount: metrics?.passedFileCount,
+      failedFileCount: metrics?.failedFileCount,
+      totalFileCount: metrics?.totalFileCount,
       passedCount: metrics?.passed,
       failedCount: metrics?.failed,
       totalCount: metrics?.total,

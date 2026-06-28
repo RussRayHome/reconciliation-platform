@@ -19,10 +19,18 @@ import {
 } from '@recon/persistence';
 import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { createDeveloperStatusService } from './services/developerStatusService';
 import { createDeveloperRuntimeService } from './services/developerRuntimeService';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
+import {
+  createReconciliationQueue,
+  type QueuedReconciliationFilePayload,
+  type QueuedReconciliationJobPayload,
+  type QueuedReconciliationResult,
+} from './services/reconciliationQueue';
+import { captureApiException, flushApiSentry, initializeApiSentry } from './services/sentry';
 
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
@@ -150,6 +158,11 @@ type ReconciliationUploadFiles = {
   qboFile: Express.Multer.File;
 };
 
+type QueuedReconciliationFiles = {
+  bankFile: QueuedReconciliationFilePayload;
+  qboFile: QueuedReconciliationFilePayload;
+};
+
 type LifecycleRegistrationContext = {
   runId: string;
   bankSourceFileId: string;
@@ -159,6 +172,11 @@ type LifecycleRegistrationContext = {
 type ReconciliationWorkflowResult = ReconciliationRequestInput & {
   persistenceJobId: string;
   run: ReconciliationRun;
+};
+
+type ReconciliationJobEnqueueResponse = {
+  jobId: string;
+  status: 'queued';
 };
 
 const reviewerDecisionTargetTypes = new Set<ReviewerDecisionTargetType>([
@@ -304,6 +322,65 @@ const getUploadedReconciliationFiles = (files: UploadFileMap): ReconciliationUpl
   return { bankFile, qboFile };
 };
 
+const toQueuedReconciliationFiles = (
+  files: ReconciliationUploadFiles,
+): QueuedReconciliationFiles => ({
+  bankFile: {
+    originalname: files.bankFile.originalname,
+    mimetype: files.bankFile.mimetype,
+    buffer: files.bankFile.buffer.toString('base64'),
+  },
+  qboFile: {
+    originalname: files.qboFile.originalname,
+    mimetype: files.qboFile.mimetype,
+    buffer: files.qboFile.buffer.toString('base64'),
+  },
+});
+
+const fromQueuedReconciliationFiles = (
+  files: QueuedReconciliationFiles,
+): ReconciliationUploadFiles => {
+  const bankBuffer = Buffer.from(files.bankFile.buffer, 'base64');
+  const qboBuffer = Buffer.from(files.qboFile.buffer, 'base64');
+
+  return {
+    bankFile: {
+      fieldname: 'bankFile',
+      originalname: files.bankFile.originalname,
+      encoding: '7bit',
+      mimetype: files.bankFile.mimetype,
+      size: bankBuffer.byteLength,
+      buffer: bankBuffer,
+      destination: '',
+      filename: files.bankFile.originalname,
+      path: '',
+      stream: Readable.from(bankBuffer),
+    },
+    qboFile: {
+      fieldname: 'qboFile',
+      originalname: files.qboFile.originalname,
+      encoding: '7bit',
+      mimetype: files.qboFile.mimetype,
+      size: qboBuffer.byteLength,
+      buffer: qboBuffer,
+      destination: '',
+      filename: files.qboFile.originalname,
+      path: '',
+      stream: Readable.from(qboBuffer),
+    },
+  };
+};
+
+const sanitizeQueuedReconciliationResult = (
+  queuedResult: QueuedReconciliationResult,
+): QueuedReconciliationResult => ({
+  status: queuedResult.status,
+  run: queuedResult.run,
+  runId: queuedResult.runId,
+  failedAt: queuedResult.failedAt,
+  reason: queuedResult.reason,
+});
+
 const parseReconciliationRequestInput = (
   body: Record<string, unknown>,
 ): ReconciliationRequestInput => ({
@@ -381,7 +458,7 @@ const runReconciliationWorkflow = async (input: {
   body: Record<string, unknown>;
   files: ReconciliationUploadFiles;
   requestId: unknown;
-  requestLog: express.Request['log'];
+  requestLog: pino.Logger;
   repository: InMemoryRunRepository;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   pool?: Pool;
@@ -595,6 +672,14 @@ type ApiRateLimiter = {
   } | null;
 };
 
+type ReconciliationQueueConfiguration = {
+  enabled: boolean;
+  redisUrl: string | null;
+  queueName: string;
+  prefix: string;
+  concurrency: number;
+};
+
 const resolveRateLimitRedisConfiguration = (): {
   enabled: boolean;
   url: string | null;
@@ -692,6 +777,206 @@ const createApiRateLimiter = (logger: pino.Logger): ApiRateLimiter => {
   };
 };
 
+const resolveReconciliationQueueConfiguration = (): ReconciliationQueueConfiguration => {
+  const queueEnabled = parseBooleanFlag(process.env.ENABLE_RECONCILIATION_QUEUE) === true;
+  const configuredRedisUrl =
+    process.env.RECONCILIATION_QUEUE_REDIS_URL?.trim() ||
+    process.env.RATE_LIMIT_REDIS_URL?.trim() ||
+    process.env.REDIS_URL?.trim() ||
+    null;
+
+  return {
+    enabled: queueEnabled,
+    redisUrl: configuredRedisUrl,
+    queueName: process.env.RECONCILIATION_QUEUE_NAME?.trim() || 'reconciliation-runs',
+    prefix: process.env.RECONCILIATION_QUEUE_PREFIX?.trim() || 'recon',
+    concurrency: parsePositiveInteger(process.env.RECONCILIATION_QUEUE_CONCURRENCY, 1, 8),
+  };
+};
+
+export const buildOpenApiSpec = () => ({
+  openapi: '3.0.3',
+  info: {
+    title: 'Reconciliation Platform API',
+    version: '0.1.0',
+    description:
+      'Operational API for authentication, reconciliation execution, run reports, and exports.',
+  },
+  servers: [{ url: '/', description: 'Current origin' }],
+  paths: {
+    '/api/health': {
+      get: {
+        summary: 'Health check',
+        responses: {
+          200: {
+            description: 'API is healthy',
+          },
+        },
+      },
+    },
+    '/api/metrics': {
+      get: {
+        summary: 'Prometheus API metrics',
+        responses: {
+          200: { description: 'Prometheus metrics payload' },
+          404: { description: 'Metrics endpoint disabled' },
+        },
+      },
+    },
+    '/api/auth/login': {
+      post: {
+        summary: 'Authenticate user credentials',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['username', 'password'],
+                properties: {
+                  username: { type: 'string' },
+                  password: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Authenticated user profile' },
+          401: { description: 'Authentication failed' },
+        },
+      },
+    },
+    '/api/reconciliation/run': {
+      post: {
+        summary: 'Run reconciliation synchronously or enqueue a queued run',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['bankFile', 'qboFile'],
+                properties: {
+                  bankFile: { type: 'string', format: 'binary' },
+                  qboFile: { type: 'string', format: 'binary' },
+                  accountIdentifier: { type: 'string' },
+                  periodLabel: { type: 'string' },
+                  reconciliationFrequency: {
+                    type: 'string',
+                    enum: ['Monthly', 'Annual'],
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Synchronous reconciliation result' },
+          202: { description: 'Queued reconciliation accepted' },
+          400: { description: 'Invalid upload payload' },
+        },
+      },
+    },
+    '/api/reconciliation/jobs/{jobId}': {
+      get: {
+        summary: 'Get queued reconciliation job status',
+        parameters: [
+          {
+            in: 'path',
+            name: 'jobId',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: { description: 'Queued job status payload' },
+          404: { description: 'Queued job not found' },
+        },
+      },
+    },
+    '/api/reconciliation/latest': {
+      get: {
+        summary: 'Fetch the latest completed reconciliation run',
+        responses: {
+          200: { description: 'Latest run report' },
+          404: { description: 'No completed run available' },
+        },
+      },
+    },
+    '/api/reconciliation/{id}': {
+      get: {
+        summary: 'Fetch a reconciliation run report by run ID',
+        parameters: [
+          {
+            in: 'path',
+            name: 'id',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: { description: 'Run report' },
+          404: { description: 'Run not found' },
+        },
+      },
+    },
+    '/api/reconciliation/{id}/summary': {
+      get: {
+        summary: 'Fetch run summary by run ID',
+        parameters: [
+          {
+            in: 'path',
+            name: 'id',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: { description: 'Run summary' },
+          404: { description: 'Run not found' },
+        },
+      },
+    },
+    '/api/reconciliation/{id}/exceptions': {
+      get: {
+        summary: 'Fetch run exceptions (optionally paginated)',
+        parameters: [
+          {
+            in: 'path',
+            name: 'id',
+            required: true,
+            schema: { type: 'string' },
+          },
+          { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1 } },
+          { in: 'query', name: 'offset', schema: { type: 'integer', minimum: 0 } },
+        ],
+        responses: {
+          200: { description: 'Exceptions list or page object' },
+          404: { description: 'Run not found' },
+        },
+      },
+    },
+    '/api/reconciliation/{id}/export/workbook': {
+      get: {
+        summary: 'Download output workbook for a reconciliation run',
+        parameters: [
+          {
+            in: 'path',
+            name: 'id',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: { description: 'Workbook download' },
+          404: { description: 'Workbook not available for run' },
+        },
+      },
+    },
+  },
+});
+
 const isDeveloperDiagnosticsEnabled = (): boolean => {
   const override = parseBooleanFlag(process.env.ENABLE_DEVELOPER_DIAGNOSTICS);
   if (override !== null) {
@@ -722,6 +1007,70 @@ export const createApp = (
   const apiMetricsFlag = parseBooleanFlag(process.env.ENABLE_API_METRICS);
   const apiMetrics = apiMetricsFlag === true || apiMetricsFlag === null ? createApiMetrics() : null;
   const apiRateLimiter = createApiRateLimiter(httpLogger);
+  const openApiSpec = buildOpenApiSpec();
+  const queueConfiguration = resolveReconciliationQueueConfiguration();
+
+  initializeApiSentry(httpLogger);
+
+  const reconciliationQueue = createReconciliationQueue({
+    enabled: queueConfiguration.enabled,
+    redisUrl: queueConfiguration.redisUrl,
+    queueName: queueConfiguration.queueName,
+    prefix: queueConfiguration.prefix,
+    concurrency: queueConfiguration.concurrency,
+    logger: httpLogger,
+    processJob: async (
+      payload: QueuedReconciliationJobPayload,
+    ): Promise<QueuedReconciliationResult> => {
+      const started = Date.now();
+      let persistenceJobId: string | undefined;
+
+      try {
+        const workflowResult = await runReconciliationWorkflow({
+          body: payload.body,
+          files: fromQueuedReconciliationFiles(payload.files),
+          requestId: payload.requestId,
+          requestLog: httpLogger,
+          repository,
+          lifecycleStore,
+          pool,
+        });
+        persistenceJobId = workflowResult.persistenceJobId;
+
+        recordSuccessfulReconciliationRun({
+          requestId: payload.requestId,
+          started,
+          result: workflowResult,
+        });
+
+        return {
+          status: 'completed',
+          runId: workflowResult.run.id,
+          run: sanitizeRun(workflowResult.run),
+        };
+      } catch (error) {
+        await handleFailedReconciliationRun({
+          requestId: payload.requestId,
+          requestBody: payload.body,
+          started,
+          lifecycleStore,
+          persistenceJobId,
+          error,
+        });
+        captureApiException(error, {
+          tags: { scope: 'reconciliation-queue' },
+          extra: { requestId: payload.requestId },
+        });
+
+        return {
+          status: 'failed',
+          failedAt: new Date().toISOString(),
+          reason:
+            error instanceof Error ? error.message : 'Unexpected reconciliation queue failure',
+        };
+      }
+    },
+  });
 
   app.set('trust proxy', true);
   app.use(
@@ -887,6 +1236,10 @@ export const createApp = (
     response.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  app.get('/api/openapi.json', (_request, response) => {
+    response.json(openApiSpec);
+  });
+
   app.get('/api/metrics', async (_request, response, next) => {
     if (!apiMetrics) {
       response.status(404).type('text/plain; charset=utf-8').send('# API metrics are disabled.\n');
@@ -1024,6 +1377,18 @@ export const createApp = (
         }
 
         const body = (request.body ?? {}) as Record<string, unknown>;
+        if (reconciliationQueue.enabled) {
+          const queuedResponse: ReconciliationJobEnqueueResponse =
+            await reconciliationQueue.enqueue({
+              requestId: resolveCorrelationId(request.id),
+              body,
+              files: toQueuedReconciliationFiles(files),
+            });
+
+          response.status(202).json(queuedResponse);
+          return;
+        }
+
         const workflowResult = await runReconciliationWorkflow({
           body,
           files,
@@ -1056,6 +1421,36 @@ export const createApp = (
       }
     },
   );
+
+  app.get('/api/reconciliation/jobs/:jobId', async (request, response, next) => {
+    try {
+      if (!reconciliationQueue.enabled) {
+        response.status(404).json({ message: 'Reconciliation queue is disabled.' });
+        return;
+      }
+
+      const queuedResult = await reconciliationQueue.getStatus(request.params.jobId);
+      if (!queuedResult) {
+        response.status(404).json({ message: 'Queued reconciliation job not found.' });
+        return;
+      }
+
+      let responsePayload = queuedResult;
+      if (queuedResult.status === 'completed' && queuedResult.runId && !queuedResult.run) {
+        const run = await loadRunReport(queuedResult.runId);
+        if (run) {
+          responsePayload = {
+            ...queuedResult,
+            run,
+          };
+        }
+      }
+
+      response.json(sanitizeQueuedReconciliationResult(responsePayload));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get('/api/reconciliation/latest', async (_request, response, next) => {
     try {
@@ -1371,6 +1766,17 @@ export const createApp = (
       const errorName = error instanceof Error ? error.name : 'UnknownError';
 
       request.log.error({ action: 'api.unhandled.error', statusCode, err: { message, stack } });
+      captureApiException(error, {
+        tags: {
+          scope: 'http-request',
+          statusCode: String(statusCode),
+        },
+        extra: {
+          method: request.method,
+          path: request.originalUrl,
+          correlationId: resolveCorrelationId(request.id),
+        },
+      });
       developerRuntimeService.recordException({
         timestamp: new Date().toISOString(),
         method: request.method,
@@ -1389,6 +1795,9 @@ export const createApp = (
     if (apiRateLimiter.redisClient?.isOpen) {
       await apiRateLimiter.redisClient.quit().catch(() => undefined);
     }
+
+    await reconciliationQueue.close().catch(() => undefined);
+    await flushApiSentry().catch(() => undefined);
   };
 
   return app;
