@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import type { ExceptionItem } from '@recon/domain';
 
+import type { ExceptionItem } from '@recon/domain';
 import { ExceptionTable } from './ExceptionTable';
+import userEvent from '@testing-library/user-event';
 
 const exceptions: ExceptionItem[] = [
   {
@@ -52,6 +52,18 @@ const exceptions: ExceptionItem[] = [
   },
 ];
 
+const buildExceptions = (count: number): ExceptionItem[] =>
+  Array.from({ length: count }, (_, index) => {
+    const template = exceptions[index % exceptions.length] as ExceptionItem;
+    return {
+      ...template,
+      id: `exception-${index + 1}`,
+      lineNumber: index + 2,
+      errorMessage: `Synthetic exception ${index + 1}`,
+      normalizedComparisonTokens: [`TOKEN-${index + 1}`],
+    };
+  });
+
 afterEach(() => {
   cleanup();
 });
@@ -84,5 +96,42 @@ describe('ExceptionTable', () => {
 
     expect(screen.getAllByText('Showing 1 of 2 exceptions.').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Timing Difference').length).toBeGreaterThan(0);
+  });
+
+  it('enables desktop virtualization for large result sets', () => {
+    vi.spyOn(globalThis, 'matchMedia').mockImplementation((query: string) => ({
+      matches: query === '(min-width: 961px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const largeExceptions = buildExceptions(170);
+    const { container } = render(<ExceptionTable exceptions={largeExceptions} />);
+
+    expect(screen.getByText('Virtualized view enabled for large result sets.')).toBeInTheDocument();
+    expect(container.querySelector('.exception-virtual-list')).not.toBeNull();
+  });
+
+  it('keeps standard table rendering for smaller desktop result sets', () => {
+    vi.spyOn(globalThis, 'matchMedia').mockImplementation((query: string) => ({
+      matches: query === '(min-width: 961px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const { container } = render(<ExceptionTable exceptions={buildExceptions(12)} />);
+
+    expect(screen.queryByText('Virtualized view enabled for large result sets.')).toBeNull();
+    expect(container.querySelector('.table-scroll--desktop table')).not.toBeNull();
   });
 });

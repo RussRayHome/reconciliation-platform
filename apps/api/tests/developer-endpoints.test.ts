@@ -16,10 +16,15 @@ type DeveloperStatusResponseBody = {
   overallStatus: string;
   cache: {
     fromCache: boolean;
+    stale?: boolean;
+    refreshInProgress?: boolean;
   };
   checks: Array<{
     name: string;
     testType?: string;
+    passedFileCount?: number;
+    failedFileCount?: number;
+    totalFileCount?: number;
     passedCount?: number;
     failedCount?: number;
     areaLabel?: string;
@@ -385,7 +390,7 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    const response = await request(app).get('/api/developer/status').expect(200);
+    const response = await request(app).get('/api/developer/status?force=1').expect(200);
     const body = response.body as DeveloperStatusResponseBody;
 
     expect(body.overallStatus).toBe('healthy');
@@ -397,6 +402,9 @@ describe('developer endpoints', () => {
         expect.objectContaining({
           name: 'Unit tests',
           testType: 'unit',
+          passedFileCount: 9,
+          failedFileCount: 0,
+          totalFileCount: 9,
           passedCount: 114,
           failedCount: 0,
           areaLabel: 'Unit',
@@ -404,6 +412,9 @@ describe('developer endpoints', () => {
         expect.objectContaining({
           name: 'Integration tests',
           testType: 'integration',
+          passedFileCount: 1,
+          failedFileCount: 0,
+          totalFileCount: 1,
           passedCount: 5,
           failedCount: 0,
           areaLabel: 'Integration',
@@ -418,6 +429,9 @@ describe('developer endpoints', () => {
         expect.objectContaining({
           name: 'Postgres DB tests',
           testType: 'postgres',
+          passedFileCount: 2,
+          failedFileCount: 0,
+          totalFileCount: 2,
           passedCount: 11,
           failedCount: 0,
           areaLabel: 'Postgres DB',
@@ -436,6 +450,16 @@ describe('developer endpoints', () => {
         }),
       ]),
     );
+    expect(body.checks.map((check) => check.name)).toEqual([
+      'Unit tests',
+      'Integration tests',
+      'Postgres DB tests',
+      'Static analysis (lint)',
+      'Static analysis (typecheck)',
+      'Coverage',
+      'Security vulnerabilities',
+      'E2E tests',
+    ]);
 
     const securityCheck = body.checks.find((check) => check.name === 'Security vulnerabilities');
     expect(securityCheck).toBeDefined();
@@ -490,6 +514,24 @@ describe('developer endpoints', () => {
       },
       failingAreas: [],
     });
+  });
+
+  it('returns warmup payload immediately for non-force cold starts in constrained runtimes', async () => {
+    process.env.NODE_ENV = 'production';
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    const response = await request(app).get('/api/developer/status').expect(200);
+    const body = response.body as DeveloperStatusResponseBody;
+
+    expect(body.cache).toMatchObject({
+      fromCache: false,
+      stale: true,
+      refreshInProgress: true,
+    });
+    expect(body.overallStatus).toBe('healthy');
+    expect(body.checks).toHaveLength(0);
   });
 
   it('returns runtime diagnostics and recent developer activity', async () => {

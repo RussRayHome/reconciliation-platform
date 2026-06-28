@@ -1,0 +1,40 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: 'America/New_York'
+    open-pull-requests-limit: 10
+    target-branch: dev
+    labels:
+      - dependencies
+      - automated
+    groups:
+      security-patches:
+        applies-to: security-updates
+        patterns:
+          - '*'
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: 'exceljs'
+        versions:
+          - '>=5'
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:30'
+      timezone: 'America/New_York'
+    target-branch: dev
+    labels:
+      - dependencies
+      - ci

@@ -3,6 +3,19 @@ import type { ReconciliationRunReport } from '@recon/domain';
 /** Alias for the full reconciliation run report returned by the API. */
 export type ReconciliationRunResponse = ReconciliationRunReport;
 
+type QueuedReconciliationEnqueueResponse = {
+  jobId: string;
+  status: 'queued';
+};
+
+export type QueuedReconciliationStatusResponse = {
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  runId?: string;
+  run?: ReconciliationRunResponse;
+  failedAt?: string;
+  reason?: string;
+};
+
 interface LoginPayload {
   username: string;
   password: string;
@@ -34,6 +47,69 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
   return (await response.json()) as T;
 };
 
+const isQueuedEnqueueResponse = (
+  payload: ReconciliationRunResponse | QueuedReconciliationEnqueueResponse,
+): payload is QueuedReconciliationEnqueueResponse => {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'status' in payload &&
+    payload.status === 'queued' &&
+    'jobId' in payload &&
+    typeof payload.jobId === 'string'
+  );
+};
+
+const wait = async (durationMs: number): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+};
+
+export const getReconciliationRunByIdRequest = async (
+  runId: string,
+): Promise<ReconciliationRunResponse> => {
+  const response = await fetch(`/api/reconciliation/${encodeURIComponent(runId)}`);
+  return parseResponse<ReconciliationRunResponse>(response);
+};
+
+const getQueuedReconciliationStatusRequest = async (
+  jobId: string,
+): Promise<QueuedReconciliationStatusResponse> => {
+  const response = await fetch(`/api/reconciliation/jobs/${encodeURIComponent(jobId)}`);
+  return parseResponse<QueuedReconciliationStatusResponse>(response);
+};
+
+const waitForQueuedReconciliationRun = async (
+  jobId: string,
+  pollIntervalMs = 1000,
+  maxAttempts = 300,
+): Promise<ReconciliationRunResponse> => {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const status = await getQueuedReconciliationStatusRequest(jobId);
+
+    if (status.status === 'failed') {
+      throw new Error(status.reason ?? 'Queued reconciliation failed.');
+    }
+
+    if (status.status === 'completed') {
+      if (status.run) {
+        return status.run;
+      }
+
+      if (status.runId) {
+        return getReconciliationRunByIdRequest(status.runId);
+      }
+
+      throw new Error('Queued reconciliation completed without a run payload.');
+    }
+
+    await wait(pollIntervalMs);
+  }
+
+  throw new Error('Timed out while waiting for queued reconciliation to complete.');
+};
+
 /** Submits a reconciliation run request with bank and QBO file uploads and optional metadata. */
 export const runReconciliationRequest = async ({
   bankFile,
@@ -60,7 +136,15 @@ export const runReconciliationRequest = async ({
     body: formData,
   });
 
-  return parseResponse<ReconciliationRunResponse>(response);
+  const parsed = await parseResponse<
+    ReconciliationRunResponse | QueuedReconciliationEnqueueResponse
+  >(response);
+
+  if (isQueuedEnqueueResponse(parsed)) {
+    return waitForQueuedReconciliationRun(parsed.jobId);
+  }
+
+  return parsed;
 };
 
 /** Fetches the most recently completed reconciliation run report. */

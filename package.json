@@ -10,6 +10,10 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "overrides": {
+    "esbuild": "0.28.1",
+    "uuid": "11.1.1"
+  },
   "scripts": {
     "dev": "concurrently -k -n API,WEB \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "npm run dev --workspace @recon/api",
@@ -81,7 +85,7 @@
     "analyze:complexity": "NODE_OPTIONS=--no-deprecation tsx scripts/escomplex-analysis.ts",
     "format": "prettier --write .",
     "typecheck": "tsc -p tsconfig.typecheck.json --pretty false",
-    "coverage": "vitest run --coverage --project unit-core --project unit-web --project integration --exclude apps/api/tests/deploy-cleanup.test.ts",
+    "coverage": "vitest run --coverage --project unit-core --project unit-web --project unit-data --project integration --exclude apps/api/tests/deploy-cleanup.test.ts",
     "security:scan": "npm audit --audit-level=high",
     "security:scan:component:api": "node scripts/security-scan-api.mjs",
     "security:scan:component:database": "node scripts/security-scan-database.mjs",
@@ -116,7 +120,9 @@
     "compare:workbooks": "python3 scripts/workbook-compare.py",
     "changelog:promote": "NODE_OPTIONS=--no-deprecation tsx scripts/changelog-promote.ts",
     "docs:api:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-api-docs.ts",
-    "docs:api:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-api-docs.ts --check"
+    "docs:api:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-api-docs.ts --check",
+    "docs:openapi:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-openapi-docs.ts",
+    "docs:openapi:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-openapi-docs.ts --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -159,6 +165,12 @@
     "@opentelemetry/auto-instrumentations-node": "^0.77.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
     "@opentelemetry/sdk-node": "^0.219.0",
+    "@sentry/node": "^10.62.0",
+    "@sentry/react": "^10.62.0",
+    "@tanstack/query-sync-storage-persister": "^5.101.1",
+    "@tanstack/react-query-persist-client": "^5.101.1",
+    "@tanstack/react-virtual": "^3.14.4",
+    "bullmq": "^5.79.2",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "prom-client": "^15.1.3",

@@ -98,7 +98,7 @@ jobs:
         run: npm ci
 
       - name: Validate static checks
-        run: npm run typecheck && npm run lint && npm run docs:api:check
+        run: npm run typecheck && npm run lint && npm run docs:api:check && npm run docs:openapi:check
 
       - name: Render Compose config
         run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml config >/tmp/reconciliation-compose-config.txt

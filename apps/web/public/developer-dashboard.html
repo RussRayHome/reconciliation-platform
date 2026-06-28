@@ -2459,9 +2459,71 @@
         return coverageMetricBoxes.length > 0 ? coverageMetricBoxes : getSecurityMetricBoxes(check);
       };
 
+      const toWholeNumberOrNull = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric < 0) {
+          return null;
+        }
+
+        return Math.trunc(numeric);
+      };
+
+      const isRepositoryTestCheck = (check) => {
+        const testType = String(check?.testType || '').toLowerCase();
+        return (
+          testType === 'unit' ||
+          testType === 'integration' ||
+          testType === 'e2e' ||
+          testType === 'postgres'
+        );
+      };
+
+      const formatTestBreakdownLine = (label, passed, failed, total) => {
+        if (passed === null && failed === null && total === null) {
+          return '';
+        }
+
+        const resolvedTotal = total !== null ? total : (passed || 0) + (failed || 0);
+
+        return `<div><strong>${escapeHtml(label)}:</strong> Passed: ${escapeHtml(passed === null ? '-' : passed)}, Failed: ${escapeHtml(failed === null ? '-' : failed)}, Total: ${escapeHtml(resolvedTotal)}</div>`;
+      };
+
+      const buildTestSummaryRowsHtml = (check) => {
+        if (!isRepositoryTestCheck(check)) {
+          return '';
+        }
+
+        const filePassed = toWholeNumberOrNull(check?.passedFileCount);
+        const fileFailed = toWholeNumberOrNull(check?.failedFileCount);
+        const fileTotal = toWholeNumberOrNull(check?.totalFileCount);
+
+        const casePassed = toWholeNumberOrNull(check?.passedCount);
+        const caseFailed = toWholeNumberOrNull(check?.failedCount);
+        const caseTotal = toWholeNumberOrNull(check?.totalCount);
+
+        const fileLine = formatTestBreakdownLine('Test files', filePassed, fileFailed, fileTotal);
+        const caseLine = formatTestBreakdownLine('Test cases', casePassed, caseFailed, caseTotal);
+
+        let errorsText = 'None';
+        if (!check?.ok) {
+          errorsText = 'Present (see output below).';
+        } else if (caseFailed !== null && caseFailed > 0) {
+          errorsText = `Present (${caseFailed} failed test case${caseFailed === 1 ? '' : 's'}).`;
+        }
+
+        return [
+          fileLine,
+          caseLine,
+          '<div><strong>Results:</strong> Full test runner output is shown below.</div>',
+          `<div><strong>Errors:</strong> ${escapeHtml(errorsText)}</div>`,
+        ]
+          .filter(Boolean)
+          .join('');
+      };
+
       const buildCheckSummaryHtml = (check, metricBoxes) => {
         if (metricBoxes.length === 0) {
-          return `<div><strong>Summary:</strong> ${escapeHtml(check.summary)}</div>`;
+          return `<div><strong>Summary:</strong> ${escapeHtml(check.summary)}</div>${buildTestSummaryRowsHtml(check)}`;
         }
 
         return `<div><strong>Summary:</strong></div>
@@ -2606,7 +2668,7 @@
         const metricBoxes = resolveCheckMetricBoxes(check);
         const securityComponentRowsHtml = buildSecurityComponentRowsMarkup(check);
         const summaryHtml = buildCheckSummaryHtml(check, metricBoxes);
-        let checkDetails = check.details || 'No additional output';
+        let checkDetails = stripAnsiCodes(check.details || 'No additional output');
         if (isCoverageCheck) {
           checkDetails = getCoverageDisplayText(check.details);
         } else if (isPostgresCheck) {
