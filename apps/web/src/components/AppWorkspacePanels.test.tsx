@@ -97,7 +97,6 @@ describe('ReviewSection probable matches performance rendering', () => {
         activeView="probable-matches"
         isHydrating={false}
         loadError={null}
-        onSelectView={() => {}}
         onGoToSetup={() => {}}
         decisionByTargetId={{}}
         pendingTargetId={null}
@@ -106,6 +105,8 @@ describe('ReviewSection probable matches performance rendering', () => {
         onDecide={() => {}}
         onClearDecision={() => {}}
         onUndoLastDecision={() => {}}
+        pendingSavedViewId={null}
+        onPendingSavedViewApplied={() => {}}
       />,
     );
 
@@ -123,7 +124,6 @@ describe('ReviewSection probable matches performance rendering', () => {
         activeView="probable-matches"
         isHydrating={false}
         loadError={null}
-        onSelectView={() => {}}
         onGoToSetup={() => {}}
         decisionByTargetId={{}}
         pendingTargetId={null}
@@ -132,6 +132,8 @@ describe('ReviewSection probable matches performance rendering', () => {
         onDecide={() => {}}
         onClearDecision={() => {}}
         onUndoLastDecision={() => {}}
+        pendingSavedViewId={null}
+        onPendingSavedViewApplied={() => {}}
       />,
     );
 

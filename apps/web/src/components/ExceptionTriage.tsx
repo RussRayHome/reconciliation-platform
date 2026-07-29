@@ -18,9 +18,10 @@ import { actionByOutcome, type DecisionAction } from '../hooks/useReviewerDecisi
 import {
   buildFacetOptions,
   emptyFacetSelection,
+  loadSavedViews,
   matchesFacets,
   matchesQuery,
-  SAVED_VIEWS_STORAGE_KEY,
+  persistSavedViews,
   sortDisplays,
   toExceptionDisplay,
   type SavedTriageView,
@@ -38,30 +39,6 @@ const facetGroupMeta: ReadonlyArray<{ key: TriageFacetKey; label: string }> = [
   { key: 'amountBand', label: 'Amount band' },
 ];
 
-const loadSavedViews = (): SavedTriageView[] => {
-  try {
-    const raw = globalThis.localStorage?.getItem(SAVED_VIEWS_STORAGE_KEY);
-
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-
-    return Array.isArray(parsed) ? (parsed as SavedTriageView[]) : [];
-  } catch {
-    return [];
-  }
-};
-
-const persistSavedViews = (views: SavedTriageView[]): void => {
-  try {
-    globalThis.localStorage?.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views));
-  } catch {
-    // Ignore storage failures so saved views still work in-memory for the session.
-  }
-};
-
 /** Master–detail exception triage: dense virtualized list, evidence detail, and in-place decisions. */
 export function ExceptionTriage({
   exceptions,
@@ -72,6 +49,8 @@ export function ExceptionTriage({
   onDecide,
   onClearDecision,
   onUndoLastDecision,
+  pendingSavedViewId = null,
+  onPendingSavedViewApplied,
 }: Readonly<{
   exceptions: ExceptionItem[];
   decisionByTargetId: Record<string, ReviewerDecision>;
@@ -81,6 +60,8 @@ export function ExceptionTriage({
   onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
   onClearDecision: (targetId: string) => void;
   onUndoLastDecision: () => void;
+  pendingSavedViewId?: string | null;
+  onPendingSavedViewApplied?: () => void;
 }>) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<{ key: TriageSortKey; direction: TriageSortDirection }>({
@@ -303,6 +284,22 @@ export function ExceptionTriage({
     setSort({ key: view.sortKey, direction: 'desc' });
     setFacetSelection({ ...emptyFacetSelection(), ...view.facets });
   };
+
+  useEffect(() => {
+    if (!pendingSavedViewId) {
+      return;
+    }
+
+    const view = savedViews.find((entry) => entry.id === pendingSavedViewId);
+
+    if (view) {
+      setQuery(view.query);
+      setSort({ key: view.sortKey, direction: 'desc' });
+      setFacetSelection({ ...emptyFacetSelection(), ...view.facets });
+    }
+
+    onPendingSavedViewApplied?.();
+  }, [pendingSavedViewId, savedViews, onPendingSavedViewApplied]);
 
   const deleteView = (id: string): void => {
     const next = savedViews.filter((entry) => entry.id !== id);

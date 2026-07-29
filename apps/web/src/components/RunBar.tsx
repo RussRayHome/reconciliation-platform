@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ProcessProgressSection, type ProgressStep } from './AppWorkspacePanels';
 
@@ -24,7 +24,7 @@ const resolveRunBarAnnouncement = (
   return '';
 };
 
-/** Sticky top bar that keeps the active run's identity and live status visible on every workspace tab. */
+/** Sticky glass top bar: primary run identity and status up front, everything else in the run-details popover. */
 export function RunBar({
   periodLabel,
   accountIdentifier,
@@ -43,10 +43,9 @@ export function RunBar({
   rulesUsedCount,
   reviewProgressLabel,
   progressSteps,
-  docsHref,
-  developerDashboardHref,
-  showDeveloperDashboardLink,
-  canAccessDocumentation,
+  profile,
+  profileLabel,
+  onToggleNav,
 }: Readonly<{
   periodLabel: string;
   accountIdentifier: string;
@@ -65,66 +64,69 @@ export function RunBar({
   rulesUsedCount: number | null;
   reviewProgressLabel: string | null;
   progressSteps: ProgressStep[];
-  docsHref: string;
-  developerDashboardHref: string;
-  showDeveloperDashboardLink: boolean;
-  canAccessDocumentation: boolean;
+  profile: ReactNode;
+  profileLabel: string;
+  onToggleNav: () => void;
 }>) {
   const accountDisplay = accountIdentifier.trim() || 'No account override';
   const sourcesDisplay =
     sourceFileNames.length > 0 ? sourceFileNames.join(' + ') : 'No files selected';
-  const hasOverflow = canAccessDocumentation || showDeveloperDashboardLink;
 
   const announcement = resolveRunBarAnnouncement(isComplete, statusTone, exceptionCount);
 
   return (
     <header className="run-bar" aria-label="Reconciliation run status">
       <div className="run-bar__identity">
-        <RunBarField label="Period" value={periodLabel || 'Not set'} />
-        <RunBarField label="Account" value={accountDisplay} />
-        <RunBarField label="Sources" value={sourcesDisplay} />
-        <RunBarField label="Frequency" value={frequency} />
+        <button
+          type="button"
+          className="run-bar__nav-toggle"
+          aria-label="Toggle navigation"
+          onClick={onToggleNav}
+        >
+          <span aria-hidden="true">≡</span>
+        </button>
+        <div className="run-bar__field run-bar__field--run" title={periodLabel || 'Not set'}>
+          <span className="run-bar__field-label">Active run</span>
+          <strong className="run-bar__field-value">
+            {periodLabel || 'Not set'} · {frequency}
+          </strong>
+        </div>
+        <span className={`run-bar__status run-bar__status--${statusTone}`}>{statusLabel}</span>
         {exceptionCount !== null ? (
           <RunBarField label="Exceptions" value={String(exceptionCount)} />
         ) : null}
-        {reviewProgressLabel ? <RunBarField label="Review" value={reviewProgressLabel} /> : null}
-        {runId ? <RunBarRunId runId={runId} /> : null}
-        {rulesUsedCount !== null ? (
-          <button type="button" className="run-bar__rules-used" onClick={onOpenRules}>
-            {rulesUsedCount > 0 ? `Rules used · ${rulesUsedCount} custom` : 'Rules used · defaults'}
-          </button>
-        ) : null}
+        {reviewProgressLabel ? <RunBarField label="Resolved" value={reviewProgressLabel} /> : null}
 
-        {hasOverflow ? (
-          <details className="run-bar__overflow">
-            <summary className="run-bar__overflow-trigger" aria-label="More links">
-              More
-            </summary>
-            <div className="run-bar__overflow-menu">
-              <button type="button" className="run-bar__overflow-link" onClick={onOpenRules}>
-                Rules
+        <details className="run-bar__overflow">
+          <summary className="run-bar__overflow-trigger" aria-label="Run details">
+            Details
+          </summary>
+          <div className="run-bar__overflow-menu">
+            <RunBarField label="Account" value={accountDisplay} />
+            <RunBarField label="Sources" value={sourcesDisplay} />
+            {runId ? <RunBarRunId runId={runId} /> : null}
+            {rulesUsedCount !== null ? (
+              <button type="button" className="run-bar__rules-used" onClick={onOpenRules}>
+                {rulesUsedCount > 0
+                  ? `Rules used · ${rulesUsedCount} custom`
+                  : 'Rules used · defaults'}
               </button>
-              {canAccessDocumentation ? (
-                <a className="run-bar__overflow-link" href={docsHref}>
-                  Documentation
-                </a>
-              ) : null}
-              {showDeveloperDashboardLink ? (
-                <a className="run-bar__overflow-link" href={developerDashboardHref}>
-                  Developer Dashboard
-                </a>
-              ) : null}
-            </div>
-          </details>
-        ) : (
-          <button type="button" className="run-bar__overflow-trigger" onClick={onOpenRules}>
-            Rules
-          </button>
-        )}
+            ) : null}
+            <button type="button" className="run-bar__overflow-link" onClick={onOpenRules}>
+              Rules
+            </button>
+          </div>
+        </details>
+
+        <details className="run-bar__profile">
+          <summary className="run-bar__profile-trigger" aria-label="User profile menu">
+            {profileLabel}
+          </summary>
+          <div className="run-bar__profile-menu">{profile}</div>
+        </details>
       </div>
 
       <div className="run-bar__status-row">
-        <span className={`run-bar__status run-bar__status--${statusTone}`}>{statusLabel}</span>
         <details className="run-bar__progress" open={statusTone === 'running'}>
           <summary className="run-bar__meter" aria-label="Run progress details">
             <progress

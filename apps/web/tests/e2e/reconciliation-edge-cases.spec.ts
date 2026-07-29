@@ -76,7 +76,7 @@ async function runReconciliation(
 
 // Opens the Exceptions triage view (Review stage) after a completed run.
 async function openExceptions(page: Page): Promise<void> {
-  await page.locator('#review-tab-exceptions').click();
+  await page.locator('#tab-exceptions').click();
   await expect(page.locator('#exception-search-input')).toBeVisible();
 }
 
@@ -311,7 +311,7 @@ test.describe('stage navigation', () => {
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(page.locator('#tab-review')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
   });
 
   test('Review opens on the Summary view by default after a run', async ({ page }) => {
@@ -321,20 +321,17 @@ test.describe('stage navigation', () => {
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
     await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
-    await expect(page.locator('#review-tab-summary')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('Probable matches view is reachable from the Review segmented control', async ({ page }) => {
+  test('Probable matches view is reachable from the navigation rail', async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#review-tab-probable-matches').click();
-    await expect(page.locator('#review-tab-probable-matches')).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    await page.locator('#tab-probable-matches').click();
+    await expect(page.locator('#tab-probable-matches')).toHaveAttribute('aria-selected', 'true');
   });
 
   test('Close & export stage exposes the export artifacts', async ({ page }) => {
@@ -397,8 +394,8 @@ test.describe('session persistence', () => {
     await page.reload();
 
     // Review uses reportRun = run ?? persistedRun, so it renders the persisted data.
-    await page.locator('#tab-review').click();
-    await page.locator('#review-tab-exceptions').click();
+
+    await page.locator('#tab-exceptions').click();
     await expect(page.locator('#exception-search-input')).toBeVisible({ timeout: 15_000 });
   });
 });
@@ -440,15 +437,15 @@ test.describe('edge cases', () => {
     await expect(exceptionSummaryCell(page, 'Missing from QBO')).toBeVisible();
   });
 
-  test('keyboard arrow keys navigate between the workflow tabs', async ({ page }) => {
+  test('keyboard arrow keys navigate between the rail destinations', async ({ page }) => {
     await openSetup(page);
     await page.locator('#tab-setup').focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tab-review')).toHaveAttribute('aria-selected', 'true');
-    await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tab-close')).toHaveAttribute('aria-selected', 'true');
-    await page.keyboard.press('ArrowLeft');
-    await expect(page.locator('#tab-review')).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#tab-probable-matches')).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
   });
 
   test('account identifier is optional — run succeeds without it', async ({ page }) => {

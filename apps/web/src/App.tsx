@@ -24,18 +24,17 @@ import {
   RulesCatalogSection,
 } from './components/AppWorkspacePanels';
 import { RunBar } from './components/RunBar';
-import { RovingTabList } from './components/RovingTabList';
-import { SemanticIcon } from './components/SemanticIcon';
+import { NavRail, type RailDestination } from './components/NavRail';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import { getLatestReconciliationRunRequest, loginRequest } from './lib/api';
 import {
-  buildTabNavigationItems,
   rulesCatalog,
   rulesCatalogLastRefresh,
   varianceMetricCatalog,
   type AppTab,
   type ReportView,
 } from './lib/appCatalog';
+import type { SavedTriageView } from './lib/exceptionTriage';
 import { useReconciliationRun } from './hooks/useReconciliationRun';
 import { useReviewerDecisions } from './hooks/useReviewerDecisions';
 
@@ -520,6 +519,8 @@ function App() {
       controls={controls}
       showDeveloperDashboardLink={showDeveloperDashboardLink}
       developerDashboardHref={developerDashboardHref}
+      username={activeUser.username}
+      profileLabel={displayName.length > 0 ? displayName : activeUser.username}
     />
   );
 }
@@ -531,6 +532,8 @@ function ReconciliationApp({
   controls,
   showDeveloperDashboardLink,
   developerDashboardHref,
+  username,
+  profileLabel,
 }: Readonly<{
   docsHref: string;
   rolePermissions: RolePermissions;
@@ -538,6 +541,8 @@ function ReconciliationApp({
   controls: ReactNode;
   showDeveloperDashboardLink: boolean;
   developerDashboardHref: string;
+  username: string;
+  profileLabel: string;
 }>) {
   const currentYear = new Date().getFullYear();
   const previousSevenYears = Array.from({ length: 7 }, (_, index) =>
@@ -564,6 +569,8 @@ function ReconciliationApp({
   const [isRulesPanelOpen, setIsRulesPanelOpen] = useState<boolean>(() =>
     parseInitialRulesPanel(initialWorkspaceParams),
   );
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [pendingSavedViewId, setPendingSavedViewId] = useState<string | null>(null);
   const [persistedRun, setPersistedRun] = useState<RunData | undefined>(() => loadPersistedRun());
   const [hasAttemptedBackendReportHydration, setHasAttemptedBackendReportHydration] =
     useState(false);
@@ -670,6 +677,23 @@ function ReconciliationApp({
     if (nextTab === 'review' || nextTab === 'close') {
       hydrateLatestBackendReport();
     }
+  };
+
+  const activeDestination: RailDestination = activeTab === 'review' ? activeView : activeTab;
+
+  const handleSelectDestination = (destination: RailDestination): void => {
+    if (destination === 'setup' || destination === 'close') {
+      handleSelectTab(destination);
+      return;
+    }
+
+    setActiveView(destination);
+    handleSelectTab('review');
+  };
+
+  const handleApplySavedView = (view: SavedTriageView): void => {
+    setPendingSavedViewId(view.id);
+    handleSelectDestination('exceptions');
   };
 
   const openRulesPanel = (): void => {
@@ -829,6 +853,9 @@ function ReconciliationApp({
   const reviewProgressLabel = reportRun
     ? `${reviewerDecisions.resolvedCount} of ${reportRun.exceptions.length} resolved · ${reviewerDecisions.researchCount} in research`
     : null;
+  const unreviewedExceptionCount = reportRun
+    ? Math.max(reportRun.exceptions.length - reviewerDecisions.resolvedCount, 0)
+    : null;
   const varianceOverrideCount = Object.keys(varianceDefaultOverrides).length;
   const thresholdSetLabel = varianceOverrideCount > 0 ? 'Custom threshold set' : 'Shipped defaults';
   const thresholdSetTimestamp =
@@ -878,10 +905,23 @@ function ReconciliationApp({
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell app-shell--workspace">
       <div className="hero-backdrop" />
-      <main className="app-layout">
-        {controls}
+      <NavRail
+        activeDestination={activeDestination}
+        onSelectDestination={handleSelectDestination}
+        unreviewedExceptionCount={unreviewedExceptionCount}
+        exceptions={reportRun?.exceptions ?? []}
+        onApplySavedView={handleApplySavedView}
+        docsHref={docsHref}
+        developerDashboardHref={developerDashboardHref}
+        showDeveloperDashboardLink={showDeveloperDashboardLink}
+        canAccessDocumentation={rolePermissions.canAccessDocumentation}
+        username={username}
+        isMobileOpen={isMobileNavOpen}
+        onMobileClose={() => setIsMobileNavOpen(false)}
+      />
+      <main className="app-layout app-layout--rail">
         <RunBar
           periodLabel={reportRun?.periodLabel ?? periodLabel}
           accountIdentifier={runBarAccountIdentifier}
@@ -895,15 +935,14 @@ function ReconciliationApp({
           runId={reportRun?.id ?? null}
           elapsedLabel={elapsedLabel}
           isComplete={Boolean(reportRun)}
-          onOpenReview={() => handleSelectTab('review')}
+          onOpenReview={() => handleSelectDestination('summary')}
           onOpenRules={openRulesPanel}
           rulesUsedCount={rulesUsedCount}
           reviewProgressLabel={reviewProgressLabel}
           progressSteps={progressSteps}
-          docsHref={docsHref}
-          developerDashboardHref={developerDashboardHref}
-          showDeveloperDashboardLink={showDeveloperDashboardLink}
-          canAccessDocumentation={rolePermissions.canAccessDocumentation}
+          profile={controls}
+          profileLabel={profileLabel}
+          onToggleNav={() => setIsMobileNavOpen((open) => !open)}
         />
 
         {isRulesPanelOpen ? (
@@ -922,13 +961,6 @@ function ReconciliationApp({
           />
         ) : (
           <section className="tabbed-workspace" aria-label="Reconciliation workspace">
-            <TabNavigation
-              activeTab={activeTab}
-              exceptionCount={run?.exceptions.length ?? 0}
-              hasRun={Boolean(run)}
-              onSelectTab={handleSelectTab}
-            />
-
             {activeTab === 'setup' ? (
               <SourceUploadSection
                 annualYear={annualYear}
@@ -963,7 +995,6 @@ function ReconciliationApp({
                 activeView={activeView}
                 isHydrating={isHydratingLatestBackendReport}
                 loadError={latestBackendReportError}
-                onSelectView={setActiveView}
                 onGoToSetup={() => handleSelectTab('setup')}
                 decisionByTargetId={reviewerDecisions.decisionByTargetId}
                 pendingTargetId={reviewerDecisions.pendingTargetId}
@@ -972,6 +1003,8 @@ function ReconciliationApp({
                 onDecide={reviewerDecisions.decide}
                 onClearDecision={reviewerDecisions.clearDecision}
                 onUndoLastDecision={reviewerDecisions.undoLastDecision}
+                pendingSavedViewId={pendingSavedViewId}
+                onPendingSavedViewApplied={() => setPendingSavedViewId(null)}
               />
             ) : null}
 
@@ -1006,47 +1039,6 @@ function ReconciliationApp({
         </footer>
       </main>
     </div>
-  );
-}
-
-function TabNavigation({
-  activeTab,
-  exceptionCount,
-  hasRun,
-  onSelectTab,
-}: Readonly<{
-  activeTab: AppTab;
-  exceptionCount: number;
-  hasRun: boolean;
-  onSelectTab: (tab: AppTab) => void;
-}>) {
-  const tabs = buildTabNavigationItems({ exceptionCount, hasRun });
-
-  return (
-    <section className="tab-shell" aria-label="Application sections">
-      <RovingTabList
-        items={tabs}
-        activeId={activeTab}
-        onSelect={onSelectTab}
-        ariaLabel="Application tabs"
-        tabIdPrefix="tab"
-        panelIdPrefix="tab-panel"
-        listClassName="tab-list"
-        tabClassName="tab-button"
-        activeTabClassName="tab-button tab-button--active"
-        renderContent={(tab) => (
-          <>
-            <span className="tab-button__label-row">
-              <span className="tab-button__icon-shell" aria-hidden="true">
-                <SemanticIcon name={tab.icon ?? 'reports'} className="tab-button__icon" />
-              </span>
-              <span className="tab-button__label-text">{tab.label}</span>
-            </span>
-            <small>{tab.description}</small>
-          </>
-        )}
-      />
-    </section>
   );
 }
 

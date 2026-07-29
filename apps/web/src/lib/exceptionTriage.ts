@@ -45,6 +45,37 @@ export type SavedTriageView = {
 
 export const SAVED_VIEWS_STORAGE_KEY = 'reconciliation-platform:saved-views';
 
+/** DOM event dispatched whenever the persisted saved views change, so shell chrome can refresh. */
+export const SAVED_VIEWS_CHANGED_EVENT = 'reconciliation-platform:saved-views-changed';
+
+/** Reads the persisted saved triage views, tolerating missing or corrupt storage. */
+export const loadSavedViews = (): SavedTriageView[] => {
+  try {
+    const raw = globalThis.localStorage?.getItem(SAVED_VIEWS_STORAGE_KEY);
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+
+    return Array.isArray(parsed) ? (parsed as SavedTriageView[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+/** Persists saved triage views and notifies listeners (for example the navigation rail). */
+export const persistSavedViews = (views: SavedTriageView[]): void => {
+  try {
+    globalThis.localStorage?.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views));
+  } catch {
+    // Ignore storage failures so saved views still work in-memory for the session.
+  }
+
+  globalThis.dispatchEvent?.(new Event(SAVED_VIEWS_CHANGED_EVENT));
+};
+
 export const severityRank: Record<ExceptionItem['severity'], number> = {
   Critical: 0,
   High: 1,

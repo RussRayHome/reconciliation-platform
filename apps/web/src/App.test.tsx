@@ -466,17 +466,21 @@ describe('App', () => {
     expect(screen.getByLabelText('Selected document preview')).toBeInTheDocument();
   });
 
-  it('renders the three workflow tabs and defaults to Setup', () => {
+  it('renders the rail destinations and defaults to Setup', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
     expect(screen.getByRole('tab', { name: /Setup/i })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: /Review/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /Summary/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /Exceptions/i })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
     expect(screen.getByRole('tab', { name: /Close/i })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByText('Source Upload')).toBeInTheDocument();
   });
 
-  it('supports arrow-key navigation across the top-level tabs', async () => {
+  it('supports arrow-key navigation across the rail destinations', async () => {
     const user = userEvent.setup();
 
     setAuthenticatedUser('rray');
@@ -486,11 +490,11 @@ describe('App', () => {
     const setupTab = screen.getByRole('tab', { name: /Setup/i });
     setupTab.focus();
 
-    await user.keyboard('{ArrowRight}');
+    await user.keyboard('{ArrowDown}');
 
-    const reviewTab = screen.getByRole('tab', { name: /Review/i });
-    expect(reviewTab).toHaveFocus();
-    expect(reviewTab).toHaveAttribute('aria-selected', 'true');
+    const summaryTab = screen.getByRole('tab', { name: /Summary/i });
+    expect(summaryTab).toHaveFocus();
+    expect(summaryTab).toHaveAttribute('aria-selected', 'true');
 
     await user.keyboard('{End}');
 
@@ -499,7 +503,7 @@ describe('App', () => {
     expect(closeTab).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('swaps Review panels via the segmented control and exports from Close', async () => {
+  it('swaps Review panels via the rail and exports from Close', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(createRunResponse()), { status: 201 }),
     );
@@ -522,14 +526,14 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Review' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Summary' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Summary/i })).toHaveAttribute('aria-selected', 'true');
     expect(
       screen.getByRole('heading', { name: 'Exception Category Breakdown' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Likely Split/Combine Issue')).toBeInTheDocument();
     expect(screen.getByText('Deposit Grouping Issue')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Exceptions' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Exceptions/i }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
     expect(screen.getAllByText(/QBO qbo.xlsx \/ 4 \| QBO qbo.xlsx \/ 5/i).length).toBeGreaterThan(
@@ -551,7 +555,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
 
     return waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -566,7 +570,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
 
     await waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -583,7 +587,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading review output');
 
@@ -600,7 +604,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Backend unavailable.');
@@ -632,9 +636,9 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
 
-    expect(screen.getByRole('tab', { name: 'Summary' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Summary/i })).toBeInTheDocument();
     expect(screen.getByText('Loading review output')).toBeInTheDocument();
   });
 
@@ -934,7 +938,7 @@ describe('App', () => {
     setAuthenticatedUser('bray');
     renderApp();
 
-    expect(screen.getByRole('tab', { name: /Review/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Summary/i })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('leads the Summary panel with the reconciliation verdict', async () => {

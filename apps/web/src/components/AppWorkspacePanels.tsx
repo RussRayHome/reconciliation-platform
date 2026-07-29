@@ -12,7 +12,6 @@ import { downloadWorkbookUrl } from '../lib/api';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
 import { formatCurrency } from '../lib/format';
 import {
-  reportCatalog,
   summaryStatDefinitions,
   varianceMetricFamilyLabels,
   varianceMetricFamilyOrder,
@@ -23,7 +22,6 @@ import {
 } from '../lib/appCatalog';
 import { ChartsPanel } from './ChartsPanel';
 import { ExceptionTriage } from './ExceptionTriage';
-import { RovingTabList } from './RovingTabList';
 import { SemanticIcon } from './SemanticIcon';
 
 /** A single step in the process progress stepper displayed during reconciliation submission. */
@@ -590,13 +588,12 @@ function ExportArtifactsContent({
   );
 }
 
-/** Panel that renders the Review stage: a segmented control over Summary, Probable matches, and Exceptions. */
+/** Panel that renders the Review stage for the rail-selected view: Summary, Probable matches, or Exceptions. */
 export function ReviewSection({
   run,
   activeView,
   isHydrating,
   loadError,
-  onSelectView,
   onGoToSetup,
   decisionByTargetId,
   pendingTargetId,
@@ -605,12 +602,13 @@ export function ReviewSection({
   onDecide,
   onClearDecision,
   onUndoLastDecision,
+  pendingSavedViewId,
+  onPendingSavedViewApplied,
 }: Readonly<{
   run: RunData | undefined;
   activeView: ReportView;
   isHydrating: boolean;
   loadError: string | null;
-  onSelectView: (view: ReportView) => void;
   onGoToSetup: () => void;
   decisionByTargetId: Record<string, ReviewerDecision>;
   pendingTargetId: string | null;
@@ -619,6 +617,8 @@ export function ReviewSection({
   onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
   onClearDecision: (targetId: string) => void;
   onUndoLastDecision: () => void;
+  pendingSavedViewId: string | null;
+  onPendingSavedViewApplied: () => void;
 }>) {
   let panelContent: ReactNode;
 
@@ -636,6 +636,8 @@ export function ReviewSection({
           onDecide={onDecide}
           onClearDecision={onClearDecision}
           onUndoLastDecision={onUndoLastDecision}
+          pendingSavedViewId={pendingSavedViewId}
+          onPendingSavedViewApplied={onPendingSavedViewApplied}
         />
       ),
     };
@@ -672,37 +674,21 @@ export function ReviewSection({
     );
   }
 
-  const reviewTabs = reportCatalog.map((report) => ({ id: report.id, label: report.name }));
-
   return (
-    <WorkspaceTabPanel tabId="review">
+    <section
+      id={`tab-panel-${activeView}`}
+      role="tabpanel"
+      aria-labelledby={`tab-${activeView}`}
+      aria-live="polite"
+      aria-busy={isHydrating}
+    >
       <SectionCard
         title="Review"
         description="Work through the reconciliation verdict, confirm probable matches, and triage exceptions in one place."
       >
-        <RovingTabList
-          items={reviewTabs}
-          activeId={activeView}
-          onSelect={onSelectView}
-          ariaLabel="Review panels"
-          tabIdPrefix="review-tab"
-          panelIdPrefix="review-panel"
-          listClassName="review-segmented"
-          tabClassName="review-segment"
-          activeTabClassName="review-segment review-segment--active"
-        />
-
-        <section
-          id={`review-panel-${activeView}`}
-          role="tabpanel"
-          aria-labelledby={`review-tab-${activeView}`}
-          aria-live="polite"
-          aria-busy={isHydrating}
-        >
-          {panelContent}
-        </section>
+        {panelContent}
       </SectionCard>
-    </WorkspaceTabPanel>
+    </section>
   );
 }
 
