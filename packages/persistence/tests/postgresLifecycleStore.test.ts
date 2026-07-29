@@ -615,6 +615,17 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(exceptionPage.total).toBe(1);
     expect(exceptionPage.items).toHaveLength(1);
     expect(exceptionPage.hasMore).toBe(false);
+
+    // Clearing the decision removes it and is idempotent.
+    await store.deleteReviewerDecision(jobId, decision.targetType, decision.targetId);
+    await store.deleteReviewerDecision(jobId, decision.targetType, decision.targetId);
+
+    const afterDelete = await pool.query<{ count: number }>(
+      'SELECT COUNT(*)::int AS count FROM reconciliation_review_decision WHERE job_id = $1',
+      [jobId],
+    );
+    expect(afterDelete.rows[0]?.count).toBe(0);
+    expect((await readModelStore.findRunReportById(jobId))?.reviewerDecisions).toHaveLength(0);
   });
 
   it('rolls back raw-row persistence and leaves the job pre-import when duplicate line numbers violate uniqueness', async () => {

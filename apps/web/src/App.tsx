@@ -968,7 +968,10 @@ function ReconciliationApp({
                 decisionByTargetId={reviewerDecisions.decisionByTargetId}
                 pendingTargetId={reviewerDecisions.pendingTargetId}
                 decisionError={reviewerDecisions.error}
+                lastChange={reviewerDecisions.lastChange}
                 onDecide={reviewerDecisions.decide}
+                onClearDecision={reviewerDecisions.clearDecision}
+                onUndoLastDecision={reviewerDecisions.undoLastDecision}
               />
             ) : null}
 

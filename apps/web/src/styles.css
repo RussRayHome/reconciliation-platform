@@ -3073,6 +3073,15 @@ th {
   color: var(--warn, #92600a);
 }
 
+.exception-decision-undo {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .exception-row__note-indicator {
   margin-left: 0.35rem;
   font-size: 0.78rem;

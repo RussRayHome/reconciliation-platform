@@ -102,7 +102,10 @@ describe('ReviewSection probable matches performance rendering', () => {
         decisionByTargetId={{}}
         pendingTargetId={null}
         decisionError={null}
+        lastChange={null}
         onDecide={() => {}}
+        onClearDecision={() => {}}
+        onUndoLastDecision={() => {}}
       />,
     );
 
@@ -125,7 +128,10 @@ describe('ReviewSection probable matches performance rendering', () => {
         decisionByTargetId={{}}
         pendingTargetId={null}
         decisionError={null}
+        lastChange={null}
         onDecide={() => {}}
+        onClearDecision={() => {}}
+        onUndoLastDecision={() => {}}
       />,
     );
 

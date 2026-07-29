@@ -1661,6 +1661,49 @@ export const createApp = (
     }
   });
 
+  app.delete(
+    '/api/reconciliation/:id/reviewer-decisions/:targetId',
+    async (request, response, next) => {
+      try {
+        const run = await loadRunReport(request.params.id);
+        if (!run) {
+          response.status(404).json({ message: 'Reconciliation run not found.' });
+          return;
+        }
+
+        const targetTypeRaw = request.query.targetType;
+        if (
+          typeof targetTypeRaw !== 'string' ||
+          !reviewerDecisionTargetTypes.has(targetTypeRaw as ReviewerDecisionTargetType)
+        ) {
+          response
+            .status(400)
+            .json({ message: 'A valid reviewer decision targetType is required.' });
+          return;
+        }
+
+        const targetType = targetTypeRaw as ReviewerDecisionTargetType;
+        const targetId = request.params.targetId.trim();
+        if (targetId.length === 0) {
+          response.status(400).json({ message: 'A reviewer decision targetId is required.' });
+          return;
+        }
+
+        // Clearing a decision returns the target to undecided; idempotent when none exists.
+        if (repository.findById(run.id)) {
+          repository.deleteReviewerDecision(run.id, targetType, targetId);
+        }
+        if (lifecycleStore) {
+          await lifecycleStore.deleteReviewerDecision(run.id, targetType, targetId);
+        }
+
+        response.status(204).end();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   const requirePool = (response: express.Response): boolean => {
     if (!pool) {
       response.status(501).json({ message: 'Alias management requires a database connection.' });

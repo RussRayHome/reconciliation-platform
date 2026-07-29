@@ -100,4 +100,33 @@ describe('useReviewerDecisions', () => {
     expect(result.current.decisionByTargetId['exception-1']).toBeUndefined();
     expect(result.current.resolvedCount).toBe(0);
   });
+
+  it('clears a decision and undoes back to the previous outcome', async () => {
+    vi.spyOn(api, 'saveReviewerDecisionRequest').mockResolvedValue(savedDecision);
+    const deleteSpy = vi.spyOn(api, 'deleteReviewerDecisionRequest').mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useReviewerDecisions('run-1', []));
+
+    act(() => {
+      result.current.decide('exception-1', 'accept', 'Looks valid');
+    });
+    await waitFor(() => {
+      expect(result.current.decisionByTargetId['exception-1']?.id).toBe('decision-1');
+    });
+
+    act(() => {
+      result.current.clearDecision('exception-1');
+    });
+    expect(result.current.decisionByTargetId['exception-1']).toBeUndefined();
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith('run-1', 'exception-1');
+    });
+
+    act(() => {
+      result.current.undoLastDecision();
+    });
+    await waitFor(() => {
+      expect(result.current.decisionByTargetId['exception-1']?.outcome).toBe('ConfirmedException');
+    });
+  });
 });

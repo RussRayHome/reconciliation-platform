@@ -66,13 +66,19 @@ export function ExceptionTriage({
   decisionByTargetId,
   pendingTargetId,
   decisionError,
+  lastChange,
   onDecide,
+  onClearDecision,
+  onUndoLastDecision,
 }: Readonly<{
   exceptions: ExceptionItem[];
   decisionByTargetId: Record<string, ReviewerDecision>;
   pendingTargetId: string | null;
   decisionError: string | null;
+  lastChange: { targetId: string; label: string } | null;
   onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
+  onClearDecision: (targetId: string) => void;
+  onUndoLastDecision: () => void;
 }>) {
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<TriageSortKey>('severity');
@@ -217,13 +223,28 @@ export function ExceptionTriage({
 
     if (key === 'a') {
       event.preventDefault();
-      onDecide(selectedDisplay.item.id, 'accept');
+      toggleDecision(selectedDisplay.item.id, 'accept');
     } else if (key === 'r') {
       event.preventDefault();
-      onDecide(selectedDisplay.item.id, 'reject');
+      toggleDecision(selectedDisplay.item.id, 'reject');
     } else if (key === 'n') {
       event.preventDefault();
-      onDecide(selectedDisplay.item.id, 'research');
+      toggleDecision(selectedDisplay.item.id, 'research');
+    } else if (key === 'u') {
+      event.preventDefault();
+      onUndoLastDecision();
+    }
+  };
+
+  // Pressing the key of the already-active outcome clears the decision (returns to undecided).
+  const toggleDecision = (targetId: string, action: DecisionAction): void => {
+    const current = decisionByTargetId[targetId];
+    const currentAction = current ? actionByOutcome[current.outcome] : undefined;
+
+    if (currentAction === action) {
+      onClearDecision(targetId);
+    } else {
+      onDecide(targetId, action);
     }
   };
 
@@ -375,6 +396,9 @@ export function ExceptionTriage({
           isPending={pendingTargetId === selectedDisplay.item.id}
           error={decisionError}
           isDrawer={!isDesktop}
+          lastChange={
+            lastChange && lastChange.targetId === selectedDisplay.item.id ? lastChange : null
+          }
           noteDraft={noteDraftByExceptionId[selectedDisplay.item.id]}
           onNoteDraftChange={(value) =>
             setNoteDraftByExceptionId((current) => ({
@@ -384,6 +408,8 @@ export function ExceptionTriage({
           }
           onClose={() => setIsDrawerOpen(false)}
           onDecide={(action, notes) => onDecide(selectedDisplay.item.id, action, notes)}
+          onClear={() => onClearDecision(selectedDisplay.item.id)}
+          onUndo={onUndoLastDecision}
         />
       ) : null}
     </div>

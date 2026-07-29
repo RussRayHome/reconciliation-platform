@@ -29,9 +29,12 @@ export function ExceptionEvidencePanel({
   decision,
   isPending,
   error,
+  lastChange,
   noteDraft,
   onNoteDraftChange,
   onDecide,
+  onClear,
+  onUndo,
   onClose,
   isDrawer,
 }: Readonly<{
@@ -39,9 +42,12 @@ export function ExceptionEvidencePanel({
   decision: ReviewerDecision | undefined;
   isPending: boolean;
   error: string | null;
+  lastChange: { targetId: string; label: string } | null;
   noteDraft: string | undefined;
   onNoteDraftChange: (value: string) => void;
   onDecide: (action: DecisionAction, notes: string) => void;
+  onClear: () => void;
+  onUndo: () => void;
   onClose?: () => void;
   isDrawer: boolean;
 }>) {
@@ -57,6 +63,14 @@ export function ExceptionEvidencePanel({
   const lineage = buildRuleLineage(item);
   const evidence = item.ruleTrace?.evidence ?? [];
   const activeAction = decision ? actionByOutcome[decision.outcome] : undefined;
+  // Clicking the already-active outcome clears the decision (returns the target to undecided).
+  const applyDecision = (action: DecisionAction): void => {
+    if (activeAction === action) {
+      onClear();
+    } else {
+      onDecide(action, note);
+    }
+  };
 
   return (
     <section
@@ -154,6 +168,14 @@ export function ExceptionEvidencePanel({
 
       <div className="exception-detail__decision" aria-label="Reviewer decision">
         <h4>Reviewer decision</h4>
+        {lastChange ? (
+          <p className="exception-decision-undo" role="status">
+            {lastChange.label} ·{' '}
+            <button type="button" className="exception-detail__action-copy" onClick={onUndo}>
+              Undo (U)
+            </button>
+          </p>
+        ) : null}
         <fieldset className="exception-decision-buttons">
           <legend className="visually-hidden">Decision outcome</legend>
           {decisionActions.map(({ action, label, key }) => (
@@ -167,7 +189,7 @@ export function ExceptionEvidencePanel({
               }
               aria-pressed={activeAction === action}
               disabled={isPending}
-              onClick={() => onDecide(action, note)}
+              onClick={() => applyDecision(action)}
             >
               {label} <kbd>{key}</kbd>
             </button>

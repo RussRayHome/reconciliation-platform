@@ -76,8 +76,14 @@ const mockDesktop = (): void => {
 
 const renderTriage = (
   props?: Partial<ComponentProps<typeof ExceptionTriage>>,
-): { onDecide: ReturnType<typeof vi.fn> } => {
+): {
+  onDecide: ReturnType<typeof vi.fn>;
+  onClearDecision: ReturnType<typeof vi.fn>;
+  onUndoLastDecision: ReturnType<typeof vi.fn>;
+} => {
   const onDecide = vi.fn();
+  const onClearDecision = vi.fn();
+  const onUndoLastDecision = vi.fn();
 
   render(
     <ExceptionTriage
@@ -85,12 +91,15 @@ const renderTriage = (
       decisionByTargetId={{}}
       pendingTargetId={null}
       decisionError={null}
+      lastChange={null}
       onDecide={onDecide}
+      onClearDecision={onClearDecision}
+      onUndoLastDecision={onUndoLastDecision}
       {...props}
     />,
   );
 
-  return { onDecide };
+  return { onDecide, onClearDecision, onUndoLastDecision };
 };
 
 beforeEach(() => {
@@ -203,6 +212,44 @@ describe('ExceptionTriage', () => {
     await user.type(screen.getByLabelText('Reviewer note'), 'review a and r and n later');
 
     expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it('clears an existing decision when the same key is pressed again (toggle off)', () => {
+    const decision: ReviewerDecision = {
+      id: 'decision-1',
+      runId: 'run-1',
+      targetType: 'ExceptionItem',
+      targetId: 'exception-1',
+      outcome: 'ConfirmedException',
+      createdAt: '2026-03-31T00:00:00.000Z',
+      updatedAt: '2026-03-31T00:00:00.000Z',
+    };
+    const { onClearDecision, onDecide } = renderTriage({
+      decisionByTargetId: { 'exception-1': decision },
+    });
+
+    const selectedRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    selectedRow.focus();
+    fireEvent.keyDown(selectedRow, { key: 'a' });
+
+    expect(onClearDecision).toHaveBeenCalledWith('exception-1');
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it('invokes undo when the U key is pressed', () => {
+    const { onUndoLastDecision } = renderTriage();
+
+    const selectedRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    selectedRow.focus();
+    fireEvent.keyDown(selectedRow, { key: 'u' });
+
+    expect(onUndoLastDecision).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an undo affordance for the last changed decision', () => {
+    renderTriage({ lastChange: { targetId: 'exception-1', label: 'Accepted' } });
+
+    expect(screen.getByRole('button', { name: /Undo/i })).toBeInTheDocument();
   });
 
   it('reflects a persisted decision and surfaces decision errors', () => {

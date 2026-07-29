@@ -217,3 +217,24 @@ export const saveReviewerDecisionRequest = async (
   );
   return parseResponse<ReviewerDecision>(response);
 };
+
+/** Clears a reviewer decision for a run target, returning it to an undecided state. */
+export const deleteReviewerDecisionRequest = async (
+  runId: string,
+  targetId: string,
+  targetType: ReviewerDecisionTargetType = 'ExceptionItem',
+): Promise<void> => {
+  const response = await fetch(
+    `/api/reconciliation/${encodeURIComponent(runId)}/reviewer-decisions/${encodeURIComponent(
+      targetId,
+    )}?targetType=${encodeURIComponent(targetType)}`,
+    { method: 'DELETE' },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({ message: 'Request failed.' }))) as {
+      message?: string;
+    };
+    throw new Error(payload.message ?? 'Request failed.');
+  }
+};

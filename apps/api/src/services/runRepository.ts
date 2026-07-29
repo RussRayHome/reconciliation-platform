@@ -8,6 +8,11 @@ export interface RunRepository {
   findById(id: string): ReconciliationRun | undefined;
   findLatest(): ReconciliationRun | undefined;
   saveReviewerDecision(runId: string, decision: ReviewerDecision): ReviewerDecision;
+  deleteReviewerDecision(
+    runId: string,
+    targetType: ReviewerDecision['targetType'],
+    targetId: string,
+  ): boolean;
   listReviewerDecisions(runId: string): ReviewerDecision[];
 }
 
@@ -167,6 +172,33 @@ export class InMemoryRunRepository implements RunRepository {
    */
   listReviewerDecisions(runId: string): ReviewerDecision[] {
     return this.findById(runId)?.reviewerDecisions ?? [];
+  }
+
+  /**
+   * Removes the reviewer decision for a run/target, returning `true` when one was removed.
+   * Clearing a decision returns the target to an undecided state (idempotent).
+   */
+  deleteReviewerDecision(
+    runId: string,
+    targetType: ReviewerDecision['targetType'],
+    targetId: string,
+  ): boolean {
+    const run = this.findById(runId);
+
+    if (!run) {
+      throw new Error(`Reconciliation run not found: ${runId}`);
+    }
+
+    const remaining = run.reviewerDecisions.filter(
+      (item) => !(item.targetType === targetType && item.targetId === targetId),
+    );
+
+    if (remaining.length === run.reviewerDecisions.length) {
+      return false;
+    }
+
+    this.save({ ...run, reviewerDecisions: remaining });
+    return true;
   }
 }
 

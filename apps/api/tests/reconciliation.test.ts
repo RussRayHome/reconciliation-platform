@@ -642,6 +642,79 @@ describe('reconciliation API', () => {
     }
   });
 
+  it('clears a reviewer decision through the delete endpoint and is idempotent', async () => {
+    const app = createApp();
+    const spreadsheetMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const [bankBuffer, qboBuffer] = await Promise.all([
+      createSampleBankWorkbook(),
+      createSampleQboWorkbook(),
+    ]);
+
+    const runResponse = await request(app)
+      .post('/api/reconciliation/run')
+      .attach('bankFile', bankBuffer, { filename: 'bank.xlsx', contentType: spreadsheetMime })
+      .attach('qboFile', qboBuffer, { filename: 'qbo.xlsx', contentType: spreadsheetMime })
+      .expect(201);
+
+    const runPayload = runResponse.body as {
+      id: string;
+      probableMatches: Array<{ id: string; disposition: string }>;
+    };
+    const target = runPayload.probableMatches.find(
+      (item) => item.disposition === 'ProbableMatch' || item.disposition === 'AmbiguousReview',
+    );
+    expect(target).toBeDefined();
+    const targetType =
+      target?.disposition === 'AmbiguousReview' ? 'AmbiguousReview' : 'ProbableMatch';
+    const targetId = target?.id ?? '';
+
+    await request(app)
+      .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
+      .send({ targetType, targetId, outcome: 'ApprovedMatch' })
+      .expect(201);
+
+    await request(app)
+      .delete(
+        `/api/reconciliation/${runPayload.id}/reviewer-decisions/${encodeURIComponent(targetId)}`,
+      )
+      .query({ targetType })
+      .expect(204);
+
+    const afterDelete = await request(app)
+      .get(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
+      .expect(200);
+    expect(afterDelete.body).toEqual([]);
+
+    // A second delete is a no-op and still succeeds.
+    await request(app)
+      .delete(
+        `/api/reconciliation/${runPayload.id}/reviewer-decisions/${encodeURIComponent(targetId)}`,
+      )
+      .query({ targetType })
+      .expect(204);
+  });
+
+  it('rejects a reviewer decision delete without a valid targetType', async () => {
+    const app = createApp();
+    const spreadsheetMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const [bankBuffer, qboBuffer] = await Promise.all([
+      createSampleBankWorkbook(),
+      createSampleQboWorkbook(),
+    ]);
+
+    const runResponse = await request(app)
+      .post('/api/reconciliation/run')
+      .attach('bankFile', bankBuffer, { filename: 'bank.xlsx', contentType: spreadsheetMime })
+      .attach('qboFile', qboBuffer, { filename: 'qbo.xlsx', contentType: spreadsheetMime })
+      .expect(201);
+
+    const { id } = runResponse.body as { id: string };
+
+    await request(app)
+      .delete(`/api/reconciliation/${id}/reviewer-decisions/some-target`)
+      .expect(400);
+  });
+
   it('returns 404 for run, summary, exceptions, and workbook when run id is unknown', async () => {
     const app = createApp();
     const unknownId = 'does-not-exist';

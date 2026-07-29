@@ -601,7 +601,10 @@ export function ReviewSection({
   decisionByTargetId,
   pendingTargetId,
   decisionError,
+  lastChange,
   onDecide,
+  onClearDecision,
+  onUndoLastDecision,
 }: Readonly<{
   run: RunData | undefined;
   activeView: ReportView;
@@ -612,7 +615,10 @@ export function ReviewSection({
   decisionByTargetId: Record<string, ReviewerDecision>;
   pendingTargetId: string | null;
   decisionError: string | null;
+  lastChange: { targetId: string; label: string } | null;
   onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
+  onClearDecision: (targetId: string) => void;
+  onUndoLastDecision: () => void;
 }>) {
   let panelContent: ReactNode;
 
@@ -626,7 +632,10 @@ export function ReviewSection({
           decisionByTargetId={decisionByTargetId}
           pendingTargetId={pendingTargetId}
           decisionError={decisionError}
+          lastChange={lastChange}
           onDecide={onDecide}
+          onClearDecision={onClearDecision}
+          onUndoLastDecision={onUndoLastDecision}
         />
       ),
     };

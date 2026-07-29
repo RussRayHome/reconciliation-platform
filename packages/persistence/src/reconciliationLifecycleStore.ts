@@ -1089,6 +1089,30 @@ export class PostgresReconciliationLifecycleStore {
   }
 
   /**
+   * Removes a reviewer decision for a run/target, returning the target to an undecided state.
+   * Idempotent: a no-op when no matching decision exists.
+   */
+  async deleteReviewerDecision(
+    runId: string,
+    targetType: ReviewerDecision['targetType'],
+    targetId: string,
+  ): Promise<void> {
+    await withTransaction(this.pool, async (client) => {
+      await lockJob(client, runId);
+      await client.query(
+        `DELETE FROM reconciliation_review_decision
+         WHERE job_id = $1 AND target_type = $2 AND target_id = $3`,
+        [runId, targetType, targetId],
+      );
+
+      await insertAuditEvent(client, runId, 'review.decision.cleared', {
+        targetType,
+        targetId,
+      });
+    });
+  }
+
+  /**
    * Marks a reconciliation job as failed (or retry-pending) with failure diagnostics.
    */
   async markFailed(input: MarkJobFailedInput): Promise<void> {
