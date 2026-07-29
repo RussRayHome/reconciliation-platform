@@ -16,6 +16,7 @@ apps/api/uploads
 apps/api/tmp
 .backups/
 .vscode/settings.json
+.claude/
 github-recovery-codes.txt
 playwright-browsers/
 apps/api/Dockerfile.bak
