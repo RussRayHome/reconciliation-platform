@@ -2681,12 +2681,68 @@ th {
   font-variant-numeric: tabular-nums;
 }
 
+.exception-facets__sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.exception-facets__clear {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+}
+
 .exception-facet-group {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 0.5rem 0.65rem;
   display: grid;
   gap: 0.3rem;
+}
+
+.exception-facet-group__summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  list-style: none;
+}
+
+.exception-facet-group__summary::-webkit-details-marker {
+  display: none;
+}
+
+.exception-facet-group__badge {
+  font-variant-numeric: tabular-nums;
+  min-width: 1.2rem;
+  text-align: center;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--teal);
+  font-size: 0.72rem;
+}
+
+.exception-facet-group__toggle {
+  justify-self: start;
+  border: none;
+  background: none;
+  padding: 0.1rem 0;
+  color: var(--teal);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .exception-facet-group legend {
