@@ -36,11 +36,22 @@
 
       .header {
         display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-bottom: 28px;
+      }
+
+      .header__top {
+        display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
+        align-items: flex-start;
         gap: 18px;
-        align-items: center;
-        margin-bottom: 28px;
+      }
+
+      .header__intro {
+        flex: 1 1 320px;
+        min-width: 0;
       }
 
       .title {
@@ -54,11 +65,41 @@
         color: var(--muted);
       }
 
+      .dashboard-brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        flex: 0 0 auto;
+        padding: 6px 12px 6px 8px;
+        border-radius: 16px;
+        border: 1px solid #d5e6e1;
+        background: linear-gradient(135deg, rgba(15, 118, 110, 0.1), rgba(18, 32, 35, 0.06));
+      }
+
+      .dashboard-brand__logo {
+        width: 40px;
+        height: 56px;
+        flex: 0 0 auto;
+        object-fit: cover;
+        object-position: center top;
+        border-radius: 12px;
+        box-shadow: 0 6px 16px rgba(8, 63, 72, 0.18);
+      }
+
+      .dashboard-brand__company {
+        font-weight: 700;
+        font-size: 0.9rem;
+        line-height: 1.1;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+
       .actions {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
         margin-top: 8px;
+        justify-content: flex-end;
       }
 
       .button {
@@ -684,12 +725,22 @@
   <body>
     <main class="container">
       <header class="header">
-        <div>
-          <h1 class="title">Developer Dashboard</h1>
-          <p class="subtitle">
-            In search for gremlins. Live status for tests, static code analysis, code coverage, and
-            security vulnerabilities.
-          </p>
+        <div class="header__top">
+          <div class="header__intro">
+            <h1 class="title">Developer Dashboard</h1>
+            <p class="subtitle">
+              In search for gremlins. Live status for tests, static code analysis, code coverage,
+              and security vulnerabilities.
+            </p>
+          </div>
+          <div class="dashboard-brand">
+            <img
+              class="dashboard-brand__logo"
+              src="kinney-highlander.png"
+              alt="Small Scottish man in a kilt illustration"
+            />
+            <span class="dashboard-brand__company">Kinney Software Solutions LLC</span>
+          </div>
         </div>
         <div class="actions">
           <button id="refresh" class="button">Refresh checks</button>
@@ -2779,7 +2830,7 @@
       };
 
       const loadRuntime = async () => {
-        const response = await fetchWithTimeout('/api/developer/runtime', 30000);
+        const response = await fetchWithTimeout('/api/developer/runtime', 15000);
         const payload = await readJsonOrThrow(response, 'Failed to load runtime diagnostics.');
         const metricsSummary = await loadApiMetricsSummary();
         latestRuntimePayload = payload;
@@ -2792,8 +2843,29 @@
       const loadStatus = async (force = false, activeButton = null) => {
         setButtonsBusy(true, activeButton);
 
+        // Runtime diagnostics (git branch/commit, promotion readiness, API metrics) can be slow
+        // or temporarily unavailable. Load them independently so a slow or failing runtime call
+        // never blocks the core repo-health status from refreshing.
+        let runtimePayload = null;
         try {
-          const runtimePayload = await loadRuntime();
+          runtimePayload = await loadRuntime();
+        } catch (error) {
+          runtimePayload = latestRuntimePayload;
+          const message =
+            error instanceof Error ? error.message : 'Runtime diagnostics are unavailable.';
+          if (promotionReadiness) {
+            promotionReadiness.textContent = latestRuntimePayload
+              ? 'Showing last known runtime data'
+              : 'Runtime diagnostics unavailable';
+            promotionReadiness.title = message;
+          }
+          if (envMatrixBadge) {
+            envMatrixBadge.textContent = latestRuntimePayload ? 'Stale' : 'Unavailable';
+            envMatrixBadge.className = 'pill warn';
+          }
+        }
+
+        try {
           const response = await fetchWithTimeout(
             `/api/developer/status${force ? '?force=1' : ''}`,
             600000,

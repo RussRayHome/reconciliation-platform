@@ -240,6 +240,7 @@ export const createDeveloperRuntimeService = ({
       const result = await execFileAsync(gitExecutable, args, {
         cwd: repoRoot,
         timeout: 5000,
+        killSignal: 'SIGKILL',
         maxBuffer: 1024 * 1024,
       });
       const value = result.stdout?.toString().trim() ?? '';
