@@ -107,6 +107,9 @@ describe('ReviewSection probable matches performance rendering', () => {
         onUndoLastDecision={() => {}}
         pendingSavedViewId={null}
         onPendingSavedViewApplied={() => {}}
+        onOpenExceptions={() => {}}
+        starredIds={[]}
+        onToggleStar={() => {}}
       />,
     );
 
@@ -134,6 +137,9 @@ describe('ReviewSection probable matches performance rendering', () => {
         onUndoLastDecision={() => {}}
         pendingSavedViewId={null}
         onPendingSavedViewApplied={() => {}}
+        onOpenExceptions={() => {}}
+        starredIds={[]}
+        onToggleStar={() => {}}
       />,
     );
 

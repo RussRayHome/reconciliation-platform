@@ -530,8 +530,8 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { name: 'Exception Category Breakdown' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Likely Split/Combine Issue')).toBeInTheDocument();
-    expect(screen.getByText('Deposit Grouping Issue')).toBeInTheDocument();
+    expect(screen.getAllByText('Likely Split/Combine Issue').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Deposit Grouping Issue').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('tab', { name: /Exceptions/i }));
 

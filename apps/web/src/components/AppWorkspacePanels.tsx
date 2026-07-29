@@ -21,6 +21,7 @@ import {
   type RuleVarianceMetric,
 } from '../lib/appCatalog';
 import { ChartsPanel } from './ChartsPanel';
+import { BentoModule } from './BentoModule';
 import { ExceptionTriage } from './ExceptionTriage';
 import { SemanticIcon } from './SemanticIcon';
 
@@ -264,7 +265,7 @@ function SummaryStatsGrid({
   summary: RunData['summary'];
 }>) {
   return (
-    <section className="stats-grid">
+    <section className="stats-grid" aria-label="Run statistics">
       {summaryStatDefinitions.map((item) => (
         <StatCard
           key={item.id}
@@ -280,7 +281,7 @@ function SummaryStatsGrid({
   );
 }
 
-/** Leads the Summary panel with the reconciliation verdict, then the supporting breakdown. */
+/** Verdict module: four KPI wells for the net figures the reviewer signs off on. */
 function SummaryVerdict({
   run,
 }: Readonly<{
@@ -289,54 +290,242 @@ function SummaryVerdict({
   const summary = run.summary;
   const difference = summary.unmatchedBankNetAmount - summary.unmatchedQboNetAmount;
 
-  const figures: ReadonlyArray<{ label: string; value: number; tone?: 'warning' | 'critical' }> = [
-    { label: 'Bank unmatched (net)', value: summary.unmatchedBankNetAmount },
-    { label: 'Book unmatched (net)', value: summary.unmatchedQboNetAmount },
-    { label: 'Difference', value: difference, tone: difference === 0 ? undefined : 'warning' },
+  const figures: ReadonlyArray<{
+    label: string;
+    value: number;
+    tone: 'neutral' | 'warning' | 'critical' | 'positive';
+  }> = [
+    { label: 'Bank unmatched (net)', value: summary.unmatchedBankNetAmount, tone: 'neutral' },
+    { label: 'Book unmatched (net)', value: summary.unmatchedQboNetAmount, tone: 'neutral' },
+    { label: 'Difference', value: difference, tone: difference === 0 ? 'neutral' : 'warning' },
     {
       label: 'Unexplained residual',
       value: summary.unresolvedExposure,
-      tone: summary.unresolvedExposure === 0 ? undefined : 'critical',
+      tone: summary.unresolvedExposure === 0 ? 'positive' : 'critical',
     },
   ];
 
   return (
-    <section className="summary-verdict" aria-label="Reconciliation verdict">
-      <div className="summary-verdict__figures">
+    <BentoModule span={6} title="Verdict" ariaLabel="Reconciliation verdict">
+      <div className="kpi-wells">
         {figures.map((figure) => (
-          <div
-            key={figure.label}
-            className="summary-verdict__figure"
-            data-tone={figure.tone ?? 'neutral'}
-          >
+          <div key={figure.label} className="kpi-well" data-tone={figure.tone}>
             <span>{figure.label}</span>
             <strong>{formatCurrency(figure.value)}</strong>
           </div>
         ))}
       </div>
-      <p className="summary-verdict__note">
+      <p className="bento-module__note">
         Balances are derived from net unmatched activity per source; the residual is the net dollar
         exposure remaining after exception classification.
       </p>
-      <div className="summary-verdict__prior" aria-label="Prior-period comparison">
+      <div className="bento-module__footer" aria-label="Prior-period comparison">
         <span className="eyebrow">Prior-period comparison</span>
         <p>
           Unavailable — the API does not yet expose previous runs for this account and period. This
           slot will populate once a prior-runs endpoint exists.
         </p>
       </div>
-    </section>
+    </BentoModule>
+  );
+}
+
+/** Match quality module: labeled 4px meters as shares of total records reviewed. */
+function MatchQualityModule({
+  summary,
+  exceptionCount,
+}: Readonly<{
+  summary: RunData['summary'];
+  exceptionCount: number;
+}>) {
+  const total = Math.max(summary.totalRecordsReviewed, 1);
+  const meters: ReadonlyArray<{ label: string; count: number; tone: string }> = [
+    { label: 'Exact matches', count: summary.exactMatches, tone: 'accent' },
+    { label: 'Probable matches', count: summary.probableMatches, tone: 'accent' },
+    { label: 'Exceptions', count: exceptionCount, tone: 'negative' },
+    { label: 'Data quality issues', count: summary.dataQualityIssues, tone: 'high' },
+  ];
+
+  return (
+    <BentoModule span={3} title="Match quality">
+      <ul className="match-meters">
+        {meters.map((meter) => {
+          const percent = Math.min(Math.round((meter.count / total) * 100), 100);
+
+          return (
+            <li key={meter.label} className="match-meter">
+              <div className="match-meter__head">
+                <span>{meter.label}</span>
+                <strong>{meter.count}</strong>
+              </div>
+              <div
+                className="match-meter__track"
+                role="img"
+                aria-label={`${meter.label}: ${meter.count} of ${total} records (${percent}%)`}
+              >
+                <div
+                  className="match-meter__fill"
+                  data-tone={meter.tone}
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </BentoModule>
+  );
+}
+
+const materialityShareTarget = 0.8;
+
+/** Materiality module: exposure concentration plus the view's single accent action into triage. */
+function MaterialityModule({
+  run,
+  onOpenExceptions,
+}: Readonly<{
+  run: RunData;
+  onOpenExceptions: () => void;
+}>) {
+  const magnitudes = run.exceptions.map((item) => Math.abs(item.amount ?? 0)).sort((a, b) => b - a);
+  const totalAbs = magnitudes.reduce((sum, value) => sum + value, 0);
+
+  let topCount = 0;
+  let covered = 0;
+
+  for (const value of magnitudes) {
+    if (totalAbs === 0 || covered >= totalAbs * materialityShareTarget) {
+      break;
+    }
+
+    covered += value;
+    topCount += 1;
+  }
+
+  const coveredPercent = totalAbs === 0 ? 0 : Math.round((covered / totalAbs) * 100);
+  const exceptionNoun = topCount === 1 ? 'exception accounts' : 'exceptions account';
+  const message =
+    totalAbs === 0
+      ? 'Open exceptions carry no dollar exposure.'
+      : `${topCount} ${exceptionNoun} for ${coveredPercent}% of residual exposure.`;
+
+  return (
+    <BentoModule span={3} title="Materiality" accent>
+      <p className="materiality__count">{topCount}</p>
+      <p className="materiality__message">{message}</p>
+      <button type="button" className="accent-button" onClick={onOpenExceptions}>
+        Review top exceptions
+      </button>
+    </BentoModule>
+  );
+}
+
+/** Exposure module: label / bar / mono amount rows per exception category. */
+function ExposureByCategoryModule({
+  run,
+}: Readonly<{
+  run: RunData;
+}>) {
+  const rows = buildCategorySummaryRows(run);
+  const maxAmount = Math.max(...rows.map((row) => Math.abs(row.amount)), 1);
+
+  return (
+    <BentoModule span={8} title="Exposure by category">
+      {rows.length === 0 ? (
+        <p className="bento-module__note">No classified exposure in this run.</p>
+      ) : (
+        <ul className="exposure-rows">
+          {rows.map((row) => (
+            <li key={row.category} className="exposure-row">
+              <span className="exposure-row__label">{row.label}</span>
+              <div
+                className="exposure-row__track"
+                role="img"
+                aria-label={`${row.label}: ${formatCurrency(Math.abs(row.amount))} across ${row.count} item${row.count === 1 ? '' : 's'}`}
+              >
+                <div
+                  className="exposure-row__bar"
+                  style={{ width: `${Math.round((Math.abs(row.amount) / maxAmount) * 100)}%` }}
+                />
+              </div>
+              <span className="exposure-row__amount">{formatCurrency(Math.abs(row.amount))}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </BentoModule>
+  );
+}
+
+/** Watchlist module: exceptions the reviewer starred in triage; rows truncate, never overflow. */
+function WatchlistModule({
+  run,
+  starredIds,
+  onToggleStar,
+}: Readonly<{
+  run: RunData;
+  starredIds: string[];
+  onToggleStar: (exceptionId: string) => void;
+}>) {
+  const starred = run.exceptions.filter((item) => starredIds.includes(item.id));
+
+  return (
+    <BentoModule span={4} title="Watchlist">
+      {starred.length === 0 ? (
+        <p className="bento-module__note">
+          No starred exceptions yet. Star items from the exception detail panel to pin them here.
+        </p>
+      ) : (
+        <ul className="watchlist-rows">
+          {starred.map((item) => (
+            <li key={item.id} className="watchlist-row">
+              <div className="watchlist-row__text">
+                <span className="watchlist-row__label">
+                  {errorCategoryDisplayNames[item.category] ?? item.category}
+                </span>
+                <span className="watchlist-row__meta">
+                  {item.spreadsheetFileName} / {item.lineNumber}
+                </span>
+              </div>
+              <span className="watchlist-row__amount">
+                {item.amount === null ? '—' : formatCurrency(item.amount)}
+              </span>
+              <button
+                type="button"
+                className="watchlist-star watchlist-star--active"
+                aria-label={`Remove ${errorCategoryDisplayNames[item.category] ?? item.category} from watchlist`}
+                onClick={() => onToggleStar(item.id)}
+              >
+                ★
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </BentoModule>
   );
 }
 
 function SummaryReportContent({
   run,
+  onOpenExceptions,
+  starredIds,
+  onToggleStar,
 }: Readonly<{
   run: RunData;
+  onOpenExceptions: () => void;
+  starredIds: string[];
+  onToggleStar: (exceptionId: string) => void;
 }>) {
   return (
     <div className="reports-display-stack">
-      <SummaryVerdict run={run} />
+      <div className="bento-grid">
+        <SummaryVerdict run={run} />
+        <MatchQualityModule summary={run.summary} exceptionCount={run.exceptions.length} />
+        <MaterialityModule run={run} onOpenExceptions={onOpenExceptions} />
+        <ExposureByCategoryModule run={run} />
+        <WatchlistModule run={run} starredIds={starredIds} onToggleStar={onToggleStar} />
+      </div>
       <SummaryStatsGrid summary={run.summary} />
       <div className="summary-badges">
         <span>{run.accountIdentifier ?? 'No account override'}</span>
@@ -604,6 +793,9 @@ export function ReviewSection({
   onUndoLastDecision,
   pendingSavedViewId,
   onPendingSavedViewApplied,
+  onOpenExceptions,
+  starredIds,
+  onToggleStar,
 }: Readonly<{
   run: RunData | undefined;
   activeView: ReportView;
@@ -619,12 +811,22 @@ export function ReviewSection({
   onUndoLastDecision: () => void;
   pendingSavedViewId: string | null;
   onPendingSavedViewApplied: () => void;
+  onOpenExceptions: () => void;
+  starredIds: string[];
+  onToggleStar: (exceptionId: string) => void;
 }>) {
   let panelContent: ReactNode;
 
   if (run) {
     const contentByView: Record<ReportView, ReactNode> = {
-      summary: <SummaryReportContent run={run} />,
+      summary: (
+        <SummaryReportContent
+          run={run}
+          onOpenExceptions={onOpenExceptions}
+          starredIds={starredIds}
+          onToggleStar={onToggleStar}
+        />
+      ),
       'probable-matches': <ProbableMatchesContent probableMatches={run.probableMatches} />,
       exceptions: (
         <ExceptionTriage
@@ -638,6 +840,8 @@ export function ReviewSection({
           onUndoLastDecision={onUndoLastDecision}
           pendingSavedViewId={pendingSavedViewId}
           onPendingSavedViewApplied={onPendingSavedViewApplied}
+          starredIds={starredIds}
+          onToggleStar={onToggleStar}
         />
       ),
     };

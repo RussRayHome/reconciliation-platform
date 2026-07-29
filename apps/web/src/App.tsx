@@ -37,6 +37,7 @@ import {
 import type { SavedTriageView } from './lib/exceptionTriage';
 import { useReconciliationRun } from './hooks/useReconciliationRun';
 import { useReviewerDecisions } from './hooks/useReviewerDecisions';
+import { useWatchlist } from './hooks/useWatchlist';
 
 type ReconciliationFrequency = 'Monthly' | 'Annual';
 type ReconciliationModel = ReturnType<typeof useReconciliationRun>;
@@ -598,6 +599,7 @@ function ReconciliationApp({
     reportRun?.reviewerDecisions,
     reportRunExceptionIds,
   );
+  const { starredIds, toggleStar } = useWatchlist(reportRun?.id);
 
   const suggestedPeriodLabel = useMemo(
     () => buildDefaultPeriodLabel(reconciliationFrequency, monthlyMonth, annualYear, currentYear),
@@ -1005,6 +1007,9 @@ function ReconciliationApp({
                 onUndoLastDecision={reviewerDecisions.undoLastDecision}
                 pendingSavedViewId={pendingSavedViewId}
                 onPendingSavedViewApplied={() => setPendingSavedViewId(null)}
+                onOpenExceptions={() => handleSelectDestination('exceptions')}
+                starredIds={starredIds}
+                onToggleStar={toggleStar}
               />
             ) : null}
 

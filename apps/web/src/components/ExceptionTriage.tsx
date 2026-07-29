@@ -51,6 +51,8 @@ export function ExceptionTriage({
   onUndoLastDecision,
   pendingSavedViewId = null,
   onPendingSavedViewApplied,
+  starredIds,
+  onToggleStar,
 }: Readonly<{
   exceptions: ExceptionItem[];
   decisionByTargetId: Record<string, ReviewerDecision>;
@@ -62,6 +64,8 @@ export function ExceptionTriage({
   onUndoLastDecision: () => void;
   pendingSavedViewId?: string | null;
   onPendingSavedViewApplied?: () => void;
+  starredIds?: string[];
+  onToggleStar?: (exceptionId: string) => void;
 }>) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<{ key: TriageSortKey; direction: TriageSortDirection }>({
@@ -424,6 +428,8 @@ export function ExceptionTriage({
           onDecide={(action, notes) => onDecide(selectedDisplay.item.id, action, notes)}
           onClear={() => onClearDecision(selectedDisplay.item.id)}
           onUndo={onUndoLastDecision}
+          isStarred={starredIds?.includes(selectedDisplay.item.id) ?? false}
+          onToggleStar={onToggleStar ? () => onToggleStar(selectedDisplay.item.id) : undefined}
         />
       ) : null}
     </div>

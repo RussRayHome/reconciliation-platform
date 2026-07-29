@@ -38,6 +38,8 @@ export function ExceptionEvidencePanel({
   onUndo,
   onClose,
   isDrawer,
+  isStarred = false,
+  onToggleStar,
 }: Readonly<{
   display: ExceptionDisplay;
   decision: ReviewerDecision | undefined;
@@ -51,6 +53,8 @@ export function ExceptionEvidencePanel({
   onUndo: () => void;
   onClose?: () => void;
   isDrawer: boolean;
+  isStarred?: boolean;
+  onToggleStar?: () => void;
 }>) {
   const item = display.item;
   const savedNote = decision?.notes ?? '';
@@ -88,6 +92,17 @@ export function ExceptionEvidencePanel({
         <div className="exception-detail__meta">
           <span className="exception-detail__amount">{display.amountLabel}</span>
           <span className="exception-detail__fileline">{display.fileLineLabel}</span>
+          {onToggleStar ? (
+            <button
+              type="button"
+              className={isStarred ? 'watchlist-star watchlist-star--active' : 'watchlist-star'}
+              aria-pressed={isStarred}
+              aria-label={isStarred ? 'Remove from watchlist' : 'Add to watchlist'}
+              onClick={onToggleStar}
+            >
+              {isStarred ? '\u2605' : '\u2606'}
+            </button>
+          ) : null}
         </div>
         {isDrawer && onClose ? (
           <button
