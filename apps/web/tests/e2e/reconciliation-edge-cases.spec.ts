@@ -19,7 +19,7 @@ import {
 } from '@recon/test-fixtures';
 import { expect, type Page, test } from '@playwright/test';
 
-import { loginToApplication } from './auth';
+import { loginToApplication, openSetup } from './auth';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -55,7 +55,7 @@ async function runReconciliation(
 ): Promise<void> {
   const { accountId = 'OPERATING-001', frequency = 'Monthly', month = 'March', label } = options;
 
-  await page.goto('/');
+  await openSetup(page);
   await setWorkbookFiles(page, bankBuffer, qboBuffer);
   await page.getByPlaceholder('OPERATING-001').fill(accountId);
 
@@ -70,26 +70,37 @@ async function runReconciliation(
   }
 
   await page.getByRole('button', { name: 'Run reconciliation' }).click();
-  await expect(page.getByRole('heading', { name: 'Exception Report' })).toBeVisible();
+  // A completed run lands on the Review stage, Summary view.
+  await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
 }
 
-// Scope assertions to exception table rows (td cells) to avoid matching chart labels,
-// dropdown options, and the category breakdown table that also render category names.
-function exceptionCategoryCell(page: Page, displayName: string) {
+// Opens the Exceptions triage view (Review stage) after a completed run.
+async function openExceptions(page: Page): Promise<void> {
+  await page.locator('#review-tab-exceptions').click();
+  await expect(page.locator('#exception-search-input')).toBeVisible();
+}
+
+// The Summary category breakdown renders each detected category once as a table cell.
+function exceptionSummaryCell(page: Page, displayName: string) {
   return page.getByRole('cell', { name: displayName, exact: true }).first();
+}
+
+// A single exception entry inside the triage list pane.
+function exceptionRow(page: Page, displayName: string) {
+  return page.locator('.exception-row', { hasText: displayName }).first();
 }
 
 // ─── Form Validation ─────────────────────────────────────────────────────────
 
 test.describe('form validation', () => {
   test('submit button is disabled before any files are uploaded', async ({ page }) => {
-    await page.goto('/');
+    await openSetup(page);
     await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeDisabled();
   });
 
   test('submit button remains disabled with only the bank file uploaded', async ({ page }) => {
     const bankBuffer = await createSampleBankWorkbook();
-    await page.goto('/');
+    await openSetup(page);
     await page.locator('#bank-workbook-input').setInputFiles({
       name: 'bank.xlsx',
       mimeType: XLSX_MIME,
@@ -105,7 +116,7 @@ test.describe('form validation', () => {
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
-    await page.goto('/');
+    await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, qboBuffer);
     await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeEnabled();
   });
@@ -117,7 +128,7 @@ test.describe('form validation', () => {
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
-    await page.goto('/');
+    await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, qboBuffer);
     await page.getByLabel('Reconciliation label').fill('');
     await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeDisabled();
@@ -126,7 +137,7 @@ test.describe('form validation', () => {
   test('uploading a non-xlsx file shows an error after submission', async ({ page }) => {
     const fakeBuffer = Buffer.from('col1,col2\nval1,val2');
     const bankBuffer = await createSampleBankWorkbook();
-    await page.goto('/');
+    await openSetup(page);
     await page.locator('#bank-workbook-input').setInputFiles({
       name: 'bank.xlsx',
       mimeType: XLSX_MIME,
@@ -146,7 +157,7 @@ test.describe('form validation', () => {
 
 test.describe('annual reconciliation frequency', () => {
   test('switching to Annual hides the month picker and shows the year picker', async ({ page }) => {
-    await page.goto('/');
+    await openSetup(page);
     await expect(page.getByLabel('Monthly reconciliation month')).toBeVisible();
     await expect(page.locator('#annual-reconciliation-year-select')).not.toBeVisible();
 
@@ -175,7 +186,7 @@ test.describe('exception category detection', () => {
       createWorkbookFromRows(missingFromQboQboRows),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionCategoryCell(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Missing from QBO')).toBeVisible();
   });
 
   test('Amount Mismatch scenario surfaces the correct exception category', async ({ page }) => {
@@ -184,7 +195,7 @@ test.describe('exception category detection', () => {
       createWorkbookFromRows(amountMismatchQboRows),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionCategoryCell(page, 'Amount Mismatch')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Amount Mismatch')).toBeVisible();
   });
 
   test('Duplicate in Bank scenario surfaces the correct exception category', async ({ page }) => {
@@ -193,7 +204,7 @@ test.describe('exception category detection', () => {
       createWorkbookFromRows(duplicateInBankQboRows),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionCategoryCell(page, 'Duplicate in Bank')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Duplicate in Bank')).toBeVisible();
   });
 
   test('Timing Difference scenario surfaces the correct exception category', async ({ page }) => {
@@ -202,7 +213,7 @@ test.describe('exception category detection', () => {
       createWorkbookFromRows(timingDifferenceQboRows),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionCategoryCell(page, 'Timing Difference')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Timing Difference')).toBeVisible();
   });
 
   test('Invalid or Missing Data scenario surfaces the correct exception category', async ({
@@ -213,65 +224,67 @@ test.describe('exception category detection', () => {
       createWorkbookFromRows(invalidDataQboRows),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionCategoryCell(page, 'Invalid or Missing Data')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Invalid or Missing Data')).toBeVisible();
   });
 });
 
 // ─── All Exception Categories Combined ───────────────────────────────────────
 
 test.describe('combined all-exceptions workbook', () => {
-  test('exception table is populated after running all-exceptions fixture', async ({ page }) => {
+  test('exception triage is populated after running all-exceptions fixture', async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createAllExceptionsBankWorkbook(),
       createAllExceptionsQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(page.getByText('Total reviewed')).toBeVisible();
+    await openExceptions(page);
     await expect(page.locator('#exception-search-input')).toBeVisible();
   });
 
-  test('multiple distinct exception categories appear in the exception table', async ({ page }) => {
+  test('multiple distinct exception categories appear in the summary breakdown', async ({
+    page,
+  }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createAllExceptionsBankWorkbook(),
       createAllExceptionsQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionCategoryCell(page, 'Missing from QBO')).toBeVisible();
-    await expect(exceptionCategoryCell(page, 'Amount Mismatch')).toBeVisible();
-    await expect(exceptionCategoryCell(page, 'Timing Difference')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Amount Mismatch')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Timing Difference')).toBeVisible();
   });
 });
 
-// ─── Exception Table Filtering ───────────────────────────────────────────────
+// ─── Exception Triage Filtering ──────────────────────────────────────────────
 
-test.describe('exception table interaction', () => {
+test.describe('exception triage interaction', () => {
   test.beforeEach(async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createAllExceptionsBankWorkbook(),
       createAllExceptionsQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
+    await openExceptions(page);
   });
 
   test('search activates the clear-filters button and retains matching rows', async ({ page }) => {
-    // "UNBOOKED" is a token from the MissingFromQBO bank row ("UNBOOKED BANK FEE") and
-    // does not appear in the error messages or tokens of any other exception category.
+    // "UNBOOKED" is a token from the MissingFromQBO bank row ("UNBOOKED BANK FEE").
     await page.locator('#exception-search-input').fill('UNBOOKED');
     await expect(page.getByRole('button', { name: 'Clear filters' })).toBeVisible();
-    await expect(exceptionCategoryCell(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionRow(page, 'Missing from QBO')).toBeVisible();
   });
 
-  test('category filter shows only the selected category in exception rows', async ({ page }) => {
-    await page.locator('#exception-category-filter').selectOption('AmountMismatch');
+  test('category facet shows only the selected category in the triage rows', async ({ page }) => {
+    await page.getByRole('checkbox', { name: /^Amount Mismatch/ }).check();
     await expect(page.getByRole('button', { name: 'Clear filters' })).toBeVisible();
-    await expect(exceptionCategoryCell(page, 'Amount Mismatch')).toBeVisible();
+    await expect(exceptionRow(page, 'Amount Mismatch')).toBeVisible();
   });
 
   test('clearing filters restores all exception categories', async ({ page }) => {
     await page.locator('#exception-search-input').fill('UNBOOKED');
     await page.getByRole('button', { name: 'Clear filters' }).click();
-    await expect(exceptionCategoryCell(page, 'Missing from QBO')).toBeVisible();
-    await expect(exceptionCategoryCell(page, 'Amount Mismatch')).toBeVisible();
+    await expect(exceptionRow(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionRow(page, 'Amount Mismatch')).toBeVisible();
   });
 
   test('search with no matches shows the empty-state message', async ({ page }) => {
@@ -280,16 +293,17 @@ test.describe('exception table interaction', () => {
   });
 });
 
-// ─── Tab Navigation ───────────────────────────────────────────────────────────
+// ─── Stage Navigation ─────────────────────────────────────────────────────────
 
-test.describe('tab navigation', () => {
-  test('Rules tab is accessible before running a reconciliation', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('#tab-rules').click();
-    await expect(page.locator('#tab-rules')).toHaveAttribute('aria-selected', 'true');
+test.describe('stage navigation', () => {
+  test('Rules catalog is reachable from the run bar before a run', async ({ page }) => {
+    await openSetup(page);
+    await page.locator('.run-bar__overflow-trigger').click();
+    await page.getByRole('button', { name: 'Rules' }).click();
+    await expect(page.getByRole('heading', { name: 'Rules Catalog' })).toBeVisible();
   });
 
-  test('after a run the application automatically navigates to the Exceptions tab', async ({
+  test('after a run the application automatically navigates to the Review stage', async ({
     page,
   }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
@@ -297,41 +311,40 @@ test.describe('tab navigation', () => {
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(page.locator('#tab-exceptions')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tab-review')).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('Reports tab is navigable after a run and shows the Run Summary view by default', async ({
-    page,
-  }) => {
+  test('Review opens on the Summary view by default after a run', async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#tab-reports').click();
-    await expect(page.getByRole('heading', { name: 'Run Summary' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
+    await expect(page.locator('#review-tab-summary')).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('Probable Match Review sub-view is reachable from the Reports tab', async ({ page }) => {
+  test('Probable matches view is reachable from the Review segmented control', async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#tab-reports').click();
-    await page.getByRole('button', { name: 'Probable Match Review' }).click();
-    await expect(page.getByRole('heading', { name: 'Probable Match Review' })).toBeVisible();
+    await page.locator('#review-tab-probable-matches').click();
+    await expect(page.locator('#review-tab-probable-matches')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 
-  test('Export Artifacts sub-view is reachable from the Reports tab', async ({ page }) => {
+  test('Close & export stage exposes the export artifacts', async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#tab-reports').click();
-    await page.getByRole('button', { name: 'Export Artifacts' }).click();
-    await expect(page.getByRole('heading', { name: 'Export Artifacts' })).toBeVisible();
+    await page.locator('#tab-close').click();
+    await expect(page.getByRole('link', { name: 'Download workbook' })).toBeVisible();
   });
 });
 
@@ -344,15 +357,14 @@ test.describe('export artifacts', () => {
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#tab-reports').click();
-    await page.getByRole('button', { name: 'Export Artifacts' }).click();
+    await page.locator('#tab-close').click();
   });
 
-  test('Download workbook link is present in Export Artifacts', async ({ page }) => {
+  test('Download workbook link is present in Close & export', async ({ page }) => {
     await expect(page.getByRole('link', { name: 'Download workbook' })).toBeVisible();
   });
 
-  test('Export JSON button is present in Export Artifacts', async ({ page }) => {
+  test('Export JSON button is present in Close & export', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Export JSON' })).toBeVisible();
   });
 
@@ -375,9 +387,8 @@ test.describe('session persistence', () => {
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
 
-    // persistRun() runs inside a React useEffect that fires after paint.
-    // Wait for localStorage to be written before reloading so the next page
-    // load can hydrate from it synchronously without a backend round-trip.
+    // persistRun() runs inside a React effect after paint; wait for localStorage
+    // before reloading so the next load hydrates from it without a backend round-trip.
     await page.waitForFunction(
       () => !!window.localStorage.getItem('reconciliation-platform:latest-report-run'),
       { timeout: 10_000 },
@@ -385,15 +396,10 @@ test.describe('session persistence', () => {
 
     await page.reload();
 
-    // After reload the Exceptions tab requires a live run (which doesn't exist).
-    // The Reports tab uses reportRun = run ?? persistedRun, so it renders the
-    // persisted data. Navigate there and open the Exception Report sub-view.
-    await page.locator('#tab-reports').click();
-    await page.getByRole('button', { name: 'Exception Report' }).click();
-    await expect(page.getByRole('heading', { name: 'Exception Report' })).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.locator('#exception-search-input')).toBeVisible();
+    // Review uses reportRun = run ?? persistedRun, so it renders the persisted data.
+    await page.locator('#tab-review').click();
+    await page.locator('#review-tab-exceptions').click();
+    await expect(page.locator('#exception-search-input')).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -405,13 +411,13 @@ test.describe('edge cases', () => {
       createWorkbookFromRows(bankHeaderOnlyRows),
       createWorkbookFromRows(qboHeaderOnlyRows),
     ]);
-    await page.goto('/');
+    await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, qboBuffer);
     await page.getByRole('button', { name: 'Run reconciliation' }).click();
-    // Either the run completes to the exception report, or a server error alert appears.
-    await expect(
-      page.getByRole('heading', { name: 'Exception Report' }).or(page.getByRole('alert')),
-    ).toBeVisible();
+    // Either the run completes to the Review summary, or a server error alert appears.
+    await expect(page.getByText('Total reviewed').or(page.getByRole('alert'))).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test('running a second reconciliation replaces the previous run results', async ({ page }) => {
@@ -425,26 +431,24 @@ test.describe('edge cases', () => {
       createWorkbookFromRows(missingFromQboBankRows),
       createWorkbookFromRows(missingFromQboQboRows),
     ]);
-    await page.locator('#tab-upload').click();
+    await page.locator('#tab-setup').click();
     await setWorkbookFiles(page, bank2, qbo2);
     await page.getByLabel('Reconciliation label').fill('Second Run April');
     await page.getByRole('button', { name: 'Run reconciliation' }).click();
 
-    await expect(page.getByRole('heading', { name: 'Exception Report' })).toBeVisible();
-    await expect(exceptionCategoryCell(page, 'Missing from QBO')).toBeVisible();
+    await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
+    await expect(exceptionSummaryCell(page, 'Missing from QBO')).toBeVisible();
   });
 
-  test('keyboard arrow keys navigate between tabs', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('#tab-upload').focus();
+  test('keyboard arrow keys navigate between the workflow tabs', async ({ page }) => {
+    await openSetup(page);
+    await page.locator('#tab-setup').focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tab-rules')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tab-review')).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tab-exceptions')).toHaveAttribute('aria-selected', 'true');
-    await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tab-reports')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tab-close')).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowLeft');
-    await expect(page.locator('#tab-exceptions')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tab-review')).toHaveAttribute('aria-selected', 'true');
   });
 
   test('account identifier is optional — run succeeds without it', async ({ page }) => {
@@ -452,16 +456,16 @@ test.describe('edge cases', () => {
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
-    await page.goto('/');
+    await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, qboBuffer);
     await page.getByRole('button', { name: 'Run reconciliation' }).click();
-    await expect(page.getByRole('heading', { name: 'Exception Report' })).toBeVisible();
+    await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
   });
 
   test('period label auto-updates when frequency switches between Monthly and Annual', async ({
     page,
   }) => {
-    await page.goto('/');
+    await openSetup(page);
     const label = page.getByLabel('Reconciliation label');
 
     const monthlyDefault = await label.inputValue();

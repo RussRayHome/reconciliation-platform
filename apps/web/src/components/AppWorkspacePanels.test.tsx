@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { MatchResult, ReconciliationRunReport } from '@recon/domain';
-import { RunResultsSection } from './AppWorkspacePanels';
+import { ReviewSection } from './AppWorkspacePanels';
 
 const buildProbableMatches = (count: number): MatchResult[] =>
   Array.from({ length: count }, (_, index) => ({
@@ -88,11 +88,22 @@ afterEach(() => {
   cleanup();
 });
 
-describe('RunResultsSection probable matches performance rendering', () => {
+describe('ReviewSection probable matches performance rendering', () => {
   it('enables virtualization for large probable match result sets', () => {
     const run = buildRun(180);
     const { container } = render(
-      <RunResultsSection run={run} onDownloadWorkbook={() => {}} onExportJson={() => {}} />,
+      <ReviewSection
+        run={run}
+        activeView="probable-matches"
+        isHydrating={false}
+        loadError={null}
+        onSelectView={() => {}}
+        onGoToSetup={() => {}}
+        decisionByTargetId={{}}
+        pendingTargetId={null}
+        decisionError={null}
+        onDecide={() => {}}
+      />,
     );
 
     expect(
@@ -104,7 +115,18 @@ describe('RunResultsSection probable matches performance rendering', () => {
   it('keeps standard table rendering for smaller probable match result sets', () => {
     const run = buildRun(16);
     const { container } = render(
-      <RunResultsSection run={run} onDownloadWorkbook={() => {}} onExportJson={() => {}} />,
+      <ReviewSection
+        run={run}
+        activeView="probable-matches"
+        isHydrating={false}
+        loadError={null}
+        onSelectView={() => {}}
+        onGoToSetup={() => {}}
+        decisionByTargetId={{}}
+        pendingTargetId={null}
+        decisionError={null}
+        onDecide={() => {}}
+      />,
     );
 
     expect(

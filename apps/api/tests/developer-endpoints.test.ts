@@ -1,5 +1,9 @@
 /** Integration tests for developer-facing API endpoints and diagnostics. */
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
 
@@ -317,16 +321,22 @@ const importCreateApp = async () => {
 
 describe('developer endpoints', () => {
   const originalEnv = { ...process.env };
+  let statusCacheDir: string;
 
   beforeEach(() => {
     vi.resetModules();
     mockExecFile.mockClear();
     process.env = { ...originalEnv };
     process.env.ENABLE_DEVELOPER_DIAGNOSTICS = 'true';
+    // Isolate every test from any real persisted developer-status cache
+    // (present inside the tools container) so cold-start expectations hold.
+    statusCacheDir = mkdtempSync(join(tmpdir(), 'dev-status-cache-'));
+    process.env.DEV_STATUS_CACHE_PATH = join(statusCacheDir, 'developer-status-cache.json');
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    rmSync(statusCacheDir, { recursive: true, force: true });
   });
 
   it('returns health status', async () => {
@@ -532,6 +542,48 @@ describe('developer endpoints', () => {
     });
     expect(body.overallStatus).toBe('healthy');
     expect(body.checks).toHaveLength(0);
+  });
+
+  it('serves a persisted status snapshot immediately after a restart without re-running checks', async () => {
+    const cachePath = process.env.DEV_STATUS_CACHE_PATH as string;
+    const persisted = {
+      payload: {
+        generatedAt: new Date().toISOString(),
+        repositoryPath: '/app',
+        overallStatus: 'healthy',
+        failedChecks: 0,
+        passedChecks: 1,
+        totalChecks: 1,
+        totalDurationMs: 1234,
+        checks: [
+          {
+            name: 'Unit tests',
+            command: 'npm run test:unit',
+            ok: true,
+            exitCode: 0,
+            durationMs: 1234,
+            summary: 'Passed: 10, Failed: 0',
+            details: '',
+          },
+        ],
+        history: [],
+      },
+      cachedAt: Date.now(),
+      history: [],
+    };
+    writeFileSync(cachePath, JSON.stringify(persisted), 'utf8');
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    const response = await request(app).get('/api/developer/status').expect(200);
+    const body = response.body as DeveloperStatusResponseBody;
+
+    expect(body.cache.fromCache).toBe(true);
+    expect(body.cache.refreshInProgress).toBe(false);
+    expect(body.checks).toHaveLength(1);
+    expect(body.checks[0]?.name).toBe('Unit tests');
+    expect(mockExecFile).not.toHaveBeenCalled();
   });
 
   it('returns runtime diagnostics and recent developer activity', async () => {

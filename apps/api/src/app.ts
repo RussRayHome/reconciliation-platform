@@ -151,6 +151,7 @@ type ReconciliationRequestInput = {
   accountIdentifier?: string;
   periodLabel?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
+  varianceOverrides?: Record<string, number>;
 };
 
 type ReconciliationUploadFiles = {
@@ -190,6 +191,8 @@ const reviewerDecisionOutcomes = new Set<ReviewerDecisionOutcome>([
   'RejectedMatch',
   'ConfirmedException',
   'ReclassifiedException',
+  'DismissedException',
+  'ResearchException',
 ]);
 
 const invalidLoginMessage = 'The user or password does not match.';
@@ -249,7 +252,12 @@ const isOutcomeAllowedForTarget = (
   outcome: ReviewerDecisionOutcome,
 ): boolean => {
   if (targetType === 'ExceptionItem') {
-    return outcome === 'ConfirmedException' || outcome === 'ReclassifiedException';
+    return (
+      outcome === 'ConfirmedException' ||
+      outcome === 'ReclassifiedException' ||
+      outcome === 'DismissedException' ||
+      outcome === 'ResearchException'
+    );
   }
 
   return outcome === 'ApprovedMatch' || outcome === 'RejectedMatch';
@@ -381,6 +389,33 @@ const sanitizeQueuedReconciliationResult = (
   reason: queuedResult.reason,
 });
 
+const parseVarianceOverrides = (value: unknown): Record<string, number> | undefined => {
+  const source =
+    typeof value === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(value) as unknown;
+          } catch {
+            return undefined;
+          }
+        })()
+      : value;
+
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  const overrides: Record<string, number> = {};
+
+  for (const [metricId, metricValue] of Object.entries(source as Record<string, unknown>)) {
+    if (typeof metricValue === 'number' && Number.isFinite(metricValue)) {
+      overrides[metricId] = metricValue;
+    }
+  }
+
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+};
+
 const parseReconciliationRequestInput = (
   body: Record<string, unknown>,
 ): ReconciliationRequestInput => ({
@@ -392,6 +427,7 @@ const parseReconciliationRequestInput = (
     reconciliationFrequencies.has(body.reconciliationFrequency as 'Monthly' | 'Annual')
       ? (body.reconciliationFrequency as 'Monthly' | 'Annual')
       : undefined,
+  varianceOverrides: parseVarianceOverrides(body.varianceOverrides),
 });
 
 const registerLifecycleJob = async (
@@ -463,7 +499,7 @@ const runReconciliationWorkflow = async (input: {
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   pool?: Pool;
 }): Promise<ReconciliationWorkflowResult> => {
-  const { accountIdentifier, periodLabel, reconciliationFrequency } =
+  const { accountIdentifier, periodLabel, reconciliationFrequency, varianceOverrides } =
     parseReconciliationRequestInput(input.body);
   const correlationId = resolveCorrelationId(input.requestId);
   const lifecycleContext = await registerLifecycleJob(
@@ -504,10 +540,15 @@ const runReconciliationWorkflow = async (input: {
     exceptions: run.exceptions.length,
   });
 
+  if (varianceOverrides) {
+    run.appliedVarianceOverrides = varianceOverrides;
+  }
+
   return {
     accountIdentifier,
     periodLabel,
     reconciliationFrequency,
+    varianceOverrides,
     persistenceJobId: lifecycleContext.runId,
     run,
   };
@@ -603,6 +644,7 @@ const sanitizeRun = (run: ReconciliationRun): ReconciliationRunReport => ({
         tabNames: run.outputWorkbook.tabNames,
       }
     : undefined,
+  appliedVarianceOverrides: run.appliedVarianceOverrides,
 });
 
 const resolveUploadErrorStatus = (error: unknown): number => {

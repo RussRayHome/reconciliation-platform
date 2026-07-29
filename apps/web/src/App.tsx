@@ -5,43 +5,41 @@ import {
   type ChangeEvent,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type Dispatch,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type SetStateAction,
 } from 'react';
 import { SectionCard } from '@recon/ui';
+import type { ReviewerDecision } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
+import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
+import { SourceDropZone } from './components/SourceDropZone';
 import {
-  HelpedFileField,
-  HelpedLabelField,
-  HelpedSelectField,
-  HelpedTextField,
-} from './components/AppFormFields';
-import {
-  ProcessProgressSection,
-  ReportsSection,
+  CloseExportSection,
+  type ProgressStep,
+  ReviewSection,
   type RuleVarianceDefaultOverrides,
   RulesCatalogSection,
-  RunResultsSection,
 } from './components/AppWorkspacePanels';
+import { RunBar } from './components/RunBar';
+import { RovingTabList } from './components/RovingTabList';
 import { SemanticIcon } from './components/SemanticIcon';
 import kinneyHighlander from './assets/kinney-highlander.png';
-import { downloadWorkbookUrl, getLatestReconciliationRunRequest, loginRequest } from './lib/api';
+import { getLatestReconciliationRunRequest, loginRequest } from './lib/api';
 import {
   buildTabNavigationItems,
-  reportCatalog,
   rulesCatalog,
+  rulesCatalogLastRefresh,
+  varianceMetricCatalog,
   type AppTab,
   type ReportView,
 } from './lib/appCatalog';
 import { useReconciliationRun } from './hooks/useReconciliationRun';
+import { useReviewerDecisions } from './hooks/useReviewerDecisions';
 
 type ReconciliationFrequency = 'Monthly' | 'Annual';
-type OpenHelpField = string | null;
 type ReconciliationModel = ReturnType<typeof useReconciliationRun>;
 type RunData = NonNullable<ReconciliationModel['data']>;
 type UserRole = 'developer' | 'financial-analyst' | 'admin' | 'superuser';
@@ -61,14 +59,6 @@ type RolePermissions = {
   canAdjustSliderDefaults: boolean;
 };
 
-type ProgressStep = {
-  id: string;
-  label: string;
-  description: string;
-  isComplete: boolean;
-  isCurrent: boolean;
-  meterValue: number;
-};
 type SelectOption = {
   value: string;
   label: string;
@@ -77,7 +67,8 @@ type SelectOption = {
 const LAST_SUCCESSFUL_RUN_STORAGE_KEY = 'reconciliation-platform:latest-report-run';
 const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
 const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
-const invalidLoginMessage = 'The user or password does not match.';
+const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-updated-at';
+const invalidLoginMessage = "That username and password don't match. Check both and try again.";
 
 const usersByUsername: Record<string, AppUser> = {
   rray2: { username: 'rray2', role: 'developer' },
@@ -119,6 +110,10 @@ const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: true,
   },
 };
+
+/** Role-aware landing tab: analysts land on Review, everyone else on Setup. */
+const resolveRoleLandingTab = (role: UserRole): AppTab =>
+  role === 'financial-analyst' ? 'review' : 'setup';
 
 const monthsWithinYear = [
   'January',
@@ -230,6 +225,27 @@ const persistSliderDefaultOverrides = (overrides: RuleVarianceDefaultOverrides):
   }
 };
 
+const loadSliderDefaultsUpdatedAt = (): string | null => {
+  try {
+    return globalThis.localStorage?.getItem(SLIDER_DEFAULTS_UPDATED_AT_KEY) ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const persistSliderDefaultsUpdatedAt = (value: string | null): void => {
+  try {
+    if (!value) {
+      globalThis.localStorage?.removeItem(SLIDER_DEFAULTS_UPDATED_AT_KEY);
+      return;
+    }
+
+    globalThis.localStorage?.setItem(SLIDER_DEFAULTS_UPDATED_AT_KEY, value);
+  } catch {
+    // Ignore storage failures so threshold-set versioning still works in-memory.
+  }
+};
+
 const persistRun = (run: RunData): void => {
   try {
     globalThis.localStorage?.setItem(LAST_SUCCESSFUL_RUN_STORAGE_KEY, JSON.stringify(run));
@@ -276,6 +292,97 @@ const resolveMeterValue = (
   return inactiveValue;
 };
 
+const formatElapsedLabel = (elapsedMs: number): string => {
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const appTabs = new Set<AppTab>(['setup', 'review', 'close']);
+const reportViews = new Set<ReportView>(['summary', 'probable-matches', 'exceptions']);
+
+const readWorkspaceSearchParams = (): URLSearchParams => {
+  try {
+    return new URLSearchParams(globalThis.location.search);
+  } catch {
+    return new URLSearchParams();
+  }
+};
+
+const parseInitialTab = (params: URLSearchParams, fallbackTab: AppTab): AppTab => {
+  const value = params.get('tab');
+
+  return value !== null && appTabs.has(value as AppTab) ? (value as AppTab) : fallbackTab;
+};
+
+const parseInitialView = (params: URLSearchParams): ReportView => {
+  const value = params.get('view');
+
+  return value !== null && reportViews.has(value as ReportView) ? (value as ReportView) : 'summary';
+};
+
+const parseInitialRulesPanel = (params: URLSearchParams): boolean =>
+  params.get('panel') === 'rules';
+
+type RunStatusTone = 'idle' | 'running' | 'complete' | 'error';
+
+const runStatusLabelsByTone: Record<RunStatusTone, string> = {
+  idle: 'Idle',
+  running: 'Running',
+  complete: 'Complete',
+  error: 'Failed',
+};
+
+const resolveRunStatusTone = (
+  isPending: boolean,
+  hasError: boolean,
+  hasRun: boolean,
+): RunStatusTone => {
+  if (isPending) {
+    return 'running';
+  }
+
+  if (hasError) {
+    return 'error';
+  }
+
+  if (hasRun) {
+    return 'complete';
+  }
+
+  return 'idle';
+};
+
+const resolveRunElapsedMs = (
+  run: RunData | undefined,
+  isPending: boolean,
+  startedAtMs: number | null,
+  nowMs: number,
+): number | null => {
+  if (run) {
+    const completedMs = new Date(run.completedAt ?? run.startedAt).getTime();
+    const startedMs = new Date(run.startedAt).getTime();
+
+    return Math.max(0, completedMs - startedMs);
+  }
+
+  if (isPending && startedAtMs !== null) {
+    return Math.max(0, nowMs - startedAtMs);
+  }
+
+  return null;
+};
+
+const mergeReviewerDecisions = (run: RunData, exceptionDecisions: ReviewerDecision[]): RunData => {
+  const nonExceptionDecisions = (run.reviewerDecisions ?? []).filter(
+    (decision) => decision.targetType !== 'ExceptionItem',
+  );
+
+  return { ...run, reviewerDecisions: [...nonExceptionDecisions, ...exceptionDecisions] };
+};
+
 const useSuggestedPeriodLabel = (
   isCustomPeriodLabel: boolean,
   suggestedPeriodLabel: string,
@@ -286,40 +393,6 @@ const useSuggestedPeriodLabel = (
       setPeriodLabel(suggestedPeriodLabel);
     }
   }, [isCustomPeriodLabel, suggestedPeriodLabel, setPeriodLabel]);
-};
-
-const useDismissibleFieldHelp = (
-  openHelpField: OpenHelpField,
-  setOpenHelpField: Dispatch<SetStateAction<OpenHelpField>>,
-): void => {
-  useEffect(() => {
-    if (!openHelpField) {
-      return undefined;
-    }
-
-    const handleDocumentPointerDown = (event: MouseEvent): void => {
-      const target = event.target;
-
-      if (!(target instanceof Element)) {
-        setOpenHelpField(null);
-        return;
-      }
-
-      const activeHelpGroup = target.closest('[data-help-field]');
-
-      if ((activeHelpGroup as HTMLElement | null)?.dataset?.helpField === openHelpField) {
-        return;
-      }
-
-      setOpenHelpField(null);
-    };
-
-    document.addEventListener('mousedown', handleDocumentPointerDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleDocumentPointerDown);
-    };
-  }, [openHelpField, setOpenHelpField]);
 };
 
 const readEnvString = (value: unknown): string | undefined =>
@@ -443,6 +516,7 @@ function App() {
     <ReconciliationApp
       docsHref={docsHref}
       rolePermissions={rolePermissions}
+      roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
       controls={controls}
       showDeveloperDashboardLink={showDeveloperDashboardLink}
       developerDashboardHref={developerDashboardHref}
@@ -453,12 +527,14 @@ function App() {
 function ReconciliationApp({
   docsHref,
   rolePermissions,
+  roleDefaultTab,
   controls,
   showDeveloperDashboardLink,
   developerDashboardHref,
 }: Readonly<{
   docsHref: string;
   rolePermissions: RolePermissions;
+  roleDefaultTab: AppTab;
   controls: ReactNode;
   showDeveloperDashboardLink: boolean;
   developerDashboardHref: string;
@@ -476,11 +552,18 @@ function ReconciliationApp({
   const [annualYear, setAnnualYear] = useState(previousSevenYears[0] ?? '');
   const [monthlyMonth, setMonthlyMonth] = useState(defaultMonth);
   const [isCustomPeriodLabel, setIsCustomPeriodLabel] = useState(false);
-  const [openHelpField, setOpenHelpField] = useState<OpenHelpField>(null);
   const [hasDownloadedWorkbook, setHasDownloadedWorkbook] = useState(false);
   const [hasExportedJson, setHasExportedJson] = useState(false);
-  const [activeTab, setActiveTab] = useState<AppTab>('upload');
-  const [activeReport, setActiveReport] = useState<ReportView>('run-summary');
+  const initialWorkspaceParams = readWorkspaceSearchParams();
+  const [activeTab, setActiveTab] = useState<AppTab>(() =>
+    parseInitialTab(initialWorkspaceParams, roleDefaultTab),
+  );
+  const [activeView, setActiveView] = useState<ReportView>(() =>
+    parseInitialView(initialWorkspaceParams),
+  );
+  const [isRulesPanelOpen, setIsRulesPanelOpen] = useState<boolean>(() =>
+    parseInitialRulesPanel(initialWorkspaceParams),
+  );
   const [persistedRun, setPersistedRun] = useState<RunData | undefined>(() => loadPersistedRun());
   const [hasAttemptedBackendReportHydration, setHasAttemptedBackendReportHydration] =
     useState(false);
@@ -488,12 +571,21 @@ function ReconciliationApp({
   const [latestBackendReportError, setLatestBackendReportError] = useState<string | null>(null);
   const [varianceDefaultOverrides, setVarianceDefaultOverrides] =
     useState<RuleVarianceDefaultOverrides>(() => loadSliderDefaultOverrides());
+  const [varianceOverridesUpdatedAt, setVarianceOverridesUpdatedAt] = useState<string | null>(() =>
+    loadSliderDefaultsUpdatedAt(),
+  );
   const [periodLabel, setPeriodLabel] = useState(
     buildDefaultPeriodLabel('Monthly', defaultMonth, annualYear, currentYear),
   );
+  const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const reconciliation = useReconciliationRun();
   const run = reconciliation.data;
   const reportRun = run ?? persistedRun;
+  const reviewerDecisions = useReviewerDecisions(
+    reportRun?.id ?? null,
+    reportRun?.reviewerDecisions,
+  );
 
   const suggestedPeriodLabel = useMemo(
     () => buildDefaultPeriodLabel(reconciliationFrequency, monthlyMonth, annualYear, currentYear),
@@ -501,7 +593,6 @@ function ReconciliationApp({
   );
 
   useSuggestedPeriodLabel(isCustomPeriodLabel, suggestedPeriodLabel, setPeriodLabel);
-  useDismissibleFieldHelp(openHelpField, setOpenHelpField);
 
   useEffect(() => {
     persistSliderDefaultOverrides(varianceDefaultOverrides);
@@ -511,12 +602,34 @@ function ReconciliationApp({
     if (run) {
       setPersistedRun(run);
       persistRun(run);
-      setActiveTab('exceptions');
-      setActiveReport('run-summary');
+      setActiveTab('review');
+      setActiveView('summary');
       setLatestBackendReportError(null);
       setIsHydratingLatestBackendReport(false);
     }
   }, [run]);
+
+  useEffect(() => {
+    const params = readWorkspaceSearchParams();
+    params.set('tab', activeTab);
+    params.set('view', activeView);
+
+    if (isRulesPanelOpen) {
+      params.set('panel', 'rules');
+    } else {
+      params.delete('panel');
+    }
+
+    const query = params.toString();
+    const querySuffix = query ? `?${query}` : '';
+    const nextUrl = `${globalThis.location.pathname}${querySuffix}`;
+
+    try {
+      globalThis.history.replaceState(globalThis.history.state, '', nextUrl);
+    } catch {
+      // Ignore history failures so navigation state still updates in-memory.
+    }
+  }, [activeTab, activeView, isRulesPanelOpen]);
 
   const hydrateLatestBackendReport = (): void => {
     if (hasAttemptedBackendReportHydration || run || persistedRun) {
@@ -543,15 +656,23 @@ function ReconciliationApp({
   };
 
   const handleSelectTab = (nextTab: AppTab): void => {
-    if (nextTab !== 'upload' && !rolePermissions.canAccessApplication) {
+    if (!rolePermissions.canAccessApplication) {
       return;
     }
 
     setActiveTab(nextTab);
 
-    if (nextTab === 'reports') {
+    if (nextTab === 'review' || nextTab === 'close') {
       hydrateLatestBackendReport();
     }
+  };
+
+  const openRulesPanel = (): void => {
+    setIsRulesPanelOpen(true);
+  };
+
+  const closeRulesPanel = (): void => {
+    setIsRulesPanelOpen(false);
   };
 
   const handleChangeVarianceDefault = (metricId: string, value: number): void => {
@@ -563,6 +684,31 @@ function ReconciliationApp({
       ...current,
       [metricId]: value,
     }));
+    const timestamp = new Date().toISOString();
+    setVarianceOverridesUpdatedAt(timestamp);
+    persistSliderDefaultsUpdatedAt(timestamp);
+  };
+
+  const handleResetVarianceDefault = (metricId: string): void => {
+    if (!rolePermissions.canAdjustSliderDefaults) {
+      return;
+    }
+
+    setVarianceDefaultOverrides((current) => {
+      const next = { ...current };
+      delete next[metricId];
+
+      if (Object.keys(next).length === 0) {
+        setVarianceOverridesUpdatedAt(null);
+        persistSliderDefaultsUpdatedAt(null);
+      } else {
+        const timestamp = new Date().toISOString();
+        setVarianceOverridesUpdatedAt(timestamp);
+        persistSliderDefaultsUpdatedAt(timestamp);
+      }
+
+      return next;
+    });
   };
 
   const handleResetVarianceDefaults = (): void => {
@@ -571,6 +717,8 @@ function ReconciliationApp({
     }
 
     setVarianceDefaultOverrides({});
+    setVarianceOverridesUpdatedAt(null);
+    persistSliderDefaultsUpdatedAt(null);
   };
 
   const trimmedPeriodLabel = periodLabel.trim();
@@ -623,6 +771,7 @@ function ReconciliationApp({
         isComplete: isRunStepComplete,
         isCurrent: isRunPendingStep,
         meterValue: runMeterValue,
+        detail: run ? `${run.summary.totalRecordsReviewed} records reviewed` : undefined,
       },
       {
         id: 'review-export',
@@ -642,10 +791,61 @@ function ReconciliationApp({
     isRunStepComplete,
     isUploadStepComplete,
     reconciliation.isPending,
+    run,
   ]);
 
   const completedStepCount = progressSteps.filter((step) => step.isComplete).length;
   const overallProgressPercent = Math.round((completedStepCount / progressSteps.length) * 100);
+
+  const currentProgressStep = progressSteps.find((step) => step.isCurrent);
+  const runStatusTone = resolveRunStatusTone(
+    reconciliation.isPending,
+    Boolean(reconciliation.error),
+    Boolean(run),
+  );
+  const runStatusLabel = runStatusLabelsByTone[runStatusTone];
+  const currentStepLabel = run
+    ? 'Reconciliation complete'
+    : (currentProgressStep?.label ?? 'Ready to run');
+  const runElapsedMs = resolveRunElapsedMs(run, reconciliation.isPending, runStartedAtMs, nowMs);
+  const elapsedLabel = runElapsedMs === null ? null : formatElapsedLabel(runElapsedMs);
+  const runBarSourceFileNames = run
+    ? run.sourceFiles.map((file) => file.fileName)
+    : [bankFile?.name, qboFile?.name].filter((name): name is string => Boolean(name));
+  const runBarAccountIdentifier = run?.accountIdentifier ?? accountIdentifier;
+  const appliedVarianceOverrides = reportRun?.appliedVarianceOverrides;
+  const rulesUsedCount = reportRun ? Object.keys(appliedVarianceOverrides ?? {}).length : null;
+  const reviewProgressLabel = reportRun
+    ? `${reviewerDecisions.reviewedCount} of ${reportRun.exceptions.length} reviewed`
+    : null;
+  const varianceOverrideCount = Object.keys(varianceDefaultOverrides).length;
+  const thresholdSetLabel = varianceOverrideCount > 0 ? 'Custom threshold set' : 'Shipped defaults';
+  const thresholdSetTimestamp =
+    varianceOverrideCount > 0
+      ? (varianceOverridesUpdatedAt?.slice(0, 10) ?? 'This session')
+      : rulesCatalogLastRefresh;
+
+  useEffect(() => {
+    if (!reportRun) {
+      return;
+    }
+
+    persistRun(mergeReviewerDecisions(reportRun, reviewerDecisions.decisions));
+  }, [reportRun, reviewerDecisions.decisions]);
+
+  useEffect(() => {
+    if (!reconciliation.isPending) {
+      return undefined;
+    }
+
+    const intervalId = globalThis.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      globalThis.clearInterval(intervalId);
+    };
+  }, [reconciliation.isPending]);
 
   const handleSubmit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();
@@ -654,17 +854,16 @@ function ReconciliationApp({
       return;
     }
 
+    setRunStartedAtMs(Date.now());
+    setNowMs(Date.now());
     reconciliation.mutate({
       bankFile,
       qboFile,
       accountIdentifier,
       reconciliationFrequency,
       periodLabel: trimmedPeriodLabel,
+      varianceOverrides: varianceDefaultOverrides,
     });
-  };
-
-  const toggleFieldHelp = (field: string): void => {
-    setOpenHelpField((current) => (current === field ? null : field));
   };
 
   return (
@@ -672,107 +871,118 @@ function ReconciliationApp({
       <div className="hero-backdrop" />
       <main className="app-layout">
         {controls}
-        <HeroSection
+        <RunBar
+          periodLabel={run?.periodLabel ?? periodLabel}
+          accountIdentifier={runBarAccountIdentifier}
+          sourceFileNames={runBarSourceFileNames}
+          frequency={reconciliationFrequency}
+          statusLabel={runStatusLabel}
+          statusTone={runStatusTone}
+          overallProgressPercent={overallProgressPercent}
+          currentStepLabel={currentStepLabel}
+          exceptionCount={run ? run.exceptions.length : null}
+          runId={run?.id ?? null}
+          elapsedLabel={elapsedLabel}
+          isComplete={Boolean(run)}
+          onOpenReview={() => handleSelectTab('review')}
+          onOpenRules={openRulesPanel}
+          rulesUsedCount={rulesUsedCount}
+          reviewProgressLabel={reviewProgressLabel}
+          progressSteps={progressSteps}
           docsHref={docsHref}
-          rolePermissions={rolePermissions}
-          showDeveloperDashboardLink={showDeveloperDashboardLink}
           developerDashboardHref={developerDashboardHref}
-          run={run}
-          periodLabel={periodLabel}
-          reconciliationFrequency={reconciliationFrequency}
-          onOpenUploadTab={() => setActiveTab('upload')}
+          showDeveloperDashboardLink={showDeveloperDashboardLink}
+          canAccessDocumentation={rolePermissions.canAccessDocumentation}
         />
 
-        <section className="tabbed-workspace" aria-label="Reconciliation workspace">
-          <TabNavigation
-            activeTab={activeTab}
-            exceptionCount={run?.exceptions.length ?? 0}
-            reportCount={reportCatalog.length}
-            canAccessApplication={rolePermissions.canAccessApplication}
-            onSelectTab={handleSelectTab}
+        {isRulesPanelOpen ? (
+          <RulesCatalogSection
+            rules={rulesCatalog}
+            metrics={varianceMetricCatalog}
+            varianceOverrides={varianceDefaultOverrides}
+            canAdjustVarianceDefaults={rolePermissions.canAdjustSliderDefaults}
+            onChangeVarianceDefault={handleChangeVarianceDefault}
+            onResetVarianceDefault={handleResetVarianceDefault}
+            onResetVarianceDefaults={handleResetVarianceDefaults}
+            run={reportRun}
+            thresholdSetLabel={thresholdSetLabel}
+            thresholdSetTimestamp={thresholdSetTimestamp}
+            onClose={closeRulesPanel}
           />
-
-          {activeTab === 'upload' ? (
-            <SourceUploadSection
-              annualYear={annualYear}
-              canSubmit={canSubmit}
-              currentYear={currentYear}
-              handleSubmit={handleSubmit}
-              isLabelMissing={isLabelMissing}
-              monthlyMonth={monthlyMonth}
-              openHelpField={openHelpField}
-              periodLabel={periodLabel}
-              previousSevenYears={previousSevenYears}
-              reconciliation={reconciliation}
-              reconciliationFrequency={reconciliationFrequency}
-              run={run}
-              setAccountIdentifier={setAccountIdentifier}
-              setAnnualYear={setAnnualYear}
-              setBankFile={setBankFile}
-              setHasDownloadedWorkbook={setHasDownloadedWorkbook}
-              setHasExportedJson={setHasExportedJson}
-              setIsCustomPeriodLabel={setIsCustomPeriodLabel}
-              setMonthlyMonth={setMonthlyMonth}
-              setPeriodLabel={setPeriodLabel}
-              setQboFile={setQboFile}
-              setReconciliationFrequency={setReconciliationFrequency}
-              suggestedPeriodLabel={suggestedPeriodLabel}
-              toggleFieldHelp={toggleFieldHelp}
-              accountIdentifier={accountIdentifier}
+        ) : (
+          <section className="tabbed-workspace" aria-label="Reconciliation workspace">
+            <TabNavigation
+              activeTab={activeTab}
+              exceptionCount={run?.exceptions.length ?? 0}
+              hasRun={Boolean(run)}
+              onSelectTab={handleSelectTab}
             />
-          ) : null}
 
-          {activeTab === 'rules' && rolePermissions.canAccessApplication ? (
-            <RulesCatalogSection
-              rules={rulesCatalog}
-              varianceOverrides={varianceDefaultOverrides}
-              canAdjustVarianceDefaults={rolePermissions.canAdjustSliderDefaults}
-              onChangeVarianceDefault={handleChangeVarianceDefault}
-              onResetVarianceDefaults={handleResetVarianceDefaults}
-            />
-          ) : null}
+            {activeTab === 'setup' ? (
+              <SourceUploadSection
+                annualYear={annualYear}
+                bankFile={bankFile}
+                qboFile={qboFile}
+                canSubmit={canSubmit}
+                currentYear={currentYear}
+                handleSubmit={handleSubmit}
+                isCustomPeriodLabel={isCustomPeriodLabel}
+                isLabelMissing={isLabelMissing}
+                monthlyMonth={monthlyMonth}
+                periodLabel={periodLabel}
+                previousSevenYears={previousSevenYears}
+                reconciliation={reconciliation}
+                reconciliationFrequency={reconciliationFrequency}
+                setAccountIdentifier={setAccountIdentifier}
+                setAnnualYear={setAnnualYear}
+                setBankFile={setBankFile}
+                setIsCustomPeriodLabel={setIsCustomPeriodLabel}
+                setMonthlyMonth={setMonthlyMonth}
+                setPeriodLabel={setPeriodLabel}
+                setQboFile={setQboFile}
+                setReconciliationFrequency={setReconciliationFrequency}
+                suggestedPeriodLabel={suggestedPeriodLabel}
+                accountIdentifier={accountIdentifier}
+              />
+            ) : null}
 
-          {activeTab === 'exceptions' && rolePermissions.canAccessApplication ? (
-            <RunResultsSection
-              run={run}
-              onExportJson={() => {
-                if (!run) {
-                  return;
-                }
+            {activeTab === 'review' ? (
+              <ReviewSection
+                run={reportRun}
+                activeView={activeView}
+                isHydrating={isHydratingLatestBackendReport}
+                loadError={latestBackendReportError}
+                onSelectView={setActiveView}
+                onGoToSetup={() => handleSelectTab('setup')}
+                decisionByTargetId={reviewerDecisions.decisionByTargetId}
+                pendingTargetId={reviewerDecisions.pendingTargetId}
+                decisionError={reviewerDecisions.error}
+                onDecide={reviewerDecisions.decide}
+              />
+            ) : null}
 
-                setHasExportedJson(true);
-                downloadJson(`${run.id}.json`, run);
-              }}
-              onDownloadWorkbook={() => setHasDownloadedWorkbook(true)}
-            />
-          ) : null}
+            {activeTab === 'close' ? (
+              <CloseExportSection
+                run={reportRun}
+                isHydrating={isHydratingLatestBackendReport}
+                loadError={latestBackendReportError}
+                onDownloadWorkbook={() => setHasDownloadedWorkbook(true)}
+                onGoToSetup={() => handleSelectTab('setup')}
+                onExportJson={() => {
+                  if (!reportRun) {
+                    return;
+                  }
 
-          {activeTab === 'reports' && rolePermissions.canAccessApplication ? (
-            <ReportsSection
-              run={reportRun}
-              activeReport={activeReport}
-              isHydrating={isHydratingLatestBackendReport}
-              loadError={latestBackendReportError}
-              onSelectReport={setActiveReport}
-              onExportJson={() => {
-                if (!reportRun) {
-                  return;
-                }
-
-                setHasExportedJson(true);
-                downloadJson(`${reportRun.id}.json`, reportRun);
-              }}
-              onDownloadWorkbook={() => setHasDownloadedWorkbook(true)}
-            />
-          ) : null}
-        </section>
-
-        {activeTab === 'upload' ? (
-          <ProcessProgressSection
-            overallProgressPercent={overallProgressPercent}
-            progressSteps={progressSteps}
-          />
-        ) : null}
+                  setHasExportedJson(true);
+                  downloadJson(
+                    `${reportRun.id}.json`,
+                    mergeReviewerDecisions(reportRun, reviewerDecisions.decisions),
+                  );
+                }}
+              />
+            ) : null}
+          </section>
+        )}
 
         <footer className="page-footer">
           <p>
@@ -785,174 +995,43 @@ function ReconciliationApp({
   );
 }
 
-function HeroSection({
-  docsHref,
-  rolePermissions,
-  showDeveloperDashboardLink,
-  developerDashboardHref,
-  run,
-  periodLabel,
-  reconciliationFrequency,
-  onOpenUploadTab,
-}: Readonly<{
-  docsHref: string;
-  rolePermissions: RolePermissions;
-  showDeveloperDashboardLink: boolean;
-  developerDashboardHref: string;
-  run: RunData | undefined;
-  periodLabel: string;
-  reconciliationFrequency: ReconciliationFrequency;
-  onOpenUploadTab: () => void;
-}>) {
-  return (
-    <header className="hero-card">
-      <div>
-        <div className="hero-heading-row">
-          <div className="hero-title-block">
-            <h1>Financial Reconciliation Platform</h1>
-          </div>
-          <div className="hero-brand">
-            <img
-              className="hero-brand__mascot"
-              src={kinneyHighlander}
-              alt="Small Scottish man in a kilt illustration"
-            />
-            <p className="hero-brand__company">Kinney Software Solutions LLC</p>
-          </div>
-        </div>
-        <p>
-          Audit-ready monthly workflow: upload source workbooks, preserve row-level traceability,
-          run evidence-based matching, and export accountant-friendly workpapers with repeatable
-          rules.
-        </p>
-        <div className="hero-cta-row">
-          {rolePermissions.canAccessApplication ? (
-            <a className="hero-primary-cta" href="#source-upload-form" onClick={onOpenUploadTab}>
-              Start Reconciliation
-            </a>
-          ) : null}
-          {rolePermissions.canAccessDocumentation ? (
-            <a className="hero-primary-cta" href={docsHref}>
-              Documentation
-            </a>
-          ) : null}
-          {showDeveloperDashboardLink ? (
-            <a className="hero-primary-cta" href={developerDashboardHref}>
-              Developer Dashboard
-            </a>
-          ) : null}
-        </div>
-      </div>
-      <div className="hero-meta">
-        <div>
-          <span>Correlation-aware processing</span>
-          <strong>{run?.correlationId ?? 'Awaiting run'}</strong>
-        </div>
-        <div>
-          <span>Current period</span>
-          <strong>{run?.periodLabel ?? (periodLabel || 'Not set')}</strong>
-        </div>
-        <div>
-          <span>Reconciliation frequency</span>
-          <strong>{reconciliationFrequency}</strong>
-        </div>
-      </div>
-    </header>
-  );
-}
-
 function TabNavigation({
   activeTab,
   exceptionCount,
-  reportCount,
-  canAccessApplication,
+  hasRun,
   onSelectTab,
 }: Readonly<{
   activeTab: AppTab;
   exceptionCount: number;
-  reportCount: number;
-  canAccessApplication: boolean;
+  hasRun: boolean;
   onSelectTab: (tab: AppTab) => void;
 }>) {
-  const tabs = buildTabNavigationItems({
-    ruleCount: rulesCatalog.length,
-    exceptionCount,
-    reportCount,
-  }).filter((tab) => canAccessApplication || tab.id === 'upload');
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
-
-  const focusAndSelectTab = (index: number): void => {
-    const boundedIndex = (index + tabs.length) % tabs.length;
-    const nextTab = tabs[boundedIndex];
-
-    if (!nextTab) {
-      return;
-    }
-
-    onSelectTab(nextTab.id);
-    tabRefs.current[boundedIndex]?.focus();
-  };
-
-  const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void => {
-    switch (event.key) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        event.preventDefault();
-        focusAndSelectTab(index + 1);
-        break;
-      case 'ArrowLeft':
-      case 'ArrowUp':
-        event.preventDefault();
-        focusAndSelectTab(index - 1);
-        break;
-      case 'Home':
-        event.preventDefault();
-        focusAndSelectTab(0);
-        break;
-      case 'End':
-        event.preventDefault();
-        focusAndSelectTab(tabs.length - 1);
-        break;
-      default:
-        break;
-    }
-  };
+  const tabs = buildTabNavigationItems({ exceptionCount, hasRun });
 
   return (
     <section className="tab-shell" aria-label="Application sections">
-      <div
-        className="tab-list"
-        role="tablist"
-        aria-label="Application tabs"
-        aria-orientation="horizontal"
-      >
-        {tabs.map((tab, index) => (
-          <button
-            key={tab.id}
-            ref={(element) => {
-              tabRefs.current[index] = element;
-            }}
-            type="button"
-            role="tab"
-            id={`tab-${tab.id}`}
-            className={activeTab === tab.id ? 'tab-button tab-button--active' : 'tab-button'}
-            aria-selected={activeTab === tab.id}
-            aria-controls={`tab-panel-${tab.id}`}
-            tabIndex={activeIndex === index ? 0 : -1}
-            onClick={() => onSelectTab(tab.id)}
-            onKeyDown={(event) => handleTabKeyDown(event, index)}
-          >
+      <RovingTabList
+        items={tabs}
+        activeId={activeTab}
+        onSelect={onSelectTab}
+        ariaLabel="Application tabs"
+        tabIdPrefix="tab"
+        panelIdPrefix="tab-panel"
+        listClassName="tab-list"
+        tabClassName="tab-button"
+        activeTabClassName="tab-button tab-button--active"
+        renderContent={(tab) => (
+          <>
             <span className="tab-button__label-row">
               <span className="tab-button__icon-shell" aria-hidden="true">
-                <SemanticIcon name={tab.icon} className="tab-button__icon" />
+                <SemanticIcon name={tab.icon ?? 'reports'} className="tab-button__icon" />
               </span>
               <span className="tab-button__label-text">{tab.label}</span>
             </span>
             <small>{tab.description}</small>
-          </button>
-        ))}
-      </div>
+          </>
+        )}
+      />
     </section>
   );
 }
@@ -974,61 +1053,57 @@ function TabPanel({
 function SourceUploadSection({
   accountIdentifier,
   annualYear,
+  bankFile,
+  qboFile,
   canSubmit,
   currentYear,
   handleSubmit,
+  isCustomPeriodLabel,
   isLabelMissing,
   monthlyMonth,
-  openHelpField,
   periodLabel,
   previousSevenYears,
   reconciliation,
   reconciliationFrequency,
-  run,
   setAccountIdentifier,
   setAnnualYear,
   setBankFile,
-  setHasDownloadedWorkbook,
-  setHasExportedJson,
   setIsCustomPeriodLabel,
   setMonthlyMonth,
   setPeriodLabel,
   setQboFile,
   setReconciliationFrequency,
   suggestedPeriodLabel,
-  toggleFieldHelp,
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
+  bankFile: File | null;
+  qboFile: File | null;
   canSubmit: boolean;
   currentYear: number;
   handleSubmit: (event: { preventDefault: () => void }) => void;
+  isCustomPeriodLabel: boolean;
   isLabelMissing: boolean;
   monthlyMonth: string;
-  openHelpField: OpenHelpField;
   periodLabel: string;
   previousSevenYears: string[];
   reconciliation: ReconciliationModel;
   reconciliationFrequency: ReconciliationFrequency;
-  run: RunData | undefined;
   setAccountIdentifier: Dispatch<SetStateAction<string>>;
   setAnnualYear: Dispatch<SetStateAction<string>>;
   setBankFile: Dispatch<SetStateAction<File | null>>;
-  setHasDownloadedWorkbook: Dispatch<SetStateAction<boolean>>;
-  setHasExportedJson: Dispatch<SetStateAction<boolean>>;
   setIsCustomPeriodLabel: Dispatch<SetStateAction<boolean>>;
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
   setPeriodLabel: Dispatch<SetStateAction<string>>;
   setQboFile: Dispatch<SetStateAction<File | null>>;
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
-  toggleFieldHelp: (field: string) => void;
 }>) {
   const reconciliationLabelErrorId = 'reconciliation-label-error';
   const reconciliationLabelHintId = 'reconciliation-label-hint';
 
   return (
-    <TabPanel tabId="upload">
+    <TabPanel tabId="setup">
       <SectionCard
         title="Source Upload"
         description="XLSX uploads only. The engine preserves original file names, line numbers, excluded rows, and normalized audit fields."
@@ -1039,46 +1114,27 @@ function SourceUploadSection({
           aria-busy={reconciliation.isPending}
           onSubmit={handleSubmit}
         >
-          <HelpedFileField
-            accept=".xlsx"
-            fieldId="bank-workbook"
-            helpText="Upload the exported bank transaction workbook used as the bank source of truth."
-            inputId="bank-workbook-input"
-            isOpen={openHelpField === 'bank-workbook'}
-            label="Bank workbook"
-            onChange={(event) => setBankFile(event.target.files?.[0] ?? null)}
-            toggleFieldHelp={toggleFieldHelp}
-          />
-
-          <HelpedFileField
-            accept=".xlsx"
-            fieldId="qbo-workbook"
-            helpText="Upload the QuickBooks Online export workbook to compare against the bank records."
-            inputId="qbo-workbook-input"
-            isOpen={openHelpField === 'qbo-workbook'}
-            label="QBO workbook"
-            onChange={(event) => setQboFile(event.target.files?.[0] ?? null)}
-            toggleFieldHelp={toggleFieldHelp}
+          <SourceDropZone
+            bankFile={bankFile}
+            qboFile={qboFile}
+            setBankFile={setBankFile}
+            setQboFile={setQboFile}
           />
 
           <HelpedTextField
             fieldId="account-identifier"
             helpText="Optional account code shown in outputs and exports to identify which account this run belongs to."
             inputId="account-identifier-input"
-            isOpen={openHelpField === 'account-identifier'}
             label="Account identifier"
             onChange={(event) => setAccountIdentifier(event.target.value)}
             placeholder="OPERATING-001"
-            toggleFieldHelp={toggleFieldHelp}
             value={accountIdentifier}
           />
 
           <HelpedFrequencyField
-            isOpen={openHelpField === 'reconciliation-frequency'}
             onChange={(event) =>
               setReconciliationFrequency(event.target.value as ReconciliationFrequency)
             }
-            toggleFieldHelp={toggleFieldHelp}
             value={reconciliationFrequency}
           />
 
@@ -1086,18 +1142,15 @@ function SourceUploadSection({
             annualYear={annualYear}
             currentYear={currentYear}
             monthlyMonth={monthlyMonth}
-            openHelpField={openHelpField}
             previousSevenYears={previousSevenYears}
             reconciliationFrequency={reconciliationFrequency}
             setAnnualYear={setAnnualYear}
             setMonthlyMonth={setMonthlyMonth}
-            toggleFieldHelp={toggleFieldHelp}
           />
 
           <HelpedLabelField
             hintId={reconciliationLabelHintId}
             isInvalid={isLabelMissing}
-            isOpen={openHelpField === 'reconciliation-label'}
             labelErrorId={reconciliationLabelErrorId}
             onChange={(event) => {
               setIsCustomPeriodLabel(true);
@@ -1105,7 +1158,11 @@ function SourceUploadSection({
             }}
             periodLabel={periodLabel}
             suggestedPeriodLabel={suggestedPeriodLabel}
-            toggleFieldHelp={toggleFieldHelp}
+            canResetToSuggested={isCustomPeriodLabel}
+            onResetToSuggested={() => {
+              setIsCustomPeriodLabel(false);
+              setPeriodLabel(suggestedPeriodLabel);
+            }}
           />
 
           <p className="trust-note">
@@ -1117,27 +1174,6 @@ function SourceUploadSection({
             <button type="submit" disabled={!canSubmit}>
               {reconciliation.isPending ? 'Running reconciliation...' : 'Run reconciliation'}
             </button>
-            {run ? (
-              <>
-                <a
-                  className="secondary-button"
-                  href={downloadWorkbookUrl(run.id)}
-                  onClick={() => setHasDownloadedWorkbook(true)}
-                >
-                  Download workbook
-                </a>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => {
-                    setHasExportedJson(true);
-                    downloadJson(`${run.id}.json`, run);
-                  }}
-                >
-                  Export JSON
-                </button>
-              </>
-            ) : null}
           </div>
 
           {reconciliation.isPending ? (
@@ -1217,7 +1253,14 @@ function LoginShell({
             <p className="login-brand__company">Kinney Software Solutions LLC</p>
           </div>
 
-          <h1>Login</h1>
+          <h1>Financial Reconciliation Platform</h1>
+          <p className="login-lede">
+            Audit-ready monthly workflow: upload source workbooks, preserve row-level traceability,
+            run evidence-based matching, and export accountant-friendly workpapers with repeatable
+            rules.
+          </p>
+
+          <h2 className="login-heading">Login</h2>
 
           <form className="login-form" onSubmit={handleSubmit}>
             <div className="field-group">
@@ -1275,9 +1318,19 @@ function UserRoleControls({
 }>) {
   return (
     <section className="user-role-shell" aria-label="User access profile">
-      <div className="user-role-shell__identity">
-        <span>Signed in as</span>
-        <strong>{displayName ?? activeUser.username}</strong>
+      <div className="user-role-shell__top">
+        <div className="user-role-shell__identity">
+          <span>Signed in as</span>
+          <strong>{displayName ?? activeUser.username}</strong>
+        </div>
+        <div className="hero-brand user-role-shell__brand">
+          <img
+            className="hero-brand__mascot"
+            src={kinneyHighlander}
+            alt="Small Scottish man in a kilt illustration"
+          />
+          <p className="hero-brand__company">Kinney Software Solutions LLC</p>
+        </div>
       </div>
       <div className="user-role-shell__meta">
         <strong>{roleDisplayLabels[activeUser.role]}</strong>
@@ -1363,14 +1416,10 @@ function AccessDeniedShell({
 }
 
 function HelpedFrequencyField({
-  isOpen,
   onChange,
-  toggleFieldHelp,
   value,
 }: Readonly<{
-  isOpen: boolean;
   onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
-  toggleFieldHelp: (field: string) => void;
   value: ReconciliationFrequency;
 }>) {
   return (
@@ -1378,11 +1427,9 @@ function HelpedFrequencyField({
       fieldId="reconciliation-frequency"
       helpText="Choose Monthly for one-month close checks, or Annual for full-year reconciliation validation."
       inputId="reconciliation-frequency-select"
-      isOpen={isOpen}
       label="Reconciliation frequency"
       onChange={onChange}
       options={reconciliationFrequencyOptions}
-      toggleFieldHelp={toggleFieldHelp}
       value={value}
     />
   );
@@ -1392,26 +1439,21 @@ function ReconciliationPeriodField({
   annualYear,
   currentYear,
   monthlyMonth,
-  openHelpField,
   previousSevenYears,
   reconciliationFrequency,
   setAnnualYear,
   setMonthlyMonth,
-  toggleFieldHelp,
 }: Readonly<{
   annualYear: string;
   currentYear: number;
   monthlyMonth: string;
-  openHelpField: OpenHelpField;
   previousSevenYears: string[];
   reconciliationFrequency: ReconciliationFrequency;
   setAnnualYear: Dispatch<SetStateAction<string>>;
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
-  toggleFieldHelp: (field: string) => void;
 }>) {
   if (reconciliationFrequency === 'Annual') {
     const fieldId = 'annual-reconciliation-year';
-    const isHelpOpen = openHelpField === fieldId;
     const annualYearOptions = previousSevenYears.map((year) => ({
       value: year,
       label: year,
@@ -1422,7 +1464,6 @@ function ReconciliationPeriodField({
         fieldId={fieldId}
         helpText="Select the completed year you want to reconcile across all 12 months."
         inputId="annual-reconciliation-year-select"
-        isOpen={isHelpOpen}
         label="Annual reconciliation year"
         hint={{
           id: 'annual-year-hint',
@@ -1430,14 +1471,12 @@ function ReconciliationPeriodField({
         }}
         onChange={(event) => setAnnualYear(event.target.value)}
         options={annualYearOptions}
-        toggleFieldHelp={toggleFieldHelp}
         value={annualYear}
       />
     );
   }
 
   const fieldId = 'monthly-reconciliation-month';
-  const isHelpOpen = openHelpField === fieldId;
   const monthlyOptions = monthsWithinYear.map((month) => ({
     value: month,
     label: month,
@@ -1448,7 +1487,6 @@ function ReconciliationPeriodField({
       fieldId={fieldId}
       helpText="Select the month in the current year that this reconciliation run represents."
       inputId="monthly-reconciliation-month-select"
-      isOpen={isHelpOpen}
       label="Monthly reconciliation month"
       hint={{
         id: 'monthly-month-hint',
@@ -1456,7 +1494,6 @@ function ReconciliationPeriodField({
       }}
       onChange={(event) => setMonthlyMonth(event.target.value)}
       options={monthlyOptions}
-      toggleFieldHelp={toggleFieldHelp}
       value={monthlyMonth}
     />
   );

@@ -2,6 +2,8 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 
 import type { SummaryMetrics } from '@recon/domain';
 
+import { formatCurrency } from '../lib/format';
+
 interface ChartsPanelProps {
   summary: SummaryMetrics;
 }
@@ -16,9 +18,21 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
       <div className="chart-card">
         <h3>Counts by Category</h3>
         <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={countChart?.data ?? []} margin={{ top: 8, right: 16, bottom: 12, left: 0 }} barCategoryGap="18%">
+          <BarChart
+            data={countChart?.data ?? []}
+            margin={{ top: 8, right: 16, bottom: 12, left: 0 }}
+            barCategoryGap="18%"
+          >
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} angle={-32} textAnchor="end" height={92} tickMargin={10} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 12 }}
+              interval={0}
+              angle={-32}
+              textAnchor="end"
+              height={92}
+              tickMargin={10}
+            />
             <YAxis />
             <Tooltip />
             <Bar dataKey="value" fill="#0f766e" radius={[6, 6, 0, 0]} />
@@ -50,16 +64,28 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
       <div className="chart-card">
         <h3>Dollar Exposure by Category</h3>
         <ResponsiveContainer width="100%" height={292}>
-          <BarChart data={exposureChart?.data ?? []} margin={{ top: 8, right: 16, bottom: 12, left: 0 }} barCategoryGap="18%">
+          <BarChart
+            data={exposureChart?.data ?? []}
+            margin={{ top: 8, right: 16, bottom: 12, left: 0 }}
+            barCategoryGap="18%"
+          >
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} angle={-32} textAnchor="end" height={108} tickMargin={10} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 12 }}
+              interval={0}
+              angle={-32}
+              textAnchor="end"
+              height={108}
+              tickMargin={10}
+            />
             <YAxis />
             <Tooltip
               formatter={(value: number | string | ReadonlyArray<number | string> | undefined) => {
                 if (typeof value === 'number' || typeof value === 'string') {
-                  return Number(value).toFixed(2);
+                  return formatCurrency(Number(value));
                 }
-                return '0.00';
+                return formatCurrency(0);
               }}
             />
             <Bar dataKey="value" fill="#c2410c" radius={[6, 6, 0, 0]} />
@@ -80,7 +106,7 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
                 {(exposureChart?.data ?? []).map((item) => (
                   <tr key={`exposure-${item.label}`}>
                     <td>{item.label}</td>
-                    <td>{Number(item.value).toFixed(2)}</td>
+                    <td className="cell-amount">{formatCurrency(Number(item.value))}</td>
                   </tr>
                 ))}
               </tbody>

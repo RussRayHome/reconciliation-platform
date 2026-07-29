@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   CreateDeveloperStatusServiceOptions,
@@ -71,6 +71,7 @@ const shouldRequireE2EInContainer = (): boolean =>
   isContainerRuntime() && process.env.NODE_ENV === 'test';
 
 const hostDevPostgresPreflightLogPath = '/var/lib/reconciliation/dev-postgres-preflight.log';
+const defaultDeveloperStatusCachePath = '/var/lib/reconciliation/developer-status-cache.json';
 const hostDevPostgresPreflightTotalsRegex = /Totals:\s*PASS=(\d+)\s*WARN=(\d+)\s*FAIL=(\d+)/i;
 
 type HostPreflightTotals = {
@@ -87,6 +88,12 @@ type CollectDeveloperStatusOptions = {
 type DeveloperStatusInFlight = {
   promise: Promise<DeveloperStatusPayload>;
   includeHeavyChecks: boolean;
+};
+
+type PersistedDeveloperStatus = {
+  payload: DeveloperStatusPayload;
+  cachedAt: number;
+  history: DeveloperStatusSnapshot[];
 };
 
 type ZapReportSummary = {
@@ -683,6 +690,7 @@ export const createDeveloperStatusService = ({
   defaultDatabaseUrl,
   statusCacheTtlMs = Number(process.env.DEV_STATUS_CACHE_TTL_MS ?? '600000'),
   statusHistoryLimit = Number(process.env.DEV_STATUS_HISTORY_LIMIT ?? '20'),
+  statusCachePath = process.env.DEV_STATUS_CACHE_PATH ?? defaultDeveloperStatusCachePath,
 }: CreateDeveloperStatusServiceOptions) => {
   const coverageSummaryPath = join(repoRoot, 'coverage', 'coverage-summary.json');
   const coverageTempPath = join(repoRoot, 'coverage', '.tmp');
@@ -690,6 +698,63 @@ export const createDeveloperStatusService = ({
   let developerStatusCache: { payload: DeveloperStatusPayload; cachedAt: number } | null = null;
   let developerStatusInFlight: DeveloperStatusInFlight | null = null;
   const developerStatusHistory: DeveloperStatusSnapshot[] = [];
+
+  // The check cache/history are otherwise in-memory only, so a tools-container
+  // restart (e.g. a redeploy) wipes them and the dashboard shows an empty,
+  // "refresh in progress" state until a full re-run completes. Persist the last
+  // successful snapshot so the dashboard warms instantly after a restart.
+  const persistDeveloperStatus = (): void => {
+    if (!developerStatusCache) {
+      return;
+    }
+
+    try {
+      mkdirSync(dirname(statusCachePath), { recursive: true });
+      const snapshot: PersistedDeveloperStatus = {
+        payload: developerStatusCache.payload,
+        cachedAt: developerStatusCache.cachedAt,
+        history: [...developerStatusHistory],
+      };
+      writeFileSync(statusCachePath, JSON.stringify(snapshot), 'utf8');
+    } catch {
+      // Best-effort persistence; ignore when the state directory is unwritable.
+    }
+  };
+
+  const loadPersistedDeveloperStatus = (): void => {
+    if (!existsSync(statusCachePath)) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(
+        readFileSync(statusCachePath, 'utf8'),
+      ) as Partial<PersistedDeveloperStatus> | null;
+
+      if (
+        !parsed ||
+        typeof parsed.cachedAt !== 'number' ||
+        !parsed.payload ||
+        !Array.isArray(parsed.payload.checks)
+      ) {
+        return;
+      }
+
+      if (Array.isArray(parsed.history)) {
+        developerStatusHistory.splice(
+          0,
+          developerStatusHistory.length,
+          ...parsed.history.slice(0, statusHistoryLimit),
+        );
+      }
+
+      developerStatusCache = { payload: parsed.payload, cachedAt: parsed.cachedAt };
+    } catch {
+      // Ignore malformed cache files; a refresh will regenerate them.
+    }
+  };
+
+  loadPersistedDeveloperStatus();
 
   const appendUniqueHighlight = (highlights: string[] | undefined, value: string): string[] => {
     const next = [...(highlights ?? [])];
@@ -1099,6 +1164,7 @@ export const createDeveloperStatusService = ({
     try {
       const payload = await refreshPromise;
       developerStatusCache = { payload, cachedAt: Date.now() };
+      persistDeveloperStatus();
       return payload;
     } finally {
       if (developerStatusInFlight?.promise === refreshPromise) {

@@ -144,4 +144,5 @@ export type CreateDeveloperStatusServiceOptions = {
   defaultDatabaseUrl: string;
   statusCacheTtlMs?: number;
   statusHistoryLimit?: number;
+  statusCachePath?: string;
 };

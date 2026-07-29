@@ -10,7 +10,9 @@ vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="responsive-container">{children}</div>
   ),
-  BarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="bar-chart">{children}</div>,
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
   XAxis: () => <div data-testid="x-axis" />,
   YAxis: () => <div data-testid="y-axis" />,
@@ -70,7 +72,7 @@ describe('ChartsPanel', () => {
     expect(screen.getByText('Dollar Exposure by Category')).toBeInTheDocument();
     expect(screen.getByText('Missing from QBO')).toBeInTheDocument();
     expect(screen.getByText('Timing Difference')).toBeInTheDocument();
-    expect(screen.getByText('125.50')).toBeInTheDocument();
+    expect(screen.getByText('$125.50')).toBeInTheDocument();
   });
 
   it('renders empty chart tables safely when expected chart series are missing', () => {

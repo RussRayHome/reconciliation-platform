@@ -1,7 +1,7 @@
 import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
 import { expect, test } from '@playwright/test';
 
-import { loginToApplication } from './auth';
+import { loginToApplication, openSetup } from './auth';
 
 test('requires login and lands on the application after successful authentication', async ({
   page,
@@ -19,6 +19,7 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   ]);
 
   await loginToApplication(page);
+  await openSetup(page);
 
   await page.locator('#bank-workbook-input').setInputFiles({
     name: 'bank.xlsx',
@@ -35,7 +36,12 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
   await page.getByRole('button', { name: 'Run reconciliation' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Exception Report' })).toBeVisible();
+  // Completing a run lands on the Review stage, Summary view.
+  await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Total reviewed')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Probable Match Review' })).toBeVisible();
+
+  // The Review segmented control swaps between Summary, Probable matches, and Exceptions.
+  await page.locator('#review-tab-probable-matches').click();
+  await page.locator('#review-tab-exceptions').click();
+  await expect(page.getByPlaceholder('Search file, message, or tokens')).toBeVisible();
 });

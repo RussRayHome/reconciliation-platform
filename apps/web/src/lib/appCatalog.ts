@@ -3,14 +3,13 @@ import { defaultReconciliationConfig } from '@recon/config';
 
 import type { SemanticIconName } from '../components/SemanticIcon';
 
-/** Union of main app tab identifiers. */
-export type AppTab = 'upload' | 'rules' | 'exceptions' | 'reports';
-/** Union of sub-view identifiers within the Reports tab. */
-export type ReportView =
-  | 'run-summary'
-  | 'probable-match-review'
-  | 'exception-report'
-  | 'export-artifacts';
+/** Union of main app tab identifiers for the three-stage workflow. */
+export type AppTab = 'setup' | 'review' | 'close';
+/** Union of sub-view identifiers within the Review stage. */
+export type ReportView = 'summary' | 'probable-matches' | 'exceptions';
+
+/** Rule family that a variance metric primarily governs. */
+export type VarianceMetricFamily = 'matching' | 'grouped' | 'classifier';
 
 /** Metadata for one matching rule entry in the Rules Catalog tab. */
 export type RuleVarianceMetric = {
@@ -21,6 +20,7 @@ export type RuleVarianceMetric = {
   max: number;
   step: number;
   value: number;
+  family: VarianceMetricFamily;
 };
 
 export type RuleCatalogItem = {
@@ -76,6 +76,7 @@ const amountToleranceMetric: RuleVarianceMetric = {
   max: 1,
   step: 0.01,
   value: matchingConfig.amountTolerance,
+  family: 'matching',
 };
 
 const dateToleranceMetric: RuleVarianceMetric = {
@@ -86,6 +87,7 @@ const dateToleranceMetric: RuleVarianceMetric = {
   max: 31,
   step: 1,
   value: matchingConfig.dateToleranceDays,
+  family: 'matching',
 };
 
 const timingDifferenceMetric: RuleVarianceMetric = {
@@ -96,6 +98,7 @@ const timingDifferenceMetric: RuleVarianceMetric = {
   max: 90,
   step: 1,
   value: matchingConfig.timingDifferenceDays,
+  family: 'matching',
 };
 
 const staleOutstandingMetric: RuleVarianceMetric = {
@@ -106,6 +109,7 @@ const staleOutstandingMetric: RuleVarianceMetric = {
   max: 120,
   step: 1,
   value: matchingConfig.staleOutstandingCheckDays,
+  family: 'classifier',
 };
 
 const textSimilarityMetric: RuleVarianceMetric = {
@@ -116,6 +120,7 @@ const textSimilarityMetric: RuleVarianceMetric = {
   max: 100,
   step: 1,
   value: toPercent(matchingConfig.textSimilarityThreshold),
+  family: 'matching',
 };
 
 const probableTextSimilarityMetric: RuleVarianceMetric = {
@@ -126,6 +131,7 @@ const probableTextSimilarityMetric: RuleVarianceMetric = {
   max: 100,
   step: 1,
   value: toPercent(matchingConfig.probableTextSimilarityThreshold),
+  family: 'matching',
 };
 
 const referenceSimilarityMetric: RuleVarianceMetric = {
@@ -136,6 +142,7 @@ const referenceSimilarityMetric: RuleVarianceMetric = {
   max: 100,
   step: 1,
   value: toPercent(matchingConfig.referenceSimilarityThreshold),
+  family: 'matching',
 };
 
 const duplicateDateWindowMetric: RuleVarianceMetric = {
@@ -146,6 +153,7 @@ const duplicateDateWindowMetric: RuleVarianceMetric = {
   max: 31,
   step: 1,
   value: matchingConfig.duplicateDateWindowDays,
+  family: 'classifier',
 };
 
 const duplicateSimilarityMetric: RuleVarianceMetric = {
@@ -156,6 +164,7 @@ const duplicateSimilarityMetric: RuleVarianceMetric = {
   max: 100,
   step: 1,
   value: toPercent(matchingConfig.duplicateSimilarityThreshold),
+  family: 'classifier',
 };
 
 const amountMismatchSimilarityMetric: RuleVarianceMetric = {
@@ -166,6 +175,7 @@ const amountMismatchSimilarityMetric: RuleVarianceMetric = {
   max: 100,
   step: 1,
   value: toPercent(matchingConfig.amountMismatchTextSimilarityThreshold),
+  family: 'matching',
 };
 
 const reversalWindowMetric: RuleVarianceMetric = {
@@ -176,6 +186,7 @@ const reversalWindowMetric: RuleVarianceMetric = {
   max: 30,
   step: 1,
   value: matchingConfig.reversalWindowDays,
+  family: 'classifier',
 };
 
 const depositInTransitMetric: RuleVarianceMetric = {
@@ -186,6 +197,7 @@ const depositInTransitMetric: RuleVarianceMetric = {
   max: 30,
   step: 1,
   value: matchingConfig.depositInTransitDays,
+  family: 'grouped',
 };
 
 const partialPaymentWindowMetric: RuleVarianceMetric = {
@@ -196,6 +208,7 @@ const partialPaymentWindowMetric: RuleVarianceMetric = {
   max: 180,
   step: 1,
   value: matchingConfig.partialPaymentWindowDays,
+  family: 'grouped',
 };
 
 export const rulesCatalog: RuleCatalogItem[] = [
@@ -518,27 +531,53 @@ export const rulesCatalog: RuleCatalogItem[] = [
   },
 ];
 
-/** Ordered catalog of all report views available in the Reports tab. */
+/** Ordered family labels for grouping variance metrics in the Rules catalog. */
+export const varianceMetricFamilyOrder: ReadonlyArray<VarianceMetricFamily> = [
+  'matching',
+  'grouped',
+  'classifier',
+];
+
+/** Human-readable labels for each variance metric family. */
+export const varianceMetricFamilyLabels: Record<VarianceMetricFamily, string> = {
+  matching: 'Matching thresholds',
+  grouped: 'Grouped roll-up windows',
+  classifier: 'Classifier thresholds',
+};
+
+/** Deduplicated, ordered catalog of every configurable variance metric. */
+export const varianceMetricCatalog: RuleVarianceMetric[] = [
+  amountToleranceMetric,
+  dateToleranceMetric,
+  timingDifferenceMetric,
+  textSimilarityMetric,
+  probableTextSimilarityMetric,
+  referenceSimilarityMetric,
+  amountMismatchSimilarityMetric,
+  partialPaymentWindowMetric,
+  depositInTransitMetric,
+  staleOutstandingMetric,
+  duplicateDateWindowMetric,
+  duplicateSimilarityMetric,
+  reversalWindowMetric,
+];
+
+/** Ordered catalog of the Review stage panels. */
 export const reportCatalog: ReportCatalogItem[] = [
   {
-    id: 'run-summary',
-    name: 'Run Summary',
-    description: 'Category charts and run context for the current reconciliation.',
+    id: 'summary',
+    name: 'Summary',
+    description: 'Reconciliation verdict, category charts, and run context.',
   },
   {
-    id: 'probable-match-review',
-    name: 'Probable Match Review',
+    id: 'probable-matches',
+    name: 'Probable matches',
     description: 'Candidate pairings that require reviewer confirmation before close.',
   },
   {
-    id: 'exception-report',
-    name: 'Exception Report',
+    id: 'exceptions',
+    name: 'Exceptions',
     description: 'Searchable exception listing with rule trace, evidence, and next actions.',
-  },
-  {
-    id: 'export-artifacts',
-    name: 'Export Artifacts',
-    description: 'Workbook and JSON outputs available for audit support and downstream review.',
   },
 ];
 
@@ -643,38 +682,30 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
   },
 ];
 
-/** Builds the tab navigation item array with live badge counts for rules, exceptions, and reports. */
+/** Builds the three-stage tab navigation items with live badge counts. */
 export const buildTabNavigationItems = ({
-  ruleCount,
   exceptionCount,
-  reportCount,
+  hasRun,
 }: Readonly<{
-  ruleCount: number;
   exceptionCount: number;
-  reportCount: number;
+  hasRun: boolean;
 }>): TabNavigationItem[] => [
   {
-    id: 'upload',
-    label: 'Upload',
+    id: 'setup',
+    label: 'Setup',
     description: 'Source files and run controls',
-    icon: 'upload',
+    icon: 'setup',
   },
   {
-    id: 'rules',
-    label: 'Rules',
-    description: `${ruleCount} documented rules`,
-    icon: 'rules',
+    id: 'review',
+    label: 'Review',
+    description: hasRun ? `${exceptionCount} exceptions to review` : 'Summary, matches, exceptions',
+    icon: 'review',
   },
   {
-    id: 'exceptions',
-    label: 'Exceptions',
-    description: `${exceptionCount} current items`,
-    icon: 'exceptions',
-  },
-  {
-    id: 'reports',
-    label: 'Reports',
-    description: `${reportCount} available views`,
-    icon: 'reports',
+    id: 'close',
+    label: 'Close & export',
+    description: 'Finalize and export workbook/JSON',
+    icon: 'operations',
   },
 ];

@@ -3,33 +3,38 @@ import {
   errorCategories,
   errorCategoryDisplayNames,
   type ReconciliationRunReport,
+  type ReviewerDecision,
 } from '@recon/domain';
 import { SectionCard, StatCard } from '@recon/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { downloadWorkbookUrl } from '../lib/api';
+import type { DecisionAction } from '../hooks/useReviewerDecisions';
+import { formatCurrency } from '../lib/format';
 import {
   reportCatalog,
-  rulesCatalogLastRefresh,
   summaryStatDefinitions,
+  varianceMetricFamilyLabels,
+  varianceMetricFamilyOrder,
   type AppTab,
-  type ReportCatalogItem,
   type ReportView,
   type RuleCatalogItem,
   type RuleVarianceMetric,
 } from '../lib/appCatalog';
 import { ChartsPanel } from './ChartsPanel';
-import { ExceptionTable } from './ExceptionTable';
+import { ExceptionTriage } from './ExceptionTriage';
+import { RovingTabList } from './RovingTabList';
 import { SemanticIcon } from './SemanticIcon';
 
 /** A single step in the process progress stepper displayed during reconciliation submission. */
-type ProgressStep = {
+export type ProgressStep = {
   id: string;
   label: string;
   description: string;
   isComplete: boolean;
   isCurrent: boolean;
   meterValue: number;
+  detail?: string;
 };
 
 type RunData = ReconciliationRunReport;
@@ -81,13 +86,6 @@ const buildCategorySummaryRows = (run: RunData): CategorySummaryRow[] => {
   return [...knownRows, ...unknownRows];
 };
 
-const currencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
 const probableMatchVirtualizationThreshold = 120;
 
 const formatVarianceValue = (value: number, unit: RuleVarianceMetric['unit']): string => {
@@ -96,67 +94,119 @@ const formatVarianceValue = (value: number, unit: RuleVarianceMetric['unit']): s
   }
 
   if (unit === 'usd') {
-    return currencyFormatter.format(value);
+    return formatCurrency(value);
   }
 
   return `${Number.isInteger(value) ? value : value.toFixed(2)}%`;
 };
 
-function RuleVarianceSliders({
-  rule,
-  varianceOverrides,
-  canAdjustVarianceDefaults,
-  onChangeVarianceDefault,
-}: Readonly<{
-  rule: RuleCatalogItem;
-  varianceOverrides: RuleVarianceDefaultOverrides;
-  canAdjustVarianceDefaults: boolean;
-  onChangeVarianceDefault: (metricId: string, value: number) => void;
-}>) {
-  if (!rule.varianceMetrics?.length) {
+const metricConsequenceByMetric: Record<
+  string,
+  { label: string; value: (summary: RunData['summary']) => number }
+> = {
+  'amount-tolerance': { label: 'clean matches', value: (summary) => summary.exactMatches },
+  'date-tolerance-days': { label: 'date variances', value: (summary) => summary.dateVariances },
+  'timing-difference-days': {
+    label: 'timing differences',
+    value: (summary) => summary.timingDifferences,
+  },
+  'text-similarity-threshold': {
+    label: 'probable matches',
+    value: (summary) => summary.probableMatches,
+  },
+  'probable-text-similarity-threshold': {
+    label: 'probable matches',
+    value: (summary) => summary.probableMatches,
+  },
+  'amount-mismatch-similarity-threshold': {
+    label: 'amount mismatches',
+    value: (summary) => summary.amountMismatches,
+  },
+  'duplicate-date-window-days': {
+    label: 'duplicate entries',
+    value: (summary) => summary.bankDuplicates + summary.qboDuplicates,
+  },
+  'duplicate-similarity-threshold': {
+    label: 'duplicate entries',
+    value: (summary) => summary.bankDuplicates + summary.qboDuplicates,
+  },
+};
+
+const buildMetricConsequence = (metricId: string, run: RunData | undefined): string | null => {
+  if (!run) {
     return null;
   }
 
+  const mapping = metricConsequenceByMetric[metricId];
+
+  if (!mapping) {
+    return null;
+  }
+
+  return `Last run: ${mapping.value(run.summary)} ${mapping.label} of ${run.summary.totalRecordsReviewed} records reviewed.`;
+};
+
+/** A single variance-metric control: effective vs default value, per-metric reset, and run consequence. */
+function RuleVarianceControl({
+  metric,
+  effectiveValue,
+  isChanged,
+  canAdjust,
+  consequence,
+  onChange,
+  onReset,
+}: Readonly<{
+  metric: RuleVarianceMetric;
+  effectiveValue: number;
+  isChanged: boolean;
+  canAdjust: boolean;
+  consequence: string | null;
+  onChange: (metricId: string, value: number) => void;
+  onReset: (metricId: string) => void;
+}>) {
   return (
-    <section className="rule-variance" aria-label={`${rule.name} variance thresholds`}>
-      <h4>Variance thresholds</h4>
-      <ul className="rule-variance-list">
-        {rule.varianceMetrics.map((metric) => {
-          const metricValue = varianceOverrides[metric.id] ?? metric.value;
+    <li className="rule-variance-item">
+      <div className="rule-variance-item__head">
+        <span>{metric.label}</span>
+        <strong>{formatVarianceValue(effectiveValue, metric.unit)}</strong>
+      </div>
+      <p className="rule-variance-item__default">
+        Default {formatVarianceValue(metric.value, metric.unit)}
+        {isChanged ? <span className="rule-variance-item__changed">Changed</span> : null}
+      </p>
 
-          return (
-            <li key={metric.id} className="rule-variance-item">
-              <div className="rule-variance-item__head">
-                <span>{metric.label}</span>
-                <strong>{formatVarianceValue(metricValue, metric.unit)}</strong>
-              </div>
-              <input
-                type="range"
-                className="rule-variance-slider"
-                min={metric.min}
-                max={metric.max}
-                step={metric.step}
-                value={metricValue}
-                readOnly={!canAdjustVarianceDefaults}
-                disabled={!canAdjustVarianceDefaults}
-                onChange={(event) => {
-                  if (!canAdjustVarianceDefaults) {
-                    return;
-                  }
+      {canAdjust ? (
+        <>
+          <input
+            type="range"
+            className="rule-variance-slider"
+            min={metric.min}
+            max={metric.max}
+            step={metric.step}
+            value={effectiveValue}
+            onChange={(event) => onChange(metric.id, Number(event.target.value))}
+            aria-label={metric.label}
+          />
+          <div className="rule-variance-item__scale" aria-hidden="true">
+            <span>{formatVarianceValue(metric.min, metric.unit)}</span>
+            <span>{formatVarianceValue(metric.max, metric.unit)}</span>
+          </div>
+          {isChanged ? (
+            <button
+              type="button"
+              className="secondary-button rule-variance-item__reset"
+              onClick={() => onReset(metric.id)}
+            >
+              Reset to default
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <p className="rule-variance-item__readonly">Read-only · Admins set thresholds</p>
+      )}
 
-                  onChangeVarianceDefault(metric.id, Number(event.target.value));
-                }}
-                aria-label={`${rule.name} ${metric.label}`}
-              />
-              <div className="rule-variance-item__scale" aria-hidden="true">
-                <span>{formatVarianceValue(metric.min, metric.unit)}</span>
-                <span>{formatVarianceValue(metric.max, metric.unit)}</span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+      {consequence ? <p className="rule-variance-item__consequence">{consequence}</p> : null}
+    </li>
   );
 }
 
@@ -200,7 +250,7 @@ function ExceptionCategoryBreakdown({
               <tr key={row.category}>
                 <td>{row.label}</td>
                 <td>{row.count}</td>
-                <td>{row.amount.toFixed(2)}</td>
+                <td className="cell-amount">{formatCurrency(row.amount)}</td>
               </tr>
             ))}
           </tbody>
@@ -232,6 +282,55 @@ function SummaryStatsGrid({
   );
 }
 
+/** Leads the Summary panel with the reconciliation verdict, then the supporting breakdown. */
+function SummaryVerdict({
+  run,
+}: Readonly<{
+  run: RunData;
+}>) {
+  const summary = run.summary;
+  const difference = summary.unmatchedBankNetAmount - summary.unmatchedQboNetAmount;
+
+  const figures: ReadonlyArray<{ label: string; value: number; tone?: 'warning' | 'critical' }> = [
+    { label: 'Bank unmatched (net)', value: summary.unmatchedBankNetAmount },
+    { label: 'Book unmatched (net)', value: summary.unmatchedQboNetAmount },
+    { label: 'Difference', value: difference, tone: difference === 0 ? undefined : 'warning' },
+    {
+      label: 'Unexplained residual',
+      value: summary.unresolvedExposure,
+      tone: summary.unresolvedExposure === 0 ? undefined : 'critical',
+    },
+  ];
+
+  return (
+    <section className="summary-verdict" aria-label="Reconciliation verdict">
+      <div className="summary-verdict__figures">
+        {figures.map((figure) => (
+          <div
+            key={figure.label}
+            className="summary-verdict__figure"
+            data-tone={figure.tone ?? 'neutral'}
+          >
+            <span>{figure.label}</span>
+            <strong>{formatCurrency(figure.value)}</strong>
+          </div>
+        ))}
+      </div>
+      <p className="summary-verdict__note">
+        Balances are derived from net unmatched activity per source; the residual is the net dollar
+        exposure remaining after exception classification.
+      </p>
+      <div className="summary-verdict__prior" aria-label="Prior-period comparison">
+        <span className="eyebrow">Prior-period comparison</span>
+        <p>
+          Unavailable — the API does not yet expose previous runs for this account and period. This
+          slot will populate once a prior-runs endpoint exists.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function SummaryReportContent({
   run,
 }: Readonly<{
@@ -239,6 +338,7 @@ function SummaryReportContent({
 }>) {
   return (
     <div className="reports-display-stack">
+      <SummaryVerdict run={run} />
       <SummaryStatsGrid summary={run.summary} />
       <div className="summary-badges">
         <span>{run.accountIdentifier ?? 'No account override'}</span>
@@ -256,43 +356,31 @@ function EmptyStateCard({
   description,
   role,
   ariaLive,
+  actionLabel,
+  onAction,
 }: Readonly<{
   eyebrow: string;
   title: string;
   description: ReactNode;
   role?: 'alert' | 'status';
   ariaLive?: 'off' | 'polite' | 'assertive';
+  actionLabel?: string;
+  onAction?: () => void;
 }>) {
   return (
     <div className="empty-state-card" role={role} aria-live={ariaLive}>
       <span className="eyebrow">{eyebrow}</span>
       <h3>{title}</h3>
       <p>{description}</p>
-    </div>
-  );
-}
-
-function RunExportActions({
-  runId,
-  onDownloadWorkbook,
-  onExportJson,
-}: Readonly<{
-  runId: string;
-  onDownloadWorkbook: () => void;
-  onExportJson: () => void;
-}>) {
-  return (
-    <div className="summary-badges">
-      <a
-        className="secondary-button"
-        href={downloadWorkbookUrl(runId)}
-        onClick={onDownloadWorkbook}
-      >
-        Download workbook
-      </a>
-      <button type="button" className="secondary-button" onClick={onExportJson}>
-        Export JSON
-      </button>
+      {actionLabel && onAction ? (
+        <button
+          type="button"
+          className="secondary-button empty-state-card__action"
+          onClick={onAction}
+        >
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -414,7 +502,7 @@ function ProbableMatchesContent({
                     </div>
                     <div>
                       <span>Amount diff</span>
-                      <strong>{item.amountDifference.toFixed(2)}</strong>
+                      <strong>{formatCurrency(item.amountDifference)}</strong>
                     </div>
                   </div>
                   <p>{item.evidence.join(' | ')}</p>
@@ -446,7 +534,7 @@ function ProbableMatchesContent({
                   <td>{item.confidence}</td>
                   <td>{item.ruleName}</td>
                   <td>{item.dateDifferenceDays ?? 'N/A'}</td>
-                  <td>{item.amountDifference.toFixed(2)}</td>
+                  <td className="cell-amount">{formatCurrency(item.amountDifference)}</td>
                   <td>{item.evidence.join(' | ')}</td>
                 </tr>
               ))}
@@ -455,27 +543,6 @@ function ProbableMatchesContent({
         </div>
       )}
     </div>
-  );
-}
-
-function ExceptionReportContent({
-  run,
-  onDownloadWorkbook,
-  onExportJson,
-}: Readonly<{
-  run: RunData;
-  onDownloadWorkbook: () => void;
-  onExportJson: () => void;
-}>) {
-  return (
-    <>
-      <RunExportActions
-        runId={run.id}
-        onDownloadWorkbook={onDownloadWorkbook}
-        onExportJson={onExportJson}
-      />
-      <ExceptionTable exceptions={run.exceptions} />
-    </>
   );
 }
 
@@ -523,186 +590,318 @@ function ExportArtifactsContent({
   );
 }
 
-/** Panel that renders the Reports tab content: run summary, probable match review, exception report, and export artifacts. */
-export function ReportsSection({
+/** Panel that renders the Review stage: a segmented control over Summary, Probable matches, and Exceptions. */
+export function ReviewSection({
   run,
-  activeReport,
+  activeView,
   isHydrating,
   loadError,
-  onSelectReport,
-  onDownloadWorkbook,
-  onExportJson,
+  onSelectView,
+  onGoToSetup,
+  decisionByTargetId,
+  pendingTargetId,
+  decisionError,
+  onDecide,
 }: Readonly<{
   run: RunData | undefined;
-  activeReport: ReportView;
+  activeView: ReportView;
   isHydrating: boolean;
   loadError: string | null;
-  onSelectReport: (report: ReportView) => void;
-  onDownloadWorkbook: () => void;
-  onExportJson: () => void;
+  onSelectView: (view: ReportView) => void;
+  onGoToSetup: () => void;
+  decisionByTargetId: Record<string, ReviewerDecision>;
+  pendingTargetId: string | null;
+  decisionError: string | null;
+  onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
 }>) {
-  const defaultReport: ReportCatalogItem = {
-    id: 'run-summary',
-    name: 'Run Summary',
-    description: 'Category charts and run context for the current reconciliation.',
-  };
-  const selectedReport =
-    reportCatalog.find((report) => report.id === activeReport) ?? defaultReport;
-  let reportContent: ReactNode;
+  let panelContent: ReactNode;
 
   if (run) {
-    const reportContentByView: Record<ReportView, ReactNode> = {
-      'run-summary': <SummaryReportContent run={run} />,
-      'probable-match-review': <ProbableMatchesContent probableMatches={run.probableMatches} />,
-      'exception-report': (
-        <ExceptionReportContent
-          run={run}
-          onDownloadWorkbook={onDownloadWorkbook}
-          onExportJson={onExportJson}
-        />
-      ),
-      'export-artifacts': (
-        <ExportArtifactsContent
-          run={run}
-          onDownloadWorkbook={onDownloadWorkbook}
-          onExportJson={onExportJson}
+    const contentByView: Record<ReportView, ReactNode> = {
+      summary: <SummaryReportContent run={run} />,
+      'probable-matches': <ProbableMatchesContent probableMatches={run.probableMatches} />,
+      exceptions: (
+        <ExceptionTriage
+          exceptions={run.exceptions}
+          decisionByTargetId={decisionByTargetId}
+          pendingTargetId={pendingTargetId}
+          decisionError={decisionError}
+          onDecide={onDecide}
         />
       ),
     };
 
-    reportContent = reportContentByView[activeReport];
+    panelContent = contentByView[activeView];
   } else if (isHydrating) {
-    reportContent = (
+    panelContent = (
       <EmptyStateCard
         eyebrow="Loading latest run"
-        title="Loading report output"
-        description="Retrieving the most recent reconciliation run from the backend so the selected report can render with saved data."
+        title="Loading review output"
+        description="Retrieving the most recent reconciliation run from the backend so the selected panel can render with saved data."
         role="status"
         ariaLive="polite"
       />
     );
   } else if (loadError) {
-    reportContent = (
+    panelContent = (
       <EmptyStateCard
-        eyebrow="Unable to load reports"
-        title="Latest report output could not be loaded"
+        eyebrow="Unable to load review"
+        title="Latest review output could not be loaded"
         description={loadError}
         role="alert"
       />
     );
   } else {
-    reportContent = (
+    panelContent = (
       <EmptyStateCard
         eyebrow="Awaiting run"
-        title="No report output yet"
-        description="Run a reconciliation from the Upload tab, then select a report to display the generated results here."
+        title="No review output yet"
+        description="Run a reconciliation from the Setup tab, then review the summary, probable matches, and exceptions here."
+        actionLabel="Go to Setup"
+        onAction={onGoToSetup}
       />
     );
   }
 
-  return (
-    <WorkspaceTabPanel tabId="reports">
-      <SectionCard
-        title="Reports"
-        description="Select a report from the list to display the current reconciliation output in-place."
-      >
-        <div className="reports-browser">
-          <nav className="reports-list" aria-label="Available reports">
-            {reportCatalog.map((report) => (
-              <button
-                key={report.id}
-                type="button"
-                className={
-                  activeReport === report.id ? 'report-link report-link--active' : 'report-link'
-                }
-                onClick={() => onSelectReport(report.id)}
-              >
-                <span>{report.name}</span>
-                <small>{report.description}</small>
-              </button>
-            ))}
-          </nav>
+  const reviewTabs = reportCatalog.map((report) => ({ id: report.id, label: report.name }));
 
-          <section className="reports-display" aria-live="polite" aria-busy={isHydrating}>
-            <div className="reports-display__header">
-              <span className="eyebrow">Selected report</span>
-              <h3>{selectedReport.name}</h3>
-              <p>{selectedReport.description}</p>
-            </div>
-            {reportContent}
-          </section>
-        </div>
+  return (
+    <WorkspaceTabPanel tabId="review">
+      <SectionCard
+        title="Review"
+        description="Work through the reconciliation verdict, confirm probable matches, and triage exceptions in one place."
+      >
+        <RovingTabList
+          items={reviewTabs}
+          activeId={activeView}
+          onSelect={onSelectView}
+          ariaLabel="Review panels"
+          tabIdPrefix="review-tab"
+          panelIdPrefix="review-panel"
+          listClassName="review-segmented"
+          tabClassName="review-segment"
+          activeTabClassName="review-segment review-segment--active"
+        />
+
+        <section
+          id={`review-panel-${activeView}`}
+          role="tabpanel"
+          aria-labelledby={`review-tab-${activeView}`}
+          aria-live="polite"
+          aria-busy={isHydrating}
+        >
+          {panelContent}
+        </section>
       </SectionCard>
     </WorkspaceTabPanel>
   );
 }
 
-/** Panel that renders the Rules Catalog tab: searchable list of all matching rules with descriptions. */
+/** Panel that renders the Close & export stage: workbook and JSON outputs plus a close summary. */
+export function CloseExportSection({
+  run,
+  isHydrating,
+  loadError,
+  onDownloadWorkbook,
+  onExportJson,
+  onGoToSetup,
+}: Readonly<{
+  run: RunData | undefined;
+  isHydrating: boolean;
+  loadError: string | null;
+  onDownloadWorkbook: () => void;
+  onExportJson: () => void;
+  onGoToSetup: () => void;
+}>) {
+  let content: ReactNode;
+
+  if (run) {
+    content = (
+      <div className="reports-display-stack">
+        <div className="summary-badges">
+          <span>{run.exceptions.length} exceptions</span>
+          <span>{formatCurrency(run.summary.unresolvedExposure)} exposure</span>
+          <span>{run.sourceFiles.map((item) => item.fileName).join(' + ')}</span>
+        </div>
+        <ExportArtifactsContent
+          run={run}
+          onDownloadWorkbook={onDownloadWorkbook}
+          onExportJson={onExportJson}
+        />
+      </div>
+    );
+  } else if (isHydrating) {
+    content = (
+      <EmptyStateCard
+        eyebrow="Loading latest run"
+        title="Loading export artifacts"
+        description="Retrieving the most recent reconciliation run so its workbook and JSON exports can be prepared."
+        role="status"
+        ariaLive="polite"
+      />
+    );
+  } else if (loadError) {
+    content = (
+      <EmptyStateCard
+        eyebrow="Unable to load run"
+        title="Export artifacts could not be loaded"
+        description={loadError}
+        role="alert"
+      />
+    );
+  } else {
+    content = (
+      <EmptyStateCard
+        eyebrow="Awaiting run"
+        title="Nothing to export yet"
+        description="Run a reconciliation from the Setup tab. The workbook and JSON exports will be available here once a run completes."
+        actionLabel="Go to Setup"
+        onAction={onGoToSetup}
+      />
+    );
+  }
+
+  return (
+    <WorkspaceTabPanel tabId="close">
+      <SectionCard
+        title="Close & export"
+        description="Download the audit workbook and JSON archive for this reconciliation run. Export lives only on this screen."
+      >
+        {content}
+      </SectionCard>
+    </WorkspaceTabPanel>
+  );
+}
+
+/** Rules catalog surface reached via the run bar (?panel=rules): read-only for non-admins. */
+/** Rules catalog surface reached via the run bar (?panel=rules): read-only for non-admins. */
 export function RulesCatalogSection({
   rules,
+  metrics,
   varianceOverrides,
   canAdjustVarianceDefaults,
   onChangeVarianceDefault,
+  onResetVarianceDefault,
   onResetVarianceDefaults,
+  run,
+  thresholdSetLabel,
+  thresholdSetTimestamp,
+  onClose,
 }: Readonly<{
   rules: RuleCatalogItem[];
+  metrics: RuleVarianceMetric[];
   varianceOverrides: RuleVarianceDefaultOverrides;
   canAdjustVarianceDefaults: boolean;
   onChangeVarianceDefault: (metricId: string, value: number) => void;
+  onResetVarianceDefault: (metricId: string) => void;
   onResetVarianceDefaults: () => void;
+  run: RunData | undefined;
+  thresholdSetLabel: string;
+  thresholdSetTimestamp: string;
+  onClose?: () => void;
 }>) {
+  const changedCount = metrics.filter(
+    (metric) => varianceOverrides[metric.id] !== undefined,
+  ).length;
+
   return (
-    <WorkspaceTabPanel tabId="rules">
+    <section className="rules-route-panel" aria-label="Rules catalog">
+      {onClose ? (
+        <button
+          type="button"
+          className="secondary-button rules-route-panel__back"
+          onClick={onClose}
+        >
+          Back to workspace
+        </button>
+      ) : null}
       <SectionCard
         title="Rules Catalog"
         description="Current matching and classification rules surfaced from the reconciliation rulebook so reviewers can see the active decision logic in one place."
       >
-        <div className="rules-overview-grid">
-          <OverviewCard
-            eyebrow="Rulebook snapshot"
-            title={`${rules.length} rules currently surfaced`}
-            description="The list below reflects the active matching and exception rules documented for this build, including the latest rulebook refresh date."
-          />
-          <OverviewCard
-            eyebrow="Last rulebook refresh"
-            title={rulesCatalogLastRefresh}
-            description="Matching stages, grouped reservation behaviors, and exception-classification categories are all represented in this catalog."
-          />
+        <div className="threshold-set-banner" aria-label="Threshold set version">
+          <div>
+            <span>Threshold set</span>
+            <strong>{thresholdSetLabel}</strong>
+          </div>
+          <div>
+            <span>Updated</span>
+            <strong>{thresholdSetTimestamp}</strong>
+          </div>
+          <div>
+            <span>Changed metrics</span>
+            <strong>{changedCount}</strong>
+          </div>
         </div>
 
         {canAdjustVarianceDefaults ? (
           <div className="rules-admin-controls">
             <p>Admin control mode is enabled.</p>
-            <p>Slider updates adjust the shared default variance thresholds.</p>
-            <button type="button" className="secondary-button" onClick={onResetVarianceDefaults}>
-              Reset default slider values
+            <p>Threshold updates adjust the shared default variance thresholds.</p>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onResetVarianceDefaults}
+              disabled={changedCount === 0}
+            >
+              Reset all thresholds
             </button>
           </div>
         ) : null}
 
-        <div className="rules-grid">
-          {rules.map((rule) => (
-            <article key={rule.id} className="rule-card">
-              <div className="rule-card__header">
-                <h3>{rule.name}</h3>
-                <span className="rule-card__pill">Active</span>
-              </div>
-              <p>{rule.description}</p>
-              <RuleVarianceSliders
-                rule={rule}
-                varianceOverrides={varianceOverrides}
-                canAdjustVarianceDefaults={canAdjustVarianceDefaults}
-                onChangeVarianceDefault={onChangeVarianceDefault}
-              />
-              <div className="rule-card__meta">
-                <span>Last Change</span>
-                <strong>{rule.lastChange}</strong>
-              </div>
-            </article>
-          ))}
+        <div className="rule-variance-families" aria-label="Variance thresholds">
+          <h3>Variance thresholds</h3>
+          {varianceMetricFamilyOrder.map((family) => {
+            const familyMetrics = metrics.filter((metric) => metric.family === family);
+
+            if (familyMetrics.length === 0) {
+              return null;
+            }
+
+            return (
+              <details key={family} className="rule-family-group" open>
+                <summary>
+                  {varianceMetricFamilyLabels[family]} ({familyMetrics.length})
+                </summary>
+                <ul className="rule-variance-list">
+                  {familyMetrics.map((metric) => (
+                    <RuleVarianceControl
+                      key={metric.id}
+                      metric={metric}
+                      effectiveValue={varianceOverrides[metric.id] ?? metric.value}
+                      isChanged={varianceOverrides[metric.id] !== undefined}
+                      canAdjust={canAdjustVarianceDefaults}
+                      consequence={buildMetricConsequence(metric.id, run)}
+                      onChange={onChangeVarianceDefault}
+                      onReset={onResetVarianceDefault}
+                    />
+                  ))}
+                </ul>
+              </details>
+            );
+          })}
+        </div>
+
+        <div className="rules-reference" aria-label="Rule reference">
+          <h3>Rule reference</h3>
+          <div className="rules-grid">
+            {rules.map((rule) => (
+              <article key={rule.id} className="rule-card">
+                <div className="rule-card__header">
+                  <h4>{rule.name}</h4>
+                  <span className="rule-card__pill">Active</span>
+                </div>
+                <p>{rule.description}</p>
+                <div className="rule-card__meta">
+                  <span>Last Change</span>
+                  <strong>{rule.lastChange}</strong>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       </SectionCard>
-    </WorkspaceTabPanel>
+    </section>
   );
 }
 
@@ -710,9 +909,11 @@ export function RulesCatalogSection({
 export function ProcessProgressSection({
   overallProgressPercent,
   progressSteps,
+  elapsedLabel,
 }: Readonly<{
   overallProgressPercent: number;
   progressSteps: ProgressStep[];
+  elapsedLabel?: string | null;
 }>) {
   return (
     <SectionCard
@@ -731,6 +932,7 @@ export function ProcessProgressSection({
             max={100}
             value={overallProgressPercent}
           />
+          {elapsedLabel ? <p className="overall-progress-elapsed">Elapsed {elapsedLabel}</p> : null}
         </article>
 
         <ul className="step-progress-list" aria-label="Reconciliation step progress">
@@ -752,80 +954,12 @@ export function ProcessProgressSection({
                   value={step.meterValue}
                 />
                 <p>{step.description}</p>
+                {step.detail ? <p className="step-progress-detail">{step.detail}</p> : null}
               </li>
             );
           })}
         </ul>
       </div>
     </SectionCard>
-  );
-}
-
-/** Panel that renders the completed run results workspace with tab navigation and sub-views. */
-export function RunResultsSection({
-  run,
-  onDownloadWorkbook,
-  onExportJson,
-}: Readonly<{
-  run: RunData | undefined;
-  onDownloadWorkbook: () => void;
-  onExportJson: () => void;
-}>) {
-  if (!run) {
-    return (
-      <WorkspaceTabPanel tabId="exceptions">
-        <SectionCard
-          title="Exceptions"
-          description="Run a reconciliation first to populate probable matches, summary metrics, and the exception report."
-        >
-          <EmptyStateCard
-            eyebrow="Awaiting run"
-            title="No exception set yet"
-            description="Upload both source workbooks in the Upload tab and run the reconciliation. The exception report, probable matches, and summary metrics will appear here automatically."
-          />
-        </SectionCard>
-      </WorkspaceTabPanel>
-    );
-  }
-
-  return (
-    <WorkspaceTabPanel tabId="exceptions">
-      <SummaryStatsGrid summary={run.summary} />
-
-      <SectionCard
-        title="Run Summary"
-        description="Exceptions are sorted by severity, source, transaction date, and line number for accounting review."
-        actions={
-          <div className="summary-badges">
-            <span>{run.accountIdentifier ?? 'No account override'}</span>
-            <span>{run.sourceFiles.map((item) => item.fileName).join(' + ')}</span>
-          </div>
-        }
-      >
-        <ChartsPanel summary={run.summary} />
-        <ExceptionCategoryBreakdown run={run} />
-      </SectionCard>
-
-      <SectionCard
-        title="Probable Match Review"
-        description="The engine never forces weak matches. Review these candidate pairings separately from the error report."
-      >
-        <ProbableMatchesContent probableMatches={run.probableMatches} />
-      </SectionCard>
-
-      <SectionCard
-        title="Exception Report"
-        description="Filter and search exceptions without losing source-line traceability."
-        actions={
-          <RunExportActions
-            runId={run.id}
-            onDownloadWorkbook={onDownloadWorkbook}
-            onExportJson={onExportJson}
-          />
-        }
-      >
-        <ExceptionTable exceptions={run.exceptions} />
-      </SectionCard>
-    </WorkspaceTabPanel>
   );
 }

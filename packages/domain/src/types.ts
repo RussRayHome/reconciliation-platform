@@ -186,7 +186,14 @@ export interface GroupedMatchResult {
   id: string;
   disposition: GroupedMatchDisposition;
   confidence: MatchConfidence;
-  category?: 'DepositGroupingIssue' | 'LikelySplitCombineIssue' | 'FeeNettingMatch' | 'PartialPaymentMatch' | 'PayrollBatchMatch' | 'BankServiceChargeAmortization' | 'LoanPaymentSplit';
+  category?:
+    | 'DepositGroupingIssue'
+    | 'LikelySplitCombineIssue'
+    | 'FeeNettingMatch'
+    | 'PartialPaymentMatch'
+    | 'PayrollBatchMatch'
+    | 'BankServiceChargeAmortization'
+    | 'LoanPaymentSplit';
   bankTransactionIds: string[];
   qboTransactionIds: string[];
   bankMembers: GroupedMatchMember[];
@@ -311,17 +318,16 @@ export interface ReviewerObservation {
 }
 
 /** The kind of item a reviewer decision targets. */
-export type ReviewerDecisionTargetType =
-  | 'ProbableMatch'
-  | 'AmbiguousReview'
-  | 'ExceptionItem';
+export type ReviewerDecisionTargetType = 'ProbableMatch' | 'AmbiguousReview' | 'ExceptionItem';
 
 /** The verdict a reviewer records for the targeted item. */
 export type ReviewerDecisionOutcome =
   | 'ApprovedMatch'
   | 'RejectedMatch'
   | 'ConfirmedException'
-  | 'ReclassifiedException';
+  | 'ReclassifiedException'
+  | 'DismissedException'
+  | 'ResearchException';
 
 /** A human reviewer's recorded decision for a probable match, ambiguous review item, or exception. */
 export interface ReviewerDecision {
@@ -370,6 +376,8 @@ export interface ReconciliationRun {
   reviewerDecisions: ReviewerDecision[];
   outputWorkbook?: OutputWorkbook;
   auditEvents: AuditEvent[];
+  /** Variance threshold overrides applied to this run, keyed by rule metric id. */
+  appliedVarianceOverrides?: Record<string, number>;
 }
 
 /** API-facing report view of a completed reconciliation run, omitting raw/normalized transaction arrays. */
@@ -390,6 +398,8 @@ export interface ReconciliationRunReport {
   reviewerObservations: ReviewerObservation[];
   reviewerDecisions: ReviewerDecision[];
   outputWorkbook?: OutputWorkbookManifest;
+  /** Variance threshold overrides applied to this run, keyed by rule metric id. */
+  appliedVarianceOverrides?: Record<string, number>;
 }
 
 /** Maps each canonical business field to the list of accepted spreadsheet column header aliases. */

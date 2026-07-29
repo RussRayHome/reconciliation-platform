@@ -58,7 +58,7 @@ export const loginToApplication = async (page: Page): Promise<void> => {
   const candidates = resolveLoginCandidates();
   const loginHeading = page.getByRole('heading', { name: 'Login' });
   const submitButton = page.getByRole('button', { name: 'Submit' });
-  const runReconciliationButton = page.getByRole('button', { name: 'Run reconciliation' });
+  const workspaceReady = page.getByRole('tab', { name: 'Setup' });
 
   await page.goto('/');
   await expect(loginHeading).toBeVisible();
@@ -79,13 +79,13 @@ export const loginToApplication = async (page: Page): Promise<void> => {
     const loginResponse = await loginResponsePromise;
 
     if (loginResponse?.ok()) {
-      await expect(runReconciliationButton).toBeVisible({ timeout: 10_000 });
+      await expect(workspaceReady).toBeVisible({ timeout: 10_000 });
       lastSuccessfulCredential = candidate;
       return;
     }
 
     try {
-      await expect(runReconciliationButton).toBeVisible({ timeout: 2_000 });
+      await expect(workspaceReady).toBeVisible({ timeout: 2_000 });
       lastSuccessfulCredential = candidate;
       return;
     } catch {
@@ -94,4 +94,11 @@ export const loginToApplication = async (page: Page): Promise<void> => {
   }
 
   throw new Error('Unable to authenticate in e2e tests with configured or fallback credentials.');
+};
+
+/** Navigates to the workspace and activates the Setup tab so the upload form is interactable. */
+export const openSetup = async (page: Page): Promise<void> => {
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'Setup' }).click();
+  await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeVisible();
 };

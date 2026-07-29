@@ -375,7 +375,9 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('The user or password does not match.');
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        "That username and password don't match. Check both and try again.",
+      );
     });
 
     const usernameFieldGroup = screen.getByLabelText('Username').closest('.field-group');
@@ -384,7 +386,7 @@ describe('App', () => {
     }
 
     expect(within(usernameFieldGroup).getByRole('alert')).toHaveTextContent(
-      'The user or password does not match.',
+      "That username and password don't match. Check both and try again.",
     );
   });
 
@@ -412,9 +414,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('heading', { name: 'Financial Reconciliation Platform' }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /Setup/i })).toBeInTheDocument();
     });
   });
 
@@ -466,17 +466,13 @@ describe('App', () => {
     expect(screen.getByLabelText('Selected document preview')).toBeInTheDocument();
   });
 
-  it('renders the four top-level application tabs and defaults to Upload', () => {
+  it('renders the three workflow tabs and defaults to Setup', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    expect(screen.getByRole('tab', { name: /Upload/i })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: /Rules/i })).toHaveAttribute('aria-selected', 'false');
-    expect(screen.getByRole('tab', { name: /Exceptions/i })).toHaveAttribute(
-      'aria-selected',
-      'false',
-    );
-    expect(screen.getByRole('tab', { name: /Reports/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /Setup/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Review/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /Close/i })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByText('Source Upload')).toBeInTheDocument();
   });
 
@@ -487,23 +483,23 @@ describe('App', () => {
 
     renderApp();
 
-    const uploadTab = screen.getByRole('tab', { name: /Upload/i });
-    uploadTab.focus();
+    const setupTab = screen.getByRole('tab', { name: /Setup/i });
+    setupTab.focus();
 
     await user.keyboard('{ArrowRight}');
 
-    const rulesTab = screen.getByRole('tab', { name: /Rules/i });
-    expect(rulesTab).toHaveFocus();
-    expect(rulesTab).toHaveAttribute('aria-selected', 'true');
+    const reviewTab = screen.getByRole('tab', { name: /Review/i });
+    expect(reviewTab).toHaveFocus();
+    expect(reviewTab).toHaveAttribute('aria-selected', 'true');
 
     await user.keyboard('{End}');
 
-    const reportsTab = screen.getByRole('tab', { name: /Reports/i });
-    expect(reportsTab).toHaveFocus();
-    expect(reportsTab).toHaveAttribute('aria-selected', 'true');
+    const closeTab = screen.getByRole('tab', { name: /Close/i });
+    expect(closeTab).toHaveFocus();
+    expect(closeTab).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('shows the reports browser and swaps displayed results when a report link is clicked', async () => {
+  it('swaps Review panels via the segmented control and exports from Close', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(createRunResponse()), { status: 201 }),
     );
@@ -525,37 +521,28 @@ describe('App', () => {
       expect(screen.getByText('Total reviewed')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
-
-    expect(screen.getByRole('heading', { name: 'Reports' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Run Summary/i })).toBeInTheDocument();
-    expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Summary' })).toHaveAttribute('aria-selected', 'true');
     expect(
       screen.getByRole('heading', { name: 'Exception Category Breakdown' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Likely Split/Combine Issue')).toBeInTheDocument();
     expect(screen.getByText('Deposit Grouping Issue')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Exception Report/i }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Exceptions' }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
     expect(screen.getAllByText(/QBO qbo.xlsx \/ 4 \| QBO qbo.xlsx \/ 5/i).length).toBeGreaterThan(
       0,
     );
-    expect(
-      screen.getAllByText(
-        /Prior: Amount \+ Extended Date Window Match \| Final: Timing Difference Reclassification/i,
-      ).length,
-    ).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: /Export Artifacts/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Close/i }));
 
     expect(screen.getByText('run-1.xlsx')).toBeInTheDocument();
     expect(screen.getByText(/Summary \| Probable Matches \| Exceptions/i)).toBeInTheDocument();
   });
 
-  it('hydrates the Reports tab from the last successful persisted run after remount', () => {
+  it('hydrates the Review tab from the last successful persisted run after remount', () => {
     setAuthenticatedUser('rray');
     globalThis.localStorage.setItem(
       'reconciliation-platform:latest-report-run',
@@ -564,29 +551,29 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
 
     return waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
       expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
-      expect(screen.queryByText('No report output yet')).toBeNull();
+      expect(screen.queryByText('No review output yet')).toBeNull();
     });
   });
 
-  it('hydrates the Reports tab from the backend latest-run endpoint when storage is empty', async () => {
+  it('hydrates the Review tab from the backend latest-run endpoint when storage is empty', async () => {
     mockedApiState.latestRunResponse = createRunResponse();
     setAuthenticatedUser('rray');
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
 
     await waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
     });
 
     expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
-    expect(screen.queryByText('No report output yet')).toBeNull();
+    expect(screen.queryByText('No review output yet')).toBeNull();
   });
 
   it('shows a loading state while hydrating the latest backend report', async () => {
@@ -596,9 +583,9 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
 
-    expect(screen.getByRole('status')).toHaveTextContent('Loading report output');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading review output');
 
     deferred.resolve(createRunResponse());
 
@@ -613,60 +600,42 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Reports/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Backend unavailable.');
     });
 
-    expect(screen.getByText('Latest report output could not be loaded')).toBeInTheDocument();
+    expect(screen.getByText('Latest review output could not be loaded')).toBeInTheDocument();
   });
 
-  it('shows the rules catalog with last-change metadata when the Rules tab is selected', () => {
+  it('shows the rules catalog with read-only thresholds for non-admins', () => {
     setAuthenticatedUser('bray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Rules/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
     expect(screen.getByText('Rules Catalog')).toBeInTheDocument();
     expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
     expect(screen.getByText('Likely Miscoding')).toBeInTheDocument();
     expect(screen.getAllByText(/Last Change/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Variance thresholds').length).toBeGreaterThan(0);
+    expect(screen.getByText('Variance thresholds')).toBeInTheDocument();
 
-    expect(
-      screen.getByRole('slider', {
-        name: /Reference \+ Amount Match Dollar tolerance/i,
-      }),
-    ).toBeDisabled();
-
-    const dateVarianceCard = screen
-      .getByRole('heading', { name: 'Date Variance' })
-      .closest('article');
-    if (!dateVarianceCard) {
-      throw new Error('Date Variance rule card not found.');
-    }
-
-    expect(
-      within(dateVarianceCard).getByRole('slider', {
-        name: /Date Variance Timing variance window/i,
-      }),
-    ).toBeDisabled();
-    expect(within(dateVarianceCard).getByText('21 days')).toBeInTheDocument();
+    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.getAllByText(/Admins set thresholds/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('21 days').length).toBeGreaterThan(0);
   });
 
-  it('shows an empty exceptions state before any reconciliation run exists', () => {
+  it('shows a no-data review state before any reconciliation run exists', () => {
+    const deferred = createDeferred<ReturnType<typeof createRunResponse>>();
+    mockedApiState.latestRunPromise = deferred.promise;
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Exceptions/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Review/i }));
 
-    expect(screen.getByText('No exception set yet')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /Upload both source workbooks in the Upload tab and run the reconciliation/i,
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Summary' })).toBeInTheDocument();
+    expect(screen.getByText('Loading review output')).toBeInTheDocument();
   });
 
   it('shows a monthly month picker by default with twelve month options', () => {
@@ -738,55 +707,6 @@ describe('App', () => {
     expect(screen.getByText('Choose one of the last 7 completed years.')).toBeInTheDocument();
   });
 
-  it('shows and hides field help text when question-mark buttons are clicked', () => {
-    setAuthenticatedUser('rray');
-    renderApp();
-
-    const bankHelpButton = screen.getByRole('button', { name: 'Open help for bank source file' });
-    expect(
-      screen.queryByText(
-        'Upload the exported bank transaction workbook used as the bank source of truth.',
-      ),
-    ).toBeNull();
-
-    fireEvent.click(bankHelpButton);
-
-    expect(
-      screen.getByText(
-        'Upload the exported bank transaction workbook used as the bank source of truth.',
-      ),
-    ).toBeInTheDocument();
-
-    fireEvent.click(bankHelpButton);
-
-    expect(
-      screen.queryByText(
-        'Upload the exported bank transaction workbook used as the bank source of truth.',
-      ),
-    ).toBeNull();
-  });
-
-  it('closes an open field help popover when clicking outside the field', () => {
-    setAuthenticatedUser('rray');
-    renderApp();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open help for bank source file' }));
-
-    expect(
-      screen.getByText(
-        'Upload the exported bank transaction workbook used as the bank source of truth.',
-      ),
-    ).toBeInTheDocument();
-
-    fireEvent.mouseDown(document.body);
-
-    expect(
-      screen.queryByText(
-        'Upload the exported bank transaction workbook used as the bank source of truth.',
-      ),
-    ).toBeNull();
-  });
-
   it('uploads files and renders returned reconciliation metrics', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(createRunResponse()), { status: 201 }),
@@ -809,8 +729,8 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
 
     await waitFor(() => {
-      expect(screen.getByAltText('Small Scottish man in a kilt illustration')).toBeInTheDocument();
-      expect(screen.getByText('Kinney Software Solutions LLC')).toBeInTheDocument();
+      expect(screen.getByText(/Run finished/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Copy run ID' })).toBeInTheDocument();
       expect(screen.getByText('Total reviewed')).toBeInTheDocument();
       expect(screen.getByText('12')).toBeInTheDocument();
       expect(screen.getAllByText('Missing in QBO').length).toBeGreaterThanOrEqual(1);
@@ -982,6 +902,66 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('resets the reconciliation label to the suggested value', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    const labelInput = screen.getByLabelText(/Reconciliation label/i);
+    fireEvent.change(labelInput, { target: { value: 'Custom Label' } });
+    expect(labelInput).toHaveValue('Custom Label');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to suggested' }));
+
+    const currentYear = new Date().getFullYear();
+    const month = monthsWithinYear[new Date().getMonth()];
+    expect(labelInput).toHaveValue(`Monthly Recon for ${month} ${currentYear}`);
+  });
+
+  it('assigns bank and QBO files from the merged drop zone by file name', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Source workbooks'), {
+      target: { files: [new File(['bank'], 'bank.xlsx'), new File(['qbo'], 'qbo.xlsx')] },
+    });
+
+    expect(screen.getByRole('button', { name: 'Run reconciliation' })).not.toBeDisabled();
+    expect(screen.getAllByText('bank.xlsx').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('qbo.xlsx').length).toBeGreaterThan(0);
+  });
+
+  it('lands financial analysts on the Review tab', () => {
+    setAuthenticatedUser('bray');
+    renderApp();
+
+    expect(screen.getByRole('tab', { name: /Review/i })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('leads the Summary panel with the reconciliation verdict', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
+    );
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Unexplained residual')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Bank unmatched (net)')).toBeInTheDocument();
+    expect(screen.getByText('Prior-period comparison')).toBeInTheDocument();
+  });
+
   it('disables submit when reconciliation label is blank', () => {
     setAuthenticatedUser('rray');
     renderApp();
@@ -1021,20 +1001,20 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'Start Reconciliation' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Setup/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
     expect(screen.queryByRole('link', { name: 'Developer Dashboard' })).toBeNull();
   });
 
-  it('allows admin role to adjust variance slider defaults in Rules', () => {
+  it('allows admin role to adjust variance thresholds in Rules', () => {
     setAuthenticatedUser('rray3');
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Rules/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
     const slider = screen.getByRole('slider', {
-      name: /Reference \+ Amount Match Dollar tolerance/i,
+      name: /Dollar tolerance/i,
     });
 
     expect(slider).not.toBeDisabled();
@@ -1050,14 +1030,14 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'Start Reconciliation' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Setup/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
     expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Rules/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
     const slider = screen.getByRole('slider', {
-      name: /Date Variance Timing variance window/i,
+      name: /Timing variance window/i,
     });
     expect(slider).not.toBeDisabled();
   });

@@ -1,8 +1,13 @@
-import type { ReconciliationRunReport } from '@recon/domain';
+import type {
+  ErrorCategory,
+  ReconciliationRunReport,
+  ReviewerDecision,
+  ReviewerDecisionOutcome,
+  ReviewerDecisionTargetType,
+} from '@recon/domain';
 
 /** Alias for the full reconciliation run report returned by the API. */
 export type ReconciliationRunResponse = ReconciliationRunReport;
-
 type QueuedReconciliationEnqueueResponse = {
   jobId: string;
   status: 'queued';
@@ -34,6 +39,7 @@ export interface RunReconciliationPayload {
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
+  varianceOverrides?: Record<string, number>;
 }
 
 const parseResponse = async <T>(response: Response): Promise<T> => {
@@ -117,6 +123,7 @@ export const runReconciliationRequest = async ({
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
+  varianceOverrides,
 }: RunReconciliationPayload): Promise<ReconciliationRunResponse> => {
   const formData = new FormData();
   formData.append('bankFile', bankFile);
@@ -129,6 +136,9 @@ export const runReconciliationRequest = async ({
   }
   if (periodLabel) {
     formData.append('periodLabel', periodLabel);
+  }
+  if (varianceOverrides && Object.keys(varianceOverrides).length > 0) {
+    formData.append('varianceOverrides', JSON.stringify(varianceOverrides));
   }
 
   const response = await fetch('/api/reconciliation/run', {
@@ -172,3 +182,38 @@ export const loginRequest = async ({
 /** Returns the workbook download URL for the given run ID. */
 export const downloadWorkbookUrl = (runId: string): string =>
   `/api/reconciliation/${runId}/export/workbook`;
+
+/** Input payload for recording a reviewer decision on a run target. */
+export interface ReviewerDecisionInput {
+  targetType: ReviewerDecisionTargetType;
+  targetId: string;
+  outcome: ReviewerDecisionOutcome;
+  finalCategory?: ErrorCategory;
+  notes?: string;
+}
+
+/** Fetches all persisted reviewer decisions for a reconciliation run. */
+export const getReviewerDecisionsRequest = async (runId: string): Promise<ReviewerDecision[]> => {
+  const response = await fetch(
+    `/api/reconciliation/${encodeURIComponent(runId)}/reviewer-decisions`,
+  );
+  return parseResponse<ReviewerDecision[]>(response);
+};
+
+/** Persists a single reviewer decision for a run target and returns the saved record. */
+export const saveReviewerDecisionRequest = async (
+  runId: string,
+  input: ReviewerDecisionInput,
+): Promise<ReviewerDecision> => {
+  const response = await fetch(
+    `/api/reconciliation/${encodeURIComponent(runId)}/reviewer-decisions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
+  );
+  return parseResponse<ReviewerDecision>(response);
+};
