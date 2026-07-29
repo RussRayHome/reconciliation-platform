@@ -1,7 +1,6 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import type { SummaryMetrics } from '@recon/domain';
-
 import { formatCurrency } from '../lib/format';
 
 interface ChartsPanelProps {
@@ -23,19 +22,27 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
             margin={{ top: 8, right: 16, bottom: 12, left: 0 }}
             barCategoryGap="18%"
           >
-            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(240, 246, 252, 0.08)" />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 12, fill: '#a8b3bf' }}
               interval={0}
               angle={-32}
               textAnchor="end"
               height={92}
               tickMargin={10}
             />
-            <YAxis />
-            <Tooltip />
-            <Bar dataKey="value" fill="#0f766e" radius={[6, 6, 0, 0]} />
+            <YAxis tick={{ fill: '#a8b3bf' }} />
+            <Tooltip
+              contentStyle={{
+                background: '#1c2230',
+                border: '1px solid rgba(240, 246, 252, 0.14)',
+                borderRadius: 8,
+                color: '#e6edf3',
+              }}
+              cursor={{ fill: 'rgba(240, 246, 252, 0.06)' }}
+            />
+            <Bar dataKey="value" fill="#1fd1a1" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
         <details className="chart-data-details">
@@ -69,18 +76,25 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
             margin={{ top: 8, right: 16, bottom: 12, left: 0 }}
             barCategoryGap="18%"
           >
-            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(240, 246, 252, 0.08)" />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 12, fill: '#a8b3bf' }}
               interval={0}
               angle={-32}
               textAnchor="end"
               height={108}
               tickMargin={10}
             />
-            <YAxis />
+            <YAxis tick={{ fill: '#a8b3bf' }} />
             <Tooltip
+              contentStyle={{
+                background: '#1c2230',
+                border: '1px solid rgba(240, 246, 252, 0.14)',
+                borderRadius: 8,
+                color: '#e6edf3',
+              }}
+              cursor={{ fill: 'rgba(240, 246, 252, 0.06)' }}
               formatter={(value: number | string | ReadonlyArray<number | string> | undefined) => {
                 if (typeof value === 'number' || typeof value === 'string') {
                   return formatCurrency(Number(value));
@@ -88,7 +102,7 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
                 return formatCurrency(0);
               }}
             />
-            <Bar dataKey="value" fill="#c2410c" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="value" fill="#f2495c" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
         <details className="chart-data-details">
