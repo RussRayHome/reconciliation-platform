@@ -80,6 +80,7 @@ export function ExceptionTriage({
   const [savedViews, setSavedViews] = useState<SavedTriageView[]>(() => loadSavedViews());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [noteDraftByExceptionId, setNoteDraftByExceptionId] = useState<Record<string, string>>({});
   const [isDesktop, setIsDesktop] = useState(() =>
     globalThis.window === undefined
       ? true
@@ -185,6 +186,12 @@ export function ExceptionTriage({
 
   const handleRowKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>): void => {
     const key = event.key.toLowerCase();
+
+    // Never let a decision shortcut fire while the reviewer is typing in the note or search field.
+    const target = event.target as HTMLElement | null;
+    if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) {
+      return;
+    }
 
     if (key === 'arrowdown' || key === 'j') {
       event.preventDefault();
@@ -319,6 +326,10 @@ export function ExceptionTriage({
       />
 
       <div className="exception-triage__list-pane">
+        <p className="exception-triage__shortcut-legend">
+          Shortcuts: <kbd>J</kbd>/<kbd>K</kbd> navigate · <kbd>A</kbd> accept · <kbd>R</kbd> reject
+          · <kbd>N</kbd> needs research
+        </p>
         {filtered.length === 0 ? (
           <div className="empty-state-card table-empty-state" role="status" aria-live="polite">
             <span className="eyebrow">No matching exceptions</span>
@@ -333,6 +344,8 @@ export function ExceptionTriage({
             >
               {rowEntries.map(({ display, index, style }) => {
                 const decision = decisionByTargetId[display.item.id];
+                const draftNote = noteDraftByExceptionId[display.item.id];
+                const hasNote = Boolean((draftNote ?? decision?.notes ?? '').trim());
 
                 return (
                   <ExceptionRow
@@ -343,6 +356,7 @@ export function ExceptionTriage({
                     tabIndex={display.item.id === selectedId ? 0 : -1}
                     decisionAction={decision ? actionByOutcome[decision.outcome] : undefined}
                     isPending={pendingTargetId === display.item.id}
+                    hasNote={hasNote}
                     onSelect={() => selectByIndex(index, { openDrawer: true, focus: false })}
                     onKeyDown={handleRowKeyDown}
                     style={style}
@@ -361,6 +375,13 @@ export function ExceptionTriage({
           isPending={pendingTargetId === selectedDisplay.item.id}
           error={decisionError}
           isDrawer={!isDesktop}
+          noteDraft={noteDraftByExceptionId[selectedDisplay.item.id]}
+          onNoteDraftChange={(value) =>
+            setNoteDraftByExceptionId((current) => ({
+              ...current,
+              [selectedDisplay.item.id]: value,
+            }))
+          }
           onClose={() => setIsDrawerOpen(false)}
           onDecide={(action, notes) => onDecide(selectedDisplay.item.id, action, notes)}
         />

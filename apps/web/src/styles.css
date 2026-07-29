@@ -742,7 +742,6 @@ select {
   color: var(--muted);
 }
 
-
 .overall-progress-elapsed,
 .step-progress-detail {
   margin: 0.25rem 0 0;
@@ -760,7 +759,6 @@ select {
     margin-left: 0;
   }
 }
-
 
 .hero-card,
 .chart-card {
@@ -2780,6 +2778,25 @@ th {
   min-width: 0;
 }
 
+.exception-triage__shortcut-legend {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.exception-triage__shortcut-legend kbd {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+}
+
 .exception-triage__list {
   position: relative;
   max-height: 560px;
@@ -3022,10 +3039,44 @@ th {
   gap: 0.25rem;
 }
 
-.exception-detail__action-buttons {
+.exception-detail__action-list {
+  list-style: none;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.exception-detail__action-item {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+}
+
+.exception-detail__action-copy {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--teal);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.exception-decision-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: var(--warn, #92600a);
+}
+
+.exception-row__note-indicator {
+  margin-left: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 .exception-detail__tokens summary {
@@ -3120,4 +3171,3 @@ th {
   justify-self: start;
   margin-top: 0.5rem;
 }
-

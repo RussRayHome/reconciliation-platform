@@ -29,8 +29,34 @@ describe('useReviewerDecisions', () => {
     const seed: ReviewerDecision = { ...savedDecision, targetId: 'exception-9' };
     const { result } = renderHook(() => useReviewerDecisions('run-1', [seed]));
 
-    expect(result.current.reviewedCount).toBe(1);
+    expect(result.current.resolvedCount).toBe(1);
     expect(result.current.decisionByTargetId['exception-9']).toEqual(seed);
+  });
+
+  it('counts only resolved decisions on current exceptions and never exceeds the exception count', () => {
+    const staleResolved: ReviewerDecision = { ...savedDecision, targetId: 'stale-exception' };
+    const research: ReviewerDecision = {
+      ...savedDecision,
+      id: 'decision-2',
+      targetId: 'exception-1',
+      outcome: 'ResearchException',
+    };
+    const resolved: ReviewerDecision = {
+      ...savedDecision,
+      id: 'decision-3',
+      targetId: 'exception-2',
+      outcome: 'DismissedException',
+    };
+    const exceptionIds = new Set(['exception-1', 'exception-2']);
+
+    const { result } = renderHook(() =>
+      useReviewerDecisions('run-1', [staleResolved, research, resolved], exceptionIds),
+    );
+
+    // stale-exception is excluded (not in the run) and research is not resolved.
+    expect(result.current.resolvedCount).toBe(1);
+    expect(result.current.researchCount).toBe(1);
+    expect(result.current.resolvedCount).toBeLessThanOrEqual(exceptionIds.size);
   });
 
   it('optimistically records a decision and reconciles with the saved record', async () => {
@@ -72,6 +98,6 @@ describe('useReviewerDecisions', () => {
     });
 
     expect(result.current.decisionByTargetId['exception-1']).toBeUndefined();
-    expect(result.current.reviewedCount).toBe(0);
+    expect(result.current.resolvedCount).toBe(0);
   });
 });

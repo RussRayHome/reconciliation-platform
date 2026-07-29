@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react';
-
 import { Pill } from '@recon/ui';
 import type { ReviewerDecision } from '@recon/domain';
 
@@ -31,6 +29,8 @@ export function ExceptionEvidencePanel({
   decision,
   isPending,
   error,
+  noteDraft,
+  onNoteDraftChange,
   onDecide,
   onClose,
   isDrawer,
@@ -39,16 +39,19 @@ export function ExceptionEvidencePanel({
   decision: ReviewerDecision | undefined;
   isPending: boolean;
   error: string | null;
+  noteDraft: string | undefined;
+  onNoteDraftChange: (value: string) => void;
   onDecide: (action: DecisionAction, notes: string) => void;
   onClose?: () => void;
   isDrawer: boolean;
 }>) {
   const item = display.item;
-  const [note, setNote] = useState(decision?.notes ?? '');
-
-  useEffect(() => {
-    setNote(decision?.notes ?? '');
-  }, [item.id, decision?.notes]);
+  const savedNote = decision?.notes ?? '';
+  // The note draft is owned by the parent and keyed by exception id, so text typed before a
+  // decision survives row navigation instead of being cleared on selection change.
+  const note = noteDraft ?? savedNote;
+  const isNoteUnsaved = note.trim() !== savedNote.trim();
+  const appendNote = (text: string): void => onNoteDraftChange(note ? `${note}\n${text}` : text);
 
   const sides = buildComparisonSides(item);
   const lineage = buildRuleLineage(item);
@@ -114,18 +117,29 @@ export function ExceptionEvidencePanel({
       {item.recommendedNextActions.length > 0 ? (
         <div className="exception-detail__actions">
           <h4>Recommended next actions</h4>
-          <div className="exception-detail__action-buttons">
+          <ul className="exception-detail__action-list">
             {item.recommendedNextActions.map((action) => (
-              <button
-                key={action}
-                type="button"
-                className="secondary-button"
-                onClick={() => setNote((current) => (current ? `${current}\n${action}` : action))}
-              >
-                {action}
-              </button>
+              <li key={action} className="exception-detail__action-item">
+                <span>{action}</span>
+                <button
+                  type="button"
+                  className="exception-detail__action-copy"
+                  onClick={() => appendNote(action)}
+                >
+                  Copy to note
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
+          {item.recommendedNextActions.length > 1 ? (
+            <button
+              type="button"
+              className="exception-detail__action-copy"
+              onClick={() => appendNote(item.recommendedNextActions.join('\n'))}
+            >
+              Copy all to note
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -167,13 +181,18 @@ export function ExceptionEvidencePanel({
           className="exception-decision-note"
           value={note}
           placeholder="Add an optional note for this decision"
-          onChange={(event) => setNote(event.target.value)}
+          onChange={(event) => onNoteDraftChange(event.target.value)}
           onBlur={() => {
-            if (activeAction && note !== (decision?.notes ?? '')) {
+            if (activeAction && note !== savedNote) {
               onDecide(activeAction, note);
             }
           }}
         />
+        {isNoteUnsaved ? (
+          <p className="exception-decision-hint" role="status">
+            Unsaved note — choose an outcome to save it.
+          </p>
+        ) : null}
         {isPending ? <p className="exception-decision-status">Saving decision…</p> : null}
         {error ? (
           <p className="error-banner" role="alert">

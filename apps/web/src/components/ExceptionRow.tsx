@@ -15,6 +15,7 @@ export function ExceptionRow({
   isSelected,
   decisionAction,
   isPending,
+  hasNote,
   optionId,
   tabIndex,
   innerRef,
@@ -26,6 +27,7 @@ export function ExceptionRow({
   isSelected: boolean;
   decisionAction: DecisionAction | undefined;
   isPending: boolean;
+  hasNote: boolean;
   optionId: string;
   tabIndex: number;
   innerRef?: (element: HTMLButtonElement | null) => void;
@@ -53,7 +55,15 @@ export function ExceptionRow({
         title={severity}
         aria-hidden="true"
       />
-      <span className="exception-row__category">{display.categoryLabel}</span>
+      <span className="exception-row__category">
+        {display.categoryLabel}
+        {hasNote ? (
+          <span className="exception-row__note-indicator" title="Has reviewer note">
+            <span aria-hidden="true">✎</span>
+            <span className="visually-hidden">Has reviewer note</span>
+          </span>
+        ) : null}
+      </span>
       <span className="exception-row__date">{display.dateLabel}</span>
       <span className="exception-row__amount">{display.amountLabel}</span>
       <span className="exception-row__counterpart" title={display.counterpartLabel}>

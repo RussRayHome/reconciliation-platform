@@ -25,7 +25,8 @@ type DecisionMap = Record<string, ReviewerDecision>;
 export type UseReviewerDecisionsResult = {
   decisionByTargetId: DecisionMap;
   decisions: ReviewerDecision[];
-  reviewedCount: number;
+  resolvedCount: number;
+  researchCount: number;
   error: string | null;
   pendingTargetId: string | null;
   decide: (targetId: string, action: DecisionAction, notes?: string) => void;
@@ -39,6 +40,7 @@ export type UseReviewerDecisionsResult = {
 export const useReviewerDecisions = (
   runId: string | null,
   initialDecisions: ReviewerDecision[] | undefined,
+  exceptionIds?: ReadonlySet<string>,
 ): UseReviewerDecisionsResult => {
   const [decisionByTargetId, setDecisionByTargetId] = useState<DecisionMap>({});
   const [error, setError] = useState<string | null>(null);
@@ -132,11 +134,24 @@ export const useReviewerDecisions = (
   }, []);
 
   const decisions = Object.values(decisionByTargetId);
+  // Only decisions on exceptions in the current run count toward progress; a stale decision
+  // persisted against an id no longer present must never inflate the total.
+  const relevantDecisions = exceptionIds
+    ? decisions.filter((decision) => exceptionIds.has(decision.targetId))
+    : decisions;
+  const resolvedCount = relevantDecisions.filter(
+    (decision) =>
+      decision.outcome === 'ConfirmedException' || decision.outcome === 'DismissedException',
+  ).length;
+  const researchCount = relevantDecisions.filter(
+    (decision) => decision.outcome === 'ResearchException',
+  ).length;
 
   return {
     decisionByTargetId,
     decisions,
-    reviewedCount: decisions.length,
+    resolvedCount,
+    researchCount,
     error,
     pendingTargetId,
     decide,

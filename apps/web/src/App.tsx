@@ -582,9 +582,14 @@ function ReconciliationApp({
   const reconciliation = useReconciliationRun();
   const run = reconciliation.data;
   const reportRun = run ?? persistedRun;
+  const reportRunExceptionIds = useMemo(
+    () => new Set((reportRun?.exceptions ?? []).map((exception) => exception.id)),
+    [reportRun],
+  );
   const reviewerDecisions = useReviewerDecisions(
     reportRun?.id ?? null,
     reportRun?.reviewerDecisions,
+    reportRunExceptionIds,
   );
 
   const suggestedPeriodLabel = useMemo(
@@ -801,22 +806,28 @@ function ReconciliationApp({
   const runStatusTone = resolveRunStatusTone(
     reconciliation.isPending,
     Boolean(reconciliation.error),
-    Boolean(run),
+    Boolean(reportRun),
   );
   const runStatusLabel = runStatusLabelsByTone[runStatusTone];
-  const currentStepLabel = run
+  const currentStepLabel = reportRun
     ? 'Reconciliation complete'
     : (currentProgressStep?.label ?? 'Ready to run');
-  const runElapsedMs = resolveRunElapsedMs(run, reconciliation.isPending, runStartedAtMs, nowMs);
+  const runElapsedMs = resolveRunElapsedMs(
+    reportRun,
+    reconciliation.isPending,
+    runStartedAtMs,
+    nowMs,
+  );
   const elapsedLabel = runElapsedMs === null ? null : formatElapsedLabel(runElapsedMs);
-  const runBarSourceFileNames = run
-    ? run.sourceFiles.map((file) => file.fileName)
+  const runBarSourceFileNames = reportRun
+    ? reportRun.sourceFiles.map((file) => file.fileName)
     : [bankFile?.name, qboFile?.name].filter((name): name is string => Boolean(name));
-  const runBarAccountIdentifier = run?.accountIdentifier ?? accountIdentifier;
+  const runBarAccountIdentifier = reportRun?.accountIdentifier ?? accountIdentifier;
+  const runBarFrequency = reportRun?.reconciliationFrequency ?? reconciliationFrequency;
   const appliedVarianceOverrides = reportRun?.appliedVarianceOverrides;
   const rulesUsedCount = reportRun ? Object.keys(appliedVarianceOverrides ?? {}).length : null;
   const reviewProgressLabel = reportRun
-    ? `${reviewerDecisions.reviewedCount} of ${reportRun.exceptions.length} reviewed`
+    ? `${reviewerDecisions.resolvedCount} of ${reportRun.exceptions.length} resolved · ${reviewerDecisions.researchCount} in research`
     : null;
   const varianceOverrideCount = Object.keys(varianceDefaultOverrides).length;
   const thresholdSetLabel = varianceOverrideCount > 0 ? 'Custom threshold set' : 'Shipped defaults';
@@ -872,18 +883,18 @@ function ReconciliationApp({
       <main className="app-layout">
         {controls}
         <RunBar
-          periodLabel={run?.periodLabel ?? periodLabel}
+          periodLabel={reportRun?.periodLabel ?? periodLabel}
           accountIdentifier={runBarAccountIdentifier}
           sourceFileNames={runBarSourceFileNames}
-          frequency={reconciliationFrequency}
+          frequency={runBarFrequency}
           statusLabel={runStatusLabel}
           statusTone={runStatusTone}
           overallProgressPercent={overallProgressPercent}
           currentStepLabel={currentStepLabel}
-          exceptionCount={run ? run.exceptions.length : null}
-          runId={run?.id ?? null}
+          exceptionCount={reportRun ? reportRun.exceptions.length : null}
+          runId={reportRun?.id ?? null}
           elapsedLabel={elapsedLabel}
-          isComplete={Boolean(run)}
+          isComplete={Boolean(reportRun)}
           onOpenReview={() => handleSelectTab('review')}
           onOpenRules={openRulesPanel}
           rulesUsedCount={rulesUsedCount}

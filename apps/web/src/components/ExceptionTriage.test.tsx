@@ -162,6 +162,49 @@ describe('ExceptionTriage', () => {
     expect(onDecide).toHaveBeenCalledWith('exception-1', 'reject', '');
   });
 
+  it('preserves a note typed before a decision when navigating rows', async () => {
+    const user = userEvent.setup();
+    renderTriage();
+
+    const noteField = screen.getByLabelText('Reviewer note');
+    await user.type(noteField, 'Investigate wire ref');
+
+    expect(screen.getByText(/Unsaved note/i)).toBeInTheDocument();
+
+    const firstRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    firstRow.focus();
+    fireEvent.keyDown(firstRow, { key: 'j' });
+    const secondRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    fireEvent.keyDown(secondRow, { key: 'k' });
+
+    expect(screen.getByLabelText('Reviewer note')).toHaveValue('Investigate wire ref');
+  });
+
+  it('renders recommended actions as a checklist and copies one into the note', async () => {
+    const user = userEvent.setup();
+    renderTriage();
+
+    await user.click(screen.getByRole('button', { name: 'Copy to note' }));
+
+    expect(screen.getByLabelText('Reviewer note')).toHaveValue('Do the thing');
+    expect(screen.getByText(/Unsaved note/i)).toBeInTheDocument();
+  });
+
+  it('shows the keyboard shortcut legend', () => {
+    renderTriage();
+
+    expect(screen.getByText(/Shortcuts:/i)).toBeInTheDocument();
+  });
+
+  it('does not trigger decision shortcuts while typing in the note field', async () => {
+    const user = userEvent.setup();
+    const { onDecide } = renderTriage();
+
+    await user.type(screen.getByLabelText('Reviewer note'), 'review a and r and n later');
+
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
   it('reflects a persisted decision and surfaces decision errors', () => {
     const decision: ReviewerDecision = {
       id: 'decision-1',
