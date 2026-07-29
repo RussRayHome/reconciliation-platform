@@ -1,25 +1,16 @@
-import { useState } from 'react';
-
 import type {
   SavedTriageView,
   TriageFacetKey,
   TriageFacetOption,
   TriageFacetSelection,
-  TriageSortKey,
 } from '../lib/exceptionTriage';
 
-const sortOptions: ReadonlyArray<{ value: TriageSortKey; label: string }> = [
-  { value: 'severity', label: 'Severity' },
-  { value: 'amount', label: 'Amount' },
-  { value: 'date', label: 'Date' },
-];
+import { useState } from 'react';
 
-/** Facet sidebar: free-text search, sort, multi-select filters with counts, and saved views. */
+/** Facet sidebar: free-text search, multi-select filters with counts, and saved views. */
 export function ExceptionFacets({
   query,
   onQueryChange,
-  sortKey,
-  onSortChange,
   facetGroups,
   selection,
   onToggleFacet,
@@ -34,8 +25,6 @@ export function ExceptionFacets({
 }: Readonly<{
   query: string;
   onQueryChange: (value: string) => void;
-  sortKey: TriageSortKey;
-  onSortChange: (value: TriageSortKey) => void;
   facetGroups: ReadonlyArray<{ key: TriageFacetKey; label: string; options: TriageFacetOption[] }>;
   selection: TriageFacetSelection;
   onToggleFacet: (key: TriageFacetKey, value: string) => void;
@@ -73,21 +62,6 @@ export function ExceptionFacets({
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search file, message, or tokens"
         />
-      </div>
-
-      <div className="exception-facets__field">
-        <label htmlFor="exception-sort-select">Sort by</label>
-        <select
-          id="exception-sort-select"
-          value={sortKey}
-          onChange={(event) => onSortChange(event.target.value as TriageSortKey)}
-        >
-          {sortOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
       </div>
 
       <p className="exception-facets__count" aria-live="polite">

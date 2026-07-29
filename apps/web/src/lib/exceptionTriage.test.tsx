@@ -245,6 +245,14 @@ describe('sortDisplays', () => {
   it('sorts by severity then amount as a tie-break', () => {
     expect(sortDisplays(displays, 'severity').map((d) => d.item.id)).toEqual(['s2', 's3', 's1']);
   });
+
+  it('reverses order when the direction is ascending', () => {
+    expect(sortDisplays(displays, 'amount', 'asc').map((d) => d.item.id)).toEqual([
+      's1',
+      's3',
+      's2',
+    ]);
+  });
 });
 
 describe('buildComparisonSides', () => {

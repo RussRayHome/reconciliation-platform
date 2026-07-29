@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 
+import type { ExceptionItem, ReviewerDecision } from '@recon/domain';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 import type { ComponentProps } from 'react';
-
-import type { ExceptionItem, ReviewerDecision } from '@recon/domain';
-import userEvent from '@testing-library/user-event';
-
 import { ExceptionTriage } from './ExceptionTriage';
+import userEvent from '@testing-library/user-event';
 
 const makeException = (
   overrides: Partial<ExceptionItem> & Pick<ExceptionItem, 'id'>,
@@ -250,6 +248,38 @@ describe('ExceptionTriage', () => {
     renderTriage({ lastChange: { targetId: 'exception-1', label: 'Accepted' } });
 
     expect(screen.getByRole('button', { name: /Undo/i })).toBeInTheDocument();
+  });
+
+  it('exposes listbox semantics with positioned options', () => {
+    renderTriage();
+
+    const listbox = screen.getByRole('listbox', { name: 'Exceptions' });
+    const options = within(listbox).getAllByRole('option');
+
+    expect(options).toHaveLength(3);
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(options[0]).toHaveAttribute('aria-posinset', '1');
+    expect(options[0]).toHaveAttribute('aria-setsize', '3');
+  });
+
+  it('does not render an "Undecided" label for undecided rows', () => {
+    renderTriage();
+
+    expect(screen.queryByText('Undecided')).not.toBeInTheDocument();
+  });
+
+  it('sorts by a column header and toggles direction with aria-sort', async () => {
+    const user = userEvent.setup();
+    renderTriage();
+
+    const amountHeader = screen.getByRole('columnheader', { name: /Amount/i });
+    const amountButton = within(amountHeader).getByRole('button');
+
+    await user.click(amountButton);
+    expect(amountHeader).toHaveAttribute('aria-sort', 'descending');
+
+    await user.click(amountButton);
+    expect(amountHeader).toHaveAttribute('aria-sort', 'ascending');
   });
 
   it('reflects a persisted decision and surfaces decision errors', () => {

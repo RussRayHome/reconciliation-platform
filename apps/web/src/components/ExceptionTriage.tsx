@@ -13,6 +13,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { ExceptionRow } from './ExceptionRow';
 import { ExceptionEvidencePanel } from './ExceptionEvidencePanel';
 import { ExceptionFacets } from './ExceptionFacets';
+import { ExceptionListHeader } from './ExceptionListHeader';
 import { actionByOutcome, type DecisionAction } from '../hooks/useReviewerDecisions';
 import {
   buildFacetOptions,
@@ -25,6 +26,7 @@ import {
   type SavedTriageView,
   type TriageFacetKey,
   type TriageFacetSelection,
+  type TriageSortDirection,
   type TriageSortKey,
 } from '../lib/exceptionTriage';
 
@@ -81,7 +83,10 @@ export function ExceptionTriage({
   onUndoLastDecision: () => void;
 }>) {
   const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<TriageSortKey>('severity');
+  const [sort, setSort] = useState<{ key: TriageSortKey; direction: TriageSortDirection }>({
+    key: 'severity',
+    direction: 'desc',
+  });
   const [facetSelection, setFacetSelection] = useState<TriageFacetSelection>(emptyFacetSelection);
   const [savedViews, setSavedViews] = useState<SavedTriageView[]>(() => loadSavedViews());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -114,8 +119,8 @@ export function ExceptionTriage({
       (display) => matchesFacets(display, facetSelection) && matchesQuery(display, normalizedQuery),
     );
 
-    return sortDisplays(matched, sortKey);
-  }, [allDisplays, facetSelection, normalizedQuery, sortKey]);
+    return sortDisplays(matched, sort.key, sort.direction);
+  }, [allDisplays, facetSelection, normalizedQuery, sort]);
 
   const hasActiveFilters =
     query.trim().length > 0 ||
@@ -264,12 +269,21 @@ export function ExceptionTriage({
     setFacetSelection(emptyFacetSelection());
   };
 
+  // Clicking a column header sorts by it; clicking the active column flips the direction.
+  const handleSort = (key: TriageSortKey): void => {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'desc' ? 'asc' : 'desc' }
+        : { key, direction: 'desc' },
+    );
+  };
+
   const saveView = (name: string): void => {
     const view: SavedTriageView = {
       id: `view-${Date.now()}`,
       name,
       query,
-      sortKey,
+      sortKey: sort.key,
       facets: facetSelection,
     };
     const next = [...savedViews, view];
@@ -286,7 +300,7 @@ export function ExceptionTriage({
     }
 
     setQuery(view.query);
-    setSortKey(view.sortKey);
+    setSort({ key: view.sortKey, direction: 'desc' });
     setFacetSelection({ ...emptyFacetSelection(), ...view.facets });
   };
 
@@ -331,8 +345,6 @@ export function ExceptionTriage({
       <ExceptionFacets
         query={query}
         onQueryChange={setQuery}
-        sortKey={sortKey}
-        onSortChange={setSortKey}
         facetGroups={facetGroups}
         selection={facetSelection}
         onToggleFacet={toggleFacet}
@@ -358,9 +370,12 @@ export function ExceptionTriage({
             <p>Adjust the search text or facet filters to see matching exception items again.</p>
           </div>
         ) : (
-          <div className="exception-triage__list" aria-label="Exceptions" ref={listRef}>
+          <div className="exception-triage__list" ref={listRef}>
+            <ExceptionListHeader sort={sort} onSort={handleSort} />
             <div
               className="exception-triage__list-canvas"
+              role="listbox"
+              aria-label="Exceptions"
               style={isVirtualized ? { height: `${rowVirtualizer.getTotalSize()}px` } : undefined}
             >
               {rowEntries.map(({ display, index, style }) => {
@@ -378,6 +393,8 @@ export function ExceptionTriage({
                     decisionAction={decision ? actionByOutcome[decision.outcome] : undefined}
                     isPending={pendingTargetId === display.item.id}
                     hasNote={hasNote}
+                    posInSet={index + 1}
+                    setSize={filtered.length}
                     onSelect={() => selectByIndex(index, { openDrawer: true, focus: false })}
                     onKeyDown={handleRowKeyDown}
                     style={style}

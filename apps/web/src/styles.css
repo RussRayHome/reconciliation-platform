@@ -2776,6 +2776,8 @@ th {
 
 .exception-triage__list-pane {
   min-width: 0;
+  /* Single source of truth for the row grid so the header and rows can never drift. */
+  --exception-row-grid: 12px minmax(0, 1.5fr) 84px 90px minmax(0, 1.4fr) minmax(0, 1fr) 78px;
 }
 
 .exception-triage__shortcut-legend {
@@ -2812,7 +2814,7 @@ th {
 
 .exception-row {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1.5fr) 84px 90px minmax(0, 1.4fr) minmax(0, 1fr) 78px;
+  grid-template-columns: var(--exception-row-grid);
   align-items: center;
   gap: 0.5rem;
   width: 100%;
@@ -2825,6 +2827,51 @@ th {
   cursor: pointer;
   font-size: 0.82rem;
   color: var(--ink);
+}
+
+.exception-list-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--exception-row-grid);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.exception-list-header__decision {
+  justify-self: end;
+}
+
+.exception-list-header__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.exception-list-header__sort--active {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.exception-list-header__indicator {
+  font-size: 0.62rem;
 }
 
 .exception-row:focus-visible {
@@ -2887,7 +2934,8 @@ th {
 }
 
 .exception-row__decision--none {
-  color: var(--muted);
+  border: none;
+  padding: 0;
 }
 
 .exception-row__decision[data-action='accept'] {

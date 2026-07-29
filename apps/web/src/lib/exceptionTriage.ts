@@ -5,6 +5,9 @@ import { formatCurrency, formatDate } from './format';
 /** Sort keys available in the triage list. */
 export type TriageSortKey = 'severity' | 'amount' | 'date';
 
+/** Sort direction; `desc` shows most-severe / largest / newest first. */
+export type TriageSortDirection = 'asc' | 'desc';
+
 /** Facet dimensions the reviewer can filter by. */
 export type TriageFacetKey = 'severity' | 'category' | 'source' | 'rule' | 'amountBand';
 
@@ -199,21 +202,26 @@ export const matchesQuery = (display: ExceptionDisplay, normalizedQuery: string)
 export const sortDisplays = (
   displays: ExceptionDisplay[],
   sortKey: TriageSortKey,
-): ExceptionDisplay[] =>
-  [...displays].sort((a, b) => {
+  direction: TriageSortDirection = 'desc',
+): ExceptionDisplay[] => {
+  const sign = direction === 'desc' ? 1 : -1;
+
+  return [...displays].sort((a, b) => {
     if (sortKey === 'amount') {
-      return Math.abs(b.item.amount ?? 0) - Math.abs(a.item.amount ?? 0);
+      return sign * (Math.abs(b.item.amount ?? 0) - Math.abs(a.item.amount ?? 0));
     }
 
     if (sortKey === 'date') {
-      return (b.item.transactionDate ?? '').localeCompare(a.item.transactionDate ?? '');
+      return sign * (b.item.transactionDate ?? '').localeCompare(a.item.transactionDate ?? '');
     }
 
     return (
-      severityRank[a.item.severity] - severityRank[b.item.severity] ||
-      Math.abs(b.item.amount ?? 0) - Math.abs(a.item.amount ?? 0)
+      sign *
+      (severityRank[a.item.severity] - severityRank[b.item.severity] ||
+        Math.abs(b.item.amount ?? 0) - Math.abs(a.item.amount ?? 0))
     );
   });
+};
 
 /** Derives the Bank-side and QBO-side lines for the detail comparison from an exception and its counterparts. */
 export const buildComparisonSides = (

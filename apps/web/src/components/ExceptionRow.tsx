@@ -18,6 +18,8 @@ export function ExceptionRow({
   hasNote,
   optionId,
   tabIndex,
+  posInSet,
+  setSize,
   innerRef,
   onSelect,
   onKeyDown,
@@ -30,6 +32,8 @@ export function ExceptionRow({
   hasNote: boolean;
   optionId: string;
   tabIndex: number;
+  posInSet: number;
+  setSize: number;
   innerRef?: (element: HTMLButtonElement | null) => void;
   onSelect: () => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
@@ -42,7 +46,10 @@ export function ExceptionRow({
       type="button"
       id={optionId}
       ref={innerRef}
-      aria-current={isSelected ? 'true' : undefined}
+      role="option"
+      aria-selected={isSelected}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
       tabIndex={tabIndex}
       className={isSelected ? 'exception-row exception-row--selected' : 'exception-row'}
       style={style}
@@ -77,7 +84,10 @@ export function ExceptionRow({
           {isPending ? 'Saving…' : decisionBadgeLabel[decisionAction]}
         </span>
       ) : (
-        <span className="exception-row__decision exception-row__decision--none">Undecided</span>
+        <span
+          className="exception-row__decision exception-row__decision--none"
+          aria-hidden="true"
+        />
       )}
     </button>
   );
