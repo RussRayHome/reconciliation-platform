@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExceptionItem } from '@recon/domain';
 
 import {
+  buildComparisonDelta,
   buildComparisonSides,
   buildFacetOptions,
   buildRuleLineage,
@@ -295,6 +296,47 @@ describe('buildComparisonSides', () => {
     expect(qbo[0]?.isPrimary).toBe(true);
     expect(bank).toHaveLength(1);
     expect(bank[0]?.fileName).toBe('txn-9');
+  });
+});
+
+describe('buildComparisonDelta', () => {
+  it('renders amount and date drift against the primary counterpart', () => {
+    const delta = buildComparisonDelta(
+      makeException({
+        id: 'd1',
+        source: 'bank',
+        amount: 3118.42,
+        transactionDate: '2026-03-31',
+        ruleTrace: {
+          ruleId: 'r',
+          ruleName: 'R',
+          reason: '',
+          evidence: [],
+          counterpart: { source: 'qbo', amount: 3118.24, transactionDate: '2026-03-29' },
+        },
+      }),
+    );
+
+    expect(delta.amountLabel).toBe('$3,118.42 vs $3,118.24 · $0.18');
+    expect(delta.dateLabel).toBe('2026-03-31 vs 2026-03-29 · 2 days');
+  });
+
+  it('returns null labels when the counterpart lacks amount and date', () => {
+    const delta = buildComparisonDelta(
+      makeException({
+        id: 'd2',
+        ruleTrace: {
+          ruleId: 'r',
+          ruleName: 'R',
+          reason: '',
+          evidence: [],
+          counterpart: { transactionId: 'x' },
+        },
+      }),
+    );
+
+    expect(delta.amountLabel).toBeNull();
+    expect(delta.dateLabel).toBeNull();
   });
 });
 

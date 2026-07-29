@@ -4,6 +4,7 @@ import type { ReviewerDecision } from '@recon/domain';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
 import { actionByOutcome } from '../hooks/useReviewerDecisions';
 import {
+  buildComparisonDelta,
   buildComparisonSides,
   buildRuleLineage,
   type ComparisonLine,
@@ -60,6 +61,7 @@ export function ExceptionEvidencePanel({
   const appendNote = (text: string): void => onNoteDraftChange(note ? `${note}\n${text}` : text);
 
   const sides = buildComparisonSides(item);
+  const delta = buildComparisonDelta(item);
   const lineage = buildRuleLineage(item);
   const evidence = item.ruleTrace?.evidence ?? [];
   const activeAction = decision ? actionByOutcome[decision.outcome] : undefined;
@@ -97,6 +99,17 @@ export function ExceptionEvidencePanel({
           </button>
         ) : null}
       </header>
+
+      {delta.amountLabel || delta.dateLabel ? (
+        <p className="exception-detail__delta">
+          {delta.amountLabel ? (
+            <span className="exception-detail__delta-item">{delta.amountLabel}</span>
+          ) : null}
+          {delta.dateLabel ? (
+            <span className="exception-detail__delta-item">{delta.dateLabel}</span>
+          ) : null}
+        </p>
+      ) : null}
 
       <div className="exception-detail__compare">
         <ComparisonColumn title="Bank" lines={sides.bank} />

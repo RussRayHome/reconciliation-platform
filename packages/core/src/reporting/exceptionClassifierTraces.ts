@@ -128,6 +128,8 @@ export const buildCounterpartTrace = (
     spreadsheetFileName: counterpart?.spreadsheetFileName,
     lineNumber: counterpart?.lineNumber,
     transactionId,
+    amount: counterpart?.amount ?? null,
+    transactionDate: counterpart?.transactionDate ?? counterpart?.postingDate ?? null,
   };
 };
 

@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import type { ComponentProps } from 'react';
+
 import { ExceptionFacets } from './ExceptionFacets';
 import { emptyFacetSelection, type TriageFacetKey } from '../lib/exceptionTriage';
 
@@ -14,8 +16,8 @@ const makeOptions = (count: number) =>
     count: count - index,
   }));
 
-const renderFacets = (overrides: Record<string, unknown> = {}) => {
-  const props = {
+const renderFacets = (overrides: Partial<ComponentProps<typeof ExceptionFacets>> = {}) => {
+  const props: ComponentProps<typeof ExceptionFacets> = {
     query: '',
     onQueryChange: vi.fn(),
     facetGroups: [{ key: 'rule' as TriageFacetKey, label: 'Rule', options: makeOptions(8) }],
@@ -32,7 +34,7 @@ const renderFacets = (overrides: Record<string, unknown> = {}) => {
     ...overrides,
   };
 
-  render(<ExceptionFacets {...(props as never)} />);
+  render(<ExceptionFacets {...props} />);
   return props;
 };
 

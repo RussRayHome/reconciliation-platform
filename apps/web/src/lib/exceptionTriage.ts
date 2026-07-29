@@ -246,8 +246,8 @@ export const buildComparisonSides = (
       line: {
         fileName: counterpart.spreadsheetFileName ?? counterpart.transactionId ?? 'N/A',
         lineNumber: counterpart.lineNumber,
-        amountLabel: 'N/A',
-        dateLabel: 'N/A',
+        amountLabel: formatCurrency(counterpart.amount ?? null),
+        dateLabel: formatDate(counterpart.transactionDate ?? null),
         isPrimary: false,
       },
     }));
@@ -266,6 +266,55 @@ export const buildComparisonSides = (
   }
 
   return { bank, qbo };
+};
+
+/** Amount and date drift between the exception and its primary counterpart, for the compare header. */
+export type ComparisonDelta = {
+  amountLabel: string | null;
+  dateLabel: string | null;
+};
+
+const resolveCounterparts = (item: ExceptionItem) =>
+  item.ruleTrace?.counterparts?.length || !item.ruleTrace?.counterpart
+    ? (item.ruleTrace?.counterparts ?? [])
+    : [item.ruleTrace.counterpart];
+
+/**
+ * Builds an explicit amount/date delta against the primary counterpart, e.g.
+ * `$3,118.42 vs $3,118.24 · $0.18` and `2026-03-31 vs 2026-03-29 · 2 days`.
+ * Returns nulls when the counterpart lacks the corresponding value.
+ */
+export const buildComparisonDelta = (item: ExceptionItem): ComparisonDelta => {
+  const primary = resolveCounterparts(item)[0];
+
+  if (!primary) {
+    return { amountLabel: null, dateLabel: null };
+  }
+
+  const selfAmount = item.amount;
+  const otherAmount = primary.amount ?? null;
+  let amountLabel: string | null = null;
+
+  if (selfAmount !== null && otherAmount !== null) {
+    const drift = Math.abs(Math.abs(selfAmount) - Math.abs(otherAmount));
+    amountLabel = `${formatCurrency(selfAmount)} vs ${formatCurrency(otherAmount)} · ${formatCurrency(drift)}`;
+  }
+
+  const selfDate = item.transactionDate ?? null;
+  const otherDate = primary.transactionDate ?? null;
+  let dateLabel: string | null = null;
+
+  if (selfDate && otherDate) {
+    const selfMs = new Date(selfDate).getTime();
+    const otherMs = new Date(otherDate).getTime();
+
+    if (!Number.isNaN(selfMs) && !Number.isNaN(otherMs)) {
+      const days = Math.abs(Math.round((selfMs - otherMs) / 86_400_000));
+      dateLabel = `${formatDate(selfDate)} vs ${formatDate(otherDate)} · ${days} ${days === 1 ? 'day' : 'days'}`;
+    }
+  }
+
+  return { amountLabel, dateLabel };
 };
 
 /** One line rendered inside a Bank/QBO comparison column. */

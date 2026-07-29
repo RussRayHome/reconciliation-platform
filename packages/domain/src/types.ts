@@ -213,6 +213,8 @@ export interface CounterpartTrace {
   spreadsheetFileName?: string;
   lineNumber?: number;
   transactionId?: string;
+  amount?: number | null;
+  transactionDate?: string | null;
 }
 
 /** Diagnostic trace of the rule evaluation that produced a specific exception classification. */
