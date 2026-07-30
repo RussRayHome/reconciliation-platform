@@ -1014,13 +1014,6 @@
       margin-left: 0;
     }
   }
-  .hero-card {
-    display: grid;
-    gap: 1.25rem;
-    grid-template-columns: 1fr;
-    padding: 2rem;
-    border-radius: var(--radius-panel);
-  }
   .chart-card {
     border-radius: var(--radius-panel);
     padding: 1rem;
@@ -1032,44 +1025,6 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-  }
-  .hero-card p {
-    color: var(--muted);
-  }
-  .hero-heading-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: stretch;
-    gap: 0.7rem;
-  }
-  .hero-title-block {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    width: calc(100% - 1rem);
-    overflow: hidden;
-    text-align: left;
-    padding: 0.9rem 1.15rem;
-    border-radius: var(--radius-panel);
-    border: 1px solid var(--line-strong);
-    background: linear-gradient(135deg, rgba(31, 209, 161, 0.08), transparent) var(--bg-raised);
-    box-shadow: none;
-  }
-  .hero-title-block h1 {
-    margin: 0;
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: clamp(1.2rem, 2.5vw, 1.95rem);
-    line-height: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .hero-cta-row {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.75rem;
-    margin-top: 1rem;
-    width: 100%;
   }
   .hero-primary-cta {
     display: inline-flex;
@@ -1098,78 +1053,6 @@
   }
   .hero-primary-cta:active {
     transform: scale(0.97);
-  }
-  .hero-secondary-cta {
-    display: inline-flex;
-    margin-left: 0.8rem;
-    margin-top: 1rem;
-    color: var(--teal);
-    font-weight: 600;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .hero-secondary-cta--spaced {
-    margin-left: 1rem;
-  }
-  .hero-meta {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem;
-    width: 100%;
-    justify-self: stretch;
-    align-content: start;
-  }
-  .hero-meta div {
-    padding: 1rem 1.1rem;
-    border-radius: var(--radius-panel);
-    background: var(--bg-raised);
-  }
-  .hero-brand {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    justify-self: end;
-    gap: 0.55rem;
-    text-align: right;
-    background: var(--bg-raised);
-    padding: 0.3rem 0.55rem;
-    border-radius: var(--radius-panel);
-    border: 1px solid var(--line);
-    box-shadow: none;
-  }
-  .hero-brand__mascot {
-    width: 46px;
-    height: 64px;
-    flex: 0 0 auto;
-    object-fit: cover;
-    object-position: center top;
-    border-radius: var(--radius-panel);
-    box-shadow: var(--shadow-raised);
-    transition: all 260ms ease;
-  }
-  .hero-card:hover .hero-brand__mascot {
-    box-shadow: var(--shadow-raised);
-    transform: translateY(-4px);
-  }
-  .hero-brand__company {
-    margin: 0;
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: clamp(0.74rem, 0.95vw, 0.88rem);
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    line-height: 1.05;
-    color: var(--ink);
-    white-space: nowrap;
-  }
-  .hero-meta span {
-    display: block;
-    font-size: 0.85rem;
-    color: var(--muted);
-  }
-  .hero-meta strong {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 1.15rem;
   }
   .tab-shell {
     display: grid;
@@ -2323,11 +2206,6 @@
     .docs-hero-actions {
       align-items: flex-start;
       flex-direction: column;
-    }
-
-    .docs-hero-actions .hero-secondary-cta,
-    .hero-secondary-cta--spaced {
-      margin-left: 0;
     }
 
     .docs-markdown {
