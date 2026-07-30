@@ -1,0 +1,131 @@
+/* Lives under patterns/ but must sit in the components layer, imported after
+   user-role.css and rules.css and before triage.css: the original source order
+   had these base button rules beating earlier component rules (signout, rule
+   reset buttons) and losing to later ones (.exception-facets__clear). */
+@layer components {
+  .accent-button {
+    align-self: flex-start;
+    margin-top: auto;
+    min-height: var(--control-height);
+    padding: 0.5rem 0.95rem;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-in-out,
+      transform 100ms ease-in-out;
+  }
+
+  .accent-button:hover {
+    background: var(--accent-hover);
+  }
+
+  .accent-button:active {
+    transform: scale(0.97);
+  }
+
+  .hero-primary-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1rem;
+    min-height: 46px;
+    padding: 0.85rem 1.25rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    text-decoration: none;
+    font-weight: 600;
+    border: 1px solid transparent;
+    box-shadow: none;
+    transition:
+      background 150ms ease-in-out,
+      transform 100ms ease;
+  }
+
+  .hero-cta-row .hero-primary-cta {
+    margin-top: 0;
+    width: 100%;
+  }
+
+  .hero-primary-cta:hover {
+    background: var(--accent-hover);
+  }
+
+  .hero-primary-cta:active {
+    transform: scale(0.97);
+  }
+
+  button,
+  .secondary-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    padding: 0.85rem 1.25rem;
+    border-radius: 999px;
+    border: 0;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      background 150ms ease-in-out,
+      border-color 150ms ease-in-out,
+      transform 100ms ease;
+    font-weight: 600;
+    position: relative;
+    overflow: hidden;
+  }
+
+  button {
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: none;
+  }
+
+  button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    opacity: 0;
+    transition: opacity 150ms ease-in-out;
+  }
+
+  button:hover::before {
+    opacity: 1;
+  }
+
+  .secondary-button {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border: 1px solid var(--line-strong);
+    transition: all 150ms ease-in-out;
+  }
+
+  button:hover {
+    background: var(--accent-hover);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .secondary-button:hover {
+    transform: none;
+    box-shadow: none;
+    background: var(--bg-raised);
+    border-color: var(--line-strong);
+  }
+
+  button:active {
+    transform: scale(0.97);
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    box-shadow: none;
+  }
+}
