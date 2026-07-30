@@ -1,0 +1,71 @@
+@layer components {
+      .history-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .history-list li {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px 10px;
+      }
+
+      .runtime-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .runtime-list li {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        background: #fbfdff;
+      }
+
+      .runtime-row-title {
+        margin: 0 0 4px;
+        font-weight: 700;
+        color: #102a43;
+      }
+
+      .runtime-row-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      pre {
+        margin-top: 10px;
+        background: #0b1220;
+        color: #c6d3e1;
+        border-radius: 10px;
+        padding: 10px;
+        overflow-x: auto;
+        font-size: 0.8rem;
+      }
+
+      pre .cv-g {
+        color: #4ade80;
+        font-weight: 700;
+      }
+
+      pre .cv-a {
+        color: #fbbf24;
+        font-weight: 700;
+      }
+
+      pre .cv-r {
+        color: #f87171;
+        font-weight: 700;
+      }
+}
