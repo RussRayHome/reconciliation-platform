@@ -1,0 +1,73 @@
+@layer patterns {
+  .app-shell {
+    position: relative;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .app-shell--workspace {
+    display: flex;
+    align-items: stretch;
+    overflow: visible;
+  }
+
+  .app-shell--workspace .app-layout {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .hero-backdrop {
+    display: none;
+  }
+
+  .app-layout {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 1.5rem;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 4rem;
+  }
+
+  [data-density='compact'] {
+    /* Floors: type never below 12px, hit targets never below 28px */
+    --row-height: 28px;
+    --module-padding: 14px;
+    --grid-gap: 12px;
+    --table-font: 13px;
+    --kpi-font: 22px;
+    --control-height: 30px;
+    --nav-item: 30px;
+  }
+
+  .page-footer {
+    padding: 1rem 1.25rem;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--line);
+    background: var(--bg-surface);
+    animation: fadeInUp 700ms ease-out;
+    position: relative;
+    overflow: hidden;
+    box-shadow: none;
+  }
+
+  .page-footer::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--teal), var(--amber));
+    opacity: 0.6;
+  }
+
+  .page-footer p {
+    margin: 0;
+    margin-left: 0.5rem;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+}

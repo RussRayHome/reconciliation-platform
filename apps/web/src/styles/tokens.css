@@ -72,4 +72,44 @@
     --rose: var(--negative);
     --rose-soft: var(--negative-soft);
   }
+
+  /* Print stays light: reassert the warm-neutral paper palette for the workpaper/export path. */
+
+  @media print {
+    :root {
+      color-scheme: light;
+      --bg-base: #f5f1ea;
+      --bg-surface: #ffffff;
+      --bg-raised: #efece5;
+      --bg-sunken: #efece5;
+      --text-primary: #122023;
+      --text-strong: #0b1518;
+      --text-secondary: #3c4b4f;
+      --text-tertiary: #516064;
+      --text-disabled: #8a969a;
+      --line: rgba(18, 32, 35, 0.14);
+      --line-strong: rgba(18, 32, 35, 0.24);
+      --accent: #0f766e;
+      --accent-hover: #115e59;
+      --on-accent: #ffffff;
+      --negative: #b3261e;
+      --severity-high: #c2410c;
+      --severity-medium: #92600a;
+      --accent-soft: rgba(15, 118, 110, 0.1);
+      --accent-soft-border: rgba(15, 118, 110, 0.3);
+      --negative-soft: rgba(179, 38, 30, 0.1);
+      --negative-soft-border: rgba(179, 38, 30, 0.3);
+      --severity-high-soft: rgba(194, 65, 12, 0.1);
+      --severity-high-soft-border: rgba(194, 65, 12, 0.3);
+      --severity-medium-soft: rgba(146, 96, 10, 0.1);
+      --severity-medium-soft-border: rgba(146, 96, 10, 0.3);
+      --shadow-raised: none;
+      --shadow-popover: none;
+      --shadow-md: none;
+      --shadow-lg: none;
+      --shadow-elevated: none;
+      --glass-bg: #ffffff;
+      --glass-border: rgba(18, 32, 35, 0.14);
+    }
+  }
 }

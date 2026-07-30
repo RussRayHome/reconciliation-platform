@@ -1,0 +1,67 @@
+@layer patterns {
+  .skeleton {
+    display: block;
+    height: 0.85rem;
+    border-radius: var(--radius-row);
+    background: linear-gradient(90deg, #1c2230 8%, #232b39 18%, #1c2230 33%);
+    background-size: 420px 100%;
+    animation: skeleton-shimmer 1400ms linear infinite;
+  }
+
+  .skeleton-panel {
+    display: grid;
+    gap: var(--grid-gap);
+  }
+
+  .skeleton-lines {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .skeleton-table {
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .skeleton-table__row {
+    display: grid;
+    gap: 0.65rem;
+    align-items: center;
+    min-height: var(--row-height);
+    padding: 0 0.65rem;
+  }
+
+  .skeleton-table__row--head {
+    min-height: calc(var(--row-height) - 8px);
+    border-radius: var(--radius-row);
+    background: var(--bg-sunken);
+  }
+
+  .skeleton-triage {
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .skeleton-triage__facets {
+    display: flex;
+    gap: 0.65rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .skeleton-triage__row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 2fr) minmax(0, 1fr) minmax(0, 0.7fr);
+    gap: 0.85rem;
+    align-items: center;
+    min-height: var(--row-height);
+    padding: 0 0.65rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+      background: var(--bg-raised);
+    }
+  }
+}

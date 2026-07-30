@@ -5,4 +5,14 @@
    statement in the same file, contra the CSS spec. */
 @import './tokens.css';
 @import './base.css';
+
+@import './patterns/layout.css';
+@import './patterns/surface.css';
+@import './patterns/badges.css';
+@import './patterns/forms.css';
+@import './patterns/tables.css';
+@import './patterns/skeleton.css';
+
+/* Not yet split; must stay the last import — it holds the later-in-source
+   rules that win same-specificity ties against everything above. */
 @import './legacy.css';
