@@ -333,121 +333,6 @@
     display: grid;
     gap: 0.75rem;
   }
-  .category-breakdown-shell {
-    padding: 1rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-panel);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-sm);
-  }
-  .category-breakdown-header {
-    display: grid;
-    gap: 0.25rem;
-  }
-  .category-breakdown-header h3 {
-    margin: 0;
-    font-family: 'Space Grotesk', sans-serif;
-  }
-  .category-breakdown-header p {
-    margin: 0;
-    color: var(--muted);
-  }
-  .exception-card-list {
-    display: none;
-  }
-  .exception-card {
-    display: grid;
-    gap: 0.8rem;
-    padding: 1rem;
-    border-radius: var(--radius-panel);
-    border: 1px solid var(--line);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-sm);
-  }
-  .exception-card__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-  .exception-card__header strong {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 1rem;
-  }
-  .exception-card__row,
-  .exception-card__detail-block {
-    display: grid;
-    gap: 0.2rem;
-  }
-  .exception-card__row span,
-  .exception-card__detail-block span {
-    color: var(--muted);
-    font-size: 0.78rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-  .exception-card__row strong {
-    font-size: 0.95rem;
-  }
-  .exception-card__detail-block p {
-    margin: 0;
-    line-height: 1.45;
-  }
-  .exception-virtual-list {
-    max-height: min(72vh, 860px);
-    overflow-y: auto;
-    border-radius: var(--radius-panel);
-    border: 1px solid var(--line);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-sm);
-  }
-  .exception-virtual-list__canvas {
-    position: relative;
-    width: 100%;
-  }
-  .exception-virtual-card {
-    position: absolute;
-    left: 0;
-    width: 100%;
-    padding: 0.95rem 1rem;
-    display: grid;
-    gap: 0.65rem;
-    border-bottom: 1px solid var(--line);
-    background: var(--bg-surface);
-  }
-  .exception-virtual-card__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-  .exception-virtual-card__header strong {
-    font-family: 'Space Grotesk', sans-serif;
-  }
-  .exception-virtual-card__grid {
-    display: grid;
-    gap: 0.7rem;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .exception-virtual-card__grid span {
-    display: block;
-    color: var(--muted);
-    font-size: 0.74rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    margin-bottom: 0.2rem;
-  }
-  .exception-virtual-card__reason {
-    margin: 0;
-    line-height: 1.45;
-  }
-  .exception-virtual-card__meta {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    color: var(--muted);
-    font-size: 0.84rem;
-  }
   .probable-match-virtual-list {
     max-height: min(64vh, 720px);
     overflow-y: auto;
@@ -496,11 +381,6 @@
   .probable-match-virtual-card p {
     margin: 0;
     line-height: 1.45;
-  }
-  @media (max-width: 1280px) {
-    .exception-virtual-card__grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
   }
   .docs-layout {
     max-width: 1560px;
@@ -902,11 +782,6 @@
     .docs-hub-grid,
     .docs-track-grid {
       grid-template-columns: 1fr;
-    }
-
-    .exception-card-list {
-      display: grid;
-      gap: 1rem;
     }
 
     .docs-viewer-card {
