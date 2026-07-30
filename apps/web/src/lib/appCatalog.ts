@@ -3,8 +3,8 @@ import { defaultReconciliationConfig } from '@recon/config';
 
 import type { SemanticIconName } from '../components/SemanticIcon';
 
-/** Union of main app tab identifiers for the three-stage workflow. */
-export type AppTab = 'setup' | 'review' | 'close';
+/** Union of main app tab identifiers for the three-stage workflow plus the developer dashboard. */
+export type AppTab = 'setup' | 'review' | 'close' | 'developer';
 /** Union of sub-view identifiers within the Review stage. */
 export type ReportView = 'summary' | 'probable-matches' | 'exceptions';
 

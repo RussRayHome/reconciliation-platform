@@ -19,7 +19,8 @@ import {
 } from '../lib/exceptionTriage';
 
 /** Flattened workspace destinations surfaced by the navigation rail. */
-export type RailDestination = 'setup' | 'summary' | 'probable-matches' | 'exceptions' | 'close';
+export type RailDestination =
+  'setup' | 'summary' | 'probable-matches' | 'exceptions' | 'close' | 'developer';
 
 const RAIL_COLLAPSED_STORAGE_PREFIX = 'reconciliation-platform:nav-rail-collapsed';
 
@@ -67,7 +68,6 @@ export function NavRail({
   exceptions,
   onApplySavedView,
   docsHref,
-  developerDashboardHref,
   showDeveloperDashboardLink,
   canAccessDocumentation,
   username,
@@ -80,7 +80,6 @@ export function NavRail({
   exceptions: ExceptionItem[];
   onApplySavedView: (view: SavedTriageView) => void;
   docsHref: string;
-  developerDashboardHref: string;
   showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
   username: string;
@@ -161,10 +160,14 @@ export function NavRail({
 
         <NavRailSystemLinks
           docsHref={docsHref}
-          developerDashboardHref={developerDashboardHref}
           showDeveloperDashboardLink={showDeveloperDashboardLink}
           canAccessDocumentation={canAccessDocumentation}
           isCollapsed={isCollapsed}
+          activeDestination={activeDestination}
+          onSelectDestination={(destination) => {
+            onSelectDestination(destination);
+            onMobileClose();
+          }}
         />
       </nav>
     </>
@@ -219,6 +222,7 @@ function NavRailDestinations({
 }>) {
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = railItems.findIndex((item) => item.id === activeDestination);
+  const rovingIndex = activeIndex === -1 ? 0 : activeIndex;
 
   const focusAndSelectItem = (index: number): void => {
     const boundedIndex = (index + railItems.length) % railItems.length;
@@ -284,7 +288,7 @@ function NavRailDestinations({
             aria-selected={isActive}
             aria-current={isActive ? 'page' : undefined}
             aria-controls={`tab-panel-${item.id}`}
-            tabIndex={activeIndex === index ? 0 : -1}
+            tabIndex={rovingIndex === index ? 0 : -1}
             title={isCollapsed ? item.label : undefined}
             onClick={() => onSelect(item.id)}
             onKeyDown={(event) => handleItemKeyDown(event, index)}
@@ -311,16 +315,18 @@ function NavRailDestinations({
 /** Permission-gated system links; unpermitted items are never rendered. */
 function NavRailSystemLinks({
   docsHref,
-  developerDashboardHref,
   showDeveloperDashboardLink,
   canAccessDocumentation,
   isCollapsed,
+  activeDestination,
+  onSelectDestination,
 }: Readonly<{
   docsHref: string;
-  developerDashboardHref: string;
   showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
   isCollapsed: boolean;
+  activeDestination: RailDestination;
+  onSelectDestination: (destination: RailDestination) => void;
 }>) {
   if (!canAccessDocumentation && !showDeveloperDashboardLink) {
     return null;
@@ -330,16 +336,22 @@ function NavRailSystemLinks({
     <div className="nav-rail__section nav-rail__section--system" aria-label="System">
       <p className="nav-rail__section-title">System</p>
       {showDeveloperDashboardLink ? (
-        <a
-          className="nav-rail__item nav-rail__item--link"
-          href={developerDashboardHref}
+        <button
+          type="button"
+          className={
+            activeDestination === 'developer'
+              ? 'nav-rail__item nav-rail__item--active'
+              : 'nav-rail__item'
+          }
+          aria-current={activeDestination === 'developer' ? 'page' : undefined}
           title={isCollapsed ? 'Developer Dashboard' : undefined}
+          onClick={() => onSelectDestination('developer')}
         >
           <span className="nav-rail__item-icon" aria-hidden="true">
             <SemanticIcon name="operations" />
           </span>
           <span className="nav-rail__item-label">Developer Dashboard</span>
-        </a>
+        </button>
       ) : null}
       {canAccessDocumentation ? (
         <a

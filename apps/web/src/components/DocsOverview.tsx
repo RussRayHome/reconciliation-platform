@@ -1,6 +1,4 @@
 import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
-
-import { SectionCard } from '@recon/ui';
 import { docsById, projectDocuments } from '../lib/docsCatalog';
 import { type HeadingLink, type MarkdownBlock, parseMarkdown } from '../lib/docsMarkdown';
 import { MarkdownArticle } from './MarkdownArticle';
@@ -320,12 +318,9 @@ export function DocsOverview({
           </div>
         </header>
 
-        <SectionCard
-          title="Document Navigator"
-          description="Filter the documentation set and choose which project document to inspect."
-        >
-          <div className="docs-toolbar">
-            <div className="docs-search-controls">
+        <section className="docs-hub-grid">
+          <div className="docs-directory-column">
+            <div className="docs-toolbar">
               <label className="docs-search-field" htmlFor="docs-search-input">
                 <span>Search documents</span>
                 <input
@@ -354,15 +349,7 @@ export function DocsOverview({
                 ))}
               </div>
             </div>
-            <p className="docs-toolbar-note">
-              The hub is split into Developer and User sections so each audience can navigate only
-              the relevant docs.
-            </p>
-          </div>
-        </SectionCard>
 
-        <section className="docs-hub-grid">
-          <div className="docs-directory-column">
             <div className="docs-track-grid">
               {documentsByTrack.map((trackEntry) => (
                 <section className="docs-track-group" key={trackEntry.track}>

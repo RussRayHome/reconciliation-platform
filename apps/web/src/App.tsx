@@ -14,6 +14,7 @@ import { SectionCard } from '@recon/ui';
 import type { ReviewerDecision } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
+import { DeveloperDashboard } from './components/DeveloperDashboard';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
 import { SourceDropZone } from './components/SourceDropZone';
 import {
@@ -520,7 +521,6 @@ function App() {
       roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
       controls={controls}
       showDeveloperDashboardLink={showDeveloperDashboardLink}
-      developerDashboardHref={developerDashboardHref}
       username={activeUser.username}
       profileLabel={displayName.length > 0 ? displayName : activeUser.username}
     />
@@ -533,7 +533,6 @@ function ReconciliationApp({
   roleDefaultTab,
   controls,
   showDeveloperDashboardLink,
-  developerDashboardHref,
   username,
   profileLabel,
 }: Readonly<{
@@ -542,7 +541,6 @@ function ReconciliationApp({
   roleDefaultTab: AppTab;
   controls: ReactNode;
   showDeveloperDashboardLink: boolean;
-  developerDashboardHref: string;
   username: string;
   profileLabel: string;
 }>) {
@@ -686,7 +684,7 @@ function ReconciliationApp({
   const activeDestination: RailDestination = activeTab === 'review' ? activeView : activeTab;
 
   const handleSelectDestination = (destination: RailDestination): void => {
-    if (destination === 'setup' || destination === 'close') {
+    if (destination === 'setup' || destination === 'close' || destination === 'developer') {
       handleSelectTab(destination);
       return;
     }
@@ -918,7 +916,6 @@ function ReconciliationApp({
         exceptions={reportRun?.exceptions ?? []}
         onApplySavedView={handleApplySavedView}
         docsHref={docsHref}
-        developerDashboardHref={developerDashboardHref}
         showDeveloperDashboardLink={showDeveloperDashboardLink}
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
         username={username}
@@ -1038,6 +1035,8 @@ function ReconciliationApp({
                 }}
               />
             ) : null}
+
+            {activeTab === 'developer' ? <DeveloperDashboard /> : null}
           </section>
         )}
 

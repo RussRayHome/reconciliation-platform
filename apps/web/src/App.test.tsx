@@ -418,7 +418,7 @@ describe('App', () => {
     });
   });
 
-  it('uses environment-prefixed docs and dashboard links on an environment root route', () => {
+  it('uses environment-prefixed docs links and an in-shell dashboard destination on an environment root route', () => {
     setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/dev');
 
@@ -428,10 +428,7 @@ describe('App', () => {
       'href',
       '/dev/docs',
     );
-    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toHaveAttribute(
-      'href',
-      '/dev/developer-dashboard.html',
-    );
+    expect(screen.getByRole('button', { name: 'Developer Dashboard' })).toBeInTheDocument();
   });
 
   it('redirects root to /dev when the development environment path segment is configured', () => {
@@ -1036,7 +1033,7 @@ describe('App', () => {
 
     expect(screen.getByRole('tab', { name: /Setup/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
-    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Developer Dashboard' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
