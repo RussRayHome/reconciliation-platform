@@ -224,36 +224,6 @@
       grid-column: 1 / -1;
     }
   }
-  .chart-card {
-    border-radius: var(--radius-panel);
-    padding: 1rem;
-  }
-  .chart-card h3 {
-    font-size: 1.1rem;
-    margin-bottom: 0.5rem;
-    background: linear-gradient(135deg, var(--text-strong), var(--text-secondary));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  .stats-grid {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    animation: slideInLeft 700ms ease-out;
-  }
-  .chart-grid {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .chart-data-details {
-    margin-top: 0.8rem;
-  }
-  .chart-data-details summary {
-    cursor: pointer;
-    font-weight: 600;
-  }
   .docs-layout {
     max-width: 1560px;
   }
