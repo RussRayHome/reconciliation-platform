@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ProcessProgressSection, type ProgressStep } from './AppWorkspacePanels';
+import type { Density } from '../hooks/useDensity';
 
 type RunStatusTone = 'idle' | 'running' | 'complete' | 'error';
 
@@ -46,6 +47,8 @@ export function RunBar({
   profile,
   profileLabel,
   onToggleNav,
+  density,
+  onChangeDensity,
 }: Readonly<{
   periodLabel: string;
   accountIdentifier: string;
@@ -67,6 +70,8 @@ export function RunBar({
   profile: ReactNode;
   profileLabel: string;
   onToggleNav: () => void;
+  density: Density;
+  onChangeDensity: (density: Density) => void;
 }>) {
   const accountDisplay = accountIdentifier.trim() || 'No account override';
   const sourcesDisplay =
@@ -117,6 +122,25 @@ export function RunBar({
             </button>
           </div>
         </details>
+
+        <div className="density-toggle" role="group" aria-label="Display density">
+          <button
+            type="button"
+            className="density-toggle__option"
+            aria-pressed={density === 'comfortable'}
+            onClick={() => onChangeDensity('comfortable')}
+          >
+            Comfortable
+          </button>
+          <button
+            type="button"
+            className="density-toggle__option"
+            aria-pressed={density === 'compact'}
+            onClick={() => onChangeDensity('compact')}
+          >
+            Compact
+          </button>
+        </div>
 
         <details className="run-bar__profile">
           <summary className="run-bar__profile-trigger" aria-label="User profile menu">

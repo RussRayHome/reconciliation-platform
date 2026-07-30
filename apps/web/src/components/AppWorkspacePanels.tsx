@@ -796,6 +796,7 @@ export function ReviewSection({
   onOpenExceptions,
   starredIds,
   onToggleStar,
+  density = 'comfortable',
 }: Readonly<{
   run: RunData | undefined;
   activeView: ReportView;
@@ -814,6 +815,7 @@ export function ReviewSection({
   onOpenExceptions: () => void;
   starredIds: string[];
   onToggleStar: (exceptionId: string) => void;
+  density?: 'comfortable' | 'compact';
 }>) {
   let panelContent: ReactNode;
 
@@ -842,6 +844,7 @@ export function ReviewSection({
           onPendingSavedViewApplied={onPendingSavedViewApplied}
           starredIds={starredIds}
           onToggleStar={onToggleStar}
+          density={density}
         />
       ),
     };

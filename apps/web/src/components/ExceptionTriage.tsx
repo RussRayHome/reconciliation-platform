@@ -53,6 +53,7 @@ export function ExceptionTriage({
   onPendingSavedViewApplied,
   starredIds,
   onToggleStar,
+  density = 'comfortable',
 }: Readonly<{
   exceptions: ExceptionItem[];
   decisionByTargetId: Record<string, ReviewerDecision>;
@@ -66,6 +67,7 @@ export function ExceptionTriage({
   onPendingSavedViewApplied?: () => void;
   starredIds?: string[];
   onToggleStar?: (exceptionId: string) => void;
+  density?: 'comfortable' | 'compact';
 }>) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<{ key: TriageSortKey; direction: TriageSortDirection }>({
@@ -84,6 +86,25 @@ export function ExceptionTriage({
   );
 
   const listRef = useRef<HTMLDivElement | null>(null);
+  const [rowHeight, setRowHeight] = useState(40);
+
+  // Read --row-height once per density change so the virtualizer tracks the density system.
+  useEffect(() => {
+    const element = listRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    const value = Number.parseFloat(
+      globalThis.getComputedStyle(element).getPropertyValue('--row-height'),
+    );
+
+    if (Number.isFinite(value) && value > 0) {
+      setRowHeight(value);
+    }
+  }, [density]);
+
   const deferredQuery = useDeferredValue(query);
   const normalizedQuery = deferredQuery.trim().toUpperCase();
 
@@ -148,9 +169,14 @@ export function ExceptionTriage({
   const rowVirtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => listRef.current,
-    estimateSize: () => 40,
+    estimateSize: () => rowHeight,
     overscan: 12,
   });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowHeight]);
 
   const selectedIndex = filtered.findIndex((display) => display.item.id === selectedId);
   const selectedDisplay = selectedIndex >= 0 ? filtered[selectedIndex] : undefined;

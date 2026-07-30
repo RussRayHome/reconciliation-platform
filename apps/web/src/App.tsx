@@ -37,6 +37,7 @@ import {
 import type { SavedTriageView } from './lib/exceptionTriage';
 import { useReconciliationRun } from './hooks/useReconciliationRun';
 import { useReviewerDecisions } from './hooks/useReviewerDecisions';
+import { useDensity } from './hooks/useDensity';
 import { useWatchlist } from './hooks/useWatchlist';
 
 type ReconciliationFrequency = 'Monthly' | 'Annual';
@@ -600,6 +601,7 @@ function ReconciliationApp({
     reportRunExceptionIds,
   );
   const { starredIds, toggleStar } = useWatchlist(reportRun?.id);
+  const { density, setDensity } = useDensity(username);
 
   const suggestedPeriodLabel = useMemo(
     () => buildDefaultPeriodLabel(reconciliationFrequency, monthlyMonth, annualYear, currentYear),
@@ -907,7 +909,7 @@ function ReconciliationApp({
   };
 
   return (
-    <div className="app-shell app-shell--workspace">
+    <div className="app-shell app-shell--workspace" data-density={density}>
       <div className="hero-backdrop" />
       <NavRail
         activeDestination={activeDestination}
@@ -945,6 +947,8 @@ function ReconciliationApp({
           profile={controls}
           profileLabel={profileLabel}
           onToggleNav={() => setIsMobileNavOpen((open) => !open)}
+          density={density}
+          onChangeDensity={setDensity}
         />
 
         {isRulesPanelOpen ? (
@@ -1010,6 +1014,7 @@ function ReconciliationApp({
                 onOpenExceptions={() => handleSelectDestination('exceptions')}
                 starredIds={starredIds}
                 onToggleStar={toggleStar}
+                density={density}
               />
             ) : null}
 
