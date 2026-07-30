@@ -15,6 +15,8 @@
 
 @import './components/login.css';
 
+@import './components/user-role.css';
+
 /* Not yet split; must stay the last import — it holds the later-in-source
    rules that win same-specificity ties against everything above. */
 @import './legacy.css';
