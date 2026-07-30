@@ -618,6 +618,26 @@ describe('PostgresReconciliationReadModelStore', () => {
       const page = await store.listRunExceptionsPage('run-1', 10, 0);
       expect(page.total).toBe(0);
     });
+
+    it('applies category and severity filters to the items and count queries', async () => {
+      const pool = makePool({ rows: [EXCEPTION_ROW], rowCount: 1 }, { rows: [{ count: '1' }] });
+      const store = new PostgresReconciliationReadModelStore(pool);
+      await store.listRunExceptionsPage('run-1', 10, 0, {
+        category: 'AmountMismatch',
+        severity: 'High',
+      });
+
+      const query = pool.query as unknown as ReturnType<typeof vi.fn>;
+      const [itemsSql, itemsParams] = query.mock.calls[0] as [string, unknown[]];
+      const [countSql, countParams] = query.mock.calls[1] as [string, unknown[]];
+
+      expect(itemsSql).toContain('category = $2');
+      expect(itemsSql).toContain('severity = $3');
+      expect(itemsParams).toEqual(['run-1', 'AmountMismatch', 'High', 10, 0]);
+      expect(countSql).toContain('category = $2');
+      expect(countSql).toContain('severity = $3');
+      expect(countParams).toEqual(['run-1', 'AmountMismatch', 'High']);
+    });
   });
 
   describe('listReviewerDecisions', () => {

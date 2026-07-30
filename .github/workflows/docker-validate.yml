@@ -106,6 +106,17 @@ jobs:
       - name: Build container images
         run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml build
 
+      - name: Scan container images for vulnerabilities
+        run: |
+          set -euo pipefail
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          trivy --version
+          project="${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}"
+          for image in "${project}-api" "${project}-web" "${project}-migrate" "${project}-data"; do
+            echo "Scanning ${image}"
+            trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed "${image}"
+          done
+
       - name: Run container smoke test
         env:
           DOCKER_ENV_FILE: .env.docker.dev.fallback

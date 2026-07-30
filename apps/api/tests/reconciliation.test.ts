@@ -455,6 +455,82 @@ describe('reconciliation API', () => {
     expect(pagedPayload.hasMore).toBe(true);
   });
 
+  it('filters paged exceptions by category and severity and rejects unknown filter values', async () => {
+    const app = createApp();
+    const [bankBuffer, qboBuffer] = await Promise.all([
+      createAllExceptionsBankWorkbook(),
+      createAllExceptionsQboWorkbook(),
+    ]);
+
+    const runResponse = await request(app)
+      .post('/api/reconciliation/run')
+      .field('accountIdentifier', 'OPERATING-001')
+      .field('periodLabel', 'Filtered Exceptions')
+      .attach('bankFile', bankBuffer, {
+        filename: 'sample-all-exceptions-bank.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .attach('qboFile', qboBuffer, {
+        filename: 'sample-all-exceptions-qbo.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+
+    const runPayload = runResponse.body as {
+      id: string;
+      exceptions: Array<{ id: string; category: string; severity: string }>;
+    };
+
+    const targetCategory = runPayload.exceptions[0]?.category;
+    expect(targetCategory).toBeDefined();
+    const expectedCategoryMatches = runPayload.exceptions.filter(
+      (item) => item.category === targetCategory,
+    );
+
+    const categoryResponse = await request(app)
+      .get(`/api/reconciliation/${runPayload.id}/exceptions?category=${targetCategory}`)
+      .expect(200);
+
+    const categoryPayload = categoryResponse.body as {
+      items: Array<{ id: string; category: string }>;
+      total: number;
+    };
+
+    expect(categoryPayload.total).toBe(expectedCategoryMatches.length);
+    expect(categoryPayload.items.every((item) => item.category === targetCategory)).toBe(true);
+
+    const targetSeverity = runPayload.exceptions[0]?.severity;
+    const expectedCombinedMatches = runPayload.exceptions.filter(
+      (item) => item.category === targetCategory && item.severity === targetSeverity,
+    );
+
+    const combinedResponse = await request(app)
+      .get(
+        `/api/reconciliation/${runPayload.id}/exceptions?category=${targetCategory}&severity=${targetSeverity}`,
+      )
+      .expect(200);
+
+    const combinedPayload = combinedResponse.body as {
+      items: Array<{ category: string; severity: string }>;
+      total: number;
+    };
+
+    expect(combinedPayload.total).toBe(expectedCombinedMatches.length);
+    expect(
+      combinedPayload.items.every(
+        (item) => item.category === targetCategory && item.severity === targetSeverity,
+      ),
+    ).toBe(true);
+
+    await request(app)
+      .get(`/api/reconciliation/${runPayload.id}/exceptions?category=NotACategory`)
+      .expect(400);
+
+    await request(app)
+      .get(`/api/reconciliation/${runPayload.id}/exceptions?severity=Bogus`)
+      .expect(400);
+  });
+
   it('keeps read-model query counts bounded for paged exceptions under larger result sets', async () => {
     const runId = 'query-budget-run';
     const { pool, getQueryCount, resetQueryCount } = createCountingReadModelPool(runId, 20);

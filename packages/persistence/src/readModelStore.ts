@@ -1,4 +1,5 @@
 import type {
+  ErrorCategory,
   ExceptionItem,
   ExceptionRuleTrace,
   GroupedMatchMember,
@@ -9,6 +10,7 @@ import type {
   ReconciliationRunReport,
   ReviewerDecision,
   ReviewerObservation,
+  SeverityLevel,
   SourceFile,
   SourceSystem,
   SummaryMetrics,
@@ -156,6 +158,12 @@ export type PaginatedExceptionsResult = {
   limit: number;
   offset: number;
   hasMore: boolean;
+};
+
+/** Optional server-side filters applied to the paginated exceptions query. */
+export type ExceptionPageFilters = {
+  category?: ErrorCategory;
+  severity?: SeverityLevel;
 };
 
 const asNumber = (value: string | number | null | undefined): number | null => {
@@ -493,12 +501,29 @@ export class PostgresReconciliationReadModelStore {
 
   /**
    * Lists a paginated slice of exceptions and total count metadata.
+   * Optional category/severity filters narrow both the page and the total count.
    */
   async listRunExceptionsPage(
     runId: string,
     limit: number,
     offset: number,
+    filters: ExceptionPageFilters = {},
   ): Promise<PaginatedExceptionsResult> {
+    const conditions = ['job_id = $1'];
+    const filterParams: unknown[] = [runId];
+
+    if (filters.category) {
+      filterParams.push(filters.category);
+      conditions.push(`category = $${filterParams.length}`);
+    }
+
+    if (filters.severity) {
+      filterParams.push(filters.severity);
+      conditions.push(`severity = $${filterParams.length}`);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
     const [itemsResult, countResult] = await Promise.all([
       this.pool.query<ExceptionRow>(
         `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
@@ -506,14 +531,14 @@ export class PostgresReconciliationReadModelStore {
                 recommended_next_actions, likely_matching_reference, reviewer_notes,
                 match_confidence, normalized_comparison_tokens, related_transaction_ids
            FROM reconciliation_exception
-          WHERE job_id = $1
+          WHERE ${whereClause}
           ORDER BY line_number ASC, id ASC
-          LIMIT $2 OFFSET $3`,
-        [runId, limit, offset],
+          LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
+        [...filterParams, limit, offset],
       ),
       this.pool.query<{ count: string }>(
-        'SELECT COUNT(*)::text AS count FROM reconciliation_exception WHERE job_id = $1',
-        [runId],
+        `SELECT COUNT(*)::text AS count FROM reconciliation_exception WHERE ${whereClause}`,
+        filterParams,
       ),
     ]);
 

@@ -5,6 +5,7 @@ import type {
   ReviewerDecision,
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
+  SeverityLevel,
 } from '@recon/domain';
 import {
   computeSha256Hex,
@@ -13,6 +14,7 @@ import {
   loadPayeeAliases,
   updatePayeeAlias,
   type CreatePayeeAliasInput,
+  type ExceptionPageFilters,
   type PaginatedExceptionsResult,
   type PostgresReconciliationLifecycleStore,
   type PostgresReconciliationReadModelStore,
@@ -34,7 +36,7 @@ import { captureApiException, flushApiSentry, initializeApiSentry } from './serv
 
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
-import { errorCategories } from '@recon/domain';
+import { errorCategories, severityLevels } from '@recon/domain';
 import { executeReconciliation } from './services/reconciliationService';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
@@ -677,6 +679,22 @@ const parseOffset = (value: unknown, defaultValue = 0): number => {
   return Math.trunc(parsed);
 };
 
+/** Returns the validated enum value, undefined when absent, or 'invalid' for unknown values. */
+const parseEnumFilter = <T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+): T | undefined | 'invalid' => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string' && allowed.includes(value as T)) {
+    return value as T;
+  }
+
+  return 'invalid';
+};
+
 const parseBooleanFlag = (value: string | undefined): boolean | null => {
   if (value === undefined) {
     return null;
@@ -1236,6 +1254,7 @@ export const createApp = (
     runId: string,
     limit: number,
     offset: number,
+    filters: ExceptionPageFilters = {},
   ): Promise<PaginatedExceptionsResult | undefined> => {
     if (readModelStore) {
       const runExists = await readModelHasRun(runId);
@@ -1243,7 +1262,7 @@ export const createApp = (
         return undefined;
       }
 
-      return readModelStore.listRunExceptionsPage(runId, limit, offset);
+      return readModelStore.listRunExceptionsPage(runId, limit, offset, filters);
     }
 
     const exceptions = repository.findById(runId)?.exceptions;
@@ -1251,13 +1270,19 @@ export const createApp = (
       return undefined;
     }
 
-    const items = exceptions.slice(offset, offset + limit);
+    const filtered = exceptions.filter(
+      (exception) =>
+        (!filters.category || exception.category === filters.category) &&
+        (!filters.severity || exception.severity === filters.severity),
+    );
+
+    const items = filtered.slice(offset, offset + limit);
     return {
       items,
-      total: exceptions.length,
+      total: filtered.length,
       limit,
       offset,
-      hasMore: offset + items.length < exceptions.length,
+      hasMore: offset + items.length < filtered.length,
     };
   };
 
@@ -1538,13 +1563,29 @@ export const createApp = (
 
   app.get('/api/reconciliation/:id/exceptions', async (request, response, next) => {
     try {
+      const category = parseEnumFilter<ErrorCategory>(request.query.category, errorCategories);
+      if (category === 'invalid') {
+        response.status(400).json({ message: 'Unknown exception category filter.' });
+        return;
+      }
+
+      const severity = parseEnumFilter<SeverityLevel>(request.query.severity, severityLevels);
+      if (severity === 'invalid') {
+        response.status(400).json({ message: 'Unknown exception severity filter.' });
+        return;
+      }
+
       const limitRequested = request.query.limit !== undefined;
       const offsetRequested = request.query.offset !== undefined;
+      const filterRequested = category !== undefined || severity !== undefined;
 
-      if (limitRequested || offsetRequested) {
+      if (limitRequested || offsetRequested || filterRequested) {
         const limit = parseLimit(request.query.limit, 50, 200);
         const offset = parseOffset(request.query.offset, 0);
-        const page = await loadRunExceptionPage(request.params.id, limit, offset);
+        const page = await loadRunExceptionPage(request.params.id, limit, offset, {
+          category,
+          severity,
+        });
 
         if (!page) {
           response.status(404).json({ message: 'Reconciliation run not found.' });
