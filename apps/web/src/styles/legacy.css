@@ -409,59 +409,6 @@
   .rules-reference {
     margin-top: 1.25rem;
   }
-  .source-dropzone {
-    display: grid;
-    gap: 0.75rem;
-  }
-  .source-dropzone__drop {
-    display: grid;
-    gap: 0.4rem;
-    padding: 1.1rem;
-    border: 2px dashed var(--line);
-    border-radius: 12px;
-    text-align: center;
-    cursor: pointer;
-    background: var(--bg-sunken);
-  }
-  .source-dropzone__drop--active {
-    border-color: var(--accent);
-    background: var(--accent-soft);
-  }
-  .source-dropzone__prompt {
-    font-weight: 600;
-  }
-  .source-dropzone__slots {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.75rem;
-  }
-  .source-slot {
-    display: grid;
-    gap: 0.35rem;
-    padding: 0.6rem 0.7rem;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-  }
-  .source-slot__file {
-    display: grid;
-    gap: 0.1rem;
-    font-size: 0.82rem;
-  }
-  .source-slot__override {
-    color: var(--severity-high);
-    font-weight: 600;
-    font-size: 0.72rem;
-  }
-  .source-slot__empty {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--muted);
-  }
-  .source-dropzone__note {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--muted);
-  }
   .bento-grid {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -1240,35 +1187,6 @@
   .rule-card__meta strong {
     font-size: 0.92rem;
   }
-  .upload-form {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .upload-form .field-group {
-    display: grid;
-    gap: 0.45rem;
-  }
-  .upload-form label {
-    font-weight: 600;
-  }
-  .trust-note {
-    grid-column: 1 / -1;
-    margin: 0;
-    padding: 0.75rem 0.85rem;
-    border-radius: 12px;
-    border: 1px solid var(--accent-soft-border);
-    background: var(--accent-soft);
-    color: var(--text-primary);
-    font-size: 0.9rem;
-  }
-  .upload-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    align-items: center;
-    grid-column: 1 / -1;
-  }
   button,
   .secondary-button {
     display: inline-flex;
@@ -1328,24 +1246,6 @@
     cursor: not-allowed;
     opacity: 0.6;
     box-shadow: none;
-  }
-  .error-banner {
-    grid-column: 1 / -1;
-    padding: 0.85rem 1rem;
-    border-radius: var(--radius-panel);
-    background: var(--negative-soft);
-    border: 1px solid var(--negative-soft-border);
-    color: var(--negative);
-    font-weight: 600;
-  }
-  .status-banner {
-    grid-column: 1 / -1;
-    padding: 0.85rem 1rem;
-    border-radius: var(--radius-panel);
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-weight: 600;
-    border: 1px solid var(--accent-soft-border);
   }
   .stats-grid {
     display: grid;
