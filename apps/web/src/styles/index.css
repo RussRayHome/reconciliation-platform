@@ -13,6 +13,8 @@
 @import './patterns/tables.css';
 @import './patterns/skeleton.css';
 
+@import './components/login.css';
+
 /* Not yet split; must stay the last import — it holds the later-in-source
    rules that win same-specificity ties against everything above. */
 @import './legacy.css';
