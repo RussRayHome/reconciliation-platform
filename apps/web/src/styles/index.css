@@ -29,6 +29,8 @@
 
 @import './components/progress.css';
 
+@import './components/rules.css';
+
 /* Not yet split; must stay the last import — it holds the later-in-source
    rules that win same-specificity ties against everything above. */
 @import './legacy.css';
