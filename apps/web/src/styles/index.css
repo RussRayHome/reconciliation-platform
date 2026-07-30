@@ -1,0 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+/* The layer order declaration lives at the top of tokens.css (the first import):
+   Vite's postcss-import rejects @import statements that follow an @layer
+   statement in the same file, contra the CSS spec. */
+@import './tokens.css';
+@import './base.css';
+@import './legacy.css';
