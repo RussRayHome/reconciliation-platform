@@ -1,5 +1,19 @@
 # Handoff: CSS Monolith → Layered Per-Component Stylesheets (v3)
 
+
+> **STATUS (2026-07-30): EXECUTED on branch `refactor/css-layers`.**
+> All phases complete; visual baselines 15/15 zero-diff at 1440/1100/900px.
+> Deltas from this plan discovered during execution:
+> - `styles.css` had grown again: 4,392 lines, nine responsive/media blocks (3×880px, 1180px, min-1181px, 1200px, 1280px, 980px, reduced-motion, 960px, print) and six keyframes.
+> - New component groups beyond the planned tree: `nav-rail.css`, `review.css` (segmented control + bento/KPI/exposure/watchlist dashboard), `developer.css` (in-app developer panel: env-matrix, promotion, runtime), `access-denied.css` kept, plus `patterns/skeleton.css`.
+> - `patterns/buttons.css` lives under patterns/ but is wrapped in `@layer components` and imported between review.css and exceptions.css — original source order had the base button rules beating earlier component rules (`.user-role-shell__signout`, rule reset buttons) and losing to later ones (`.exception-facets__clear`); a patterns-layer placement flipped those ties (caught by baselines).
+> - `components/responsive.css` (imported last) holds two cross-component groups that cannot be split without editing selectors: the 980px grid collapse and the reduced-motion hover suppression.
+> - The `@layer` order statement lives at the top of `tokens.css`, not `index.css`: Vite's postcss-import rejects `@import` after an `@layer` statement, contra spec.
+> - `@media print` splits between `tokens.css` (`:root` palette swap) and `base.css` (global resets).
+> - Dashboard serving reality: nginx on the web gateway serves `developer-dashboard.html` and `dashboard-styles/*` from the dist root (`try_files`); no tools-server static config change was needed. Token copy wired as `sync:dashboard-tokens` + predev/prebuild.
+> - packages/ui no longer references `fadeInUp`; the plan's note about it was stale.
+> - Run Bar "running" transient state is not baseline-snapshotted (non-deterministic); complete state is.
+
 **For:** Claude Code, executing in `reconciliation-platform` (branch off `dev`)
 **Supersedes:** `docs/css-refactor-plan.md` in the repo, which targets a 2,129-line `styles.css`. The file is now **3,336 lines** — this plan is updated to current reality. Replace the repo doc with this one when you branch.
 **Scope:** `apps/web/src/styles.css` (3,336 lines) + `packages/ui/src/styles.css` (~200 lines) + the Developer Dashboard's styles.
@@ -167,3 +181,6 @@ A snapshot diff means: (a) a rule left unlayered, (b) a source-order tie re-orde
 5. Self-host or preload fonts instead of the render-blocking `@import`.
 6. Delete dead selectors found in Phase 5.
 7. Then: `design_handoff_dark_system/` Phase 1 lands as a `tokens.css` swap.
+8. Dead selectors found in Phase 5 (listed, not deleted — verify and remove in a dedicated PR):
+   `.exception-card`, `.exception-card-list`, `.exception-card__detail-block`, `.exception-card__header`, `.exception-card__row`, `.exception-virtual-card`, `.exception-virtual-card__grid`, `.exception-virtual-card__header`, `.exception-virtual-card__meta`, `.exception-virtual-card__reason`, `.exception-virtual-list`, `.exception-virtual-list__canvas` (exceptions.css — superseded by the triage master–detail), `.field-help-popover`, `.field-label-row`, `.help-icon`, `.help-icon-button` (forms.css), `.hero-cta-row`, `.hero-heading-row`, `.hero-secondary-cta`, `.hero-secondary-cta--spaced`, `.hero-title-block` (hero.css), `.report-link`, `.report-link--active`, `.reports-browser`, `.reports-display__header`, `.reports-list` (reports.css), `.review-segment`, `.review-segment--active`, `.review-segmented` (review.css), `.rules-overview-grid` (rules.css), `.tab-button`, `.tab-button--active`, `.tab-button__icon`, `.tab-button__icon-shell`, `.tab-button__label-row`, `.tab-button__label-text`, `.tab-list`, `.tab-shell` (tabs.css), `.table-reset-button`, `.table-toolbar` (tables.css).
+
