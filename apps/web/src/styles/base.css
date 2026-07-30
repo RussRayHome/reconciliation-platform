@@ -1,5 +1,4 @@
-/* Keyframe names are not layer-scoped; every @keyframes in the app lives here.
-   packages/ui references fadeInUp without defining it. */
+/* Keyframe names are not layer-scoped; every @keyframes in the app lives here. */
 @layer base {
   ::selection {
     background: rgba(31, 209, 161, 0.28);
