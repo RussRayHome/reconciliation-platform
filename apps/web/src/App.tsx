@@ -1,4 +1,4 @@
-import './styles.css';
+import './styles/index.css';
 import '@recon/ui/styles.css';
 
 import {

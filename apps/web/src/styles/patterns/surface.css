@@ -1,0 +1,42 @@
+@layer patterns {
+  .hero-card,
+  .chart-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--line);
+  }
+
+  .hero-card h1,
+  .chart-card h3 {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .rules-overview-card,
+  .rule-card,
+  .empty-state-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .rules-overview-card h3,
+  .rule-card h3,
+  .empty-state-card h3 {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .rules-overview-card p,
+  .rule-card p,
+  .empty-state-card p {
+    margin-bottom: 0;
+  }
+
+  .rule-card:hover,
+  .empty-state-card:hover,
+  .rules-overview-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow);
+  }
+}

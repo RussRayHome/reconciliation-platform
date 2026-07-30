@@ -1,0 +1,115 @@
+/* Layer order for the whole app — declared here (first file imported by
+   index.css) because postcss-import disallows @import after an @layer
+   statement in index.css itself. */
+@layer tokens, base, patterns, components;
+
+@layer tokens {
+  :root {
+    color-scheme: dark;
+    /* Surfaces */
+    --bg-base: #0d1117;
+    --bg-surface: #161b22;
+    --bg-raised: #1c2230;
+    --bg-sunken: #0a0e13;
+    /* Text */
+    --text-primary: #e6edf3;
+    --text-strong: #f0f6fc;
+    --text-secondary: #a8b3bf;
+    --text-tertiary: #7d8896;
+    --text-disabled: #4e5866;
+    /* Line */
+    --line: rgba(240, 246, 252, 0.08);
+    --line-strong: rgba(240, 246, 252, 0.14);
+    /* Semantic */
+    --accent: #1fd1a1;
+    --accent-hover: #3be0b4;
+    --on-accent: #04140f;
+    --negative: #f2495c;
+    --severity-high: #f0883e;
+    --severity-medium: #c99a2e;
+    /* Soft fills: 0.12 alpha bg + 0.28–0.32 alpha border + full-strength text */
+    --accent-soft: rgba(31, 209, 161, 0.12);
+    --accent-soft-border: rgba(31, 209, 161, 0.3);
+    --negative-soft: rgba(242, 73, 92, 0.12);
+    --negative-soft-border: rgba(242, 73, 92, 0.3);
+    --severity-high-soft: rgba(240, 136, 62, 0.12);
+    --severity-high-soft-border: rgba(240, 136, 62, 0.3);
+    --severity-medium-soft: rgba(201, 154, 46, 0.12);
+    --severity-medium-soft-border: rgba(201, 154, 46, 0.3);
+    /* Radii: 6 row · 8 control · 12 module · 999 pill */
+    --radius-row: 6px;
+    --radius-control: 8px;
+    --radius-panel: 12px;
+    --radius-pill: 999px;
+    /* Density (Phase 4): data-density on the app shell swaps these seven values */
+    --row-height: 40px;
+    --module-padding: 20px;
+    --grid-gap: 16px;
+    --table-font: 14px;
+    --kpi-font: 26px;
+    --control-height: 36px;
+    --nav-item: 34px;
+    /* Elevation: flat (hairline), raised, glass (floating layers only) */
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.32);
+    --shadow-popover: var(--shadow-raised);
+    --shadow-sm: none;
+    --shadow: none;
+    --shadow-md: var(--shadow-raised);
+    --shadow-hover: none;
+    --shadow-lg: var(--shadow-raised);
+    --shadow-elevated: var(--shadow-raised);
+    --glass-bg: rgba(22, 27, 34, 0.72);
+    --glass-border: rgba(240, 246, 252, 0.12);
+    /* Legacy aliases (delete after one release) */
+    --bg: var(--bg-base);
+    --bg-secondary: var(--bg-surface);
+    --ink: var(--text-primary);
+    --muted: var(--text-tertiary);
+    --teal: var(--accent);
+    --teal-soft: var(--accent-soft);
+    --amber: var(--severity-high);
+    --amber-soft: var(--severity-high-soft);
+    --rose: var(--negative);
+    --rose-soft: var(--negative-soft);
+  }
+
+  /* Print stays light: reassert the warm-neutral paper palette for the workpaper/export path. */
+
+  @media print {
+    :root {
+      color-scheme: light;
+      --bg-base: #f5f1ea;
+      --bg-surface: #ffffff;
+      --bg-raised: #efece5;
+      --bg-sunken: #efece5;
+      --text-primary: #122023;
+      --text-strong: #0b1518;
+      --text-secondary: #3c4b4f;
+      --text-tertiary: #516064;
+      --text-disabled: #8a969a;
+      --line: rgba(18, 32, 35, 0.14);
+      --line-strong: rgba(18, 32, 35, 0.24);
+      --accent: #0f766e;
+      --accent-hover: #115e59;
+      --on-accent: #ffffff;
+      --negative: #b3261e;
+      --severity-high: #c2410c;
+      --severity-medium: #92600a;
+      --accent-soft: rgba(15, 118, 110, 0.1);
+      --accent-soft-border: rgba(15, 118, 110, 0.3);
+      --negative-soft: rgba(179, 38, 30, 0.1);
+      --negative-soft-border: rgba(179, 38, 30, 0.3);
+      --severity-high-soft: rgba(194, 65, 12, 0.1);
+      --severity-high-soft-border: rgba(194, 65, 12, 0.3);
+      --severity-medium-soft: rgba(146, 96, 10, 0.1);
+      --severity-medium-soft-border: rgba(146, 96, 10, 0.3);
+      --shadow-raised: none;
+      --shadow-popover: none;
+      --shadow-md: none;
+      --shadow-lg: none;
+      --shadow-elevated: none;
+      --glass-bg: #ffffff;
+      --glass-border: rgba(18, 32, 35, 0.14);
+    }
+  }
+}

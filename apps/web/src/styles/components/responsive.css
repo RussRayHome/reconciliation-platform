@@ -1,0 +1,35 @@
+@layer components {
+  @media (max-width: 980px) {
+    .hero-card,
+    .chart-grid,
+    .stats-grid,
+    .upload-form,
+    .tab-list,
+    .rules-overview-grid,
+    .rules-grid,
+    .reports-browser,
+    .artifacts-grid,
+    .docs-toolbar,
+    .docs-hub-grid,
+    .docs-track-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .section-card:hover,
+    .chart-card:hover,
+    .tab-button:hover,
+    button:hover,
+    .secondary-button:hover,
+    .rule-card:hover,
+    .empty-state-card:hover,
+    .rules-overview-card:hover,
+    .stat-card:hover,
+    .overall-progress-card:hover,
+    .step-progress-item:hover,
+    .docs-nav-card:hover {
+      transform: none;
+    }
+  }
+}

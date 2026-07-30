@@ -1,0 +1,11 @@
+/* Developer Dashboard entry stylesheet — served raw by the tools server.
+   This tree is intentionally decoupled from src/styles/ (different server):
+   never import across the boundary in either direction. tokens.css is a
+   generated copy — see the sync:dashboard-tokens script. Browser-native
+   @import resolves these; the layer order declaration ships in tokens.css. */
+@import './tokens.css';
+@import './dashboard-base.css';
+@import './components/shell.css';
+@import './components/health.css';
+@import './components/correlation.css';
+@import './components/run-log.css';
