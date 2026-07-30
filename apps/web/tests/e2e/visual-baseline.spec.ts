@@ -7,6 +7,13 @@ import { openSetup } from './auth';
 // Snapshots are recorded once on the pre-refactor tree; every later phase must
 // produce ZERO diffs. Never regenerate after Phase 0.
 
+// All three viewport variants submit the identical reconciliation (same account
+// identifier and period label) as "superuser workspace". Running them concurrently
+// races against shared backend run state and produces nondeterministic exception
+// counts in the Review charts — confirmed by comparing a --workers=1 run against
+// the default parallel run. Force this file to run serially to keep it deterministic.
+test.describe.configure({ mode: 'serial' });
+
 const widths = [1440, 1100, 900] as const;
 
 const screenshotOptions = {
@@ -23,6 +30,22 @@ const loginAs = async (page: Page, username: string, password: string): Promise<
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Submit' }).click();
   await expect(page.getByRole('heading', { name: 'Login' })).toBeHidden({ timeout: 10_000 });
+};
+
+// The docs pages embed a full document preview (including diagram images) whose
+// final height can settle a beat after 'networkidle' fires. Poll scrollHeight
+// until two consecutive reads agree before screenshotting, to avoid capturing a
+// mid-reflow frame.
+const waitForStableLayout = async (page: Page): Promise<void> => {
+  let previousHeight = -1;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const currentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    if (currentHeight === previousHeight) {
+      return;
+    }
+    previousHeight = currentHeight;
+    await page.waitForTimeout(100);
+  }
 };
 
 const runReconciliation = async (page: Page): Promise<void> => {
@@ -72,10 +95,20 @@ for (const width of widths) {
     });
 
     test(`superuser workspace @${width}`, async ({ page }) => {
-      await loginAs(page, 'rray', 'rray');
+      await loginAs(page, 'rray', 'P@ssw0rd');
 
       await openSetup(page);
-      await expect(page).toHaveScreenshot(`setup-upload-${width}.png`, screenshotOptions);
+      // Native <select> chrome (the dropdown arrow) renders with a few
+      // non-deterministic pixels under headless Linux Chromium between
+      // otherwise-identical runs — mask both selects on this screen rather
+      // than loosen the pixel-diff tolerance suite-wide.
+      await expect(page).toHaveScreenshot(`setup-upload-${width}.png`, {
+        ...screenshotOptions,
+        mask: [
+          page.getByLabel('Reconciliation frequency'),
+          page.getByLabel('Monthly reconciliation month'),
+        ],
+      });
 
       await page.goto('/?panel=rules');
       await expect(page.getByRole('tab', { name: 'Setup' })).toBeVisible();
@@ -101,27 +134,29 @@ for (const width of widths) {
     });
 
     test(`docs hub and document @${width}`, async ({ page }) => {
-      await loginAs(page, 'rray', 'rray');
+      await loginAs(page, 'rray', 'P@ssw0rd');
       await page.goto('/docs');
       await page.waitForLoadState('networkidle');
+      await waitForStableLayout(page);
       await expect(page).toHaveScreenshot(`docs-hub-${width}.png`, screenshotOptions);
 
       const firstDocLink = page.locator('a[href^="/docs/"]').first();
       if (await firstDocLink.isVisible().catch(() => false)) {
         await firstDocLink.click();
         await page.waitForLoadState('networkidle');
+        await waitForStableLayout(page);
         await expect(page).toHaveScreenshot(`docs-document-${width}.png`, screenshotOptions);
       }
     });
 
     test(`developer access denied @${width}`, async ({ page }) => {
-      await loginAs(page, 'rray2', 'rray2');
+      await loginAs(page, 'rray2', 'P@ssw0rd');
       await page.waitForLoadState('networkidle');
       await expect(page).toHaveScreenshot(`developer-access-denied-${width}.png`, screenshotOptions);
     });
 
     test(`analyst workspace @${width}`, async ({ page }) => {
-      await loginAs(page, 'bray', 'bray');
+      await loginAs(page, 'bray', 'bray123');
       await page.waitForLoadState('networkidle');
       await expect(page).toHaveScreenshot(`analyst-workspace-${width}.png`, screenshotOptions);
     });

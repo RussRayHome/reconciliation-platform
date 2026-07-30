@@ -627,9 +627,14 @@ describe('PostgresReconciliationReadModelStore', () => {
         severity: 'High',
       });
 
-      const query = pool.query as unknown as ReturnType<typeof vi.fn>;
-      const [itemsSql, itemsParams] = query.mock.calls[0] as [string, unknown[]];
-      const [countSql, countParams] = query.mock.calls[1] as [string, unknown[]];
+      const [itemsSql, itemsParams] = (pool.query as ReturnType<typeof vi.fn>).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      const [countSql, countParams] = (pool.query as ReturnType<typeof vi.fn>).mock.calls[1] as [
+        string,
+        unknown[],
+      ];
 
       expect(itemsSql).toContain('category = $2');
       expect(itemsSql).toContain('severity = $3');

@@ -275,7 +275,19 @@ test.describe('exception triage interaction', () => {
   });
 
   test('category facet shows only the selected category in the triage rows', async ({ page }) => {
-    await page.getByRole('checkbox', { name: /^Amount Mismatch/ }).check();
+    // The Category facet is a closed <details> accordion by default, and low-count
+    // options (like Amount Mismatch in this fixture) are hidden behind "Show all"
+    // until the option cap is lifted.
+    const categoryGroup = page
+      .getByRole('complementary', { name: 'Exception filters' })
+      .getByRole('group')
+      .filter({ hasText: 'Category' });
+    await categoryGroup.getByText('Category', { exact: true }).click();
+    const showAllButton = categoryGroup.getByRole('button', { name: /^Show all/ });
+    if (await showAllButton.isVisible().catch(() => false)) {
+      await showAllButton.click();
+    }
+    await categoryGroup.getByRole('checkbox', { name: /^Amount Mismatch/ }).check();
     await expect(page.getByRole('button', { name: 'Clear filters' })).toBeVisible();
     await expect(exceptionRow(page, 'Amount Mismatch')).toBeVisible();
   });

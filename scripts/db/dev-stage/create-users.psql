@@ -2,7 +2,12 @@
 -- DEV AND STAGE ENVIRONMENTS ONLY
 -- DO NOT RUN IN PRODUCTION.
 --
--- Creates the 'rray' database user with superuser and database-admin privileges.
+-- Creates the 'rray' database user with superuser and database-admin privileges,
+-- and seeds the application-level login accounts in reconciliation_user (the
+-- table the app's /api/auth/login endpoint actually queries — separate from the
+-- Postgres roles below). Without this, a fresh deployment has a working database
+-- but no way to log into the application, since there is no self-service
+-- registration endpoint.
 -- Idempotent: safe to run multiple times.
 --
 -- How to run (dev):
@@ -76,3 +81,30 @@ ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
   GRANT ALL PRIVILEGES ON FUNCTIONS TO rray;
 
 \echo 'Done. User rray is configured for dev/stage.'
+
+-- -----------------------------------------------------------------------------
+-- Application login accounts (reconciliation_user table)
+-- -----------------------------------------------------------------------------
+-- This script runs before migrations on first deploy, so reconciliation_user
+-- won't exist yet on a brand-new database — skip quietly in that case. deploy.sh
+-- also re-runs this script after migrations complete, at which point the table
+-- exists and this block seeds/updates the accounts.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'reconciliation_user') THEN
+    INSERT INTO reconciliation_user (user_name, first_name, last_name, password)
+    VALUES
+      ('rray', 'R', 'Ray', 'P@ssw0rd'),
+      ('rray2', 'R', 'Ray2', 'P@ssw0rd'),
+      ('rray3', 'R', 'Ray3', 'P@ssw0rd'),
+      ('bray', 'B', 'Ray', 'bray123')
+    ON CONFLICT (user_name) DO UPDATE
+      SET first_name = EXCLUDED.first_name,
+          last_name = EXCLUDED.last_name,
+          password = EXCLUDED.password;
+    RAISE NOTICE 'Application login accounts (rray, rray2, rray3, bray) seeded in reconciliation_user.';
+  ELSE
+    RAISE NOTICE 'reconciliation_user does not exist yet — skipping application login seed (re-run after migrations).';
+  END IF;
+END;
+$$;
