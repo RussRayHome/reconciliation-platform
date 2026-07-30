@@ -22,6 +22,13 @@ import {
 } from '../lib/appCatalog';
 import { ChartsPanel } from './ChartsPanel';
 import { BentoModule } from './BentoModule';
+import {
+  SkeletonLines,
+  SkeletonPanel,
+  SummaryDashboardSkeleton,
+  TableSkeleton,
+  TriageSkeleton,
+} from './Skeleton';
 import { ExceptionTriage } from './ExceptionTriage';
 import { SemanticIcon } from './SemanticIcon';
 
@@ -851,14 +858,14 @@ export function ReviewSection({
 
     panelContent = contentByView[activeView];
   } else if (isHydrating) {
+    const skeletonByView: Record<ReportView, ReactNode> = {
+      summary: <SummaryDashboardSkeleton />,
+      'probable-matches': <TableSkeleton rows={8} columns={5} />,
+      exceptions: <TriageSkeleton />,
+    };
+
     panelContent = (
-      <EmptyStateCard
-        eyebrow="Loading latest run"
-        title="Loading review output"
-        description="Retrieving the most recent reconciliation run from the backend so the selected panel can render with saved data."
-        role="status"
-        ariaLive="polite"
-      />
+      <SkeletonPanel label="Loading review output">{skeletonByView[activeView]}</SkeletonPanel>
     );
   } else if (loadError) {
     panelContent = (
@@ -934,13 +941,10 @@ export function CloseExportSection({
     );
   } else if (isHydrating) {
     content = (
-      <EmptyStateCard
-        eyebrow="Loading latest run"
-        title="Loading export artifacts"
-        description="Retrieving the most recent reconciliation run so its workbook and JSON exports can be prepared."
-        role="status"
-        ariaLive="polite"
-      />
+      <SkeletonPanel label="Loading export artifacts">
+        <SkeletonLines count={2} />
+        <TableSkeleton rows={2} columns={3} />
+      </SkeletonPanel>
     );
   } else if (loadError) {
     content = (

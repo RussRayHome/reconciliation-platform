@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { BentoModule } from './BentoModule';
+import {
+  KpiWellsSkeleton,
+  SkeletonBar,
+  SkeletonLines,
+  SkeletonPanel,
+  TableSkeleton,
+} from './Skeleton';
 
 type RuntimeState = 'ready' | 'attention' | 'pending';
 
@@ -231,7 +238,9 @@ function RepositoryHealthModule({
     return statusError ? (
       <p className="developer-dashboard__error">{statusError}</p>
     ) : (
-      <p className="developer-dashboard__loading">Loading repository checks…</p>
+      <SkeletonPanel label="Loading repository checks">
+        <KpiWellsSkeleton count={6} six />
+      </SkeletonPanel>
     );
   }
 
@@ -287,7 +296,10 @@ function EnvironmentPromotionModule({
     return runtimeError ? (
       <p className="developer-dashboard__error">{runtimeError}</p>
     ) : (
-      <p className="developer-dashboard__loading">Loading promotion readiness…</p>
+      <SkeletonPanel label="Loading promotion readiness">
+        <TableSkeleton rows={3} columns={6} />
+        <SkeletonBar height="3rem" />
+      </SkeletonPanel>
     );
   }
 
@@ -345,7 +357,11 @@ function EnvironmentPromotionModule({
 
 function RuntimeHealthModule({ runtime }: Readonly<{ runtime: DeveloperRuntimeResponse | null }>) {
   if (!runtime) {
-    return <p className="developer-dashboard__loading">Loading runtime summary…</p>;
+    return (
+      <SkeletonPanel label="Loading runtime summary">
+        <SkeletonLines count={6} />
+      </SkeletonPanel>
+    );
   }
 
   return (
@@ -387,7 +403,11 @@ function RuntimeHealthModule({ runtime }: Readonly<{ runtime: DeveloperRuntimeRe
 
 function RuntimeEventsModule({ runtime }: Readonly<{ runtime: DeveloperRuntimeResponse | null }>) {
   if (!runtime) {
-    return <p className="developer-dashboard__loading">Loading runtime events…</p>;
+    return (
+      <SkeletonPanel label="Loading runtime events">
+        <SkeletonLines count={5} lineHeight="var(--row-height)" />
+      </SkeletonPanel>
+    );
   }
 
   const runtimeEvents = buildRuntimeEvents(runtime);
