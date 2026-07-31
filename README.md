@@ -1,6 +1,6 @@
-# Bank-to-QBO Reconciliation Platform
+# Bank-to-GL Reconciliation Platform
 
-The reconciliation platform compares bank and QBO workbooks, classifies accounting exceptions, and produces an auditor-friendly workbook export with traceable source lineage.
+The reconciliation platform compares bank and GL workbooks, classifies accounting exceptions, and produces an auditor-friendly workbook export with traceable source lineage.
 
 > **Start here:** Analysts and reviewers should begin with `docs/user-quickstart.md`. Developers and maintainers should begin with `docs/developer-setup.md`.
 

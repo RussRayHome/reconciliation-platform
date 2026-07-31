@@ -159,7 +159,7 @@ That view should show:
 - grouped disposition
 - total grouped amount
 - bank member rows
-- QBO member rows
+- GL member rows
 - evidence and rationale
 - reviewer decision controls once grouped reviewer decisions are implemented
 
@@ -175,7 +175,7 @@ Workbook export should add a `Grouped Matches Review` sheet with:
 - date difference
 - evidence summary
 - bank member detail
-- QBO member detail
+- GL member detail
 
 The current grouped exception labels can remain in the Summary sheet during transition, but they should eventually be derived from grouped results rather than residual exception discovery.
 

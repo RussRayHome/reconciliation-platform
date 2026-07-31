@@ -13,7 +13,7 @@ _Rendered ERD generated from the schema definition in `packages/persistence/src/
 | Table | Purpose | Key constraints |
 |---|---|---|
 | `reconciliation_job` | Root entity — lifecycle state, period context, retry/failure metadata | — |
-| `reconciliation_source_file` | Bank or QBO file registration and import metadata | UNIQUE `(job_id, source_system)` |
+| `reconciliation_source_file` | Bank or GL file registration and import metadata | UNIQUE `(job_id, source_system)` |
 | `reconciliation_import_batch` | Ingest batching ledger with row-range tracking | UNIQUE `(source_file_id, batch_number)` |
 | `reconciliation_raw_row` | Raw source rows exactly as parsed | UNIQUE `(source_file_id, line_number)` |
 | `reconciliation_canonical_row` | Normalized rows with computed fields | UNIQUE `(raw_row_id)` |

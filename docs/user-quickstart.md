@@ -7,7 +7,7 @@ This guide is for analysts and reviewers who need to run reconciliation and revi
 Prepare these items first:
 
 - a bank workbook in `.xlsx` format
-- a QBO workbook in `.xlsx` format
+- a GL workbook in `.xlsx` format
 - files that cover the same account and period
 - access to the reconciliation web app
 
@@ -32,7 +32,7 @@ If the page does not load, ask a maintainer to start or verify the environment.
 
 1. Go to the Upload workspace.
 2. Select the bank workbook as `bankFile`.
-3. Select the QBO workbook as `qboFile`.
+3. Select the GL workbook as `qboFile`.
 4. Enter optional context fields (account, frequency, period).
 5. Run reconciliation and wait for processing to finish.
 
@@ -92,7 +92,7 @@ Use this workbook for downstream approval, handoff, and audit evidence.
 ### Results do not look right
 
 - Verify both files are for the same account and period.
-- Confirm you did not swap bank and QBO files.
+- Confirm you did not swap bank and GL files.
 
 ### Too many data-quality exceptions
 

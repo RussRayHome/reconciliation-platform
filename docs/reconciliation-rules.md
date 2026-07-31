@@ -16,7 +16,7 @@ This reference is intentionally implementation-driven.
 
 The application executes reconciliation in this order:
 
-1. Parse bank and QBO workbooks into raw rows.
+1. Parse bank and GL workbooks into raw rows.
 2. Normalize rows into a shared transaction shape.
 3. Run duplicate detection and one-to-one candidate ranking.
 4. Reserve grouped residual candidates.
@@ -34,13 +34,13 @@ The application executes reconciliation in this order:
 - Default header row is `1`; transaction start row is `2`.
 - Column mapping is alias-based with fuzzy header matching.
 - Rows configured in `excludedRows` are marked excluded.
-- QBO beginning-balance patterns (`BEGINNING BALANCE`, `OPENING BALANCE` by default) are excluded when enabled.
+- GL beginning-balance patterns (`BEGINNING BALANCE`, `OPENING BALANCE` by default) are excluded when enabled.
 - Source lineage is preserved: file name, worksheet, source file id, and spreadsheet line number.
 
 ### Normalization
 
 - Amount parsing supports currency symbols, commas, parentheses negatives, trailing minus, and `CR`/`DR` suffixes.
-- `splitAmount` is parsed from a dedicated column (default aliases: `split amount`, `split amt`, `line amount`, `line amt`, `distribution amount`) and stored as a signed number on `NormalizedTransaction`. It represents the individual line amount on a QBO split transaction, as distinct from the parent transaction `amount`. When no split column is present, `splitAmount` is `null`.
+- `splitAmount` is parsed from a dedicated column (default aliases: `split amount`, `split amt`, `line amount`, `line amt`, `distribution amount`) and stored as a signed number on `NormalizedTransaction`. It represents the individual line amount on a GL split transaction, as distinct from the parent transaction `amount`. When no split column is present, `splitAmount` is `null`.
 - Date parsing supports standard date strings and Excel serial values.
 - Signed amount behavior depends on source config (`signedAmount` vs `debitCreditColumns`).
 - Comparison tokens use text normalization and stop-word removal.
@@ -92,7 +92,7 @@ The matcher starts from active transactions only:
 - `isExcluded === false`
 - `dataQualityIssues.length === 0`
 
-Duplicate detection runs inside each source independently (bank and QBO) and requires:
+Duplicate detection runs inside each source independently (bank and GL) and requires:
 
 - same amount within tolerance
 - date difference within duplicate window
@@ -102,7 +102,7 @@ Duplicate rows are removed from cross-source matching and later classified as `D
 
 ### One-to-one candidate ranking order
 
-For each remaining bank/QBO pair, the engine evaluates rules in this order:
+For each remaining bank/GL pair, the engine evaluates rules in this order:
 
 1. `Reference + Amount Match` -> exact candidate
 2. `Month-End Transfer Review Match` -> probable timing-review candidate
@@ -148,9 +148,9 @@ The reservation stage currently emits both general grouped and specialized group
 - general grouped: `LikelySplitCombineIssue`, `DepositGroupingIssue`
 - specialized grouped: `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`
 
-`LoanPaymentSplit` matches a single bank loan or mortgage debit against two to three QBO debits (principal reduction and interest expense) whose amounts sum to the bank total within the primary date tolerance window. Subset combination search is used so additional QBO debits in the date window do not prevent a valid match.
+`LoanPaymentSplit` matches a single bank loan or mortgage debit against two to three GL debits (principal reduction and interest expense) whose amounts sum to the bank total within the primary date tolerance window. Subset combination search is used so additional GL debits in the date window do not prevent a valid match.
 
-Because grouped candidates reserve overlapping members, one selected grouped candidate can suppress another candidate that shares the same bank/QBO lines.
+Because grouped candidates reserve overlapping members, one selected grouped candidate can suppress another candidate that shares the same bank/GL lines.
 
 ### Match result consumption rules
 
@@ -195,24 +195,24 @@ Transactions tied to these advisory categories are removed from residual missing
 
 - `InvalidOrMissingData`: rows with missing or malformed amount, date, or other data-quality failures.
 - `DuplicateInBank` / `DuplicateInQBO`: same-source duplicates detected by amount equality, date proximity, and description similarity.
-- `StaleOutstandingCheck`: unmatched, check-like, negative QBO items older than the stale outstanding threshold (default 45 days).
-- `OutstandingCheck`: unmatched, check-like, negative QBO items within the stale threshold but not yet cleared in bank.
+- `StaleOutstandingCheck`: unmatched, check-like, negative GL items older than the stale outstanding threshold (default 45 days).
+- `OutstandingCheck`: unmatched, check-like, negative GL items within the stale threshold but not yet cleared in bank.
 - `ACHReturn`: paired bank debit and credit that net to zero within the reversal window, with ACH or NSF indicators in the description; both sides are classified.
 - `NSFReturnedDeposit`: unmatched bank debit containing NSF or returned-check keywords (`nsf`, `returned check`, `insufficient funds`, etc.) with no corresponding pair; runs after ACH return detection so paired NSF credits are not double-classified.
 - `ReversalVoid`: unmatched bank debit paired with a same-amount bank credit within the reversal window, indicating a reversal or void; both sides are classified.
 - `ChargebackReturn`: unmatched bank debit with chargeback keywords paired with a same-amount bank credit within the reversal window.
-- `InterestIncome`: unmatched bank credit with interest-income keywords and no QBO counterpart.
-- `IntercompanyMismatch`: unmatched bank or QBO transaction with intercompany, entity-transfer, due-to/due-from, or subsidiary keywords and no counterpart.
-- `FeeNettingMatch`: a bank credit equals QBO revenue net of a QBO fee line.
-- `PartialPaymentMatch`: multiple bank debits accumulate to one QBO payable amount.
-- `PayrollBatchMatch`: one payroll bank debit equals multiple QBO payroll expense lines.
-- `BankServiceChargeAmortization`: one service-charge bank debit equals multiple QBO fee allocations.
-- `LoanPaymentSplit`: a single bank loan or mortgage debit matches two to three QBO debits (principal reduction and interest expense) whose amounts sum to the bank total.
+- `InterestIncome`: unmatched bank credit with interest-income keywords and no GL counterpart.
+- `IntercompanyMismatch`: unmatched bank or GL transaction with intercompany, entity-transfer, due-to/due-from, or subsidiary keywords and no counterpart.
+- `FeeNettingMatch`: a bank credit equals GL revenue net of a GL fee line.
+- `PartialPaymentMatch`: multiple bank debits accumulate to one GL payable amount.
+- `PayrollBatchMatch`: one payroll bank debit equals multiple GL payroll expense lines.
+- `BankServiceChargeAmortization`: one service-charge bank debit equals multiple GL fee allocations.
+- `LoanPaymentSplit`: a single bank loan or mortgage debit matches two to three GL debits (principal reduction and interest expense) whose amounts sum to the bank total.
 - `LikelyMiscoding`: distinctive same-amount near-date pairs with strong narrative/reference conflict suggesting an account miscoding.
 - `LikelySplitCombineIssue` / `DepositGroupingIssue`: balanced residual grouped sets where amounts match but split or combined posting is suspected.
 - `TimingDifference`: residual timing-compatible same-amount pairs in the extended window (default 21 days).
-- `VoidedCheckCleared`: unmatched bank debit identified as check-like (check number present, `serialNumber` set, or description contains `check`/`chk`) with no QBO counterpart; runs after all other stages so legitimate matches are not misclassified.
-- `DepositInTransit`: unmatched QBO credit recorded near the statement period end (within the deposit-in-transit window, default 7 days) with no bank counterpart; not check-like.
+- `VoidedCheckCleared`: unmatched bank debit identified as check-like (check number present, `serialNumber` set, or description contains `check`/`chk`) with no GL counterpart; runs after all other stages so legitimate matches are not misclassified.
+- `DepositInTransit`: unmatched GL credit recorded near the statement period end (within the deposit-in-transit window, default 7 days) with no bank counterpart; not check-like.
 - `MissingFromQBO` / `MissingFromBank`: final unmatched fallback after all prior stages have been applied.
 - Match-result-derived categories: `DateVariance`, `TimingDifference`, `AmountMismatch`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `DescriptionMerchantVariance`, `AmbiguousMatchRequiringReview`.
 
@@ -279,40 +279,40 @@ Reviewer observations are also generated for:
 
 ## 9. GAAP alignment and bank reconciliation standard coverage
 
-Bank-to-QBO reconciliation is governed primarily by **ASC 305 (Cash and Cash Equivalents)** and **ASC 230 (Statement of Cash Flows)**. A complete bank reconciliation under GAAP requires that every difference between the bank statement balance and the general-ledger book balance is identified, explained, and resolved before period close.
+Bank-to-GL reconciliation is governed primarily by **ASC 305 (Cash and Cash Equivalents)** and **ASC 230 (Statement of Cash Flows)**. A complete bank reconciliation under GAAP requires that every difference between the bank statement balance and the general-ledger book balance is identified, explained, and resolved before period close.
 
 ### Standard bank reconciliation items — full coverage map
 
 | Standard reconciling item                   | GAAP basis | System category                                   | How detected                                                                                                         |
 |---------------------------------------------|------------|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
-| Outstanding checks — normal clearing window | ASC 305-10 | `OutstandingCheck`                                | Unmatched negative QBO check items within the stale threshold                                                        |
+| Outstanding checks — normal clearing window | ASC 305-10 | `OutstandingCheck`                                | Unmatched negative GL check items within the stale threshold                                                        |
 | Outstanding checks — aged beyond policy     | ASC 305-10 | `StaleOutstandingCheck`                           | Same as above, age exceeds `staleOutstandingCheckDays` (default 45 d)                                                |
-| Deposits in transit                         | ASC 305-10 | `DepositInTransit`                                | Unmatched QBO credit near period end within `depositInTransitDays` (default 7 d), not check-like                     |
+| Deposits in transit                         | ASC 305-10 | `DepositInTransit`                                | Unmatched GL credit near period end within `depositInTransitDays` (default 7 d), not check-like                     |
 | NSF / returned checks                       | ASC 310-10 | `NSFReturnedDeposit`                              | Bank debit with NSF or returned-check keywords, no paired bank credit                                                |
-| Bank service charges and fees               | ASC 305-10 | `BankServiceChargeAmortization`                   | Bank debit with service-charge keywords equals sum of 2–6 QBO fee lines                                              |
-| Interest income credited by bank            | ASC 305-10 | `InterestIncome`                                  | Bank credit with interest keywords, no QBO counterpart                                                               |
+| Bank service charges and fees               | ASC 305-10 | `BankServiceChargeAmortization`                   | Bank debit with service-charge keywords equals sum of 2–6 GL fee lines                                              |
+| Interest income credited by bank            | ASC 305-10 | `InterestIncome`                                  | Bank credit with interest keywords, no GL counterpart                                                               |
 | ACH / EFT returns                           | ASC 310-10 | `ACHReturn`                                       | Paired same-amount bank debit and credit (net zero) with ACH or NSF indicators within reversal window                |
 | Reversed or voided entries                  | ASC 305-10 | `ReversalVoid`                                    | Paired same-amount bank debit and credit with no ACH indicators, within reversal window                              |
-| Check voided in books but cleared bank      | ASC 305-10 | `VoidedCheckCleared`                              | Bank check debit (check number or “check”/”chk” description) with no QBO counterpart                                 |
+| Check voided in books but cleared bank      | ASC 305-10 | `VoidedCheckCleared`                              | Bank check debit (check number or “check”/”chk” description) with no GL counterpart                                 |
 | Chargeback / disputed item returned         | ASC 606-10 | `ChargebackReturn`                                | Bank debit with chargeback keywords paired with same-amount bank credit                                              |
-| Loan payment — principal + interest split   | ASC 470-10 | `LoanPaymentSplit`                                | Single bank loan debit matched against 2–3 QBO debits (principal + interest) summing to bank total                   |
-| Intercompany / entity transfer              | ASC 810-10 | `IntercompanyMismatch`                            | Bank or QBO item with intercompany, due-to/from, or subsidiary keywords and no counterpart                           |
-| Payroll batch posting                       | ASC 718-10 | `PayrollBatchMatch`                               | Single bank payroll debit equals sum of multiple QBO payroll expense lines                                           |
-| Fee netting (revenue net of bank fee)       | ASC 606-10 | `FeeNettingMatch`                                 | Bank credit equals QBO revenue line minus QBO fee line                                                               |
-| Partial payment accumulation                | ASC 310-10 | `PartialPaymentMatch`                             | Multiple bank debits accumulate to a single QBO payable amount                                                       |
+| Loan payment — principal + interest split   | ASC 470-10 | `LoanPaymentSplit`                                | Single bank loan debit matched against 2–3 GL debits (principal + interest) summing to bank total                   |
+| Intercompany / entity transfer              | ASC 810-10 | `IntercompanyMismatch`                            | Bank or GL item with intercompany, due-to/from, or subsidiary keywords and no counterpart                           |
+| Payroll batch posting                       | ASC 718-10 | `PayrollBatchMatch`                               | Single bank payroll debit equals sum of multiple GL payroll expense lines                                           |
+| Fee netting (revenue net of bank fee)       | ASC 606-10 | `FeeNettingMatch`                                 | Bank credit equals GL revenue line minus GL fee line                                                               |
+| Partial payment accumulation                | ASC 310-10 | `PartialPaymentMatch`                             | Multiple bank debits accumulate to a single GL payable amount                                                       |
 | Timing difference (posting-date lag)        | ASC 230-10 | `TimingDifference`                                | Same-amount pair within the extended timing window (`timingDifferenceDays`, default 21 d) but outside primary window |
 | Date variance (extended window match)       | ASC 230-10 | `DateVariance`                                    | Matched pair with date difference exceeding primary tolerance but within timing window                               |
 | Amount mismatch                             | ASC 305-10 | `AmountMismatch`                                  | Matched pair where amounts differ beyond `amountTolerance` with high description similarity                          |
 | Likely miscoding                            | ASC 820-10 | `LikelyMiscoding`                                 | Distinctive same-amount near-date pair where description/reference conflict suggests wrong account                   |
 | Duplicate bank posting                      | ASC 305-10 | `DuplicateInBank`                                 | Same-source same-amount duplicate within `duplicateDateWindowDays`                                                   |
-| Duplicate book entry                        | ASC 305-10 | `DuplicateInQBO`                                  | Same-source same-amount duplicate in QBO within duplicate window                                                     |
+| Duplicate book entry                        | ASC 305-10 | `DuplicateInQBO`                                  | Same-source same-amount duplicate in GL within duplicate window                                                     |
 | Split transaction / grouped deposit         | ASC 230-10 | `LikelySplitCombineIssue`, `DepositGroupingIssue` | Balanced residual grouped sets where split or batched posting is likely                                              |
 | Check number mismatch                       | ASC 305-10 | `CheckNumberMismatch`                             | Amount and text align but check numbers differ                                                                       |
 | Reference number mismatch                   | ASC 305-10 | `ReferenceNumberMismatch`                         | Amount and text align but reference numbers differ                                                                   |
 | Description / merchant variance             | ASC 305-10 | `DescriptionMerchantVariance`                     | Amount and date match but description similarity is in the grey zone                                                 |
 | Ambiguous match requiring review            | ASC 305-10 | `AmbiguousMatchRequiringReview`                   | Multiple near-equal candidates exist for the same transaction                                                        |
-| Missing from QBO (book)                     | ASC 305-10 | `MissingFromQBO`                                  | Bank transaction has no book counterpart after all other stages                                                      |
-| Missing from bank                           | ASC 305-10 | `MissingFromBank`                                 | QBO transaction has no bank counterpart after all other stages                                                       |
+| Missing from GL (book)                     | ASC 305-10 | `MissingFromQBO`                                  | Bank transaction has no book counterpart after all other stages                                                      |
+| Missing from bank                           | ASC 305-10 | `MissingFromBank`                                 | GL transaction has no bank counterpart after all other stages                                                       |
 | Invalid or missing data                     | ASC 855-10 | `InvalidOrMissingData`                            | Amount, date, or other required field is absent or malformed                                                         |
 
 ### GAAP assertion coverage
@@ -327,7 +327,7 @@ Bank-to-QBO reconciliation is governed primarily by **ASC 305 (Cash and Cash Equ
 | Presentation — output is auditable          | Partially covered | Summary metrics, exception export workbook, reviewer observations, rule traces stored per exception                                              |
 | Rights and obligations                      | Not covered       | Requires legal-entity and policy controls outside pattern matching                                                                               |
 
-**Scope boundary:** this engine fully covers the transaction-level detection tier for bank-to-QBO cash reconciliation (all 30 categories map to a standard reconciling item above). Full period-close GAAP compliance also requires chart-of-accounts governance, management review sign-off, journal entry controls, and external audit procedures that are outside the scope of automated matching.
+**Scope boundary:** this engine fully covers the transaction-level detection tier for bank-to-GL cash reconciliation (all 30 categories map to a standard reconciling item above). Full period-close GAAP compliance also requires chart-of-accounts governance, management review sign-off, journal entry controls, and external audit procedures that are outside the scope of automated matching.
 
 ## 10. Change management guidance
 

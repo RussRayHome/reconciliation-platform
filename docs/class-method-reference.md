@@ -690,7 +690,7 @@ Module: packages/core/src/export/workbookExporter.ts
     'Probable Matches Review',
     'Reviewer Observations',
     'Bank Normalized',
-    'QBO Normalized'
+    'GL Normalized'
   ],
   outputWorkbook: {
     fileName: string,
@@ -816,7 +816,7 @@ sequenceDiagram
   Service->>Cfg: resolve config
   Cfg-->>Service: ReconciliationConfig
   Service->>Parser: parse bank workbook
-  Service->>Parser: parse QBO workbook
+  Service->>Parser: parse GL workbook
   Parser-->>Service: ParsedWorkbook(s)
   Service->>Core: runReconciliation(...)
   Core-->>Service: ReconciliationOutput
@@ -978,7 +978,7 @@ sequenceDiagram
   participant Engine as reconcileMatches
   participant Similarity as similarity helpers
   Caller->>Engine: reconcileMatches(transactions, config)
-  Engine->>Engine: partition bank vs QBO
+  Engine->>Engine: partition bank vs GL
   loop each bank transaction
     Engine->>Similarity: amount/date/token comparisons
     Similarity-->>Engine: scores

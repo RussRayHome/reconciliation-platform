@@ -70,7 +70,7 @@ npm run runtime:status
 
 Purpose:
 
-- Generates sample bank and QBO workbooks for local demos, manual testing, and docs examples.
+- Generates sample bank and GL workbooks for local demos, manual testing, and docs examples.
 
 How to run:
 
@@ -348,7 +348,7 @@ Purpose:
 
 Purpose:
 
-- Runs a local reconciliation analysis pass against a bank workbook and QBO workbook.
+- Runs a local reconciliation analysis pass against a bank workbook and GL workbook.
 - Helps inspect matching behavior under different date windows, similarity thresholds, and hybrid-match settings.
 
 How to run:
@@ -374,7 +374,7 @@ Key options:
 
 - `--account`: account identifier used to resolve reconciliation config.
 - `--bank`: path to the source bank workbook.
-- `--qbo`: path to the source QBO workbook.
+- `--qbo`: path to the source GL workbook.
 - `--windows`: comma-separated list of candidate day windows.
 - `--thresholds`: comma-separated list of similarity thresholds from `0` to `1`.
 - `--similarity-days`: maximum day distance used by similarity analysis.
