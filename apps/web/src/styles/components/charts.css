@@ -22,8 +22,14 @@
 
   .chart-grid {
     display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+    grid-template-columns: 1fr;
+  }
+
+  .chart-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.35rem;
   }
 
   .chart-data-details {
