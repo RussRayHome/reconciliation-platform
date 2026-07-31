@@ -125,7 +125,9 @@ const arrangeHappyMocks = (): void => {
   parseWorkbookMock
     .mockResolvedValueOnce(makeParseResult('bank', 'bank.xlsx'))
     .mockResolvedValueOnce(makeParseResult('qbo', 'qbo.xlsx'));
-  normalizeTransactionsMock.mockReturnValue([{ id: 'normalized-1' }]);
+  normalizeTransactionsMock.mockReturnValue([
+    { id: 'normalized-1', dataQualityIssues: [], isExcluded: false },
+  ]);
   reconcileMatchesMock.mockReturnValue(makeMatchingOutput());
   classifyExceptionsMock.mockReturnValue({
     exceptions: [{ id: 'exception-1' }],

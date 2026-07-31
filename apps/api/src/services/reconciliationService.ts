@@ -80,6 +80,15 @@ export const executeReconciliation = async ({
     qboSizeBytes: qboFile.size,
   });
 
+  // Times and logs a lifecycleStore persistence call at debug level, so a stalled
+  // Postgres write is visible as "step never completed" rather than a silent hang.
+  const runPersistStep = async <T>(action: string, fn: () => Promise<T>): Promise<T> => {
+    const stepStart = Date.now();
+    const result = await fn();
+    log.debug({ action, durationMs: Date.now() - stepStart });
+    return result;
+  };
+
   // ── 1. Config resolution ───────────────────────────────────────────────────
   const config =
     resolveReconciliationConfig(accountIdentifier, sampleAccountOverrides) ??
@@ -147,7 +156,9 @@ export const executeReconciliation = async ({
   const rawRows = [...bankParsed.rawRows, ...qboParsed.rawRows];
 
   if (lifecycleStore) {
-    await lifecycleStore.persistParsedRows(runId, [...sourceFiles], rawRows);
+    await runPersistStep('service.persist.parsedRows.completed', () =>
+      lifecycleStore.persistParsedRows(runId, [...sourceFiles], rawRows),
+    );
   }
 
   // Log first few raw rows at debug level for traceability
@@ -199,16 +210,72 @@ export const executeReconciliation = async ({
   let outputWorkbook: Awaited<ReturnType<typeof exportWorkbook>>;
 
   try {
+    const normalizeStart = Date.now();
     normalizedTransactions = normalizeTransactions(runId, rawRows, config);
+    const excludedTransactions = normalizedTransactions.filter((t) => t.isExcluded);
+    const dataQualityTransactions = normalizedTransactions.filter(
+      (t) => t.dataQualityIssues.length > 0,
+    );
+    log.debug({
+      action: 'service.normalize.completed',
+      durationMs: Date.now() - normalizeStart,
+      normalizedCount: normalizedTransactions.length,
+      excludedCount: excludedTransactions.length,
+      dataQualityIssueCount: dataQualityTransactions.length,
+    });
+    if (process.env.DEBUG_RECONCILIATION === 'true' && excludedTransactions.length > 0) {
+      log.debug({
+        action: 'service.normalize.exclusions.sample',
+        samples: excludedTransactions.slice(0, 10).map((t) => ({
+          id: t.id,
+          source: t.source,
+          line: t.lineNumber,
+          exclusionReason: t.exclusionReason,
+          dataQualityIssues: t.dataQualityIssues,
+        })),
+      });
+    }
     appendAuditEvent('reconciliation.normalize.completed', {
       transactionCount: normalizedTransactions.length,
     });
 
     if (lifecycleStore) {
-      await lifecycleStore.persistNormalizedRows(runId, normalizedTransactions);
+      await runPersistStep('service.persist.normalizedRows.completed', () =>
+        lifecycleStore.persistNormalizedRows(runId, normalizedTransactions),
+      );
     }
 
+    const matchStart = Date.now();
     matching = reconcileMatches(normalizedTransactions, config.matching, aliases);
+    const matchResultsByDisposition = matching.matchResults.reduce<Record<string, number>>(
+      (acc, result) => {
+        acc[result.disposition] = (acc[result.disposition] ?? 0) + 1;
+        return acc;
+      },
+      {},
+    );
+    log.debug({
+      action: 'service.match.completed',
+      durationMs: Date.now() - matchStart,
+      matchResultsByDisposition,
+      groupedMatchResultCount: matching.groupedMatchResults.length,
+      probableMatchCount: matching.probableMatches.length,
+      unmatchedBankCount: matching.unmatchedBankTransactionIds.size,
+      unmatchedQboCount: matching.unmatchedQboTransactionIds.size,
+      duplicateCount: matching.duplicateTransactionIds.size,
+    });
+    if (process.env.DEBUG_RECONCILIATION === 'true') {
+      log.debug({
+        action: 'service.match.results.sample',
+        samples: matching.matchResults.slice(0, 10).map((r) => ({
+          disposition: r.disposition,
+          confidence: r.confidence,
+          ruleName: r.ruleName,
+          reason: r.reason,
+          score: r.score,
+        })),
+      });
+    }
     appendAuditEvent('reconciliation.match.completed', {
       matchResultCount: matching.matchResults.length,
       groupedMatchResultCount: matching.groupedMatchResults.length,
@@ -216,14 +283,17 @@ export const executeReconciliation = async ({
     });
 
     if (lifecycleStore) {
-      await lifecycleStore.persistMatchingArtifacts({
-        jobId: runId,
-        matchResults: matching.matchResults,
-        probableMatches: matching.probableMatches,
-        groupedMatchResults: matching.groupedMatchResults,
-      });
+      await runPersistStep('service.persist.matchingArtifacts.completed', () =>
+        lifecycleStore.persistMatchingArtifacts({
+          jobId: runId,
+          matchResults: matching.matchResults,
+          probableMatches: matching.probableMatches,
+          groupedMatchResults: matching.groupedMatchResults,
+        }),
+      );
     }
 
+    const classifyStart = Date.now();
     exceptionOutput = classifyExceptions({
       runId,
       sourceFiles: [...sourceFiles],
@@ -237,25 +307,59 @@ export const executeReconciliation = async ({
       matching: config.matching,
       reconciliationFrequency,
     });
+    const exceptionsByCategory = exceptionOutput.exceptions.reduce<Record<string, number>>(
+      (acc, exception) => {
+        acc[exception.category] = (acc[exception.category] ?? 0) + 1;
+        return acc;
+      },
+      {},
+    );
+    log.debug({
+      action: 'service.classify.completed',
+      durationMs: Date.now() - classifyStart,
+      exceptionsByCategory,
+      reviewerObservationCount: exceptionOutput.reviewerObservations.length,
+    });
+    if (process.env.DEBUG_RECONCILIATION === 'true') {
+      log.debug({
+        action: 'service.classify.exceptions.sample',
+        samples: exceptionOutput.exceptions.slice(0, 10).map((e) => ({
+          category: e.category,
+          severity: e.severity,
+          source: e.source,
+          line: e.lineNumber,
+          errorMessage: e.errorMessage,
+          ruleTrace: e.ruleTrace,
+        })),
+      });
+    }
     appendAuditEvent('reconciliation.classify.completed', {
       exceptionCount: exceptionOutput.exceptions.length,
     });
 
+    const summaryStart = Date.now();
     summary = buildSummaryMetrics(
       normalizedTransactions,
       matching.matchResults,
       exceptionOutput.exceptions,
     );
+    log.debug({
+      action: 'service.summary.completed',
+      durationMs: Date.now() - summaryStart,
+    });
 
     if (lifecycleStore) {
-      await lifecycleStore.persistReviewArtifacts({
-        jobId: runId,
-        exceptions: exceptionOutput.exceptions,
-        reviewerObservations: exceptionOutput.reviewerObservations,
-        summary,
-      });
+      await runPersistStep('service.persist.reviewArtifacts.completed', () =>
+        lifecycleStore.persistReviewArtifacts({
+          jobId: runId,
+          exceptions: exceptionOutput.exceptions,
+          reviewerObservations: exceptionOutput.reviewerObservations,
+          summary,
+        }),
+      );
     }
 
+    const exportStart = Date.now();
     outputWorkbook = await exportWorkbook({
       runId,
       accountIdentifier,
@@ -266,6 +370,11 @@ export const executeReconciliation = async ({
       probableMatches: matching.probableMatches,
       reviewerObservations: exceptionOutput.reviewerObservations,
       normalizedTransactions,
+    });
+    log.debug({
+      action: 'service.export.completed',
+      durationMs: Date.now() - exportStart,
+      tabCount: outputWorkbook.tabNames.length,
     });
     appendAuditEvent('reconciliation.export.completed', {
       workbookFileName: outputWorkbook.fileName,
@@ -308,12 +417,14 @@ export const executeReconciliation = async ({
   log.info({ action: 'service.reconciliation.done', runId, totalDurationMs: Date.now() - t0 });
 
   if (lifecycleStore) {
-    await lifecycleStore.persistExportAndFinalize({
-      jobId: runId,
-      outputWorkbook,
-      completedAt: new Date().toISOString(),
-      auditEvents,
-    });
+    await runPersistStep('service.persist.exportAndFinalize.completed', () =>
+      lifecycleStore.persistExportAndFinalize({
+        jobId: runId,
+        outputWorkbook,
+        completedAt: new Date().toISOString(),
+        auditEvents,
+      }),
+    );
   }
 
   return {

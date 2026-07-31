@@ -176,6 +176,16 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
 export const startServer = async (): Promise<void> => {
   const runtime = await createServerRuntime();
 
+  process.on('uncaughtException', (error) => {
+    runtime.logger.fatal({ err: error }, 'Uncaught exception, terminating process');
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    runtime.logger.fatal({ err: reason }, 'Unhandled promise rejection, terminating process');
+    process.exit(1);
+  });
+
   const server = runtime.app.listen(runtime.port, '0.0.0.0', () => {
     markServerStarted();
     runtime.logger.info(
