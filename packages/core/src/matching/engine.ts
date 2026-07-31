@@ -425,6 +425,31 @@ const rankCandidates = (
         continue;
       }
 
+      // A strongly matching reference/document number is enough to pair a transaction even when
+      // description wording diverges (as real bank feeds routinely do) — mirror the checkNumber
+      // branch above but keyed on reference similarity generally, not just an explicit check number.
+      if (
+        !sameAmount &&
+        referenceSimilarity >= config.referenceSimilarityThreshold &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
+      ) {
+        candidates.push(
+          buildCandidate(
+            bankTransaction,
+            qboTransaction,
+            'Reference Match with Amount Variance',
+            0.83,
+            'AmountMismatch',
+            [
+              'Reference or document number aligns strongly across both sources.',
+              'Recorded amounts differ beyond configured tolerance — likely a transposition or recording error.',
+            ],
+            'AmountMismatch',
+          ),
+        );
+        continue;
+      }
+
       const aliasHit = bankAliasHits.get(bankTransaction.id) ?? null;
       if (
         aliasHit &&
@@ -569,7 +594,7 @@ const rankCandidates = (
             0.77,
             'AmountMismatch',
             [
-              `Bank amount of ${bankTransaction.amount.toFixed(2)} and QBO amount of ${qboTransaction.amount.toFixed(2)} differ by ${feeDeducted.toFixed(2)}.`,
+              `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${qboTransaction.amount.toFixed(2)} differ by ${feeDeducted.toFixed(2)}.`,
               'Amounts share the same sign and the difference is within the wire-fee tolerance, suggesting a correspondent bank or processing fee was deducted in transit.',
               'Reviewer should confirm against wire advice or settlement detail.',
             ],
@@ -599,7 +624,7 @@ const rankCandidates = (
               0.74,
               'AmountMismatch',
               [
-                `Bank amount of ${bankTransaction.amount.toFixed(2)} and QBO amount of ${qboTransaction.amount.toFixed(2)} differ by ${(diffPct * 100).toFixed(2)}%.`,
+                `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${qboTransaction.amount.toFixed(2)} differ by ${(diffPct * 100).toFixed(2)}%.`,
                 'The percentage variance is consistent with a foreign exchange rate difference or a processing discount.',
                 'Reviewer should confirm the FX rate or discount applied and record an adjusting entry if needed.',
               ],

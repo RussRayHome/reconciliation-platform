@@ -61,7 +61,7 @@ describe('toExceptionDisplay', () => {
     );
 
     expect(display.ruleLabel).toBe('Derived classification');
-    expect(display.sourceLabel).toBe('QBO');
+    expect(display.sourceLabel).toBe('GL');
     expect(display.amountBand).toBe('band-1k-10k');
     expect(display.fileLineLabel).toBe('bank.xlsx / 1');
   });
@@ -103,7 +103,7 @@ describe('toExceptionDisplay', () => {
       }),
     );
 
-    expect(display.counterpartLabel).toBe('QBO qbo.xlsx / 9');
+    expect(display.counterpartLabel).toBe('GL qbo.xlsx / 9');
   });
 
   it('falls back to transaction id when a counterpart has no spreadsheet file', () => {
@@ -167,7 +167,7 @@ describe('buildFacetOptions and matchesFacets', () => {
   it('labels category, source, and amount-band facet values', () => {
     expect(buildFacetOptions(displays, 'category', emptyFacetSelection())[0]?.label).not.toBe('');
     expect(buildFacetOptions(displays, 'source', emptyFacetSelection())[0]?.label).toMatch(
-      /BANK|QBO/,
+      /BANK|GL/,
     );
     expect(
       buildFacetOptions(displays, 'amountBand', emptyFacetSelection()).map((o) => o.label),

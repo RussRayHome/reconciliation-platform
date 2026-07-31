@@ -300,11 +300,11 @@ describe('runReconciliation', () => {
     expect(summaryLabels).toEqual(
       expect.arrayContaining([
         'Total bank transactions reviewed',
-        'Total QBO transactions reviewed',
+        'Total GL transactions reviewed',
         'Total duplicates in bank',
-        'Total duplicates in QBO',
+        'Total duplicates in GL',
         'Total date variances',
-        'Net amount of items missing in QBO',
+        'Net amount of items missing in GL',
         'Net amount of items missing in bank',
         'Narrative Summary',
       ]),

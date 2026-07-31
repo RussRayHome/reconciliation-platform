@@ -53,7 +53,7 @@ export const buildDerivedMatchTrace = (
         'Same amount was paired outside the primary date tolerance and within the timing-difference window.',
         `Date difference is ${matchedTimingDifferenceCandidate.dateDifference} day(s).`,
         `Narrative similarity score is ${matchedTimingDifferenceCandidate.textSimilarity.toFixed(2)} and reference similarity score is ${matchedTimingDifferenceCandidate.referenceSimilarity.toFixed(2)}.`,
-        `Transaction kinds remain timing-compatible: bank=${inferTransactionKind(matchedTimingDifferenceCandidate.bankTransaction)}, qbo=${inferTransactionKind(matchedTimingDifferenceCandidate.qboTransaction)}.`,
+        `Transaction kinds remain timing-compatible: bank=${inferTransactionKind(matchedTimingDifferenceCandidate.bankTransaction)}, gl=${inferTransactionKind(matchedTimingDifferenceCandidate.qboTransaction)}.`,
       ],
     };
   }

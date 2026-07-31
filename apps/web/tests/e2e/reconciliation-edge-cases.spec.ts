@@ -180,13 +180,13 @@ test.describe('annual reconciliation frequency', () => {
 // ─── Exception Category Detection ────────────────────────────────────────────
 
 test.describe('exception category detection', () => {
-  test('Missing from QBO scenario surfaces the correct exception category', async ({ page }) => {
+  test('Missing from GL scenario surfaces the correct exception category', async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createWorkbookFromRows(missingFromQboBankRows),
       createWorkbookFromRows(missingFromQboQboRows),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionSummaryCell(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
   });
 
   test('Amount Mismatch scenario surfaces the correct exception category', async ({ page }) => {
@@ -249,7 +249,7 @@ test.describe('combined all-exceptions workbook', () => {
       createAllExceptionsQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(exceptionSummaryCell(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
     await expect(exceptionSummaryCell(page, 'Amount Mismatch')).toBeVisible();
     await expect(exceptionSummaryCell(page, 'Timing Difference')).toBeVisible();
   });
@@ -271,7 +271,7 @@ test.describe('exception triage interaction', () => {
     // "UNBOOKED" is a token from the MissingFromQBO bank row ("UNBOOKED BANK FEE").
     await page.locator('#exception-search-input').fill('UNBOOKED');
     await expect(page.getByRole('button', { name: 'Clear filters' })).toBeVisible();
-    await expect(exceptionRow(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionRow(page, 'Missing from GL')).toBeVisible();
   });
 
   test('category facet shows only the selected category in the triage rows', async ({ page }) => {
@@ -295,7 +295,7 @@ test.describe('exception triage interaction', () => {
   test('clearing filters restores all exception categories', async ({ page }) => {
     await page.locator('#exception-search-input').fill('UNBOOKED');
     await page.getByRole('button', { name: 'Clear filters' }).click();
-    await expect(exceptionRow(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionRow(page, 'Missing from GL')).toBeVisible();
     await expect(exceptionRow(page, 'Amount Mismatch')).toBeVisible();
   });
 
@@ -446,7 +446,7 @@ test.describe('edge cases', () => {
     await page.getByRole('button', { name: 'Run reconciliation' }).click();
 
     await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
-    await expect(exceptionSummaryCell(page, 'Missing from QBO')).toBeVisible();
+    await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
   });
 
   test('keyboard arrow keys navigate between the rail destinations', async ({ page }) => {

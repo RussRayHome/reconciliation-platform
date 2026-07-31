@@ -19,7 +19,7 @@ const sourceDisplayName = (source: string): string => {
   }
 
   if (source === 'qbo') {
-    return 'QBO';
+    return 'GL';
   }
 
   return source;
@@ -150,7 +150,7 @@ const buildNarrativeSummary = (
     statusSentence = `The reconciliation${accountText}${periodText} generally reconciles, with a meaningful share of remaining exceptions driven by timing-related differences.`;
   }
 
-  const volumeSentence = `${summary.bankRecords} bank transactions and ${summary.qboRecords} QBO transactions were reviewed, producing ${summary.exactMatches} exact matches and ${summary.probableMatches} probable matches.`;
+  const volumeSentence = `${summary.bankRecords} bank transactions and ${summary.qboRecords} GL transactions were reviewed, producing ${summary.exactMatches} exact matches and ${summary.probableMatches} probable matches.`;
 
   const categorySummary = errorCategories
     .filter((category) => (summary.countsByCategory[category] ?? 0) > 0)
@@ -299,19 +299,19 @@ export const exportWorkbook = async ({
     { label: 'Period', value: periodLabel ?? 'Not provided' },
     { label: 'Total records reviewed', value: summary.totalRecordsReviewed, numFmt: '#,##0' },
     { label: 'Total bank transactions reviewed', value: summary.bankRecords, numFmt: '#,##0' },
-    { label: 'Total QBO transactions reviewed', value: summary.qboRecords, numFmt: '#,##0' },
+    { label: 'Total GL transactions reviewed', value: summary.qboRecords, numFmt: '#,##0' },
     { label: 'Total exact matches', value: summary.exactMatches, numFmt: '#,##0' },
     { label: 'Total probable matches', value: summary.probableMatches, numFmt: '#,##0' },
-    { label: 'Total items missing in QBO', value: summary.missingFromQBO, numFmt: '#,##0' },
+    { label: 'Total items missing in GL', value: summary.missingFromQBO, numFmt: '#,##0' },
     { label: 'Total items missing in bank', value: summary.missingFromBank, numFmt: '#,##0' },
     { label: 'Total amount mismatches', value: summary.amountMismatches, numFmt: '#,##0' },
     { label: 'Total duplicates in bank', value: summary.bankDuplicates, numFmt: '#,##0' },
-    { label: 'Total duplicates in QBO', value: summary.qboDuplicates, numFmt: '#,##0' },
+    { label: 'Total duplicates in GL', value: summary.qboDuplicates, numFmt: '#,##0' },
     { label: 'Total date variances', value: summary.dateVariances, numFmt: '#,##0' },
     { label: 'Total timing differences', value: summary.timingDifferences, numFmt: '#,##0' },
     { label: 'Total data-quality issues', value: summary.dataQualityIssues, numFmt: '#,##0' },
     {
-      label: 'Net amount of items missing in QBO',
+      label: 'Net amount of items missing in GL',
       value: summary.unmatchedBankNetAmount,
       numFmt: '$#,##0.00;[Red]-$#,##0.00',
     },
@@ -354,9 +354,9 @@ export const exportWorkbook = async ({
   assumptionsSheet.addRows([
     ['Bank Header Row', config.bank.headerRow],
     ['Bank Transaction Start Row', config.bank.transactionStartRow],
-    ['QBO Header Row', config.qbo.headerRow],
-    ['QBO Transaction Start Row', config.qbo.transactionStartRow],
-    ['Exclude QBO Beginning Balance', String(config.qbo.excludeBeginningBalance)],
+    ['GL Header Row', config.qbo.headerRow],
+    ['GL Transaction Start Row', config.qbo.transactionStartRow],
+    ['Exclude GL Beginning Balance', String(config.qbo.excludeBeginningBalance)],
     ['Date Tolerance Days', config.matching.dateToleranceDays],
     ['Timing Difference Window', config.matching.timingDifferenceDays],
     ['Probable Similarity Threshold', config.matching.probableTextSimilarityThreshold],
@@ -407,7 +407,7 @@ export const exportWorkbook = async ({
     'Confidence',
     'Rule',
     'Bank Transaction ID',
-    'QBO Transaction ID',
+    'GL Transaction ID',
     'Date Difference',
     'Amount Difference',
     'Evidence',
@@ -469,7 +469,7 @@ export const exportWorkbook = async ({
       ]);
     });
 
-  const qboSheet = workbook.addWorksheet('QBO Normalized');
+  const qboSheet = workbook.addWorksheet('GL Normalized');
   addHeaderRow(qboSheet, [
     'Line Number',
     'Transaction Date',

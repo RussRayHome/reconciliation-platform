@@ -27,7 +27,7 @@ const formatFileSize = (bytes: number): string => {
 };
 
 /**
- * Single drop zone that accepts both source workbooks. Files are auto-assigned to the bank or QBO
+ * Single drop zone that accepts both source workbooks. Files are auto-assigned to the bank or GL
  * slot by filename signature, with per-slot inputs for manual override.
  */
 export function SourceDropZone({
@@ -116,7 +116,7 @@ export function SourceDropZone({
         />
         <SourceSlot
           slot="qbo"
-          label="QBO workbook"
+          label="GL workbook"
           inputId="qbo-workbook-input"
           file={qboFile}
           onChange={(file) => setQboFile(file)}
@@ -124,7 +124,7 @@ export function SourceDropZone({
       </div>
 
       <p className="source-dropzone__note">
-        Bank and QBO are detected from each file name; use the slot pickers to override. Row counts,
+        Bank and GL are detected from each file name; use the slot pickers to override. Row counts,
         date range, and excluded rows are calculated when the reconciliation runs.
       </p>
     </div>

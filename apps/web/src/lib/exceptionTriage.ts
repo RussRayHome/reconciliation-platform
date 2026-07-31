@@ -2,6 +2,9 @@ import { errorCategoryDisplayNames, type ExceptionItem } from '@recon/domain';
 
 import { formatCurrency, formatDate } from './format';
 
+/** Uppercased display label for a transaction source; the GL source is displayed as "GL", not "GL". */
+const toSourceLabel = (source: string): string => (source === 'qbo' ? 'GL' : source.toUpperCase());
+
 /** Sort keys available in the triage list. */
 export type TriageSortKey = 'severity' | 'amount' | 'date';
 
@@ -127,7 +130,7 @@ const resolveCounterpartLabel = (item: ExceptionItem): string => {
   return counterparts
     .map((counterpart) =>
       counterpart.spreadsheetFileName
-        ? `${counterpart.source?.toUpperCase() ?? ''} ${counterpart.spreadsheetFileName} / ${counterpart.lineNumber ?? 'N/A'}`.trim()
+        ? `${counterpart.source ? toSourceLabel(counterpart.source) : ''} ${counterpart.spreadsheetFileName} / ${counterpart.lineNumber ?? 'N/A'}`.trim()
         : (counterpart.transactionId ?? 'N/A'),
     )
     .join(' | ');
@@ -137,7 +140,7 @@ export const toExceptionDisplay = (item: ExceptionItem): ExceptionDisplay => ({
   item,
   categoryLabel: errorCategoryDisplayNames[item.category] ?? item.category,
   ruleLabel: item.ruleTrace?.ruleName ?? 'Derived classification',
-  sourceLabel: item.source.toUpperCase(),
+  sourceLabel: toSourceLabel(item.source),
   dateLabel: formatDate(item.transactionDate),
   amountLabel: formatCurrency(item.amount),
   counterpartLabel: resolveCounterpartLabel(item),
@@ -169,7 +172,7 @@ const facetOptionLabel = (key: TriageFacetKey, value: string): string => {
     case 'category':
       return errorCategoryDisplayNames[value as ExceptionItem['category']] ?? value;
     case 'source':
-      return value.toUpperCase();
+      return toSourceLabel(value);
     case 'amountBand':
       return amountBandLabel(value);
     default:
@@ -254,7 +257,7 @@ export const sortDisplays = (
   });
 };
 
-/** Derives the Bank-side and QBO-side lines for the detail comparison from an exception and its counterparts. */
+/** Derives the Bank-side and GL-side lines for the detail comparison from an exception and its counterparts. */
 export const buildComparisonSides = (
   item: ExceptionItem,
 ): { bank: ComparisonLine[]; qbo: ComparisonLine[] } => {
@@ -348,7 +351,7 @@ export const buildComparisonDelta = (item: ExceptionItem): ComparisonDelta => {
   return { amountLabel, dateLabel };
 };
 
-/** One line rendered inside a Bank/QBO comparison column. */
+/** One line rendered inside a Bank/GL comparison column. */
 export type ComparisonLine = {
   fileName: string;
   lineNumber?: number;

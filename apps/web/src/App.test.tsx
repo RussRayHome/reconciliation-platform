@@ -512,7 +512,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [new File(['qbo'], 'qbo.xlsx')] },
     });
 
@@ -533,7 +533,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Exceptions/i }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/QBO qbo.xlsx \/ 4 \| QBO qbo.xlsx \/ 5/i).length).toBeGreaterThan(
+    expect(screen.getAllByText(/GL qbo.xlsx \/ 4 \| GL qbo.xlsx \/ 5/i).length).toBeGreaterThan(
       0,
     );
 
@@ -677,7 +677,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [new File(['qbo'], 'qbo.xlsx')] },
     });
 
@@ -720,7 +720,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [new File(['qbo'], 'qbo.xlsx')] },
     });
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
@@ -734,8 +734,8 @@ describe('App', () => {
       expect(screen.getByRole('button', { name: 'Copy run ID' })).toBeInTheDocument();
       expect(screen.getByText('Total reviewed')).toBeInTheDocument();
       expect(screen.getByText('12')).toBeInTheDocument();
-      expect(screen.getAllByText('Missing in QBO').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Missing from QBO').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Missing in GL').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Missing from GL').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Likely Split/Combine Issue').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Deposit Grouping Issue').length).toBeGreaterThanOrEqual(1);
     });
@@ -753,7 +753,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [new File(['qbo'], 'qbo.xlsx')] },
     });
 
@@ -783,7 +783,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [bankFile] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [qboFile] },
     });
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
@@ -834,7 +834,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [bankFile] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [qboFile] },
     });
     fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
@@ -866,7 +866,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank-data'], 'bank.xlsx')] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [new File(['qbo-data'], 'qbo.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
@@ -949,7 +949,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [new File(['qbo'], 'qbo.xlsx')] },
     });
 
@@ -970,7 +970,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Bank workbook'), {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
-    fireEvent.change(screen.getByLabelText('QBO workbook'), {
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
       target: { files: [new File(['qbo'], 'qbo.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {

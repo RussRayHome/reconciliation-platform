@@ -48,7 +48,7 @@ const describeTransactionGroup = (
   transactions
     .map(
       (transaction) =>
-        `${transaction.source.toUpperCase()} line ${transaction.lineNumber} (${transaction.amount.toFixed(2)})`,
+        `${transaction.source === 'qbo' ? 'GL' : transaction.source.toUpperCase()} line ${transaction.lineNumber} (${transaction.amount.toFixed(2)})`,
     )
     .join(', ');
 
@@ -113,12 +113,12 @@ const buildGroupedResidualCandidate = (
         : 'Residual unmatched transactions form a one-to-many or many-to-one relationship that the one-to-one matcher cannot settle cleanly.',
     evidence: [
       'Residual unmatched transactions form a balanced grouped amount across sources.',
-      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); QBO total is ${qboTotal.toFixed(2)} across ${qboTransactions.length} line(s).`,
+      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); GL total is ${qboTotal.toFixed(2)} across ${qboTransactions.length} line(s).`,
       `Maximum cross-source date difference is ${dateDifference} day(s).`,
-      `Observed transaction kinds are bank=${bankKinds} and qbo=${qboKinds}.`,
+      `Observed transaction kinds are bank=${bankKinds} and gl=${qboKinds}.`,
       `Narrative similarity score is ${textSimilarity.toFixed(2)} and reference similarity score is ${referenceSimilarity.toFixed(2)}.`,
       `Bank members: ${describeTransactionGroup(bankTransactions)}.`,
-      `QBO members: ${describeTransactionGroup(qboTransactions)}.`,
+      `GL members: ${describeTransactionGroup(qboTransactions)}.`,
     ],
     bankTransactions,
     qboTransactions,

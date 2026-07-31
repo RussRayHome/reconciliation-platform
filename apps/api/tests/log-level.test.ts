@@ -20,16 +20,16 @@ describe('resolveLogLevelAtLeastInfo', () => {
     expect(resolveLogLevelAtLeastInfo(' definitely-not-a-level ')).toBe('info');
   });
 
-  it('promotes trace and debug to info in non-test runtimes', () => {
-    expect(resolveLogLevelAtLeastInfo('trace')).toBe('info');
-    expect(resolveLogLevelAtLeastInfo('debug')).toBe('info');
+  it('passes trace and debug through unchanged in non-test runtimes', () => {
+    expect(resolveLogLevelAtLeastInfo('trace')).toBe('trace');
+    expect(resolveLogLevelAtLeastInfo('debug')).toBe('debug');
   });
 
-  it('preserves info-or-higher levels in non-test runtimes', () => {
+  it('preserves info and promotes quieter levels up to info in non-test runtimes', () => {
     expect(resolveLogLevelAtLeastInfo('info')).toBe('info');
-    expect(resolveLogLevelAtLeastInfo('warn')).toBe('warn');
-    expect(resolveLogLevelAtLeastInfo('error')).toBe('error');
-    expect(resolveLogLevelAtLeastInfo('fatal')).toBe('fatal');
+    expect(resolveLogLevelAtLeastInfo('warn')).toBe('info');
+    expect(resolveLogLevelAtLeastInfo('error')).toBe('info');
+    expect(resolveLogLevelAtLeastInfo('fatal')).toBe('info');
   });
 
   it('allows silent only in test runtimes and otherwise promotes it to info', () => {

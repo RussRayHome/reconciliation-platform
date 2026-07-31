@@ -116,7 +116,7 @@ const waitForQueuedReconciliationRun = async (
   throw new Error('Timed out while waiting for queued reconciliation to complete.');
 };
 
-/** Submits a reconciliation run request with bank and QBO file uploads and optional metadata. */
+/** Submits a reconciliation run request with bank and GL file uploads and optional metadata. */
 export const runReconciliationRequest = async ({
   bankFile,
   qboFile,

@@ -128,7 +128,7 @@ export function ExceptionEvidencePanel({
 
       <div className="exception-detail__compare">
         <ComparisonColumn title="Bank" lines={sides.bank} />
-        <ComparisonColumn title="QBO" lines={sides.qbo} />
+        <ComparisonColumn title="GL" lines={sides.qbo} />
       </div>
 
       {lineage.length > 0 ? (

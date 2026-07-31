@@ -38,13 +38,19 @@ export const buildAmountFrequency = (
   return frequency;
 };
 
-/** Returns `true` when the QBO transaction has a check number, serial number, or a type string containing "check". */
+/**
+ * Returns `true` when the GL transaction has a check number, serial number, a type string
+ * containing "check", or a description that reads as a check ("check"/"chk" as a whole word) —
+ * the last fallback matters for GL exports that record the disbursement type only in free text.
+ */
 export const isCheckLikeQboTransaction = (transaction: NormalizedTransaction): boolean => {
   const transactionType = (transaction.transactionType ?? '').toLowerCase();
-  return (
-    Boolean(transaction.checkNumber || transaction.serialNumber) ||
-    transactionType.includes('check')
-  );
+  if (Boolean(transaction.checkNumber || transaction.serialNumber) || transactionType.includes('check')) {
+    return true;
+  }
+
+  const description = (transaction.description ?? '').toLowerCase();
+  return /\bchk\b/.test(description) || /\bcheck\b/.test(description);
 };
 
 const normalizeTransactionType = (value: string | undefined): string =>
@@ -154,7 +160,7 @@ export const areGroupedTransactionsCompatible = (
     ),
   );
 
-/** Returns the maximum pairwise date difference (in days) across all bank/QBO transaction combinations, or `null` if any date is missing. */
+/** Returns the maximum pairwise date difference (in days) across all bank/GL transaction combinations, or `null` if any date is missing. */
 export const calculateGroupedDateDifference = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],

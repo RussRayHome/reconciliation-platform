@@ -1,7 +1,14 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import type { SummaryMetrics } from '@recon/domain';
-import { formatCurrency } from '../lib/format';
+import { formatCurrencyWhole } from '../lib/format';
+
+const compactCurrencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
 
 interface ChartsPanelProps {
   summary: SummaryMetrics;
@@ -86,7 +93,11 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
               height={108}
               tickMargin={10}
             />
-            <YAxis tick={{ fill: '#a8b3bf' }} />
+            <YAxis
+              tick={{ fill: '#a8b3bf', fontSize: 12 }}
+              tickFormatter={(value: number) => compactCurrencyFormatter.format(value)}
+              width={72}
+            />
             <Tooltip
               contentStyle={{
                 background: '#1c2230',
@@ -97,9 +108,9 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
               cursor={{ fill: 'rgba(240, 246, 252, 0.06)' }}
               formatter={(value: number | string | ReadonlyArray<number | string> | undefined) => {
                 if (typeof value === 'number' || typeof value === 'string') {
-                  return formatCurrency(Number(value));
+                  return formatCurrencyWhole(Number(value));
                 }
-                return formatCurrency(0);
+                return formatCurrencyWhole(0);
               }}
             />
             <Bar dataKey="value" fill="#f2495c" radius={[6, 6, 0, 0]} />
@@ -120,7 +131,7 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
                 {(exposureChart?.data ?? []).map((item) => (
                   <tr key={`exposure-${item.label}`}>
                     <td>{item.label}</td>
-                    <td className="cell-amount">{formatCurrency(Number(item.value))}</td>
+                    <td className="cell-amount">{formatCurrencyWhole(Number(item.value))}</td>
                   </tr>
                 ))}
               </tbody>

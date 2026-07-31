@@ -782,7 +782,7 @@ function ReconciliationApp({
       {
         id: 'upload',
         label: 'Upload source files',
-        description: 'Select both Bank and QBO workbooks.',
+        description: 'Select both Bank and GL workbooks.',
         isComplete: isUploadStepComplete,
         isCurrent: hasStartedUploadStep && !isUploadStepComplete,
         meterValue: uploadMeterValue,

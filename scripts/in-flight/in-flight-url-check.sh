@@ -121,7 +121,9 @@ check_json_url() {
   echo "In-flight URL check passed: ${label} (${url})"
 }
 
+check_url "Nginx health (unproxied)" "${gateway_base}/healthz"
 check_url "Application" "${gateway_base}/"
+check_url "API proxy health" "${gateway_base}/api/health"
 check_url "Docs" "$(resolve_gateway_url "docs")"
 check_url "Developer Dashboard" "$(resolve_gateway_url "developer-dashboard.html")"
 

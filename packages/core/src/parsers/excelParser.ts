@@ -165,6 +165,20 @@ const getColumnIndexes = (
     }
   }
 
+  // The generic `amount` alias matches any header containing the substring "amount", which
+  // includes debit/credit-style columns (e.g. "Debit Amount", "Withdrawal Amount"). Those are
+  // already claimed by the dedicated `debit`/`credit` fields above, and computeSignedAmount()
+  // gives `amount` priority over the debit/credit-derived sign calculation — so an accidental
+  // collision here would silently take an unsigned debit/credit magnitude as a pre-signed
+  // amount, corrupting the sign for whichever side collided. Drop the ambiguous claim and let
+  // the debit/credit split (which correctly assigns the sign) handle it instead.
+  if (
+    columnIndexes.amount !== undefined &&
+    (columnIndexes.amount === columnIndexes.debit || columnIndexes.amount === columnIndexes.credit)
+  ) {
+    delete columnIndexes.amount;
+  }
+
   return columnIndexes;
 };
 
@@ -193,7 +207,7 @@ const isBeginningBalanceRow = (
   );
 };
 
-/** Input required to parse a bank or QBO Excel/CSV workbook. */
+/** Input required to parse a bank or GL Excel/CSV workbook. */
 export interface ParseWorkbookInput {
   source: SourceSystem;
   sourceFileId?: string;
@@ -211,7 +225,7 @@ export interface ParsedWorkbook {
 }
 
 /**
- * Parses a bank or QBO workbook buffer into raw transaction rows using the provided
+ * Parses a bank or GL workbook buffer into raw transaction rows using the provided
  * reconciliation config for header resolution and column mapping.
  */
 export const parseWorkbook = async ({

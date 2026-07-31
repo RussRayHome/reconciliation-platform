@@ -8,6 +8,7 @@ x-api-environment: &api-environment
   NODE_ENV: production
   PORT: ${PORT:-4000}
   LOG_LEVEL: ${LOG_LEVEL:-info}
+  DEBUG_RECONCILIATION: ${DEBUG_RECONCILIATION:-false}
   MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
   RECON_PERSISTENCE_BACKEND: ${RECON_PERSISTENCE_BACKEND:-postgres}
   DATABASE_URL: ${API_DATABASE_URL:-postgresql://recon_app:change-local-password@postgres:5432/reconciliation_platform}

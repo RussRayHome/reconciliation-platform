@@ -150,7 +150,7 @@ export const classifyExceptions = ({
             'duplicate-detection',
             transaction.source === 'bank'
               ? 'Duplicate Detection in Bank'
-              : 'Duplicate Detection in QBO',
+              : 'Duplicate Detection in GL',
             'Same-source duplicate detected from amount equality, close dates, and similar description or reference tokens.',
             [
               'Same amount within configured tolerance.',

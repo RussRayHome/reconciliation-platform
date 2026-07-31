@@ -495,7 +495,7 @@ describe('classifyExceptions', () => {
     expect(missing).toBeDefined();
     expect(missing?.recommendedNextActions).toEqual(
       expect.arrayContaining([
-        'Check whether the bank transaction was recorded to the correct QBO account and period.',
+        'Check whether the bank transaction was recorded to the correct GL account and period.',
       ]),
     );
     expect(missing?.ruleTrace?.ruleId).toBe('missing-from-qbo');

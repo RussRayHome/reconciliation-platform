@@ -2,6 +2,7 @@ import type { ReconciliationRunReport } from '@recon/domain';
 import { defaultReconciliationConfig } from '@recon/config';
 
 import type { SemanticIconName } from '../components/SemanticIcon';
+import { formatCurrencyWhole } from './format';
 
 /** Union of main app tab identifiers for the three-stage workflow plus the developer dashboard. */
 export type AppTab = 'setup' | 'review' | 'close' | 'developer';
@@ -216,7 +217,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'reference-amount-match',
     name: 'Reference + Amount Match',
     description:
-      'Pairs bank and QBO transactions when amounts agree within tolerance and reference similarity meets the configured threshold.',
+      'Pairs bank and GL transactions when amounts agree within tolerance and reference similarity meets the configured threshold.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [amountToleranceMetric, referenceSimilarityMetric],
   },
@@ -336,7 +337,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'stale-outstanding-check',
     name: 'Stale Outstanding Check',
     description:
-      'Promotes unmatched aged QBO check-like disbursements into a dedicated stale-check exception instead of generic missing-from-bank treatment.',
+      'Promotes unmatched aged GL check-like disbursements into a dedicated stale-check exception instead of generic missing-from-bank treatment.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [staleOutstandingMetric],
   },
@@ -344,7 +345,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'outstanding-check',
     name: 'Outstanding Check',
     description:
-      'Classifies unmatched recent check-like QBO disbursements as outstanding checks before broader missing-item fallback logic.',
+      'Classifies unmatched recent check-like GL disbursements as outstanding checks before broader missing-item fallback logic.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [staleOutstandingMetric],
   },
@@ -396,7 +397,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'fee-netting-match',
     name: 'Fee Netting Match',
     description:
-      'Classifies grouped scenarios where a bank net receipt equals QBO gross revenue minus one or more fee entries.',
+      'Classifies grouped scenarios where a bank net receipt equals GL gross revenue minus one or more fee entries.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [amountToleranceMetric, timingDifferenceMetric],
   },
@@ -404,7 +405,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'partial-payment-match',
     name: 'Partial Payment Match',
     description:
-      'Classifies grouped scenarios where multiple bank debits roll up to a single QBO payable amount within tolerance windows.',
+      'Classifies grouped scenarios where multiple bank debits roll up to a single GL payable amount within tolerance windows.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [amountToleranceMetric, partialPaymentWindowMetric],
   },
@@ -412,7 +413,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'payroll-batch-match',
     name: 'Payroll Batch Match',
     description:
-      'Classifies grouped payroll scenarios where one bank payroll debit corresponds to multiple QBO payroll expense rows.',
+      'Classifies grouped payroll scenarios where one bank payroll debit corresponds to multiple GL payroll expense rows.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
@@ -420,7 +421,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'bank-service-charge-amortization',
     name: 'Bank Service Charge Amortization',
     description:
-      'Classifies grouped fee scenarios where one bank service charge maps to multiple QBO expense allocations.',
+      'Classifies grouped fee scenarios where one bank service charge maps to multiple GL expense allocations.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
@@ -428,7 +429,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'loan-payment-split',
     name: 'Loan Payment Split',
     description:
-      'Classifies grouped loan payment scenarios where one bank debit corresponds to principal and interest components in QBO.',
+      'Classifies grouped loan payment scenarios where one bank debit corresponds to principal and interest components in GL.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [amountToleranceMetric, dateToleranceMetric],
   },
@@ -465,29 +466,29 @@ export const rulesCatalog: RuleCatalogItem[] = [
     id: 'voided-check-cleared',
     name: 'Voided Check Cleared',
     description:
-      'Classifies unmatched bank check-like debits with no QBO counterpart after grouped and timing stages complete.',
+      'Classifies unmatched bank check-like debits with no GL counterpart after grouped and timing stages complete.',
     lastChange: fullRulebookRefresh,
   },
   {
     id: 'deposit-in-transit',
     name: 'Deposit in Transit',
     description:
-      'Classifies unmatched near-period-end QBO credits as deposits in transit before generic missing-item fallback applies.',
+      'Classifies unmatched near-period-end GL credits as deposits in transit before generic missing-item fallback applies.',
     lastChange: fullRulebookRefresh,
     varianceMetrics: [depositInTransitMetric],
   },
   {
     id: 'missing-from-qbo',
-    name: 'Missing from QBO',
+    name: 'Missing from GL',
     description:
-      'Classifies unmatched bank-side transactions as missing from QBO after exact, review, and variance matching rules are exhausted.',
+      'Classifies unmatched bank-side transactions as missing from GL after exact, review, and variance matching rules are exhausted.',
     lastChange: fullRulebookRefresh,
   },
   {
     id: 'missing-from-bank',
     name: 'Missing from Bank',
     description:
-      'Classifies unmatched QBO-side transactions as missing from bank activity after exact, review, and variance matching rules are exhausted.',
+      'Classifies unmatched GL-side transactions as missing from bank activity after exact, review, and variance matching rules are exhausted.',
     lastChange: fullRulebookRefresh,
   },
   {
@@ -586,7 +587,7 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
   {
     id: 'total-reviewed',
     label: 'Total reviewed',
-    helper: 'Bank + QBO records',
+    helper: 'Bank + GL records',
     icon: 'records',
     iconLabel: 'Total records reviewed',
     value: (summary) => summary.totalRecordsReviewed,
@@ -612,7 +613,7 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
   {
     id: 'missing-in-bank',
     label: 'Missing in bank',
-    helper: 'QBO-side items without bank support',
+    helper: 'GL-side items without bank support',
     tone: 'critical',
     icon: 'missing',
     iconLabel: 'Missing in bank items',
@@ -620,11 +621,11 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
   },
   {
     id: 'missing-in-qbo',
-    label: 'Missing in QBO',
-    helper: 'Bank-side items without QBO support',
+    label: 'Missing in GL',
+    helper: 'Bank-side items without GL support',
     tone: 'critical',
     icon: 'missing',
-    iconLabel: 'Missing in QBO items',
+    iconLabel: 'Missing in GL items',
     value: (summary) => summary.missingFromQBO,
   },
   {
@@ -638,11 +639,11 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
   },
   {
     id: 'qbo-duplicates',
-    label: 'QBO duplicates',
-    helper: 'Potential duplicate QBO entries',
+    label: 'GL duplicates',
+    helper: 'Potential duplicate GL entries',
     tone: 'warning',
     icon: 'duplicate',
-    iconLabel: 'Potential duplicate QBO entries',
+    iconLabel: 'Potential duplicate GL entries',
     value: (summary) => summary.qboDuplicates,
   },
   {
@@ -678,7 +679,7 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
     tone: 'critical',
     icon: 'exposure',
     iconLabel: 'Exception exposure in dollars',
-    value: (summary) => summary.unresolvedExposure.toFixed(2),
+    value: (summary) => formatCurrencyWhole(summary.unresolvedExposure),
   },
 ];
 

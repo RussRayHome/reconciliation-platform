@@ -84,7 +84,7 @@ const createSourceConfig = (
           referenceNumber: ['num', 'reference', 'ref no'],
         }
       : {
-          description: ['description', 'details', 'memo'],
+          description: ['description', 'details', 'memo', 'transaction text'],
           merchantName: ['merchant', 'description', 'details'],
         },
   ),

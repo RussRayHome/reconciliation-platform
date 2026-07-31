@@ -10,7 +10,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { downloadWorkbookUrl } from '../lib/api';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
-import { formatCurrency } from '../lib/format';
+import { formatCurrency, formatCurrencyWhole } from '../lib/format';
 import {
   summaryStatDefinitions,
   varianceMetricFamilyLabels,
@@ -318,7 +318,7 @@ function SummaryVerdict({
         {figures.map((figure) => (
           <div key={figure.label} className="kpi-well" data-tone={figure.tone}>
             <span>{figure.label}</span>
-            <strong>{formatCurrency(figure.value)}</strong>
+            <strong>{formatCurrencyWhole(figure.value)}</strong>
           </div>
         ))}
       </div>

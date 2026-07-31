@@ -9,7 +9,7 @@ export const runStatuses = ['Pending', 'Running', 'Completed', 'Failed'] as cons
 export type ReconciliationRunStatus = (typeof runStatuses)[number];
 
 /**
- * How confident the matching engine is that a bank/QBO transaction pair is the same event.
+ * How confident the matching engine is that a bank/GL transaction pair is the same event.
  * Ordered from strongest to weakest:
  * - `Exact` — amount, date, and text all match within tolerances
  * - `Probable` — strong text/amount match with a date variance

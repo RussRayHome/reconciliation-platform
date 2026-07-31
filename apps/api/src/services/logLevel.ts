@@ -11,10 +11,12 @@ const isPinoLevel = (value: string): value is Level =>
   (pinoLevels as readonly string[]).includes(value);
 
 /**
- * Resolves the effective pino log level from the configured value, enforcing a minimum of
- * `info` in non-test runtimes. `silent` is only permitted when `NODE_ENV=test` or
- * `VITEST=true`; otherwise it is promoted to `info`. Invalid level strings fall back to
- * `info`.
+ * Resolves the effective pino log level from the configured value, enforcing a floor of
+ * `info` verbosity in non-test runtimes — quieter levels (`warn`/`error`/`fatal`) are promoted
+ * up to `info` so operational messages are never silently suppressed, while louder levels
+ * (`debug`/`trace`) pass through unchanged since they already include everything `info` would.
+ * `silent` is only permitted when `NODE_ENV=test` or `VITEST=true`; otherwise it is promoted to
+ * `info`. Invalid level strings fall back to `info`.
  */
 export const resolveLogLevelAtLeastInfo = (
   configuredLevel: string | undefined,
@@ -29,5 +31,5 @@ export const resolveLogLevelAtLeastInfo = (
     return 'info';
   }
 
-  return pinoLevels.indexOf(normalized) < minimumLevelIndex ? 'info' : normalized;
+  return pinoLevels.indexOf(normalized) > minimumLevelIndex ? 'info' : normalized;
 };

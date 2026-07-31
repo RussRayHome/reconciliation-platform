@@ -50,7 +50,7 @@ describe('ChartsPanel', () => {
     cleanup();
   });
 
-  it('renders chart data tables and formats exposure values to two decimals', () => {
+  it('renders chart data tables and formats exposure values as whole dollars', () => {
     render(
       <ChartsPanel
         summary={createSummary([
@@ -72,7 +72,7 @@ describe('ChartsPanel', () => {
     expect(screen.getByText('Dollar Exposure by Category')).toBeInTheDocument();
     expect(screen.getByText('Missing from QBO')).toBeInTheDocument();
     expect(screen.getByText('Timing Difference')).toBeInTheDocument();
-    expect(screen.getByText('$125.50')).toBeInTheDocument();
+    expect(screen.getByText('$126')).toBeInTheDocument();
   });
 
   it('renders empty chart tables safely when expected chart series are missing', () => {

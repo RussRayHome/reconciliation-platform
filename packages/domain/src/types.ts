@@ -26,7 +26,7 @@ export type BusinessField =
   | 'runningBalance'
   | 'accountIdentifier';
 
-/** Metadata registered for a single uploaded spreadsheet (bank or QBO). */
+/** Metadata registered for a single uploaded spreadsheet (bank or GL). */
 export interface SourceFile {
   id: string;
   source: SourceSystem;
@@ -115,7 +115,7 @@ export interface NormalizedTransaction {
   reviewerNotes?: string;
 }
 
-/** Outcome of a single matching rule applied to one bank/QBO transaction pair candidate. */
+/** Outcome of a single matching rule applied to one bank/GL transaction pair candidate. */
 export interface RuleEvaluation {
   ruleId: string;
   ruleName: string;
@@ -126,7 +126,7 @@ export interface RuleEvaluation {
   candidateTransactionId?: string;
 }
 
-/** A proposed bank/QBO pair produced by the scoring phase, before the highest-scoring candidate is selected. */
+/** A proposed bank/GL pair produced by the scoring phase, before the highest-scoring candidate is selected. */
 export interface MatchCandidate {
   bankTransactionId: string;
   qboTransactionId: string;
@@ -143,7 +143,7 @@ export interface MatchCandidate {
 }
 
 /**
- * The final outcome of the matching engine for one bank/QBO transaction pair (or an unmatched
+ * The final outcome of the matching engine for one bank/GL transaction pair (or an unmatched
  * singleton). Pairwise results have both `bankTransactionId` and `qboTransactionId` set;
  * unmatched results have only one side populated.
  */
@@ -178,8 +178,8 @@ export interface GroupedMatchMember {
 }
 
 /**
- * A many-to-many match where multiple bank transactions together correspond to one or more QBO
- * transactions (e.g. a single QBO deposit that was split across several bank entries).
+ * A many-to-many match where multiple bank transactions together correspond to one or more GL
+ * transactions (e.g. a single GL deposit that was split across several bank entries).
  * `bankMembers` and `qboMembers` carry display-level detail for the workbook export.
  */
 export interface GroupedMatchResult {
@@ -407,7 +407,7 @@ export interface ReconciliationRunReport {
 /** Maps each canonical business field to the list of accepted spreadsheet column header aliases. */
 export type ColumnAliasMap = Record<BusinessField, string[]>;
 
-/** Per-source (bank or QBO) parsing and column-mapping configuration for a reconciliation run. */
+/** Per-source (bank or GL) parsing and column-mapping configuration for a reconciliation run. */
 export interface SourceReconciliationConfig {
   headerRow: number;
   transactionStartRow: number;
@@ -473,7 +473,7 @@ export interface AccountOverrideConfig {
 
 /**
  * Top-level configuration for a reconciliation run.
- * `accountOverrides` can selectively override bank, QBO, matching, or reporting
+ * `accountOverrides` can selectively override bank, GL, matching, or reporting
  * sub-config for a specific account identifier without changing the base config.
  */
 export interface ReconciliationConfig {
@@ -499,9 +499,9 @@ export interface ReconciliationInput {
 
 /** Full output produced by `runReconciliation`; persisted to PostgreSQL by the lifecycle store. */
 /**
- * A learned mapping from a bank description pattern to a canonical QBO payee name.
+ * A learned mapping from a bank description pattern to a canonical GL payee name.
  * Stored in the `reconciliation_payee_alias` table and loaded at runtime to boost matching for
- * bank entries whose raw text similarity to the QBO payee would otherwise be low.
+ * bank entries whose raw text similarity to the GL payee would otherwise be low.
  */
 export interface PayeeAlias {
   id: string;

@@ -144,7 +144,7 @@ export function RunBar({
 
         <details className="run-bar__profile">
           <summary className="run-bar__profile-trigger" aria-label="User profile menu">
-            {profileLabel}
+            User: {profileLabel}
           </summary>
           <div className="run-bar__profile-menu">{profile}</div>
         </details>

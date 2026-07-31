@@ -2,7 +2,7 @@ import type { MatchingConfig, NormalizedTransaction } from '@recon/domain';
 
 import { currencyEquals, dateDifferenceDays, tokenSimilarity } from './similarity';
 
-/** A proposed many-to-many grouped match candidate with its constituent bank and QBO transactions. */
+/** A proposed many-to-many grouped match candidate with its constituent bank and GL transactions. */
 export interface GroupedReservationCandidate {
   category: 'DepositGroupingIssue' | 'LikelySplitCombineIssue' | 'FeeNettingMatch' | 'PartialPaymentMatch' | 'PayrollBatchMatch' | 'BankServiceChargeAmortization' | 'LoanPaymentSplit';
   ruleId: 'grouped-deposit-reserved' | 'grouped-split-combine-reserved' | 'fee-netting-reserved' | 'partial-payment-reserved' | 'payroll-batch-reserved' | 'bank-service-charge-reserved' | 'loan-payment-split-reserved';
@@ -201,11 +201,11 @@ const buildGroupedReservationCandidate = (
         ? 'A balanced grouped deposit candidate was reserved before one-to-one review matching.'
         : 'A balanced grouped split/combine candidate was reserved before one-to-one review matching.',
     evidence: [
-      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); QBO total is ${qboTotal.toFixed(2)} across ${qboTransactions.length} line(s).`,
+      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); GL total is ${qboTotal.toFixed(2)} across ${qboTransactions.length} line(s).`,
       `Maximum cross-source date difference is ${dateDifference} day(s).`,
-      `Observed transaction kinds are bank=${bankKinds} and qbo=${qboKinds}.`,
+      `Observed transaction kinds are bank=${bankKinds} and gl=${qboKinds}.`,
       `Bank members: ${describeTransactionGroup(bankTransactions)}.`,
-      `QBO members: ${describeTransactionGroup(qboTransactions)}.`,
+      `GL members: ${describeTransactionGroup(qboTransactions)}.`,
     ],
     dateDifferenceDays: dateDifference,
     bankTransactions,
@@ -295,6 +295,19 @@ const findGroupedReservationCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
+const FEE_NETTING_KEYWORDS = [
+  'merchant fee', 'processing fee', 'processor fee', 'gateway fee', 'interchange fee',
+  'merchant service fee', 'discount fee', 'settlement fee', 'transaction fee', 'card fee',
+];
+
+const isFeeLikeQboTransaction = (transaction: NormalizedTransaction): boolean => {
+  const text = [transaction.description, transaction.merchantName, transaction.payeeName]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return FEE_NETTING_KEYWORDS.some((keyword) => text.includes(keyword));
+};
+
 const buildFeeNettingCandidates = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],
@@ -306,26 +319,24 @@ const buildFeeNettingCandidates = (
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
       transaction.amount !== null && transaction.amount > 0,
   );
-  const qboWithAmount = qboTransactions.filter(
+  const qboRevenues = qboTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
-      transaction.amount !== null,
+      transaction.amount !== null && transaction.amount > 0,
+  );
+  // Narrowing to a description-driven fee signal (mirroring the bank-side keyword gates used by
+  // the payroll/service-charge/loan builders above) keeps this to genuine fee-netting pairs —
+  // without it, any two GL amounts that happen to sum near a bank credit within the timing
+  // window get flagged, producing massive false-positive rates on real-sized datasets.
+  const qboFees = qboTransactions.filter(
+    (transaction): transaction is NormalizedTransaction & { amount: number } =>
+      transaction.amount !== null && transaction.amount < 0 && isFeeLikeQboTransaction(transaction),
   );
 
   for (const bankCredit of bankCredits) {
     const bankDate = bankCredit.transactionDate ?? bankCredit.postingDate;
 
-    for (let i = 0; i < qboWithAmount.length; i += 1) {
-      const qboRevenue = qboWithAmount[i];
-      if (!qboRevenue || qboRevenue.amount <= 0) {
-        continue;
-      }
-
-      for (let j = i + 1; j < qboWithAmount.length; j += 1) {
-        const qboFee = qboWithAmount[j];
-        if (!qboFee || qboFee.amount >= 0) {
-          continue;
-        }
-
+    for (const qboRevenue of qboRevenues) {
+      for (const qboFee of qboFees) {
         const netAmount = qboRevenue.amount + qboFee.amount;
         if (!currencyEquals(bankCredit.amount, netAmount, matching.amountTolerance)) {
           continue;
@@ -352,11 +363,11 @@ const buildFeeNettingCandidates = (
           ruleId: 'fee-netting-reserved',
           ruleName: 'Fee Netting Candidate',
           reason:
-            'A bank credit matches the net of a QBO revenue entry minus a fee expense, indicating a fee-netted payout.',
+            'A bank credit matches the net of a GL revenue entry minus a fee expense, indicating a fee-netted payout.',
           evidence: [
-            `Bank credit of ${bankCredit.amount.toFixed(2)} matches QBO revenue ${qboRevenue.amount.toFixed(2)} + fee ${qboFee.amount.toFixed(2)} = ${netAmount.toFixed(2)}.`,
+            `Bank credit of ${bankCredit.amount.toFixed(2)} matches GL revenue ${qboRevenue.amount.toFixed(2)} + fee ${qboFee.amount.toFixed(2)} = ${netAmount.toFixed(2)}.`,
             `Maximum cross-source date difference is ${maxDateDiff} day(s).`,
-            `Bank: ${bankCredit.spreadsheetFileName}:L${bankCredit.lineNumber}; QBO revenue: ${qboRevenue.spreadsheetFileName}:L${qboRevenue.lineNumber}; QBO fee: ${qboFee.spreadsheetFileName}:L${qboFee.lineNumber}.`,
+            `Bank: ${bankCredit.spreadsheetFileName}:L${bankCredit.lineNumber}; GL revenue: ${qboRevenue.spreadsheetFileName}:L${qboRevenue.lineNumber}; GL fee: ${qboFee.spreadsheetFileName}:L${qboFee.lineNumber}.`,
           ],
           dateDifferenceDays: maxDateDiff,
           bankTransactions: [bankCredit],
@@ -372,6 +383,20 @@ const buildFeeNettingCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
+const PARTIAL_PAYMENT_POOL_SIZE = 30;
+
+const PARTIAL_PAYMENT_BANK_KEYWORDS = [
+  'installment', 'partial payment', 'payment plan', 'split payment', 'installment pmt',
+];
+
+const isPartialPaymentBankSignal = (transaction: NormalizedTransaction): boolean => {
+  const text = [transaction.description, transaction.merchantName, transaction.payeeName]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return PARTIAL_PAYMENT_BANK_KEYWORDS.some((keyword) => text.includes(keyword));
+};
+
 const buildPartialPaymentCandidates = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],
@@ -379,9 +404,12 @@ const buildPartialPaymentCandidates = (
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
 
+  // Without a bank-side signal, any negative-amount bank transaction is eligible, so on a wide
+  // 90-day window the closest-N-by-date pool fills with unrelated debits before the real
+  // installments are ever considered. Gate on an installment-style description first.
   const bankDebits = bankTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
-      transaction.amount !== null && transaction.amount < 0,
+      transaction.amount !== null && transaction.amount < 0 && isPartialPaymentBankSignal(transaction),
   );
   const qboDebits = qboTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
@@ -391,11 +419,26 @@ const buildPartialPaymentCandidates = (
   for (const qboDebit of qboDebits) {
     const qboDate = qboDebit.transactionDate ?? qboDebit.postingDate;
 
-    const eligibleBankDebits = bankDebits.filter((bankDebit) => {
-      const bankDate = bankDebit.transactionDate ?? bankDebit.postingDate;
-      const diff = dateDifferenceDays(bankDate, qboDate);
-      return diff !== null && diff <= matching.partialPaymentWindowDays;
-    });
+    // partialPaymentWindowDays (90 by default) is wide enough that "eligible" can mean most of
+    // the dataset's bank debits. generateTransactionCombinations() has no internal size limit,
+    // so an uncapped pool here is combinatorially explosive (C(n,2)+C(n,3) blows past a few
+    // hundred candidates) — cap to a dedicated pool size, keeping the closest-dated debits, same
+    // as collectGroupedCounterpartPool() does for the other grouped rules. This builder gets its
+    // own (larger) constant rather than the shared groupedCandidatePoolSize: a 90-day window is
+    // wide enough that the true installments are routinely *not* among the 6 closest-dated
+    // entries, so a pool sized for a narrow window silently drops the real match.
+    const eligibleBankDebits = bankDebits
+      .filter((bankDebit) => {
+        const bankDate = bankDebit.transactionDate ?? bankDebit.postingDate;
+        const diff = dateDifferenceDays(bankDate, qboDate);
+        return diff !== null && diff <= matching.partialPaymentWindowDays;
+      })
+      .sort((left, right) => {
+        const leftDiff = dateDifferenceDays(left.transactionDate ?? left.postingDate, qboDate) ?? Number.MAX_SAFE_INTEGER;
+        const rightDiff = dateDifferenceDays(right.transactionDate ?? right.postingDate, qboDate) ?? Number.MAX_SAFE_INTEGER;
+        return leftDiff - rightDiff;
+      })
+      .slice(0, PARTIAL_PAYMENT_POOL_SIZE);
 
     const combinations = generateTransactionCombinations(eligibleBankDebits, 2, matching.groupedMatchMaxSize);
 
@@ -443,13 +486,13 @@ const buildPartialPaymentCandidates = (
         ruleId: 'partial-payment-reserved',
         ruleName: 'Partial Payment Candidate',
         reason:
-          'Multiple bank debits with similar payee context accumulate to a single QBO payable, indicating partial payments.',
+          'Multiple bank debits with similar payee context accumulate to a single GL payable, indicating partial payments.',
         evidence: [
-          `Bank total of ${bankTotal.toFixed(2)} across ${combination.length} payment(s) matches QBO payable of ${qboDebit.amount.toFixed(2)}.`,
+          `Bank total of ${bankTotal.toFixed(2)} across ${combination.length} payment(s) matches GL payable of ${qboDebit.amount.toFixed(2)}.`,
           `Average inter-bank payee similarity is ${avgSimilarity.toFixed(2)}.`,
           `Maximum cross-source date difference is ${maxDateDiff} day(s) (window: ${matching.partialPaymentWindowDays} days).`,
           `Bank members: ${combination.map((tx) => `${tx.spreadsheetFileName}:L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join('; ')}.`,
-          `QBO payable: ${qboDebit.spreadsheetFileName}:L${qboDebit.lineNumber}:${qboDebit.amount.toFixed(2)}.`,
+          `GL payable: ${qboDebit.spreadsheetFileName}:L${qboDebit.lineNumber}:${qboDebit.amount.toFixed(2)}.`,
         ],
         dateDifferenceDays: maxDateDiff,
         bankTransactions: combination,
@@ -465,6 +508,7 @@ const buildPartialPaymentCandidates = (
 };
 
 const PAYROLL_BATCH_MAX_QBO_LINES = 25;
+const PAYROLL_BATCH_POOL_SIZE = 12;
 
 const PAYROLL_BANK_KEYWORDS = [
   'payroll', 'adp', 'paychex', 'gusto', 'rippling', 'trinet', 'justworks',
@@ -480,6 +524,19 @@ const isPayrollBankSignal = (transaction: NormalizedTransaction): boolean => {
   return PAYROLL_BANK_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
+const PAYROLL_QBO_KEYWORDS = [
+  'payroll', 'wages', 'wage expense', 'salary', 'salaries', 'employee compensation',
+  'payroll tax', 'payroll expense',
+];
+
+const isPayrollQboSignal = (transaction: NormalizedTransaction): boolean => {
+  const text = [transaction.description, transaction.merchantName, transaction.payeeName]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return PAYROLL_QBO_KEYWORDS.some((keyword) => text.includes(keyword));
+};
+
 const buildPayrollBatchCandidates = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],
@@ -492,31 +549,57 @@ const buildPayrollBatchCandidates = (
       tx.amount !== null && tx.amount < 0 && isPayrollBankSignal(tx),
   );
 
+  // Without a GL-side signal too, "closest N by date" is a weak filter on a dense dataset — an
+  // 11-day window around a payroll date can hold dozens of unrelated small debits from other
+  // scenarios, crowding the real payroll lines out of the pool before the subset search ever
+  // runs. Mirror the bank-side keyword gate on the GL description as well.
   const qboDebitsWithAmount = qboTransactions.filter(
     (tx): tx is NormalizedTransaction & { amount: number } =>
-      tx.amount !== null && tx.amount < 0,
+      tx.amount !== null && tx.amount < 0 && isPayrollQboSignal(tx),
   );
 
   for (const bankDebit of payrollBankDebits) {
     const bankDate = bankDebit.transactionDate ?? bankDebit.postingDate;
 
+    // Summing the *entire* filtered pool (as opposed to searching subsets, like the partial-payment
+    // and loan-split builders do) only works if the pool is already exactly the intended group —
+    // on a real-sized dataset, other unrelated small debits routinely fall in the same date window
+    // and inflate the total past any tolerance, so this never fires. Search subsets instead, over a
+    // pool bounded generously (payroll batches run up to PAYROLL_BATCH_MAX_QBO_LINES lines) to keep
+    // the combinatorial cost in check.
     const pool = qboDebitsWithAmount
       .filter((qboDebit) => {
         const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance);
+      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .sort((left, right) => {
+        const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        return leftDiff - rightDiff;
+      })
+      .slice(0, PAYROLL_BATCH_POOL_SIZE);
 
-    if (pool.length < 2 || pool.length > PAYROLL_BATCH_MAX_QBO_LINES) {
+    if (pool.length < 2) {
       continue;
     }
 
-    const qboTotal = pool.reduce((sum, tx) => sum + tx.amount, 0);
-    if (!currencyEquals(bankDebit.amount, qboTotal, matching.amountTolerance)) {
+    const combos = generateTransactionCombinations(pool, 2, Math.min(PAYROLL_BATCH_MAX_QBO_LINES, pool.length));
+    const combo = combos.find((candidateCombo) =>
+      currencyEquals(
+        bankDebit.amount,
+        candidateCombo.reduce((sum, tx) => sum + tx.amount, 0),
+        matching.amountTolerance,
+      ),
+    );
+
+    if (!combo) {
       continue;
     }
 
-    const maxDateDiff = pool.reduce<number>((max, qboDebit) => {
+    const qboTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
+
+    const maxDateDiff = combo.reduce<number>((max, qboDebit) => {
       const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate) ?? 0;
       return Math.max(max, diff);
     }, 0);
@@ -526,19 +609,19 @@ const buildPayrollBatchCandidates = (
       ruleId: 'payroll-batch-reserved',
       ruleName: 'Payroll Batch Candidate',
       reason:
-        'A bank payroll ACH debit matches the aggregate of multiple QBO payroll expense entries posted on the same payroll date.',
+        'A bank payroll ACH debit matches the aggregate of multiple GL payroll expense entries posted on the same payroll date.',
       evidence: [
-        `Bank payroll debit of ${bankDebit.amount.toFixed(2)} matches QBO total of ${qboTotal.toFixed(2)} across ${pool.length} expense line(s).`,
-        `All QBO entries fall within ${matching.dateToleranceDays} day(s) of the bank payroll date.`,
+        `Bank payroll debit of ${bankDebit.amount.toFixed(2)} matches GL total of ${qboTotal.toFixed(2)} across ${combo.length} expense line(s).`,
+        `All GL entries fall within ${matching.dateToleranceDays} day(s) of the bank payroll date.`,
         `Payroll processor signal detected in bank description: "${bankDebit.description ?? bankDebit.merchantName ?? ''}"`,
-        `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; QBO lines: ${pool.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
+        `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; GL lines: ${combo.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
       ],
       dateDifferenceDays: maxDateDiff,
       bankTransactions: [bankDebit],
-      qboTransactions: pool,
+      qboTransactions: combo,
       bankTransactionIds: [bankDebit.id],
-      qboTransactionIds: pool.map((tx) => tx.id),
-      score: 100 - maxDateDiff * 2 - pool.length,
+      qboTransactionIds: combo.map((tx) => tx.id),
+      score: 100 - maxDateDiff * 2 - combo.length,
     });
   }
 
@@ -546,6 +629,7 @@ const buildPayrollBatchCandidates = (
 };
 
 const BANK_SERVICE_CHARGE_MAX_QBO_LINES = 5;
+const BANK_SERVICE_CHARGE_POOL_SIZE = 10;
 
 const BANK_SERVICE_CHARGE_KEYWORDS = [
   'service charge', 'service fee', 'monthly fee', 'maintenance fee', 'account fee',
@@ -561,6 +645,18 @@ const isServiceChargeBankSignal = (transaction: NormalizedTransaction): boolean 
   return BANK_SERVICE_CHARGE_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
+const SERVICE_CHARGE_QBO_KEYWORDS = [
+  'bank fee', 'bank charge', 'service charge', 'fee expense', 'bank service',
+];
+
+const isServiceChargeQboSignal = (transaction: NormalizedTransaction): boolean => {
+  const text = [transaction.description, transaction.merchantName, transaction.payeeName]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return SERVICE_CHARGE_QBO_KEYWORDS.some((keyword) => text.includes(keyword));
+};
+
 const buildBankServiceChargeAmortizationCandidates = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],
@@ -573,31 +669,55 @@ const buildBankServiceChargeAmortizationCandidates = (
       tx.amount !== null && tx.amount < 0 && isServiceChargeBankSignal(tx),
   );
 
+  // Same reasoning as buildPayrollBatchCandidates: gate the GL side on a fee-expense keyword too,
+  // so the date-proximity pool isn't drowned out by unrelated debits in a dense dataset.
   const qboDebitsWithAmount = qboTransactions.filter(
     (tx): tx is NormalizedTransaction & { amount: number } =>
-      tx.amount !== null && tx.amount < 0,
+      tx.amount !== null && tx.amount < 0 && isServiceChargeQboSignal(tx),
   );
 
   for (const bankDebit of serviceChargeBankDebits) {
     const bankDate = bankDebit.transactionDate ?? bankDebit.postingDate;
 
+    // Same fix as buildPayrollBatchCandidates: search subsets of the pool for one that sums to the
+    // bank total, rather than requiring the entire date/amount-filtered pool to sum exactly.
     const pool = qboDebitsWithAmount
       .filter((qboDebit) => {
         const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance);
+      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .sort((left, right) => {
+        const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        return leftDiff - rightDiff;
+      })
+      .slice(0, BANK_SERVICE_CHARGE_POOL_SIZE);
 
-    if (pool.length < 2 || pool.length > BANK_SERVICE_CHARGE_MAX_QBO_LINES) {
+    if (pool.length < 2) {
       continue;
     }
 
-    const qboTotal = pool.reduce((sum, tx) => sum + tx.amount, 0);
-    if (!currencyEquals(bankDebit.amount, qboTotal, matching.amountTolerance)) {
+    const combos = generateTransactionCombinations(
+      pool,
+      2,
+      Math.min(BANK_SERVICE_CHARGE_MAX_QBO_LINES, pool.length),
+    );
+    const combo = combos.find((candidateCombo) =>
+      currencyEquals(
+        bankDebit.amount,
+        candidateCombo.reduce((sum, tx) => sum + tx.amount, 0),
+        matching.amountTolerance,
+      ),
+    );
+
+    if (!combo) {
       continue;
     }
 
-    const maxDateDiff = pool.reduce<number>((max, qboDebit) => {
+    const qboTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
+
+    const maxDateDiff = combo.reduce<number>((max, qboDebit) => {
       const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate) ?? 0;
       return Math.max(max, diff);
     }, 0);
@@ -607,19 +727,19 @@ const buildBankServiceChargeAmortizationCandidates = (
       ruleId: 'bank-service-charge-reserved',
       ruleName: 'Bank Service Charge Candidate',
       reason:
-        'A bank service charge debit matches the aggregate of multiple QBO fee expense entries, indicating an amortized or split posting across account categories.',
+        'A bank service charge debit matches the aggregate of multiple GL fee expense entries, indicating an amortized or split posting across account categories.',
       evidence: [
-        `Bank service charge of ${bankDebit.amount.toFixed(2)} matches QBO total of ${qboTotal.toFixed(2)} across ${pool.length} expense line(s).`,
-        `All QBO entries fall within ${matching.dateToleranceDays} day(s) of the bank charge date.`,
+        `Bank service charge of ${bankDebit.amount.toFixed(2)} matches GL total of ${qboTotal.toFixed(2)} across ${combo.length} expense line(s).`,
+        `All GL entries fall within ${matching.dateToleranceDays} day(s) of the bank charge date.`,
         `Service charge signal detected in bank description: "${bankDebit.description ?? bankDebit.merchantName ?? ''}"`,
-        `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; QBO lines: ${pool.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
+        `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; GL lines: ${combo.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
       ],
       dateDifferenceDays: maxDateDiff,
       bankTransactions: [bankDebit],
-      qboTransactions: pool,
+      qboTransactions: combo,
       bankTransactionIds: [bankDebit.id],
-      qboTransactionIds: pool.map((tx) => tx.id),
-      score: 100 - maxDateDiff * 2 - pool.length,
+      qboTransactionIds: combo.map((tx) => tx.id),
+      score: 100 - maxDateDiff * 2 - combo.length,
     });
   }
 
@@ -627,6 +747,7 @@ const buildBankServiceChargeAmortizationCandidates = (
 };
 
 const LOAN_PAYMENT_MAX_QBO_LINES = 3;
+const LOAN_PAYMENT_POOL_SIZE = 15;
 
 const LOAN_PAYMENT_KEYWORDS = [
   'loan payment', 'mortgage payment', 'mortgage', 'note payable', 'line of credit',
@@ -642,6 +763,19 @@ const isLoanPaymentBankSignal = (transaction: NormalizedTransaction): boolean =>
   return LOAN_PAYMENT_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
+const LOAN_PAYMENT_QBO_KEYWORDS = [
+  'loan principal', 'loan interest', 'principal reduction', 'interest expense',
+  'note payable', 'mortgage', 'loan payment', 'debt service',
+];
+
+const isLoanPaymentQboSignal = (transaction: NormalizedTransaction): boolean => {
+  const text = [transaction.description, transaction.merchantName, transaction.payeeName]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return LOAN_PAYMENT_QBO_KEYWORDS.some((keyword) => text.includes(keyword));
+};
+
 const buildLoanPaymentSplitCandidates = (
   bankTransactions: NormalizedTransaction[],
   qboTransactions: NormalizedTransaction[],
@@ -654,26 +788,36 @@ const buildLoanPaymentSplitCandidates = (
       tx.amount !== null && tx.amount < 0 && isLoanPaymentBankSignal(tx),
   );
 
+  // Same reasoning as buildPayrollBatchCandidates: gate the GL side too, so principal/interest
+  // lines aren't crowded out of the date-proximity pool by unrelated debits.
   const qboDebitsWithAmount = qboTransactions.filter(
     (tx): tx is NormalizedTransaction & { amount: number } =>
-      tx.amount !== null && tx.amount < 0,
+      tx.amount !== null && tx.amount < 0 && isLoanPaymentQboSignal(tx),
   );
 
   for (const bankDebit of loanBankDebits) {
     const bankDate = bankDebit.transactionDate ?? bankDebit.postingDate;
 
+    // Same combinatorial-size concern as buildPartialPaymentCandidates: bound the pool before
+    // generateTransactionCombinations() rather than after, keeping the closest-dated entries.
     const pool = qboDebitsWithAmount
       .filter((qboDebit) => {
         const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance);
+      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .sort((left, right) => {
+        const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        return leftDiff - rightDiff;
+      })
+      .slice(0, LOAN_PAYMENT_POOL_SIZE);
 
     if (pool.length < 2) {
       continue;
     }
 
-    const combos = generateTransactionCombinations(pool, 2, LOAN_PAYMENT_MAX_QBO_LINES);
+    const combos = generateTransactionCombinations(pool, 2, Math.min(LOAN_PAYMENT_MAX_QBO_LINES, pool.length));
     let matched = false;
 
     for (const combo of combos) {
@@ -692,12 +836,12 @@ const buildLoanPaymentSplitCandidates = (
         ruleId: 'loan-payment-split-reserved',
         ruleName: 'Loan Payment Split Candidate',
         reason:
-          'A bank loan payment debit matches the aggregate of QBO principal and interest expense entries for the same obligation.',
+          'A bank loan payment debit matches the aggregate of GL principal and interest expense entries for the same obligation.',
         evidence: [
-          `Bank loan payment of ${bankDebit.amount.toFixed(2)} matches QBO total of ${qboTotal.toFixed(2)} across ${combo.length} entry(ies).`,
-          `All QBO entries fall within ${matching.dateToleranceDays} day(s) of the bank payment date.`,
+          `Bank loan payment of ${bankDebit.amount.toFixed(2)} matches GL total of ${qboTotal.toFixed(2)} across ${combo.length} entry(ies).`,
+          `All GL entries fall within ${matching.dateToleranceDays} day(s) of the bank payment date.`,
           `Loan payment signal detected in bank description: "${bankDebit.description ?? bankDebit.merchantName ?? ''}"`,
-          `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; QBO lines: ${combo.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
+          `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; GL lines: ${combo.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
         ],
         dateDifferenceDays: maxDateDiff,
         bankTransactions: [bankDebit],

@@ -254,12 +254,12 @@ const classifyStaleOutstandingChecksStage = (params: ResidualStageParams): Set<s
         ruleTrace: buildExceptionRuleTrace(
           'stale-outstanding-check',
           'Stale Outstanding Check',
-          `QBO check-like disbursement remains unmatched in bank activity ${ageInDays} days after its recorded date.`,
+          `GL check-like disbursement remains unmatched in bank activity ${ageInDays} days after its recorded date.`,
           [
             'Transaction remains unmatched on the bank side after matching completed.',
             `Recorded age relative to the latest statement activity is ${ageInDays} days.`,
             transaction.checkNumber
-              ? `Check number ${transaction.checkNumber} is present on the QBO transaction.`
+              ? `Check number ${transaction.checkNumber} is present on the GL transaction.`
               : 'Transaction type indicates a check-like disbursement.',
           ],
         ),
@@ -326,12 +326,12 @@ const classifyOutstandingChecksStage = (
         ruleTrace: buildExceptionRuleTrace(
           'outstanding-check',
           'Outstanding Check',
-          `QBO check-like disbursement has not cleared the bank ${ageInDays} day(s) after its recorded date, within the normal clearing window.`,
+          `GL check-like disbursement has not cleared the bank ${ageInDays} day(s) after its recorded date, within the normal clearing window.`,
           [
             'Transaction remains unmatched on the bank side after matching completed.',
             `Recorded age relative to the latest statement activity is ${ageInDays} day(s), within the ${matching.staleOutstandingCheckDays}-day stale threshold.`,
             transaction.checkNumber
-              ? `Check number ${transaction.checkNumber} is present on the QBO transaction.`
+              ? `Check number ${transaction.checkNumber} is present on the GL transaction.`
               : 'Transaction type indicates a check-like disbursement.',
             'Carry as an outstanding item and confirm clearance in the next reconciliation cycle.',
           ],
@@ -636,7 +636,7 @@ const classifyChargebackReturnStage = (
             [
               `Bank debit of ${debit.amount.toFixed(2)} contains chargeback keywords.`,
               `A matched bank credit of ${credit.amount.toFixed(2)} exists ${diff} day(s) prior (within the ${CHARGEBACK_WINDOW_DAYS}-day chargeback window).`,
-              'A corresponding QBO reversal entry is likely missing.',
+              'A corresponding GL reversal entry is likely missing.',
             ],
             buildCounterpartTrace(credit, credit.id),
           ),
@@ -691,11 +691,11 @@ const classifyInterestIncomeStage = (
         ruleTrace: buildExceptionRuleTrace(
           'interest-income',
           'Interest Income',
-          'A bank interest credit has no corresponding QBO entry. Interest income earned during the period should be recorded.',
+          'A bank interest credit has no corresponding GL entry. Interest income earned during the period should be recorded.',
           [
             `Bank credit of ${transaction.amount?.toFixed(2)} contains interest income keywords.`,
-            'No matching QBO income entry was found within the configured date and amount tolerance.',
-            'Record the interest credit to the appropriate QBO income account.',
+            'No matching GL income entry was found within the configured date and amount tolerance.',
+            'Record the interest credit to the appropriate GL income account.',
           ],
         ),
       }),
@@ -758,11 +758,11 @@ const classifyIntercompanyMismatchStage = (
         ruleTrace: buildExceptionRuleTrace(
           'intercompany-mismatch',
           'Intercompany / Entity Mismatch',
-          'Bank transaction contains intercompany or entity-transfer keywords with no counterpart in QBO.',
+          'Bank transaction contains intercompany or entity-transfer keywords with no counterpart in GL.',
           [
             'Transaction description contains intercompany or entity-transfer indicators.',
-            'No matching QBO entry was found within the configured date and amount tolerance.',
-            'Verify whether this transaction belongs to a different legal entity or QBO file.',
+            'No matching GL entry was found within the configured date and amount tolerance.',
+            'Verify whether this transaction belongs to a different legal entity or GL file.',
           ],
         ),
       }),
@@ -790,11 +790,11 @@ const classifyIntercompanyMismatchStage = (
         ruleTrace: buildExceptionRuleTrace(
           'intercompany-mismatch',
           'Intercompany / Entity Mismatch',
-          'QBO transaction contains intercompany or entity-transfer keywords with no counterpart in bank activity.',
+          'GL transaction contains intercompany or entity-transfer keywords with no counterpart in bank activity.',
           [
             'Transaction description contains intercompany or entity-transfer indicators.',
             'No matching bank entry was found within the configured date and amount tolerance.',
-            'Verify whether this transaction belongs to a different legal entity or QBO file.',
+            'Verify whether this transaction belongs to a different legal entity or GL file.',
           ],
         ),
       }),
@@ -870,7 +870,7 @@ const classifyMiscodingStage = (
         ruleTrace: buildExceptionRuleTrace(
           'likely-miscoding',
           'Likely Miscoding',
-          'A same-amount, near-date QBO transaction exists, but description or reference context conflicts materially.',
+          'A same-amount, near-date GL transaction exists, but description or reference context conflicts materially.',
           sharedEvidence,
           buildCounterpartTrace(candidate.qboTransaction, candidate.qboTransaction.id),
         ),
@@ -951,7 +951,7 @@ const classifyNSFReturnedDepositStage = (
           [
             `Bank debit of ${transaction.amount?.toFixed(2)} contains NSF or returned-deposit keywords.`,
             'No corresponding bank credit/debit pair was found by the ACH return detector.',
-            'The original customer payment in QBO may require reversal.',
+            'The original customer payment in GL may require reversal.',
           ],
         ),
       }),
@@ -993,13 +993,13 @@ const classifyVoidedCheckClearedStage = (
         ruleTrace: buildExceptionRuleTrace(
           'voided-check-cleared',
           'Voided Check Cleared',
-          'A bank check debit has no corresponding QBO entry, suggesting the check was voided or never recorded in QBO but cleared the bank.',
+          'A bank check debit has no corresponding GL entry, suggesting the check was voided or never recorded in GL but cleared the bank.',
           [
             transaction.checkNumber
               ? `Check number ${transaction.checkNumber} is present on the bank transaction.`
               : 'Bank description contains check-like identifiers.',
-            'No matching QBO entry was found at any amount or date tolerance.',
-            'Verify whether this check was voided in QBO or was never recorded.',
+            'No matching GL entry was found at any amount or date tolerance.',
+            'Verify whether this check was voided in GL or was never recorded.',
           ],
         ),
       }),
@@ -1068,7 +1068,7 @@ const classifyTimingStage = (
       'Same-amount residual transactions remained unmatched after exact and review matching.',
       `Date difference is ${candidate.dateDifference} day(s), which is outside the primary tolerance and within the timing-difference window.`,
       `Narrative similarity score is ${candidate.textSimilarity.toFixed(2)} and reference similarity score is ${candidate.referenceSimilarity.toFixed(2)}.`,
-      `Transaction kinds remain timing-compatible: bank=${inferTransactionKind(candidate.bankTransaction)}, qbo=${inferTransactionKind(candidate.qboTransaction)}.`,
+      `Transaction kinds remain timing-compatible: bank=${inferTransactionKind(candidate.bankTransaction)}, gl=${inferTransactionKind(candidate.qboTransaction)}.`,
     ];
     const qboCounterpartTrace = buildCounterpartTrace(
       candidate.qboTransaction,
@@ -1108,7 +1108,7 @@ const classifyTimingStage = (
         ruleTrace: buildExceptionRuleTrace(
           'residual-timing-difference',
           'Residual Timing Difference',
-          'A same-amount, timing-compatible QBO transaction remains unmatched within the extended timing window.',
+          'A same-amount, timing-compatible GL transaction remains unmatched within the extended timing window.',
           sharedEvidence,
           qboCounterpartTrace,
         ),
@@ -1399,8 +1399,8 @@ const classifyMissingFallbackStage = (
         reporting,
         ruleTrace: buildExceptionRuleTrace(
           'missing-from-qbo',
-          'Missing from QBO',
-          'No QBO-side transaction remained after exact, review, and variance matching rules were applied.',
+          'Missing from GL',
+          'No GL-side transaction remained after exact, review, and variance matching rules were applied.',
           ['Transaction stayed unmatched after cross-source candidate selection.'],
         ),
       }),
@@ -1450,9 +1450,9 @@ const classifyMissingFallbackStage = (
           ruleTrace: buildExceptionRuleTrace(
             'deposit-in-transit',
             'Deposit in Transit',
-            'A QBO credit recorded near the statement period end has no corresponding bank entry, consistent with a deposit in transit.',
+            'A GL credit recorded near the statement period end has no corresponding bank entry, consistent with a deposit in transit.',
             [
-              'Transaction is a QBO credit with no matching bank entry.',
+              'Transaction is a GL credit with no matching bank entry.',
               `Transaction date is within ${matching.depositInTransitDays} day(s) of the reconciliation anchor date.`,
               'Transaction is not check-like.',
             ],

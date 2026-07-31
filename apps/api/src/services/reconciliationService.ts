@@ -51,7 +51,7 @@ export interface ExecuteReconciliationInput {
 }
 
 /**
- * Parses the uploaded bank and QBO workbooks, resolves reconciliation config,
+ * Parses the uploaded bank and GL workbooks, resolves reconciliation config,
  * executes the shared matching pipeline, and returns a completed run payload.
  *
  * @param input Uploaded workbooks plus correlation and optional accounting context.
