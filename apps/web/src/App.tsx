@@ -67,6 +67,10 @@ type SelectOption = {
 };
 
 const LAST_SUCCESSFUL_RUN_STORAGE_KEY = 'reconciliation-platform:latest-report-run';
+// Bump this whenever a change to display wording, category labels, or the RunData shape would
+// make a previously-persisted run render stale or incorrect content (e.g. the QBO->GL rename) --
+// loadPersistedRun() discards anything stored under a different version instead of trusting it.
+const RUN_STORAGE_SCHEMA_VERSION = 2;
 const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
 const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
 const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-updated-at';
@@ -144,7 +148,14 @@ const loadPersistedRun = (): RunData | undefined => {
       return undefined;
     }
 
-    return JSON.parse(storedRun) as RunData;
+    const parsed = JSON.parse(storedRun) as { version?: number; run?: RunData };
+
+    if (parsed?.version !== RUN_STORAGE_SCHEMA_VERSION || !parsed.run) {
+      globalThis.localStorage?.removeItem(LAST_SUCCESSFUL_RUN_STORAGE_KEY);
+      return undefined;
+    }
+
+    return parsed.run;
   } catch {
     return undefined;
   }
@@ -250,7 +261,10 @@ const persistSliderDefaultsUpdatedAt = (value: string | null): void => {
 
 const persistRun = (run: RunData): void => {
   try {
-    globalThis.localStorage?.setItem(LAST_SUCCESSFUL_RUN_STORAGE_KEY, JSON.stringify(run));
+    globalThis.localStorage?.setItem(
+      LAST_SUCCESSFUL_RUN_STORAGE_KEY,
+      JSON.stringify({ version: RUN_STORAGE_SCHEMA_VERSION, run }),
+    );
   } catch {
     // Ignore storage failures so reconciliation results still render in-memory.
   }

@@ -547,7 +547,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     globalThis.localStorage.setItem(
       'reconciliation-platform:latest-report-run',
-      JSON.stringify(createRunResponse()),
+      JSON.stringify({ version: 2, run: createRunResponse() }),
     );
 
     renderApp();
@@ -559,6 +559,20 @@ describe('App', () => {
       expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
       expect(screen.queryByText('No review output yet')).toBeNull();
     });
+  });
+
+  it('discards a persisted run stored under an outdated schema version', () => {
+    setAuthenticatedUser('rray');
+    globalThis.localStorage.setItem(
+      'reconciliation-platform:latest-report-run',
+      JSON.stringify(createRunResponse()),
+    );
+
+    renderApp();
+
+    expect(
+      globalThis.localStorage.getItem('reconciliation-platform:latest-report-run'),
+    ).toBeNull();
   });
 
   it('hydrates the Review tab from the backend latest-run endpoint when storage is empty', async () => {
