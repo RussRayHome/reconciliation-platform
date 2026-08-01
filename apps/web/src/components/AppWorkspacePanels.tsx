@@ -15,7 +15,6 @@ import {
   summaryStatDefinitions,
   varianceMetricFamilyLabels,
   varianceMetricFamilyOrder,
-  type AppTab,
   type ReportView,
   type RuleCatalogItem,
   type RuleVarianceMetric,
@@ -579,20 +578,6 @@ function EmptyStateCard({
   );
 }
 
-function WorkspaceTabPanel({
-  tabId,
-  children,
-}: Readonly<{
-  tabId: AppTab;
-  children: ReactNode;
-}>) {
-  return (
-    <section id={`tab-panel-${tabId}`} role="tabpanel" aria-labelledby={`tab-${tabId}`}>
-      {children}
-    </section>
-  );
-}
-
 function OverviewCard({
   eyebrow,
   title,
@@ -889,13 +874,7 @@ export function ReviewSection({
   }
 
   return (
-    <section
-      id={`tab-panel-${activeView}`}
-      role="tabpanel"
-      aria-labelledby={`tab-${activeView}`}
-      aria-live="polite"
-      aria-busy={isHydrating}
-    >
+    <section aria-live="polite" aria-busy={isHydrating}>
       <SectionCard
         title="Review"
         description="Work through the reconciliation verdict, confirm probable matches, and triage exceptions in one place."
@@ -906,7 +885,7 @@ export function ReviewSection({
   );
 }
 
-/** Panel that renders the Close & export stage: workbook and JSON outputs plus a close summary. */
+/** Panel that renders the Export stage: workbook and JSON outputs plus a close summary. */
 export function CloseExportSection({
   run,
   isHydrating,
@@ -968,14 +947,12 @@ export function CloseExportSection({
   }
 
   return (
-    <WorkspaceTabPanel tabId="close">
-      <SectionCard
-        title="Close & export"
-        description="Download the audit workbook and JSON archive for this reconciliation run. Export lives only on this screen."
-      >
-        {content}
-      </SectionCard>
-    </WorkspaceTabPanel>
+    <SectionCard
+      title="Export"
+      description="Download the audit workbook and JSON archive for this reconciliation run. Export lives only on this screen."
+    >
+      {content}
+    </SectionCard>
   );
 }
 

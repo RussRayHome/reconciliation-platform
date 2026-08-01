@@ -1,0 +1,58 @@
+@layer components {
+  .remove-account-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    border: 0;
+    background: rgba(0, 0, 0, 0.6);
+  }
+
+  .remove-account-modal {
+    display: grid;
+    gap: 0.75rem;
+    width: min(92vw, 420px);
+    padding: 1.5rem;
+    border-radius: var(--radius-panel);
+    background: var(--bg-raised);
+    border: 1px solid var(--line-strong);
+    box-shadow: var(--shadow-raised);
+  }
+
+  .remove-account-modal h2 {
+    margin: 0;
+    color: var(--text-strong);
+  }
+
+  .remove-account-modal p {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .remove-account-modal label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .remove-account-modal input {
+    min-height: var(--control-height);
+    padding: 0 0.75rem;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: var(--bg-sunken);
+    color: var(--text-primary);
+  }
+
+  .remove-account-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .coming-soon-note {
+    color: var(--text-tertiary);
+  }
+}

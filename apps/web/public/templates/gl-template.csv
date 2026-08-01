@@ -1,0 +1,5 @@
+Date,Type,Num,Name,Memo,Amount
+2026-08-01,Expense,,Acme Office Supplies,Office supplies order,-125.50
+2026-08-03,Expense,,Payroll Processor,Payroll ACH batch,-3200.00
+2026-08-05,Deposit,,North Client,Client payment North,3200.00
+2026-08-08,Check,1052,Landlord LLC,Rent August,-1600.00

@@ -20,7 +20,13 @@ export type SemanticIconName =
   | 'calendar'
   | 'clock'
   | 'quality'
-  | 'exposure';
+  | 'exposure'
+  | 'profile'
+  | 'security'
+  | 'billing'
+  | 'notification'
+  | 'preferences'
+  | 'remove';
 
 type SemanticIconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & {
   name: SemanticIconName;
@@ -192,6 +198,52 @@ const renderIconPath = (name: SemanticIconName) => {
           <circle cx="12" cy="12" r="8" />
           <line x1="12" y1="7" x2="12" y2="17" />
           <path d="M14.8 8.8c0-1.2-1.1-2.1-2.8-2.1-1.5 0-2.7.9-2.7 2.1 0 3.2 5.5 1.6 5.5 4.5 0 1.3-1.2 2.2-2.8 2.2s-2.7-.9-2.8-2.2" />
+        </>
+      );
+    case 'profile':
+      return (
+        <>
+          <circle cx="12" cy="8" r="3.2" />
+          <path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6" />
+        </>
+      );
+    case 'security':
+      return (
+        <>
+          <path d="M12 3.5 19 6.5v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10v-5Z" />
+          <path d="m9 12 2 2 4-4" />
+        </>
+      );
+    case 'billing':
+      return (
+        <>
+          <rect x="3.5" y="6" width="17" height="12" rx="2" />
+          <line x1="3.5" y1="10" x2="20.5" y2="10" />
+          <line x1="7" y1="14.5" x2="11" y2="14.5" />
+        </>
+      );
+    case 'notification':
+      return (
+        <>
+          <path d="M12 4a4.5 4.5 0 0 0-4.5 4.5v3.5L6 15h12l-1.5-3V8.5A4.5 4.5 0 0 0 12 4Z" />
+          <path d="M10 18a2 2 0 0 0 4 0" />
+        </>
+      );
+    case 'preferences':
+      return (
+        <>
+          <rect x="4" y="9" width="16" height="6" rx="3" />
+          <circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none" />
+        </>
+      );
+    case 'remove':
+      return (
+        <>
+          <rect x="6" y="8" width="12" height="12" rx="1.5" />
+          <path d="M4 8h16" />
+          <path d="M9 8V5.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V8" />
+          <line x1="10" y1="11.5" x2="10" y2="16.5" />
+          <line x1="14" y1="11.5" x2="14" y2="16.5" />
         </>
       );
     default:
