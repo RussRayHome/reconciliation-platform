@@ -33,10 +33,22 @@ import {
   type QueuedReconciliationResult,
 } from './services/reconciliationQueue';
 import { captureApiException, flushApiSentry, initializeApiSentry } from './services/sentry';
+import {
+  aliasesQuerySchema,
+  createAliasBodySchema,
+  exceptionsQuerySchema,
+  isErrorCategory,
+  loginBodySchema,
+  reconciliationRunBodySchema,
+  respondWithValidationError,
+  reviewerDecisionBodySchema,
+  reviewerDecisionDeleteParamsSchema,
+  reviewerDecisionDeleteQuerySchema,
+  updateAliasBodySchema,
+} from './validation';
 
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
-import { errorCategories, severityLevels } from '@recon/domain';
 import { executeReconciliation } from './services/reconciliationService';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
@@ -122,8 +134,6 @@ const developerRuntimeService = createDeveloperRuntimeService({
   gitExecutable,
 });
 
-const reconciliationFrequencies = new Set(['Monthly', 'Annual'] as const);
-
 const acceptedMimeTypes = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/octet-stream',
@@ -132,21 +142,6 @@ const acceptedMimeTypes = new Set([
 type UploadFileMap = {
   bankFile?: Express.Multer.File[];
   qboFile?: Express.Multer.File[];
-};
-
-type ReviewerDecisionRequestBody = {
-  targetType?: unknown;
-  targetId?: unknown;
-  outcome?: unknown;
-  finalCategory?: unknown;
-  notes?: unknown;
-  reviewerId?: unknown;
-  reviewerName?: unknown;
-};
-
-type LoginRequestBody = {
-  username?: unknown;
-  password?: unknown;
 };
 
 type ReconciliationRequestInput = {
@@ -182,21 +177,6 @@ type ReconciliationJobEnqueueResponse = {
   status: 'queued';
 };
 
-const reviewerDecisionTargetTypes = new Set<ReviewerDecisionTargetType>([
-  'ProbableMatch',
-  'AmbiguousReview',
-  'ExceptionItem',
-]);
-
-const reviewerDecisionOutcomes = new Set<ReviewerDecisionOutcome>([
-  'ApprovedMatch',
-  'RejectedMatch',
-  'ConfirmedException',
-  'ReclassifiedException',
-  'DismissedException',
-  'ResearchException',
-]);
-
 const invalidLoginMessage = 'The user or password does not match.';
 
 const localLoginUsers: Record<string, { password: string; firstName: string; lastName: string }> = {
@@ -222,9 +202,6 @@ const localLoginUsers: Record<string, { password: string; firstName: string; las
   },
 };
 
-const isErrorCategory = (value: unknown): value is ErrorCategory =>
-  typeof value === 'string' && errorCategories.includes(value as ErrorCategory);
-
 const findDecisionTarget = (
   run: Pick<ReconciliationRunReport, 'exceptions' | 'probableMatches'>,
   targetType: ReviewerDecisionTargetType,
@@ -247,22 +224,6 @@ const findDecisionTarget = (
   }
 
   return false;
-};
-
-const isOutcomeAllowedForTarget = (
-  targetType: ReviewerDecisionTargetType,
-  outcome: ReviewerDecisionOutcome,
-): boolean => {
-  if (targetType === 'ExceptionItem') {
-    return (
-      outcome === 'ConfirmedException' ||
-      outcome === 'ReclassifiedException' ||
-      outcome === 'DismissedException' ||
-      outcome === 'ResearchException'
-    );
-  }
-
-  return outcome === 'ApprovedMatch' || outcome === 'RejectedMatch';
 };
 
 const cleanOptionalText = (value: unknown): string | undefined => {
@@ -420,17 +381,17 @@ const parseVarianceOverrides = (value: unknown): Record<string, number> | undefi
 
 const parseReconciliationRequestInput = (
   body: Record<string, unknown>,
-): ReconciliationRequestInput => ({
-  accountIdentifier:
-    typeof body.accountIdentifier === 'string' ? body.accountIdentifier : undefined,
-  periodLabel: typeof body.periodLabel === 'string' ? body.periodLabel : undefined,
-  reconciliationFrequency:
-    typeof body.reconciliationFrequency === 'string' &&
-    reconciliationFrequencies.has(body.reconciliationFrequency as 'Monthly' | 'Annual')
-      ? (body.reconciliationFrequency as 'Monthly' | 'Annual')
-      : undefined,
-  varianceOverrides: parseVarianceOverrides(body.varianceOverrides),
-});
+): ReconciliationRequestInput => {
+  // `.catch()` on every field in this schema means parsing never throws.
+  const parsed = reconciliationRunBodySchema.parse(body);
+
+  return {
+    accountIdentifier: parsed.accountIdentifier,
+    periodLabel: parsed.periodLabel,
+    reconciliationFrequency: parsed.reconciliationFrequency,
+    varianceOverrides: parseVarianceOverrides(body.varianceOverrides),
+  };
+};
 
 const registerLifecycleJob = async (
   lifecycleStore: PostgresReconciliationLifecycleStore | undefined,
@@ -677,22 +638,6 @@ const parseOffset = (value: unknown, defaultValue = 0): number => {
   }
 
   return Math.trunc(parsed);
-};
-
-/** Returns the validated enum value, undefined when absent, or 'invalid' for unknown values. */
-const parseEnumFilter = <T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-): T | undefined | 'invalid' => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value === 'string' && allowed.includes(value as T)) {
-    return value as T;
-  }
-
-  return 'invalid';
 };
 
 const parseBooleanFlag = (value: string | undefined): boolean | null => {
@@ -1324,9 +1269,7 @@ export const createApp = (
 
   app.post('/api/auth/login', async (request, response, next) => {
     try {
-      const body = (request.body ?? {}) as LoginRequestBody;
-      const username = typeof body.username === 'string' ? body.username.trim() : '';
-      const password = typeof body.password === 'string' ? body.password : '';
+      const { username, password } = loginBodySchema.parse(request.body ?? {});
 
       if (username.length === 0 || password.length === 0) {
         response.status(401).json({ message: invalidLoginMessage });
@@ -1563,17 +1506,14 @@ export const createApp = (
 
   app.get('/api/reconciliation/:id/exceptions', async (request, response, next) => {
     try {
-      const category = parseEnumFilter<ErrorCategory>(request.query.category, errorCategories);
-      if (category === 'invalid') {
-        response.status(400).json({ message: 'Unknown exception category filter.' });
+      const queryResult = exceptionsQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        respondWithValidationError(response, queryResult.error);
         return;
       }
 
-      const severity = parseEnumFilter<SeverityLevel>(request.query.severity, severityLevels);
-      if (severity === 'invalid') {
-        response.status(400).json({ message: 'Unknown exception severity filter.' });
-        return;
-      }
+      const category = queryResult.data.category as ErrorCategory | undefined;
+      const severity = queryResult.data.severity as SeverityLevel | undefined;
 
       const limitRequested = request.query.limit !== undefined;
       const offsetRequested = request.query.offset !== undefined;
@@ -1630,50 +1570,22 @@ export const createApp = (
         return;
       }
 
-      const body = (request.body ?? {}) as ReviewerDecisionRequestBody;
-      if (
-        typeof body.targetType !== 'string' ||
-        !reviewerDecisionTargetTypes.has(body.targetType as ReviewerDecisionTargetType)
-      ) {
-        response.status(400).json({ message: 'A valid reviewer decision targetType is required.' });
+      const bodyResult = reviewerDecisionBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
         return;
       }
 
-      if (typeof body.targetId !== 'string' || body.targetId.trim().length === 0) {
-        response.status(400).json({ message: 'A reviewer decision targetId is required.' });
-        return;
-      }
-
-      if (
-        typeof body.outcome !== 'string' ||
-        !reviewerDecisionOutcomes.has(body.outcome as ReviewerDecisionOutcome)
-      ) {
-        response.status(400).json({ message: 'A valid reviewer decision outcome is required.' });
-        return;
-      }
-
-      const targetType = body.targetType as ReviewerDecisionTargetType;
-      const targetId = body.targetId.trim();
-      const outcome = body.outcome as ReviewerDecisionOutcome;
+      // The schema's superRefine already confirmed these are valid enum members / non-empty
+      // strings; the field types stay `unknown` because that check is cross-field, not structural.
+      const targetType = bodyResult.data.targetType as ReviewerDecisionTargetType;
+      const targetId = (bodyResult.data.targetId as string).trim();
+      const outcome = bodyResult.data.outcome as ReviewerDecisionOutcome;
 
       if (!findDecisionTarget(run, targetType, targetId)) {
         response
           .status(400)
           .json({ message: 'Reviewer decision target was not found on this reconciliation run.' });
-        return;
-      }
-
-      if (!isOutcomeAllowedForTarget(targetType, outcome)) {
-        response.status(400).json({
-          message: 'Reviewer decision outcome is not valid for the specified target type.',
-        });
-        return;
-      }
-
-      if (outcome === 'ReclassifiedException' && !isErrorCategory(body.finalCategory)) {
-        response
-          .status(400)
-          .json({ message: 'A valid finalCategory is required when reclassifying an exception.' });
         return;
       }
 
@@ -1684,10 +1596,12 @@ export const createApp = (
         targetType,
         targetId,
         outcome,
-        finalCategory: isErrorCategory(body.finalCategory) ? body.finalCategory : undefined,
-        notes: cleanOptionalText(body.notes),
-        reviewerId: cleanOptionalText(body.reviewerId),
-        reviewerName: cleanOptionalText(body.reviewerName),
+        finalCategory: isErrorCategory(bodyResult.data.finalCategory)
+          ? bodyResult.data.finalCategory
+          : undefined,
+        notes: cleanOptionalText(bodyResult.data.notes),
+        reviewerId: cleanOptionalText(bodyResult.data.reviewerId),
+        reviewerName: cleanOptionalText(bodyResult.data.reviewerName),
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -1712,23 +1626,20 @@ export const createApp = (
           return;
         }
 
-        const targetTypeRaw = request.query.targetType;
-        if (
-          typeof targetTypeRaw !== 'string' ||
-          !reviewerDecisionTargetTypes.has(targetTypeRaw as ReviewerDecisionTargetType)
-        ) {
-          response
-            .status(400)
-            .json({ message: 'A valid reviewer decision targetType is required.' });
+        const queryResult = reviewerDecisionDeleteQuerySchema.safeParse(request.query);
+        if (!queryResult.success) {
+          respondWithValidationError(response, queryResult.error);
           return;
         }
 
-        const targetType = targetTypeRaw as ReviewerDecisionTargetType;
-        const targetId = request.params.targetId.trim();
-        if (targetId.length === 0) {
-          response.status(400).json({ message: 'A reviewer decision targetId is required.' });
+        const paramsResult = reviewerDecisionDeleteParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          respondWithValidationError(response, paramsResult.error);
           return;
         }
+
+        const targetType = queryResult.data.targetType as ReviewerDecisionTargetType;
+        const targetId = paramsResult.data.targetId.trim();
 
         // Clearing a decision returns the target to undecided; idempotent when none exists.
         if (repository.findById(run.id)) {
@@ -1756,10 +1667,7 @@ export const createApp = (
   app.get('/api/aliases', async (request, response, next) => {
     if (!requirePool(response)) return;
     try {
-      const accountIdentifier =
-        typeof request.query.accountIdentifier === 'string'
-          ? request.query.accountIdentifier
-          : undefined;
+      const { accountIdentifier } = aliasesQuerySchema.parse(request.query);
       const aliases = await loadPayeeAliases(pool!, accountIdentifier);
       response.json(aliases);
     } catch (error) {
@@ -1770,39 +1678,13 @@ export const createApp = (
   app.post('/api/aliases', async (request, response, next) => {
     if (!requirePool(response)) return;
     try {
-      const body = (request.body ?? {}) as Record<string, unknown>;
-
-      if (typeof body.bankPattern !== 'string' || body.bankPattern.trim().length === 0) {
-        response.status(400).json({ message: 'bankPattern is required.' });
-        return;
-      }
-      if (
-        typeof body.canonicalPayeeName !== 'string' ||
-        body.canonicalPayeeName.trim().length === 0
-      ) {
-        response.status(400).json({ message: 'canonicalPayeeName is required.' });
+      const bodyResult = createAliasBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
         return;
       }
 
-      const normalizedTokens = Array.isArray(body.normalizedTokens)
-        ? (body.normalizedTokens as unknown[]).filter((t): t is string => typeof t === 'string')
-        : [];
-
-      const input: CreatePayeeAliasInput = {
-        bankPattern: body.bankPattern.trim(),
-        canonicalPayeeName: body.canonicalPayeeName.trim(),
-        normalizedTokens,
-        accountIdentifier:
-          typeof body.accountIdentifier === 'string' ? body.accountIdentifier : undefined,
-        sourceDirection: body.sourceDirection === 'bidirectional' ? 'bidirectional' : 'bank_to_qbo',
-        matchConfidence:
-          typeof body.matchConfidence === 'number' &&
-          body.matchConfidence >= 0 &&
-          body.matchConfidence <= 1
-            ? body.matchConfidence
-            : 1,
-      };
-
+      const input: CreatePayeeAliasInput = bodyResult.data;
       const alias = await createPayeeAlias(pool!, input);
       response.status(201).json(alias);
     } catch (error) {
@@ -1813,28 +1695,13 @@ export const createApp = (
   app.put('/api/aliases/:id', async (request, response, next) => {
     if (!requirePool(response)) return;
     try {
-      const body = (request.body ?? {}) as Record<string, unknown>;
-      const normalizedTokens = Array.isArray(body.normalizedTokens)
-        ? (body.normalizedTokens as unknown[]).filter((t): t is string => typeof t === 'string')
-        : undefined;
-      const sourceDirection =
-        body.sourceDirection === 'bidirectional' || body.sourceDirection === 'bank_to_qbo'
-          ? body.sourceDirection
-          : undefined;
+      const bodyResult = updateAliasBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
 
-      const alias = await updatePayeeAlias(pool!, request.params.id, {
-        bankPattern: typeof body.bankPattern === 'string' ? body.bankPattern.trim() : undefined,
-        canonicalPayeeName:
-          typeof body.canonicalPayeeName === 'string' ? body.canonicalPayeeName.trim() : undefined,
-        normalizedTokens,
-        sourceDirection,
-        matchConfidence:
-          typeof body.matchConfidence === 'number' &&
-          body.matchConfidence >= 0 &&
-          body.matchConfidence <= 1
-            ? body.matchConfidence
-            : undefined,
-      });
+      const alias = await updatePayeeAlias(pool!, request.params.id, bodyResult.data);
 
       if (!alias) {
         response.status(404).json({ message: 'Alias not found.' });
