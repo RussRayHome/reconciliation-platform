@@ -436,6 +436,9 @@ const registerLifecycleJob = async (
         sizeBytes: files.bankFile.size,
         sha256: bankSha256,
         uploadedAt: startedAt,
+        // multer holds uploads in memory, so these bytes are gone the moment the request ends.
+        // Handing them to createJob preserves the original before parsing can fail.
+        content: files.bankFile.buffer,
       },
       {
         id: qboSourceFileId,
@@ -446,6 +449,7 @@ const registerLifecycleJob = async (
         sizeBytes: files.qboFile.size,
         sha256: qboSha256,
         uploadedAt: startedAt,
+        content: files.qboFile.buffer,
       },
     ],
   });

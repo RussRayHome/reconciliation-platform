@@ -30,6 +30,20 @@ type PersistedSourceFileRegistration = {
   sha256: string;
   storageUri?: string;
   uploadedAt: string;
+  /**
+   * The uploaded file verbatim. Persisted to `reconciliation_source_file_content` inside the same
+   * transaction as registration, so the bytes are durable before parsing has had a chance to fail —
+   * which is precisely the case the preserved copy exists to survive.
+   *
+   * Omitting it registers the file with no recoverable original: `reconciliation_source_file_recovery`
+   * will report the row as MISSING. Callers that hold the upload buffer should always pass it.
+   */
+  content?: Buffer;
+  /**
+   * How the file is normalized. 'DIRECT' (the default) means the built-in column configuration with
+   * no mapping profile — the mode every import uses today. See changeset 0020.
+   */
+  ingestionMode?: 'DIRECT' | 'MAPPED';
 };
 
 /** Input to `createJob` — creates the job row and registers source file metadata. */
@@ -217,6 +231,60 @@ const transitionJobState = async (
   await insertAuditEvent(client, jobId, 'job.state.transitioned', details, currentState, nextState);
 };
 
+/**
+ * Preserves each uploaded file's bytes verbatim in `reconciliation_source_file_content`.
+ *
+ * Runs inside the registration transaction so the original is durable before any parsing is
+ * attempted — a file that crashes the parser is exactly the one an operator needs to retrieve.
+ *
+ * Resolves the target row by the natural key `(job_id, source_system)` rather than trusting the
+ * caller's generated id. The source-file insert upserts on that same natural key, so if a row
+ * already existed it keeps its *original* id and the caller's freshly generated one is discarded --
+ * keying the content insert off the caller's id would then violate the foreign key. The job state
+ * machine currently rejects a second `createJob` for the same job (FILE_REGISTERED is terminal for
+ * that transition), so this is defence in depth rather than a path exercised today.
+ *
+ * Files registered without a buffer are skipped; `reconciliation_source_file_recovery` reports them
+ * as MISSING rather than silently implying a recoverable copy exists.
+ */
+const persistSourceFileContent = async (
+  client: PoolClient,
+  jobId: string,
+  sourceFiles: PersistedSourceFileRegistration[],
+): Promise<void> => {
+  for (const sourceFile of sourceFiles) {
+    if (sourceFile.content === undefined) {
+      continue;
+    }
+
+    await client.query(
+      `INSERT INTO reconciliation_source_file_content
+         (source_file_id, content, byte_size, sha256, original_file_name, original_mime_type)
+       SELECT id, $3::bytea, $4, $5, $6, $7
+         FROM reconciliation_source_file
+        WHERE job_id = $1 AND source_system = $2
+       ON CONFLICT (source_file_id) DO UPDATE
+          SET content = EXCLUDED.content,
+              byte_size = EXCLUDED.byte_size,
+              sha256 = EXCLUDED.sha256,
+              original_file_name = EXCLUDED.original_file_name,
+              original_mime_type = EXCLUDED.original_mime_type,
+              captured_at = NOW()`,
+      [
+        jobId,
+        sourceFile.sourceSystem,
+        sourceFile.content,
+        // Taken from the buffer itself rather than the caller-supplied sizeBytes so the value can
+        // never disagree with what is stored; the table's octet_length CHECK would reject it anyway.
+        sourceFile.content.byteLength,
+        sourceFile.sha256,
+        sourceFile.fileName,
+        sourceFile.mimeType,
+      ],
+    );
+  }
+};
+
 const upsertSourceFileDetails = async (
   client: PoolClient,
   sourceFiles: SourceFile[],
@@ -366,6 +434,7 @@ export class PostgresReconciliationLifecycleStore {
             sourceFile.sha256,
             sourceFile.storageUri ?? null,
             sourceFile.uploadedAt,
+            sourceFile.ingestionMode ?? 'DIRECT',
           ] as const,
       );
 
@@ -382,14 +451,19 @@ export class PostgresReconciliationLifecycleStore {
           'sha256',
           'storage_uri',
           'uploaded_at',
+          'ingestion_mode',
         ],
         sourceFileRows,
-        ' ON CONFLICT (job_id, source_system) DO UPDATE SET sha256 = EXCLUDED.sha256, storage_uri = EXCLUDED.storage_uri, updated_at = NOW()',
+        ' ON CONFLICT (job_id, source_system) DO UPDATE SET sha256 = EXCLUDED.sha256, storage_uri = EXCLUDED.storage_uri, ingestion_mode = EXCLUDED.ingestion_mode, updated_at = NOW()',
       );
       await client.query(insertSourceFiles.text, insertSourceFiles.values);
+
+      await persistSourceFileContent(client, input.jobId, input.sourceFiles);
+
       await transitionJobState(client, input.jobId, 'FILE_REGISTERED', {
         sourceFileCount: input.sourceFiles.length,
         inputFingerprint: input.inputFingerprint ?? null,
+        contentPreservedCount: input.sourceFiles.filter((file) => file.content !== undefined).length,
       });
     });
   }

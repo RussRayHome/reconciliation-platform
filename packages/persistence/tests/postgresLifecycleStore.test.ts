@@ -21,7 +21,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { GenericContainer } from 'testcontainers';
 import type { Pool } from 'pg';
 import type { StartedTestContainer } from 'testcontainers';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { runLiquibase } from './testHelpers/liquibase';
 
 let container: StartedTestContainer;
@@ -333,6 +333,138 @@ describe('PostgresReconciliationLifecycleStore', () => {
         'reconciliation_review_observation_job_created_idx',
       ]),
     );
+  });
+
+  it('preserves uploaded file bytes verbatim and reports them as recoverable', async () => {
+    if (startupError) {
+      throw startupError;
+    }
+
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    // A byte sequence that is not valid UTF-8 and contains NUL, so a round trip proves the column is
+    // genuinely binary rather than silently coerced through a text encoding.
+    const bankBytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0xfe, 0x00, 0x41]);
+    const bankSha256 = createHash('sha256').update(bankBytes).digest('hex');
+    const jobId = randomUUID();
+    const startedAt = new Date().toISOString();
+
+    await store.createJob({
+      jobId,
+      correlationId: 'corr-content',
+      startedAt,
+      rulepackVersion: '2026-04-06',
+      sourceFiles: [
+        {
+          id: randomUUID(),
+          sourceSystem: 'bank',
+          sourceFormat: 'xlsx',
+          fileName: 'bank.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          sizeBytes: bankBytes.byteLength,
+          sha256: bankSha256,
+          uploadedAt: startedAt,
+          content: bankBytes,
+        },
+        {
+          // Registered without a buffer: must be reported as MISSING rather than implying a copy.
+          id: randomUUID(),
+          sourceSystem: 'qbo',
+          sourceFormat: 'xlsx',
+          fileName: 'qbo.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          sizeBytes: 1024,
+          sha256: 'qbo-sha',
+          uploadedAt: startedAt,
+        },
+      ],
+    });
+
+    const stored = await pool.query<{ content: Buffer; byte_size: string }>(
+      `SELECT c.content, c.byte_size
+         FROM reconciliation_source_file_content c
+         JOIN reconciliation_source_file f ON f.id = c.source_file_id
+        WHERE f.job_id = $1 AND f.source_system = 'bank'`,
+      [jobId],
+    );
+
+    expect(stored.rowCount).toBe(1);
+    expect(stored.rows[0]?.content.equals(bankBytes)).toBe(true);
+    expect(Number(stored.rows[0]?.byte_size)).toBe(bankBytes.byteLength);
+
+    const recovery = await pool.query<{
+      source_system: string;
+      recovery_status: string;
+      ingestion_mode: string;
+    }>(
+      `SELECT source_system, recovery_status, ingestion_mode
+         FROM reconciliation_source_file_recovery
+        WHERE job_id = $1
+        ORDER BY source_system`,
+      [jobId],
+    );
+
+    expect(recovery.rows).toEqual([
+      { source_system: 'bank', recovery_status: 'VERIFIED', ingestion_mode: 'DIRECT' },
+      { source_system: 'qbo', recovery_status: 'MISSING', ingestion_mode: 'DIRECT' },
+    ]);
+  });
+
+  it('keeps preserved bytes recoverable after the job fails', async () => {
+    if (startupError) {
+      throw startupError;
+    }
+
+    // The whole point of preservation: when a run blows up, the operator must still be able to get
+    // the original file back. Registration happens before parsing, so the bytes outlive the failure.
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const bytes = Buffer.from('date,amount\n2026-01-01,10.00\n', 'utf8');
+    const jobId = randomUUID();
+    const startedAt = new Date().toISOString();
+
+    await store.createJob({
+      jobId,
+      correlationId: 'corr-failure',
+      startedAt,
+      rulepackVersion: '2026-04-06',
+      sourceFiles: [
+        {
+          id: randomUUID(),
+          sourceSystem: 'bank',
+          sourceFormat: 'csv',
+          fileName: 'bank.csv',
+          mimeType: 'text/csv',
+          sizeBytes: bytes.byteLength,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          uploadedAt: startedAt,
+          content: bytes,
+        },
+      ],
+    });
+
+    await store.markFailed({
+      jobId,
+      failedAt: new Date().toISOString(),
+      errorCode: 'PARSE_ERROR',
+      errorMessage: 'Unreadable workbook',
+    });
+
+    const recovered = await pool.query<{ content: Buffer; recovery_status: string }>(
+      `SELECT c.content, r.recovery_status
+         FROM reconciliation_source_file_content c
+         JOIN reconciliation_source_file_recovery r ON r.source_file_id = c.source_file_id
+        WHERE r.job_id = $1`,
+      [jobId],
+    );
+
+    expect(recovered.rowCount).toBe(1);
+    expect(recovered.rows[0]?.recovery_status).toBe('VERIFIED');
+    expect(recovered.rows[0]?.content.equals(bytes)).toBe(true);
+
+    const jobState = await pool.query<{ current_state: string }>(
+      'SELECT current_state FROM reconciliation_job WHERE id = $1',
+      [jobId],
+    );
+    expect(jobState.rows[0]?.current_state).toBe('FAILED');
   });
 
   it('persists lifecycle state, row data, derived results, and review decisions through finalization', async () => {
