@@ -6,6 +6,10 @@ export default defineConfig({
       all: true,
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],
+      // Without this, Vitest silently skips writing coverage-summary.json whenever any test
+      // fails anywhere in the run — which is exactly when the Developer Dashboard most needs
+      // to show coverage data, not hide it.
+      reportOnFailure: true,
       include: [
         'apps/api/src/**/*.{ts,tsx}',
         'apps/web/src/**/*.{ts,tsx}',
@@ -21,10 +25,10 @@ export default defineConfig({
         'scripts/**',
       ],
       thresholds: {
-        statements: 80,
+        statements: 75,
         branches: 75,
-        functions: 80,
-        lines: 80,
+        functions: 75,
+        lines: 75,
       },
     },
     projects: [

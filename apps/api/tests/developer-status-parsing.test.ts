@@ -80,7 +80,7 @@ describe('developerStatusParsing', () => {
     expect(directBenchmarks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: 'S', meetsThreshold: true }),
-        expect.objectContaining({ key: 'B', threshold: '30', meetsThreshold: false }),
+        expect.objectContaining({ key: 'B', threshold: '75', meetsThreshold: false }),
       ]),
     );
 

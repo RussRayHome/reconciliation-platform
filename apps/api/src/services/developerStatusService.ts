@@ -53,6 +53,17 @@ const runtimeMissingToolRegex = /(?:^|\n)\s*(?:sh|\/bin\/sh):\s*([a-z0-9._-]+):\
 const runtimeAuditNetworkErrorRegex = /EAI_AGAIN|ENOTFOUND|audit endpoint returned an error/i;
 const runtimeDockerUnavailableRegex =
   /docker info failed|Cannot connect to the Docker daemon|docker:\s*not found|permission denied while trying to connect to the Docker daemon|Could not find a working container runtime strategy/i;
+// packages/persistence/tests/{liquibase-migrations,postgresLifecycleStore}.test.ts spawn sibling
+// `docker run -v <path>:...` invocations that require a real host Docker CLI (see
+// packages/persistence/tests/testHelpers/liquibase.ts) — from inside this container's own
+// Docker-outside-of-Docker setup, that bind-mount source path only exists in the container's own
+// filesystem, so the host daemon rejects it. Both tests fail this exact way every time here.
+const dockerSiblingMountPathDeniedRegex =
+  /mounts denied|is not shared from the host and is not known to Docker/i;
+const coverageDockerIncompatibleTestExcludes = [
+  'packages/persistence/tests/liquibase-migrations.test.ts',
+  'packages/persistence/tests/postgresLifecycleStore.test.ts',
+];
 const runtimePlaywrightBrowserMissingRegex =
   /browserType\.launch:\s*Executable doesn't exist at|Looks like Playwright was just installed or updated/i;
 const runtimeSkippableChecks = new Set([
@@ -865,7 +876,7 @@ export const createDeveloperStatusService = ({
     }
 
     try {
-      return parseCoverageSummaryJson(readFileSync(coverageSummaryPath, 'utf8'));
+      return parseCoverageSummaryJson(readFileSync(coverageSummaryPath, 'utf8'), repoRoot);
     } catch {
       return [];
     }
@@ -1115,7 +1126,9 @@ export const createDeveloperStatusService = ({
     mkdirSync(devStatusTempPath, { recursive: true });
 
     const failedAndSkippedTestItems = (path: string): TestItem[] =>
-      readJsonReportFile(path, parseVitestJsonTestItems).filter((item) => item.status !== 'passed');
+      readJsonReportFile(path, (raw) => parseVitestJsonTestItems(raw, repoRoot)).filter(
+        (item) => item.status !== 'passed',
+      );
 
     const unitTests = await runDeveloperCheck(
       'Unit tests',
@@ -1183,7 +1196,9 @@ export const createDeveloperStatusService = ({
     } catch {
       // Ignored — dbTestItems below simply stays empty when this can't run here.
     }
-    postgresTests.dbTestItems = readJsonReportFile(postgresJsonReportPath, parseDbTestItems);
+    postgresTests.dbTestItems = readJsonReportFile(postgresJsonReportPath, (raw) =>
+      parseDbTestItems(raw, repoRoot),
+    );
 
     const lint = await runDeveloperCheck(
       'Static analysis (lint)',
@@ -1206,7 +1221,9 @@ export const createDeveloperStatusService = ({
       // ESLint exits non-zero when it finds issues even though --output-file was written
       // successfully — that's expected, not a failure of this best-effort pass.
     }
-    lint.lintIssues = readJsonReportFile(lintJsonReportPath, parseEslintJsonIssues);
+    lint.lintIssues = readJsonReportFile(lintJsonReportPath, (raw) =>
+      parseEslintJsonIssues(raw, repoRoot),
+    );
 
     const typecheck = await runDeveloperCheck(
       'Static analysis (typecheck)',
@@ -1222,18 +1239,35 @@ export const createDeveloperStatusService = ({
       coverage: DeveloperCheck;
       security: DeveloperCheck;
     }> => {
-      const coverage = await runDeveloperCheck(
-        heavyDeveloperCheckNames.coverage,
-        ['run', 'coverage'],
-        (stdout) => summarizeCoverageOutput(stdout),
-        parseCoverageHighlights,
-        420000,
-        (output) => ({
-          areaLabel: 'Coverage',
-          coverageBenchmarks: buildCoverageBenchmarks(output, readCoverageSummaryMetrics),
-          coverageFiles: readCoverageFiles(),
-        }),
-      );
+      const runCoverageCheck = (args: string[]): Promise<DeveloperCheck> =>
+        runDeveloperCheck(
+          heavyDeveloperCheckNames.coverage,
+          args,
+          (stdout) => summarizeCoverageOutput(stdout),
+          parseCoverageHighlights,
+          420000,
+          (output) => ({
+            areaLabel: 'Coverage',
+            coverageBenchmarks: buildCoverageBenchmarks(output, readCoverageSummaryMetrics),
+            coverageFiles: readCoverageFiles(),
+          }),
+        );
+
+      let coverage = await runCoverageCheck(['run', 'coverage']);
+
+      if (!coverage.ok && dockerSiblingMountPathDeniedRegex.test(coverage.details)) {
+        coverage = await runCoverageCheck([
+          'run',
+          'coverage',
+          '--',
+          ...coverageDockerIncompatibleTestExcludes.flatMap((path) => ['--exclude', path]),
+        ]);
+        coverage.highlights = appendUniqueHighlight(
+          coverage.highlights,
+          'Excluded Liquibase/Testcontainers persistence tests: they spawn sibling Docker ' +
+            'containers that need a real host Docker CLI, unavailable from this runtime.',
+        );
+      }
 
       const securityBase = await runDeveloperCheck(
         heavyDeveloperCheckNames.security,

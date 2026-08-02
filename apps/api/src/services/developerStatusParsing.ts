@@ -624,11 +624,12 @@ export const parseTestMetadata =
     };
   };
 
+// Matches vitest.config.ts's coverage.thresholds — keep these in sync.
 const coverageThresholds: Record<CoverageBenchmarkKey, number> = {
-  S: 40,
-  B: 30,
-  F: 40,
-  L: 40,
+  S: 75,
+  B: 75,
+  F: 75,
+  L: 75,
 };
 
 /** Builds per-dimension coverage benchmark objects from check output or the coverage-summary JSON fallback. */
@@ -677,7 +678,20 @@ const parseJsonArrayFromMixedOutput = (output: string): unknown => {
   }
 };
 
-const relativizeFilePath = (filePath: string): string => {
+/**
+ * Strips a known repo-root prefix from an absolute file path. Tries the caller-supplied
+ * `repoRoot` first (correct in every runtime, including inside a container where the repo is
+ * mounted at e.g. `/app` rather than a path containing "reconciliation-platform"), falling back
+ * to a `/reconciliation-platform/` marker for callers that don't have `repoRoot` on hand.
+ */
+const relativizeFilePath = (filePath: string, repoRoot?: string): string => {
+  if (repoRoot) {
+    const normalizedRoot = repoRoot.endsWith('/') ? repoRoot : `${repoRoot}/`;
+    if (filePath.startsWith(normalizedRoot)) {
+      return filePath.slice(normalizedRoot.length);
+    }
+  }
+
   const repoMarker = '/reconciliation-platform/';
   const markerIndex = filePath.indexOf(repoMarker);
   return markerIndex === -1 ? filePath : filePath.slice(markerIndex + repoMarker.length);
@@ -689,7 +703,7 @@ const relativizeFilePath = (filePath: string): string => {
  * status, duration, failureMessages }] }] }`. Callers filter to the statuses they need — Unit/
  * Integration panels keep only failed+skipped, the Database panel keeps everything.
  */
-export const parseVitestJsonTestItems = (jsonRaw: string): TestItem[] => {
+export const parseVitestJsonTestItems = (jsonRaw: string, repoRoot?: string): TestItem[] => {
   let payload: unknown;
   try {
     payload = JSON.parse(jsonRaw);
@@ -711,7 +725,7 @@ export const parseVitestJsonTestItems = (jsonRaw: string): TestItem[] => {
   for (const fileResult of testResults) {
     if (typeof fileResult !== 'object' || fileResult === null) continue;
     const fileEntry = fileResult as Record<string, unknown>;
-    const suite = relativizeFilePath(readOptionalText(fileEntry.name) ?? 'unknown suite');
+    const suite = relativizeFilePath(readOptionalText(fileEntry.name) ?? 'unknown suite', repoRoot);
     const assertionResults = fileEntry.assertionResults;
     if (!Array.isArray(assertionResults)) continue;
 
@@ -754,8 +768,8 @@ const dbTestCategoryFromName = (name: string): DbTestItem['category'] => {
 };
 
 /** Maps every Vitest postgres-suite test result into the Database tests panel's row shape. */
-export const parseDbTestItems = (jsonRaw: string): DbTestItem[] =>
-  parseVitestJsonTestItems(jsonRaw)
+export const parseDbTestItems = (jsonRaw: string, repoRoot?: string): DbTestItem[] =>
+  parseVitestJsonTestItems(jsonRaw, repoRoot)
     .filter((item) => item.status !== 'skipped')
     .map((item) => ({
       name: item.name,
@@ -860,7 +874,7 @@ export const parsePlaywrightJsonSpecs = (jsonRaw: string): E2eSpecItem[] => {
 };
 
 /** Parses ESLint's `--format json` array output (one entry per file) into a flat list of issue rows. */
-export const parseEslintJsonIssues = (output: string): LintIssue[] => {
+export const parseEslintJsonIssues = (output: string, repoRoot?: string): LintIssue[] => {
   const payload = parseJsonArrayFromMixedOutput(output);
   if (!Array.isArray(payload)) {
     return [];
@@ -872,7 +886,7 @@ export const parseEslintJsonIssues = (output: string): LintIssue[] => {
   for (const fileResult of payload) {
     if (typeof fileResult !== 'object' || fileResult === null) continue;
     const source = fileResult as Record<string, unknown>;
-    const file = relativizeFilePath(readOptionalText(source.filePath) ?? 'unknown file');
+    const file = relativizeFilePath(readOptionalText(source.filePath) ?? 'unknown file', repoRoot);
     const messages = Array.isArray(source.messages) ? source.messages : [];
 
     for (const message of messages) {
@@ -897,7 +911,7 @@ export const parseEslintJsonIssues = (output: string): LintIssue[] => {
  * Reads every per-file entry from an Istanbul `coverage-summary.json` payload (the `"total"` key
  * is the aggregate and is skipped), flagging rows below the 75%-lines-per-file minimum.
  */
-export const parseCoverageSummaryJson = (jsonRaw: string): CoverageFileEntry[] => {
+export const parseCoverageSummaryJson = (jsonRaw: string, repoRoot?: string): CoverageFileEntry[] => {
   let payload: unknown;
   try {
     payload = JSON.parse(jsonRaw);
@@ -931,7 +945,7 @@ export const parseCoverageSummaryJson = (jsonRaw: string): CoverageFileEntry[] =
     const lines = pctOf('lines');
 
     entries.push({
-      filePath: relativizeFilePath(filePath),
+      filePath: relativizeFilePath(filePath, repoRoot),
       lines,
       branches: pctOf('branches'),
       functions: pctOf('functions'),
