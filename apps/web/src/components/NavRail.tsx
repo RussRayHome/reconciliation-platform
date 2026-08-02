@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom';
 
 import type { ExceptionItem } from '@recon/domain';
 
+import navRailLogo from '../assets/nav-rail-logo.png';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 import { RemoveAccountDialog } from './RemoveAccountDialog';
 import { routePaths } from '../routes/routePaths';
@@ -136,6 +137,15 @@ export function NavRail({
         />
       ) : null}
       <nav className={railClassName} aria-label="Primary">
+        <div className="nav-rail__brand">
+          <img
+            src={navRailLogo}
+            alt="Reconciliation Platform logo"
+            className="nav-rail__brand-logo"
+          />
+          <span className="nav-rail__brand-name">Reconciliation Platform</span>
+        </div>
+
         <button
           type="button"
           className="nav-rail__toggle"

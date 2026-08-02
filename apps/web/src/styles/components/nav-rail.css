@@ -31,6 +31,39 @@
     display: none;
   }
 
+  .nav-rail__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.2rem 0.7rem 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .nav-rail__brand-logo {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-pill);
+    object-fit: cover;
+    border: 1px solid var(--line-strong);
+  }
+
+  .nav-rail__brand-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+
+  .nav-rail--collapsed .nav-rail__brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .nav-rail--collapsed .nav-rail__brand-name {
+    display: none;
+  }
+
   .nav-rail__toggle {
     display: flex;
     align-items: center;
