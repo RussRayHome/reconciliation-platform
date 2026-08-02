@@ -12,13 +12,13 @@
     "infra:synth": "npx cdk synth"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.260.0",
-    "constructs": "^10.4.2"
+    "aws-cdk-lib": "^2.262.2",
+    "constructs": "^10.7.2"
   },
   "devDependencies": {
-    "@types/node": "^26.0.1",
-    "aws-cdk": "^2.1128.1",
-    "tsx": "^4.22.4",
+    "@types/node": "^26.1.2",
+    "aws-cdk": "^2.1133.0",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.3"
   }
 }
