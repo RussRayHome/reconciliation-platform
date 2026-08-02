@@ -575,10 +575,22 @@ export interface CanonicalField {
   note: string;
 }
 
+/** A per-column data transform applied between the raw source value and the canonical field. */
+export type TransformKind =
+  | 'none'
+  | 'trim'
+  | 'dateReformat'
+  | 'parseNumber'
+  | 'negate'
+  | 'deriveDirection'
+  | 'uppercase'
+  | 'accountLookup';
+
 /** A single mapped source column, keyed to the canonical field it feeds. */
 export interface MappingProfilePair {
   col: string;
   db: BusinessField;
+  transform?: TransformKind;
 }
 
 /** Client-submitted payload for saving a combined GL + Bank mapping profile in one action. */

@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
 import { baseAliases } from '@recon/config';
-import type { BusinessField, CanonicalField, MappingProfilePair } from '@recon/domain';
+import type { BusinessField, CanonicalField, MappingProfilePair, TransformKind } from '@recon/domain';
 
 import { readHeaderOnly, type MappingSourceColumn } from '../lib/csvHeader';
 import { suggestMapping } from '../lib/mappingSuggest';
+import { applyTransform, defaultTransformForType, TRANSFORM_KINDS, TRANSFORM_LABELS, validateSampleValue } from '../lib/mappingTransforms';
 import { CreateMappingCanvas } from './CreateMappingCanvas';
 
 /**
@@ -54,6 +55,8 @@ export function CreateMappingScreen() {
     gl: [],
     bank: [],
   });
+  const [glTransforms, setGlTransforms] = useState<Record<string, TransformKind>>({});
+  const [bankTransforms, setBankTransforms] = useState<Record<string, TransformKind>>({});
 
   const handleCanvasChange = useCallback(
     (next: { gl: MappingProfilePair[]; bank: MappingProfilePair[] }) => {
@@ -61,6 +64,44 @@ export function CreateMappingScreen() {
     },
     [],
   );
+
+  const fieldTypeById = useMemo(
+    () => Object.fromEntries(CANONICAL_FIELDS_FIXTURE.map((field) => [field.id, field.type])),
+    [],
+  );
+
+  // Newly-connected pairs get a type-appropriate default transform; existing selections
+  // (including anything the user picked manually) are never overwritten.
+  useEffect(() => {
+    setGlTransforms((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const pair of mapping.gl) {
+        if (!(pair.col in next)) {
+          next[pair.col] = defaultTransformForType(fieldTypeById[pair.db] ?? 'text');
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [mapping.gl, fieldTypeById]);
+
+  useEffect(() => {
+    setBankTransforms((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const pair of mapping.bank) {
+        if (!(pair.col in next)) {
+          next[pair.col] = defaultTransformForType(fieldTypeById[pair.db] ?? 'text');
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [mapping.bank, fieldTypeById]);
+
+  const glSampleByColumn = useMemo(() => Object.fromEntries(glCols.map((c) => [c.id, c.sample])), [glCols]);
+  const bankSampleByColumn = useMemo(() => Object.fromEntries(bankCols.map((c) => [c.id, c.sample])), [bankCols]);
 
   const handleFileChange = useCallback(
     (side: UploadSide) => async (event: ChangeEvent<HTMLInputElement>) => {
@@ -99,6 +140,13 @@ export function CreateMappingScreen() {
     },
     [],
   );
+
+  const handleGlTransformChange = useCallback((column: string, kind: TransformKind) => {
+    setGlTransforms((current) => ({ ...current, [column]: kind }));
+  }, []);
+  const handleBankTransformChange = useCallback((column: string, kind: TransformKind) => {
+    setBankTransforms((current) => ({ ...current, [column]: kind }));
+  }, []);
 
   const glByField = useMemo(
     () => Object.fromEntries(mapping.gl.map((pair) => [pair.db, pair.col])),
@@ -292,8 +340,10 @@ export function CreateMappingScreen() {
           <thead>
             <tr>
               <th>GL column</th>
+              <th>GL transform</th>
               <th>Database column</th>
               <th>Bank column</th>
+              <th>Bank transform</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -321,11 +371,37 @@ export function CreateMappingScreen() {
                   <td className={gl ? 'mapping-table__col mapping-table__col--gl' : 'mapping-table__col mapping-table__col--empty'}>
                     {gl ?? '—'}
                   </td>
+                  <td className="mapping-table__col">
+                    {gl ? (
+                      <TransformCell
+                        columnName={gl}
+                        fieldType={field.type}
+                        sampleValue={glSampleByColumn[gl] ?? ''}
+                        transformKind={glTransforms[gl] ?? defaultTransformForType(field.type)}
+                        onChange={handleGlTransformChange}
+                      />
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="mapping-table__col mapping-table__col--db">{field.id}</td>
                   <td
                     className={bank ? 'mapping-table__col mapping-table__col--bank' : 'mapping-table__col mapping-table__col--empty'}
                   >
                     {bank ?? '—'}
+                  </td>
+                  <td className="mapping-table__col">
+                    {bank ? (
+                      <TransformCell
+                        columnName={bank}
+                        fieldType={field.type}
+                        sampleValue={bankSampleByColumn[bank] ?? ''}
+                        transformKind={bankTransforms[bank] ?? defaultTransformForType(field.type)}
+                        onChange={handleBankTransformChange}
+                      />
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className={statusClass}>{status}</td>
                 </tr>
@@ -334,6 +410,53 @@ export function CreateMappingScreen() {
           </tbody>
         </table>
       </section>
+    </div>
+  );
+}
+
+/** A transform `<select>` plus its live preview, computed from the mapped column's sample value. */
+function TransformCell({
+  columnName,
+  fieldType,
+  sampleValue,
+  transformKind,
+  onChange,
+}: Readonly<{
+  columnName: string;
+  fieldType: CanonicalField['type'];
+  sampleValue: string;
+  transformKind: TransformKind;
+  onChange: (column: string, kind: TransformKind) => void;
+}>) {
+  const preview = applyTransform(transformKind, sampleValue);
+  const validation = validateSampleValue(fieldType, preview);
+
+  return (
+    <div className="mapping-transform-cell">
+      <select
+        className="mapping-transform-cell__select"
+        value={transformKind}
+        onChange={(event) => onChange(columnName, event.target.value as TransformKind)}
+        aria-label={`Transform for ${columnName}`}
+      >
+        {TRANSFORM_KINDS.map((kind) => (
+          <option key={kind} value={kind}>
+            {TRANSFORM_LABELS[kind]}
+          </option>
+        ))}
+      </select>
+      {sampleValue ? (
+        <span
+          className={
+            validation.valid
+              ? 'mapping-transform-cell__preview'
+              : 'mapping-transform-cell__preview mapping-transform-cell__preview--warn'
+          }
+          title={validation.message}
+        >
+          {preview || '—'}
+        </span>
+      ) : null}
     </div>
   );
 }
