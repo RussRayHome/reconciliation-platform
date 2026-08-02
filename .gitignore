@@ -21,3 +21,4 @@ github-recovery-codes.txt
 playwright-browsers/
 apps/api/Dockerfile.bak
 reviews/
+.dev-status-tmp/

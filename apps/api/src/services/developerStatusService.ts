@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   CreateDeveloperStatusServiceOptions,
+  CoverageFileEntry,
   CoverageMetrics,
   DeveloperCheck,
   DeveloperHistoryTestTotals,
@@ -11,7 +12,9 @@ import type {
   DeveloperStatusPayload,
   DeveloperStatusResult,
   DeveloperStatusSnapshot,
+  RepoHealthKpis,
   TestBreakdown,
+  TestItem,
 } from './developerStatusTypes';
 export type {
   CreateDeveloperStatusServiceOptions,
@@ -28,10 +31,15 @@ import {
   formatCommand,
   parseAuditSummary,
   parseCoverageMetrics,
+  parseCoverageSummaryJson,
+  parseDbTestItems,
+  parseEslintJsonIssues,
+  parsePlaywrightJsonSpecs,
   parseSecurityHighlights,
   parseSecurityMetadata,
   parseTestHighlights,
   parseTestMetadata,
+  parseVitestJsonTestItems,
   summarizeLintOutput,
   summarizeTestOutput,
   summarizeTypecheckOutput,
@@ -694,6 +702,15 @@ export const createDeveloperStatusService = ({
 }: CreateDeveloperStatusServiceOptions) => {
   const coverageSummaryPath = join(repoRoot, 'coverage', 'coverage-summary.json');
   const coverageTempPath = join(repoRoot, 'coverage', '.tmp');
+  // Vitest's own --coverage flag uses coverage/.tmp internally for raw per-worker V8 data, so
+  // these dashboard-only JSON reports must live in a separate directory — sharing coverage/.tmp
+  // corrupts the Coverage check's own run (it deletes/recreates that directory mid-run).
+  const devStatusTempPath = join(repoRoot, '.dev-status-tmp');
+  const unitJsonReportPath = join(devStatusTempPath, 'unit-results.json');
+  const integrationJsonReportPath = join(devStatusTempPath, 'integration-results.json');
+  const postgresJsonReportPath = join(devStatusTempPath, 'postgres-results.json');
+  const e2eJsonReportPath = join(devStatusTempPath, 'e2e-results.json');
+  const lintJsonReportPath = join(devStatusTempPath, 'lint-results.json');
 
   let developerStatusCache: { payload: DeveloperStatusPayload; cachedAt: number } | null = null;
   let developerStatusInFlight: DeveloperStatusInFlight | null = null;
@@ -735,7 +752,10 @@ export const createDeveloperStatusService = ({
         !parsed ||
         typeof parsed.cachedAt !== 'number' ||
         !parsed.payload ||
-        !Array.isArray(parsed.payload.checks)
+        !Array.isArray(parsed.payload.checks) ||
+        // Discard cache files written by an older payload shape (e.g. missing repoHealth)
+        // rather than serving a malformed payload the frontend isn't prepared for.
+        !parsed.payload.repoHealth
       ) {
         return;
       }
@@ -839,6 +859,30 @@ export const createDeveloperStatusService = ({
     }
   };
 
+  const readCoverageFiles = (): CoverageFileEntry[] => {
+    if (!existsSync(coverageSummaryPath)) {
+      return [];
+    }
+
+    try {
+      return parseCoverageSummaryJson(readFileSync(coverageSummaryPath, 'utf8'));
+    } catch {
+      return [];
+    }
+  };
+
+  const readJsonReportFile = <T>(path: string, parse: (raw: string) => T[]): T[] => {
+    if (!existsSync(path)) {
+      return [];
+    }
+
+    try {
+      return parse(readFileSync(path, 'utf8'));
+    } catch {
+      return [];
+    }
+  };
+
   const summarizeCoverageOutput = (stdout: string): string => {
     const metrics = parseCoverageMetrics(stdout) ?? readCoverageSummaryMetrics();
     if (!metrics) {
@@ -869,12 +913,14 @@ export const createDeveloperStatusService = ({
     extractHighlights?: (output: string) => string[],
     timeout = 240000,
     parseMetadata?: (output: string) => Partial<DeveloperCheck>,
+    extraEnv?: Record<string, string>,
   ): Promise<DeveloperCheck> => {
     const started = Date.now();
     const command = formatCommand(npmExecutable, args);
     const checkEnv = {
       ...process.env,
       DATABASE_URL: process.env.DATABASE_URL ?? defaultDatabaseUrl,
+      ...extraEnv,
     };
 
     if (name === 'Coverage') {
@@ -964,6 +1010,101 @@ export const createDeveloperStatusService = ({
     }
   };
 
+  const gitExecutable = 'git';
+
+  const readGitCommandOutput = async (args: string[]): Promise<string | null> => {
+    try {
+      const result = await execFileAsync(gitExecutable, args, {
+        cwd: repoRoot,
+        timeout: 5000,
+        killSignal: 'SIGKILL',
+      });
+      const value = result.stdout?.toString().trim() ?? '';
+      return value.length > 0 ? value : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getCommitsThisWeek = async (): Promise<number | null> => {
+    const output = await readGitCommandOutput([
+      'rev-list',
+      '--count',
+      '--since=7 days ago',
+      'HEAD',
+    ]);
+    if (output === null) {
+      return null;
+    }
+
+    const count = Number.parseInt(output, 10);
+    return Number.isFinite(count) ? count : null;
+  };
+
+  const getBranchFreshness = async (): Promise<RepoHealthKpis['branchFreshness']> => {
+    const remoteRef = 'origin/stage vs origin/dev';
+    const output = await readGitCommandOutput([
+      'rev-list',
+      '--left-right',
+      '--count',
+      'origin/stage...origin/dev',
+    ]);
+
+    if (output === null) {
+      return { remoteRef, aheadCount: null, behindCount: null };
+    }
+
+    const [aheadRaw, behindRaw] = output.split(/\s+/u);
+    const aheadCount = Number.parseInt(aheadRaw ?? '', 10);
+    const behindCount = Number.parseInt(behindRaw ?? '', 10);
+
+    return {
+      remoteRef,
+      aheadCount: Number.isFinite(aheadCount) ? aheadCount : null,
+      behindCount: Number.isFinite(behindCount) ? behindCount : null,
+    };
+  };
+
+  const getOpenPrCount = async (): Promise<{ openPrCount: number | null; openPrNote?: string }> => {
+    try {
+      const result = await execFileAsync(
+        'gh',
+        ['pr', 'list', '--state', 'open', '--json', 'number', '--jq', 'length'],
+        { cwd: repoRoot, timeout: 8000, killSignal: 'SIGKILL' },
+      );
+      const count = Number.parseInt(result.stdout?.toString().trim() ?? '', 10);
+      return Number.isFinite(count) ? { openPrCount: count } : { openPrCount: null };
+    } catch {
+      return {
+        openPrCount: null,
+        openPrNote: 'gh CLI is unavailable or not authenticated in this runtime.',
+      };
+    }
+  };
+
+  const collectRepoHealthKpis = async (
+    overallStatus: RepoHealthKpis['overallStatus'],
+    failedChecks: number,
+    totalDurationMs: number,
+    generatedAt: string,
+  ): Promise<RepoHealthKpis> => {
+    const [commitsThisWeek, branchFreshness, openPr] = await Promise.all([
+      getCommitsThisWeek(),
+      getBranchFreshness(),
+      getOpenPrCount(),
+    ]);
+
+    return {
+      overallStatus,
+      failedChecks,
+      lastCiRun: { status: overallStatus, durationMs: totalDurationMs, at: generatedAt },
+      commitsThisWeek,
+      branchFreshness,
+      openPrCount: openPr.openPrCount,
+      openPrNote: openPr.openPrNote,
+    };
+  };
+
   const collectDeveloperStatus = async ({
     includeHeavyChecks,
     cachedPayload,
@@ -971,23 +1112,44 @@ export const createDeveloperStatusService = ({
     const penetrationTestStatuses =
       process.env.DEPLOY_ENV === 'stage' ? collectPenetrationTestStatuses(repoRoot) : undefined;
 
+    mkdirSync(devStatusTempPath, { recursive: true });
+
+    const failedAndSkippedTestItems = (path: string): TestItem[] =>
+      readJsonReportFile(path, parseVitestJsonTestItems).filter((item) => item.status !== 'passed');
+
     const unitTests = await runDeveloperCheck(
       'Unit tests',
-      ['run', 'test:unit'],
+      [
+        'run',
+        'test:unit',
+        '--',
+        '--reporter=default',
+        '--reporter=json',
+        `--outputFile.json=${unitJsonReportPath}`,
+      ],
       (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
       parseTestHighlights,
       240000,
       parseTestMetadata('unit', 'Unit'),
     );
+    unitTests.testItems = failedAndSkippedTestItems(unitJsonReportPath);
 
     const integrationTests = await runDeveloperCheck(
       'Integration tests',
-      ['run', 'test:integration:dashboard'],
+      [
+        'run',
+        'test:integration:dashboard',
+        '--',
+        '--reporter=default',
+        '--reporter=json',
+        `--outputFile.json=${integrationJsonReportPath}`,
+      ],
       (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
       parseTestHighlights,
       240000,
       parseTestMetadata('integration', 'Integration'),
     );
+    integrationTests.testItems = failedAndSkippedTestItems(integrationJsonReportPath);
 
     const postgresTests = await runDeveloperCheck(
       'Postgres DB tests',
@@ -997,6 +1159,31 @@ export const createDeveloperStatusService = ({
       600000,
       parseTestMetadata('postgres', 'Postgres DB'),
     );
+    // Best-effort: the preflight script above stays the authority for pass/fail, but the
+    // Database tests detail panel wants the real migration/constraint test names — run the
+    // actual Vitest postgres suite's JSON reporter separately and fold in whatever it produces.
+    // If Docker/Testcontainers aren't available in this runtime, this just yields an empty list.
+    try {
+      await execFileAsync(
+        npmExecutable,
+        [
+          'run',
+          'test:postgres',
+          '--',
+          '--reporter=json',
+          `--outputFile.json=${postgresJsonReportPath}`,
+        ],
+        {
+          cwd: repoRoot,
+          env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? defaultDatabaseUrl },
+          timeout: 300000,
+          maxBuffer: 1024 * 1024 * 6,
+        },
+      );
+    } catch {
+      // Ignored — dbTestItems below simply stays empty when this can't run here.
+    }
+    postgresTests.dbTestItems = readJsonReportFile(postgresJsonReportPath, parseDbTestItems);
 
     const lint = await runDeveloperCheck(
       'Static analysis (lint)',
@@ -1006,6 +1193,20 @@ export const createDeveloperStatusService = ({
       240000,
       () => ({ areaLabel: 'Static analysis' }),
     );
+    // Best-effort second pass purely for structured issue rows — ESLint can't emit its default
+    // human-readable summary and --format json in the same invocation, and the check above
+    // already determined lint's pass/fail from the default formatter.
+    try {
+      await execFileAsync(
+        npmExecutable,
+        ['run', 'lint', '--', '--format', 'json', '--output-file', lintJsonReportPath],
+        { cwd: repoRoot, timeout: 240000, maxBuffer: 1024 * 1024 * 6 },
+      );
+    } catch {
+      // ESLint exits non-zero when it finds issues even though --output-file was written
+      // successfully — that's expected, not a failure of this best-effort pass.
+    }
+    lint.lintIssues = readJsonReportFile(lintJsonReportPath, parseEslintJsonIssues);
 
     const typecheck = await runDeveloperCheck(
       'Static analysis (typecheck)',
@@ -1030,6 +1231,7 @@ export const createDeveloperStatusService = ({
         (output) => ({
           areaLabel: 'Coverage',
           coverageBenchmarks: buildCoverageBenchmarks(output, readCoverageSummaryMetrics),
+          coverageFiles: readCoverageFiles(),
         }),
       );
 
@@ -1044,12 +1246,14 @@ export const createDeveloperStatusService = ({
 
       const e2eTests = await runDeveloperCheck(
         heavyDeveloperCheckNames.e2e,
-        ['run', 'test:e2e'],
+        ['run', 'test:e2e', '--', '--reporter=list,json'],
         (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
         parseTestHighlights,
         240000,
         parseTestMetadata('e2e', 'E2E'),
+        { PLAYWRIGHT_JSON_OUTPUT_NAME: e2eJsonReportPath },
       );
+      e2eTests.e2eSpecs = readJsonReportFile(e2eJsonReportPath, parsePlaywrightJsonSpecs);
 
       return {
         coverage,
@@ -1081,9 +1285,16 @@ export const createDeveloperStatusService = ({
     const totalDurationMs = checks.reduce((sum, item) => sum + item.durationMs, 0);
     const overallStatus: 'healthy' | 'attention-needed' =
       failedChecks === 0 ? 'healthy' : 'attention-needed';
+    const generatedAt = new Date().toISOString();
+    const repoHealth = await collectRepoHealthKpis(
+      overallStatus,
+      failedChecks,
+      totalDurationMs,
+      generatedAt,
+    );
 
     const payload: DeveloperStatusPayload = {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       repositoryPath: repoRoot,
       overallStatus,
       failedChecks,
@@ -1092,6 +1303,7 @@ export const createDeveloperStatusService = ({
       totalDurationMs,
       checks,
       history: [],
+      repoHealth,
     };
 
     developerStatusHistory.unshift(buildStatusSnapshot(payload));
@@ -1137,6 +1349,14 @@ export const createDeveloperStatusService = ({
     totalDurationMs: 0,
     checks: [],
     history: [...developerStatusHistory],
+    repoHealth: {
+      overallStatus: 'healthy',
+      failedChecks: 0,
+      lastCiRun: { status: 'healthy', durationMs: 0, at: new Date().toISOString() },
+      commitsThisWeek: null,
+      branchFreshness: { remoteRef: 'origin/stage vs origin/dev', aheadCount: null, behindCount: null },
+      openPrCount: null,
+    },
   });
 
   const runRefresh = async (includeHeavyChecks: boolean): Promise<DeveloperStatusPayload> => {

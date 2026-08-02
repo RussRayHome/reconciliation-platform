@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { DeveloperDashboard } from './DeveloperDashboard';
@@ -22,81 +22,203 @@ const jsonResponse = (payload: unknown, status = 200): Response =>
     headers: { 'Content-Type': 'application/json' },
   });
 
+const baseRepoHealth = {
+  overallStatus: 'attention-needed' as const,
+  failedChecks: 2,
+  lastCiRun: { status: 'attention-needed' as const, durationMs: 125000, at: '2026-07-30T12:00:00.000Z' },
+  commitsThisWeek: 17,
+  branchFreshness: { remoteRef: 'origin/stage vs origin/dev', aheadCount: 0, behindCount: 4 },
+  openPrCount: 2,
+};
+
 const baseStatus = {
   generatedAt: '2026-07-30T12:00:00.000Z',
   overallStatus: 'attention-needed' as const,
   failedChecks: 2,
-  passedChecks: 8,
-  totalChecks: 10,
+  passedChecks: 5,
+  totalChecks: 7,
   totalDurationMs: 125000,
   checks: [
-    { name: 'Lint', ok: false, durationMs: 1000, summary: 'failed', areaLabel: 'Static analysis' },
     {
-      name: 'Typecheck',
+      name: 'Unit tests',
+      ok: true,
+      durationMs: 5000,
+      summary: 'Passed: 100, Failed: 0',
+      areaLabel: 'Unit',
+      passedCount: 100,
+      failedCount: 0,
+      totalCount: 100,
+      testItems: [],
+    },
+    {
+      name: 'Static analysis (lint)',
       ok: false,
       durationMs: 1000,
-      summary: 'failed',
+      summary: '2 lint problems',
+      areaLabel: 'Static analysis',
+      lintIssues: [
+        { rule: 'no-unused-vars', severity: 'error', file: 'apps/web/src/App.tsx', line: 10, message: 'unused var' },
+        { rule: 'react-hooks/exhaustive-deps', severity: 'warning', file: 'apps/web/src/App.tsx', line: 20, message: 'missing dep' },
+      ],
+    },
+    {
+      name: 'Static analysis (typecheck)',
+      ok: true,
+      durationMs: 1000,
+      summary: 'No type errors',
       areaLabel: 'Static analysis',
     },
-    { name: 'Unit tests', ok: true, durationMs: 500, summary: 'ok' },
+    {
+      name: 'Postgres DB tests',
+      ok: false,
+      durationMs: 20000,
+      summary: 'Passed: 12, Failed: 1',
+      areaLabel: 'Postgres DB',
+      passedCount: 12,
+      failedCount: 1,
+      totalCount: 13,
+      dbTestItems: [
+        { name: 'migration_apply_clean_db', category: 'migration', status: 'passed', durationMs: 3200 },
+        {
+          name: 'check_amount_precision',
+          category: 'constraint',
+          status: 'failed',
+          durationMs: 700,
+          failureMessage: 'expected NUMERIC(18,4)',
+        },
+      ],
+    },
+    {
+      name: 'Coverage',
+      ok: true,
+      durationMs: 30000,
+      summary: 'Coverage S/B/F/L: S 81% | B 80% | F 82% | L 81%',
+      areaLabel: 'Coverage',
+      coverageBenchmarks: [{ key: 'L', label: 'Lines', value: '81.4', meetsThreshold: true }],
+      coverageFiles: [
+        {
+          filePath: 'apps/web/src/components/ExceptionTable.tsx',
+          lines: 54.2,
+          branches: 41,
+          functions: 60,
+          uncoveredLineCount: 118,
+          meetsMinimum: false,
+        },
+        {
+          filePath: 'apps/web/src/components/ReportsGrid.tsx',
+          lines: 91.2,
+          branches: 84.6,
+          functions: 100,
+          uncoveredLineCount: 7,
+          meetsMinimum: true,
+        },
+      ],
+    },
+    {
+      name: 'Security vulnerabilities',
+      ok: false,
+      durationMs: 40000,
+      summary: 'Vulnerabilities across 4 components',
+      areaLabel: 'Security',
+      securityAggregateScore: { critical: 1, high: 2, moderate: 3, low: 4, info: 0 },
+      securityComponentScores: [
+        {
+          component: 'API',
+          scanner: 'npm audit',
+          status: 'ok',
+          critical: 1,
+          high: 0,
+          moderate: 0,
+          low: 0,
+          info: 0,
+          cveFindings: [
+            {
+              id: 'CVE-2026-30154',
+              description: 'Signature-bypass flaw in jsonwebtoken.',
+              severity: 'CRITICAL',
+              component: 'API',
+              scanner: 'npm audit',
+              packageName: 'jsonwebtoken',
+              installedVersion: '9.0.1',
+              fixedVersion: '9.0.4',
+              path: 'direct',
+              status: 'patch-available',
+            },
+          ],
+        },
+        {
+          component: 'Web Server',
+          scanner: 'npm audit',
+          status: 'ok',
+          critical: 0,
+          high: 2,
+          moderate: 0,
+          low: 0,
+          info: 0,
+          cveFindings: [
+            {
+              id: 'CVE-2026-25990',
+              description: 'SSRF via redirect handling.',
+              severity: 'HIGH',
+              component: 'Web Server',
+              scanner: 'Trivy',
+              packageName: 'axios',
+              installedVersion: '1.6.0',
+              fixedVersion: '1.7.2',
+              path: 'transitive',
+              status: 'open',
+            },
+          ],
+        },
+        {
+          component: 'Container Component',
+          scanner: 'Trivy',
+          status: 'ok',
+          critical: 0,
+          high: 0,
+          moderate: 2,
+          low: 1,
+          info: 0,
+        },
+        {
+          component: 'Database',
+          scanner: 'Trivy + pgAudit',
+          status: 'ok',
+          critical: 0,
+          high: 0,
+          moderate: 1,
+          low: 3,
+          info: 0,
+        },
+      ],
+    },
+    {
+      name: 'E2E tests',
+      ok: true,
+      durationMs: 291000,
+      summary: 'Passed: 27, Failed: 0',
+      areaLabel: 'E2E',
+      passedCount: 27,
+      failedCount: 0,
+      totalCount: 28,
+      e2eSpecs: [
+        { name: 'login.spec.ts › logs in', status: 'passed', durationMs: 8400, retries: 0 },
+        {
+          name: 'exceptions-triage.spec.ts › filters rows',
+          status: 'flaky',
+          durationMs: 41200,
+          retries: 1,
+          artifactPath: 'test-results/trace.zip',
+        },
+      ],
+    },
   ],
+  repoHealth: baseRepoHealth,
   cache: { ttlMs: 60000, ageMs: 5000, fromCache: true, stale: true },
 };
 
 const baseRuntime = {
-  apiStatus: 'reachable' as const,
-  startedAt: '2026-07-30T10:00:00.000Z',
-  uptimeMs: 65000,
-  lastRequestAt: null,
-  failedRequestsLastWindow: 3,
-  exceptionsLastWindow: 1,
   gitContext: { branch: 'dev', commit: 'abcdef1234567890', isDirty: true },
-  promotionReadiness: {
-    overall: 'attention' as const,
-    summary: 'Blocked on 3 issues',
-    checkedAt: '2026-07-30T12:00:00.000Z',
-    sync: { remote: 'origin', trackingBranch: 'dev', aheadCount: 2, behindCount: 1, inSync: false },
-    baseline: { tagName: 'v1.2.3', exists: true, matchesHead: false },
-    environments: [
-      {
-        name: 'dev',
-        runtime: 'docker',
-        sourceBranch: 'dev',
-        targetRevision: 'abcdef1234567890',
-        status: 'ready' as const,
-        note: 'ok',
-      },
-      {
-        name: 'stage',
-        runtime: 'docker',
-        sourceBranch: null,
-        targetRevision: null,
-        status: 'pending' as const,
-        note: 'waiting',
-      },
-    ],
-  },
-  recentFailedRequests: [
-    { timestamp: '2026-07-30T11:59:00.000Z', method: 'POST', path: '/api/x', statusCode: 500 },
-  ],
-  recentExceptions: [
-    { timestamp: '2026-07-30T11:58:00.000Z', errorName: 'TypeError', message: 'boom', path: '/api/y' },
-  ],
-  recentReconciliationRuns: [
-    {
-      timestamp: '2026-07-30T11:57:00.000Z',
-      status: 'Succeeded' as const,
-      periodLabel: 'March 2026',
-      durationMs: 3000,
-      exceptionCount: 5,
-    },
-    {
-      timestamp: '2026-07-30T11:56:00.000Z',
-      status: 'Failed' as const,
-      durationMs: 1000,
-      failureReason: 'timeout',
-    },
-  ],
 };
 
 const mockFetch = (
@@ -123,94 +245,107 @@ afterEach(() => {
 });
 
 describe('DeveloperDashboard', () => {
-  it('renders repository health, promotion, runtime, and events once data loads', async () => {
+  it('renders the header verdict, repo health band, and overview cards once data loads', async () => {
     mockFetch({});
     render(<DeveloperDashboard />);
 
-    await waitFor(() => expect(screen.getByText('Attention')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Failing')).toBeInTheDocument());
 
-    // Repository health KPIs, including deduped failing areas.
-    expect(screen.getByText('2')).toBeInTheDocument(); // failed checks
-    expect(screen.getByText('8/10')).toBeInTheDocument(); // passed/total
-    expect(screen.getByText('2m 5s')).toBeInTheDocument(); // totalDurationMs formatted
-    expect(screen.getByText('Stale')).toBeInTheDocument(); // cache label
-    expect(screen.getByText('Static analysis')).toBeInTheDocument(); // deduped failing area (once)
+    // Header: branch @ short revision.
+    expect(screen.getByText('dev @ abcdef1234')).toBeInTheDocument();
 
-    // Environment promotion matrix.
-    // shortRevision: shown for both the env matrix row and the runtime "Commit" field.
-    expect(screen.getAllByText('abcdef1234').length).toBeGreaterThanOrEqual(2);
-    // stage row's null source/revision plus the null lastRequestAt all collapse into dashes.
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText('Ready')).toBeInTheDocument();
-    expect(screen.getByText('Pending')).toBeInTheDocument();
-    expect(screen.getByText('Blocked on 3 issues')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Local dev is out of sync with origin \(2 ahead \/ 1 behind\)\./),
-    ).toBeInTheDocument();
-    expect(screen.getByText('HEAD does not match baseline tag v1.2.3.')).toBeInTheDocument();
-    expect(screen.getByText('Working tree has uncommitted changes.')).toBeInTheDocument();
+    // Repo Health KPI band.
+    expect(screen.getByText('Attention')).toBeInTheDocument();
+    const kpiBand = document.querySelector('.kpi-wells--six') as HTMLElement;
+    expect(within(kpiBand).getAllByText('2')).toHaveLength(2); // openPrCount and failedChecks
+    expect(within(kpiBand).getByText('−4')).toBeInTheDocument(); // branch freshness drift
+    expect(within(kpiBand).getByText('17')).toBeInTheDocument(); // commits this week
 
-    // Runtime health summary.
-    expect(screen.getByText('1m 5s')).toBeInTheDocument(); // uptime formatted
-    expect(screen.getByText('dev (dirty)')).toBeInTheDocument();
-    expect(screen.getByText('3 requests · 1 exceptions')).toBeInTheDocument();
-
-    // Runtime events feed: reconciliation runs + failed request + exception + lifecycle,
-    // sorted newest-first.
-    const events = screen.getAllByText(/Reconciliation run |Failed request |TypeError|API server started/);
-    expect(events.length).toBeGreaterThanOrEqual(5);
-    expect(screen.getByText('Reconciliation run succeeded')).toBeInTheDocument();
-    expect(screen.getByText('Reconciliation run failed')).toBeInTheDocument();
-    expect(screen.getByText('Failed request 500')).toBeInTheDocument();
-    expect(screen.getByText('TypeError')).toBeInTheDocument();
-    expect(screen.getByText('API server started')).toBeInTheDocument();
+    // Overview cards: one per check area, each linking to its detail panel.
+    expect(screen.getByRole('heading', { name: 'Unit tests' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Static code analysis' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Database tests' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Code coverage' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Security' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'E2E tests' })).toBeInTheDocument();
   });
 
-  it('renders the healthy, fully-synced, uncached branch set', async () => {
+  it('renders the unit tests, lint, and database detail panels with per-item rows', async () => {
+    mockFetch({});
+    render(<DeveloperDashboard />);
+    await waitFor(() => expect(screen.getByText('Failing')).toBeInTheDocument());
+
+    // Unit tests: all passed, so the failed & skipped table shows the empty state.
+    const unitPanel = document.querySelector('#unit-tests');
+    expect(unitPanel).not.toBeNull();
+    expect(within(unitPanel as HTMLElement).getByText('All unit tests passed.')).toBeInTheDocument();
+
+    // Static analysis: both lint issues listed with correct severities.
+    const staticPanel = document.querySelector('#static');
+    expect(within(staticPanel as HTMLElement).getByText('no-unused-vars')).toBeInTheDocument();
+    expect(within(staticPanel as HTMLElement).getByText('Error')).toBeInTheDocument();
+    expect(within(staticPanel as HTMLElement).getByText('Warning')).toBeInTheDocument();
+
+    // Database tests: both rows shown, including the failure message.
+    const dbPanel = document.querySelector('#db-tests');
+    expect(within(dbPanel as HTMLElement).getByText('migration_apply_clean_db')).toBeInTheDocument();
+    expect(within(dbPanel as HTMLElement).getByText('check_amount_precision')).toBeInTheDocument();
+    expect(within(dbPanel as HTMLElement).getByText('expected NUMERIC(18,4)')).toBeInTheDocument();
+  });
+
+  it('renders the coverage, security, and e2e detail panels with per-item rows', async () => {
+    mockFetch({});
+    render(<DeveloperDashboard />);
+    await waitFor(() => expect(screen.getByText('Failing')).toBeInTheDocument());
+
+    const coveragePanel = document.querySelector('#coverage');
+    expect(
+      within(coveragePanel as HTMLElement).getByText('apps/web/src/components/ExceptionTable.tsx'),
+    ).toBeInTheDocument();
+    expect(within(coveragePanel as HTMLElement).getByText(/1 files below minimum/)).toBeInTheDocument();
+
+    // Security: four component sub-groups, each with its own header pill.
+    const securityPanel = document.querySelector('#security');
+    expect(within(securityPanel as HTMLElement).getByText('API')).toBeInTheDocument();
+    expect(within(securityPanel as HTMLElement).getByText('Web Server')).toBeInTheDocument();
+    expect(within(securityPanel as HTMLElement).getByText('Container Component')).toBeInTheDocument();
+    expect(within(securityPanel as HTMLElement).getByText('Database')).toBeInTheDocument();
+    expect(within(securityPanel as HTMLElement).getByText('CVE-2026-30154')).toBeInTheDocument();
+    expect(within(securityPanel as HTMLElement).getByText('jsonwebtoken')).toBeInTheDocument();
+    expect(within(securityPanel as HTMLElement).getByText('9.0.4')).toBeInTheDocument();
+
+    // E2E: failures/flaky sort first — flaky spec should appear.
+    const e2ePanel = document.querySelector('#e2e');
+    expect(within(e2ePanel as HTMLElement).getByText(/filters rows/)).toBeInTheDocument();
+    expect(within(e2ePanel as HTMLElement).getByText('Flaky')).toBeInTheDocument();
+  });
+
+  it('renders the healthy, all-clear branch set', async () => {
     mockFetch({
       status: () =>
         jsonResponse({
           ...baseStatus,
           overallStatus: 'healthy',
           failedChecks: 0,
-          checks: [{ name: 'Unit tests', ok: true, durationMs: 500, summary: 'ok' }],
-          cache: { ttlMs: 60000, ageMs: 1000, fromCache: false },
-        }),
-      runtime: () =>
-        jsonResponse({
-          ...baseRuntime,
-          lastRequestAt: '2026-07-30T11:59:30.000Z',
-          gitContext: { branch: null, commit: null, isDirty: false },
-          promotionReadiness: {
-            ...baseRuntime.promotionReadiness,
-            overall: 'ready',
-            sync: {
-              remote: 'origin',
-              trackingBranch: 'dev',
-              aheadCount: 0,
-              behindCount: 0,
-              inSync: true,
-            },
-            baseline: { tagName: 'v1.2.3', exists: true, matchesHead: true },
-            environments: [],
+          checks: baseStatus.checks.map((check) => ({ ...check, ok: true, lintIssues: [] })),
+          repoHealth: {
+            ...baseRepoHealth,
+            overallStatus: 'healthy',
+            failedChecks: 0,
+            branchFreshness: { ...baseRepoHealth.branchFreshness, behindCount: 0 },
           },
+          cache: { ttlMs: 60000, ageMs: 1000, fromCache: false },
         }),
     });
 
     render(<DeveloperDashboard />);
 
     await waitFor(() => expect(screen.getByText('Healthy')).toBeInTheDocument());
-
-    expect(screen.getByText('Fresh')).toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveAttribute('data-tone', 'ready');
-    // No blockers: the promotion callout renders no <ul>.
-    expect(screen.getByRole('note').querySelector('ul')).toBeNull();
+    expect(screen.getByText('Up to date')).toBeInTheDocument();
   });
 
   it('shows a fallback error message when the status request fails without an Error', async () => {
     mockFetch({
-      // Deliberately rejects with a non-Error to exercise the `error instanceof Error`
-      // fallback branch in DeveloperDashboard's catch handler.
       // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
       status: () => Promise.reject('network down'),
     });
@@ -220,16 +355,6 @@ describe('DeveloperDashboard', () => {
     await waitFor(() =>
       expect(screen.getByText('Unable to load repo status.')).toBeInTheDocument(),
     );
-  });
-
-  it('surfaces the real error message when the runtime request rejects with an Error', async () => {
-    mockFetch({
-      runtime: () => Promise.reject(new Error('runtime unreachable')),
-    });
-
-    render(<DeveloperDashboard />);
-
-    await waitFor(() => expect(screen.getByText('runtime unreachable')).toBeInTheDocument());
   });
 
   it('disables both actions and swaps labels while a refresh is in flight, then restores them', async () => {
@@ -258,7 +383,7 @@ describe('DeveloperDashboard', () => {
     });
 
     render(<DeveloperDashboard />);
-    await waitFor(() => expect(screen.getByText('Attention')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Failing')).toBeInTheDocument());
 
     const refreshButton = screen.getByRole('button', { name: 'Refresh' });
     const forceButton = screen.getByRole('button', { name: 'Force refresh' });
@@ -296,22 +421,19 @@ describe('DeveloperDashboard', () => {
     });
 
     render(<DeveloperDashboard />);
-    await waitFor(() => expect(screen.getByText('Attention')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Failing')).toBeInTheDocument());
 
     await user.click(screen.getByRole('button', { name: 'Force refresh' }));
     await waitFor(() => expect(requestedUrls).toContain('/api/developer/status?force=true'));
   });
 
-  it('shows loading skeletons before either request resolves', async () => {
+  it('shows a loading skeleton before the status request resolves', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(() => {}));
 
     render(<DeveloperDashboard />);
 
-    const panels = await screen.findAllByRole('status');
-    expect(panels.length).toBeGreaterThan(0);
-    expect(screen.getByText('Loading repository checks')).toBeInTheDocument();
-    expect(screen.getByText('Loading promotion readiness')).toBeInTheDocument();
-    expect(screen.getByText('Loading runtime summary')).toBeInTheDocument();
-    expect(screen.getByText('Loading runtime events')).toBeInTheDocument();
+    const panel = await screen.findByRole('status');
+    expect(panel).toBeInTheDocument();
+    expect(screen.getByText('Loading application health')).toBeInTheDocument();
   });
 });

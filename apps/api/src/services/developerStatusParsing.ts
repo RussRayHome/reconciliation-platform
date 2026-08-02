@@ -1,11 +1,16 @@
 import type {
   CoverageBenchmark,
   CoverageBenchmarkKey,
+  CoverageFileEntry,
   CoverageMetrics,
+  DbTestItem,
   DeveloperCheck,
+  E2eSpecItem,
+  LintIssue,
   SecurityComponentScore,
   SecurityCveFinding,
   SecuritySeverityScore,
+  TestItem,
 } from './developerStatusTypes';
 
 /** Formats a command and its arguments into a single display string for check labels. */
@@ -228,6 +233,11 @@ const toNonNegativeInteger = (value: unknown): number => {
   return Math.max(0, Math.trunc(numeric));
 };
 
+const clipText = (value: string, maxLength: number): string => {
+  const normalized = value.replaceAll(/\s+/gu, ' ').trim();
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
+};
+
 const zeroSecurityScore = (): SecuritySeverityScore => ({
   critical: 0,
   high: 0,
@@ -289,6 +299,7 @@ const readSecurityScanPayload = (output: string): SecurityScanPayload | null => 
 };
 
 const cveIdRegex = /CVE-\d{4}-\d+/iu;
+const ghsaIdRegex = /GHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}/iu;
 
 const securityCveSeverityRank: Record<SecurityCveFinding['severity'], number> = {
   CRITICAL: 0,
@@ -309,7 +320,8 @@ const securityCveSeverityLabels = new Set<SecurityCveFinding['severity']>([
 ]);
 
 const normalizeSecurityCveId = (value: unknown): string | null => {
-  const match = cveIdRegex.exec(toSearchableText(value).toUpperCase());
+  const text = toSearchableText(value).toUpperCase();
+  const match = cveIdRegex.exec(text) ?? ghsaIdRegex.exec(text);
   return match ? match[0] : null;
 };
 
@@ -355,12 +367,23 @@ const normalizeSecurityCveFinding = (
     return null;
   }
 
+  const path = readOptionalText(source.path);
+  const status = readOptionalText(source.status);
+  const validPath = path === 'direct' || path === 'transitive' || path === 'base-image' ? path : undefined;
+  const validStatus =
+    status === 'open' || status === 'patch-available' || status === 'mitigated' ? status : undefined;
+
   return {
     id,
     description: normalizeSecurityCveDescription(source.description ?? source.title),
     severity: normalizeSecurityCveSeverity(source.severity),
     component: readOptionalText(source.component) ?? fallbackComponent ?? 'Unknown component',
     scanner: readOptionalText(source.scanner) ?? fallbackScanner ?? 'Unknown scanner',
+    packageName: readOptionalText(source.packageName) ?? undefined,
+    installedVersion: readOptionalText(source.installedVersion) ?? undefined,
+    fixedVersion: readOptionalText(source.fixedVersion) ?? undefined,
+    path: validPath,
+    status: validStatus,
   };
 };
 
@@ -637,4 +660,285 @@ export const buildCoverageBenchmarks = (
       meetsThreshold: Number.isFinite(score) && score >= threshold,
     };
   });
+};
+
+const parseJsonArrayFromMixedOutput = (output: string): unknown => {
+  const jsonStart = output.indexOf('[');
+  const jsonEnd = output.lastIndexOf(']');
+
+  if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(output.slice(jsonStart, jsonEnd + 1)) as unknown;
+  } catch {
+    return null;
+  }
+};
+
+const relativizeFilePath = (filePath: string): string => {
+  const repoMarker = '/reconciliation-platform/';
+  const markerIndex = filePath.indexOf(repoMarker);
+  return markerIndex === -1 ? filePath : filePath.slice(markerIndex + repoMarker.length);
+};
+
+/**
+ * Extracts every test result (pass/fail/skip) from a Vitest JSON reporter file. Vitest's `json`
+ * reporter is Jest-compatible: `{ testResults: [{ name: filePath, assertionResults: [{ title,
+ * status, duration, failureMessages }] }] }`. Callers filter to the statuses they need — Unit/
+ * Integration panels keep only failed+skipped, the Database panel keeps everything.
+ */
+export const parseVitestJsonTestItems = (jsonRaw: string): TestItem[] => {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(jsonRaw);
+  } catch {
+    return [];
+  }
+
+  if (typeof payload !== 'object' || payload === null) {
+    return [];
+  }
+
+  const testResults = (payload as { testResults?: unknown }).testResults;
+  if (!Array.isArray(testResults)) {
+    return [];
+  }
+
+  const items: TestItem[] = [];
+
+  for (const fileResult of testResults) {
+    if (typeof fileResult !== 'object' || fileResult === null) continue;
+    const fileEntry = fileResult as Record<string, unknown>;
+    const suite = relativizeFilePath(readOptionalText(fileEntry.name) ?? 'unknown suite');
+    const assertionResults = fileEntry.assertionResults;
+    if (!Array.isArray(assertionResults)) continue;
+
+    for (const assertion of assertionResults) {
+      if (typeof assertion !== 'object' || assertion === null) continue;
+      const source = assertion as Record<string, unknown>;
+      const rawStatus = readOptionalText(source.status)?.toLowerCase();
+      const status: TestItem['status'] =
+        rawStatus === 'failed' ? 'failed' : rawStatus === 'passed' ? 'passed' : 'skipped';
+      const failureMessages = Array.isArray(source.failureMessages)
+        ? source.failureMessages
+        : [];
+      const reason =
+        status === 'failed' && failureMessages.length > 0
+          ? clipText(String(failureMessages[0]), 220)
+          : undefined;
+
+      items.push({
+        name: readOptionalText(source.fullName ?? source.title) ?? 'unnamed test',
+        suite,
+        status,
+        reason,
+        durationMs: typeof source.duration === 'number' ? source.duration : undefined,
+      });
+    }
+  }
+
+  return items;
+};
+
+const dbTestCategoryFromName = (name: string): DbTestItem['category'] => {
+  const normalized = name.toLowerCase();
+  if (normalized.includes('migrat') || normalized.includes('changelog')) return 'migration';
+  if (normalized.includes('constraint') || normalized.includes('fk') || normalized.includes('check_'))
+    return 'constraint';
+  if (normalized.includes('seed')) return 'seed';
+  if (normalized.includes('isolation') || normalized.includes('deadlock') || normalized.includes('lifecycle'))
+    return 'behavior';
+  return 'other';
+};
+
+/** Maps every Vitest postgres-suite test result into the Database tests panel's row shape. */
+export const parseDbTestItems = (jsonRaw: string): DbTestItem[] =>
+  parseVitestJsonTestItems(jsonRaw)
+    .filter((item) => item.status !== 'skipped')
+    .map((item) => ({
+      name: item.name,
+      category: dbTestCategoryFromName(item.name),
+      status: item.status === 'failed' ? 'failed' : 'passed',
+      durationMs: item.durationMs,
+      failureMessage: item.reason,
+    }));
+
+/**
+ * Recursively walks a Playwright JSON reporter's nested `suites` tree, extracting one row per
+ * spec. `ok: true` with more than one result means it eventually passed after retries (flaky).
+ */
+export const parsePlaywrightJsonSpecs = (jsonRaw: string): E2eSpecItem[] => {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(jsonRaw);
+  } catch {
+    return [];
+  }
+
+  if (typeof payload !== 'object' || payload === null) {
+    return [];
+  }
+
+  const items: E2eSpecItem[] = [];
+
+  const visitSuite = (suite: unknown, titlePrefix: string): void => {
+    if (typeof suite !== 'object' || suite === null) return;
+    const source = suite as Record<string, unknown>;
+    const suiteTitle = readOptionalText(source.title);
+    const prefix = suiteTitle ? `${titlePrefix}${titlePrefix ? ' › ' : ''}${suiteTitle}` : titlePrefix;
+
+    const specs = Array.isArray(source.specs) ? source.specs : [];
+    for (const spec of specs) {
+      if (typeof spec !== 'object' || spec === null) continue;
+      const specSource = spec as Record<string, unknown>;
+      const tests = Array.isArray(specSource.tests) ? specSource.tests : [];
+      const firstTest = tests[0];
+      const results =
+        typeof firstTest === 'object' && firstTest !== null && Array.isArray((firstTest as Record<string, unknown>).results)
+          ? ((firstTest as Record<string, unknown>).results as unknown[])
+          : [];
+      const lastResult = results[results.length - 1];
+      const lastResultSource =
+        typeof lastResult === 'object' && lastResult !== null ? (lastResult as Record<string, unknown>) : {};
+      const ok = specSource.ok === true;
+      const retries = Math.max(0, results.length - 1);
+      // A spec skipped by a serial-mode abort still gets one result entry with
+      // status: 'skipped' — an empty results array only happens if nothing ran at all.
+      // Check the actual result status rather than inferring from array length.
+      const lastResultStatus = readOptionalText(lastResultSource.status);
+      const status: E2eSpecItem['status'] =
+        results.length === 0 || lastResultStatus === 'skipped'
+          ? 'skipped'
+          : !ok
+            ? 'failed'
+            : retries > 0
+              ? 'flaky'
+              : 'passed';
+      const totalDurationMs = results.reduce((sum: number, result) => {
+        const duration =
+          typeof result === 'object' && result !== null ? (result as Record<string, unknown>).duration : 0;
+        return sum + (typeof duration === 'number' ? duration : 0);
+      }, 0);
+      const attachments = Array.isArray(lastResultSource.attachments)
+        ? lastResultSource.attachments
+        : [];
+      const traceAttachment = attachments.find(
+        (attachment): attachment is Record<string, unknown> =>
+          typeof attachment === 'object' &&
+          attachment !== null &&
+          readOptionalText((attachment as Record<string, unknown>).name) === 'trace',
+      );
+      const artifactPath = traceAttachment
+        ? (readOptionalText(traceAttachment.path) ?? undefined)
+        : undefined;
+
+      items.push({
+        name: `${prefix}${prefix ? ' › ' : ''}${readOptionalText(specSource.title) ?? 'unnamed spec'}`,
+        status,
+        durationMs: totalDurationMs,
+        retries,
+        artifactPath,
+      });
+    }
+
+    const nestedSuites = Array.isArray(source.suites) ? source.suites : [];
+    for (const nested of nestedSuites) {
+      visitSuite(nested, prefix);
+    }
+  };
+
+  const topSuites = (payload as { suites?: unknown }).suites;
+  if (Array.isArray(topSuites)) {
+    for (const suite of topSuites) {
+      visitSuite(suite, '');
+    }
+  }
+
+  return items;
+};
+
+/** Parses ESLint's `--format json` array output (one entry per file) into a flat list of issue rows. */
+export const parseEslintJsonIssues = (output: string): LintIssue[] => {
+  const payload = parseJsonArrayFromMixedOutput(output);
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  const issues: LintIssue[] = [];
+  const severityLabel: Record<number, LintIssue['severity']> = { 1: 'warning', 2: 'error' };
+
+  for (const fileResult of payload) {
+    if (typeof fileResult !== 'object' || fileResult === null) continue;
+    const source = fileResult as Record<string, unknown>;
+    const file = relativizeFilePath(readOptionalText(source.filePath) ?? 'unknown file');
+    const messages = Array.isArray(source.messages) ? source.messages : [];
+
+    for (const message of messages) {
+      if (typeof message !== 'object' || message === null) continue;
+      const messageSource = message as Record<string, unknown>;
+      const severityValue = typeof messageSource.severity === 'number' ? messageSource.severity : 1;
+
+      issues.push({
+        rule: readOptionalText(messageSource.ruleId) ?? 'parse-error',
+        severity: severityLabel[severityValue] ?? 'info',
+        file,
+        line: toNonNegativeInteger(messageSource.line),
+        message: readOptionalText(messageSource.message) ?? 'No message provided.',
+      });
+    }
+  }
+
+  return issues;
+};
+
+/**
+ * Reads every per-file entry from an Istanbul `coverage-summary.json` payload (the `"total"` key
+ * is the aggregate and is skipped), flagging rows below the 75%-lines-per-file minimum.
+ */
+export const parseCoverageSummaryJson = (jsonRaw: string): CoverageFileEntry[] => {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(jsonRaw);
+  } catch {
+    return [];
+  }
+
+  if (typeof payload !== 'object' || payload === null) {
+    return [];
+  }
+
+  const entries: CoverageFileEntry[] = [];
+
+  for (const [filePath, value] of Object.entries(payload as Record<string, unknown>)) {
+    if (filePath === 'total' || typeof value !== 'object' || value === null) continue;
+    const source = value as Record<string, unknown>;
+    const pctOf = (key: string): number => {
+      const dimension = source[key];
+      const pct =
+        typeof dimension === 'object' && dimension !== null
+          ? (dimension as Record<string, unknown>).pct
+          : undefined;
+      return typeof pct === 'number' && Number.isFinite(pct) ? pct : 0;
+    };
+    const linesDimension = source.lines;
+    const uncoveredLineCount =
+      typeof linesDimension === 'object' && linesDimension !== null
+        ? toNonNegativeInteger((linesDimension as Record<string, unknown>).total) -
+          toNonNegativeInteger((linesDimension as Record<string, unknown>).covered)
+        : 0;
+    const lines = pctOf('lines');
+
+    entries.push({
+      filePath: relativizeFilePath(filePath),
+      lines,
+      branches: pctOf('branches'),
+      functions: pctOf('functions'),
+      uncoveredLineCount: Math.max(0, uncoveredLineCount),
+      meetsMinimum: lines >= 75,
+    });
+  }
+
+  return entries.sort((left, right) => left.lines - right.lines);
 };

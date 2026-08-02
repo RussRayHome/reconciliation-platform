@@ -213,7 +213,8 @@ const sanitizeCveFinding = (value, fallbackComponent = '', fallbackScanner = '')
   const id =
     normalizeCveId(source.id) ??
     normalizeCveId(source.cve) ??
-    normalizeCveId(source.vulnerabilityId);
+    normalizeCveId(source.vulnerabilityId) ??
+    normalizeGhsaId(source.id);
   if (!id) {
     return null;
   }
@@ -233,6 +234,11 @@ const sanitizeCveFinding = (value, fallbackComponent = '', fallbackScanner = '')
     severity: normalizeSeverityLabel(source.severity),
     component,
     scanner,
+    packageName: source.packageName || undefined,
+    installedVersion: source.installedVersion || undefined,
+    fixedVersion: source.fixedVersion || undefined,
+    path: source.path || undefined,
+    status: source.status || undefined,
   };
 };
 
@@ -728,7 +734,26 @@ const computeNpmAuditAllowlistExclusion = (output, allowlist) => {
   return exclusion;
 };
 
-const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, component, scanner) => {
+const readInstalledPackageVersion = (repoRoot, nodeModulesPath) => {
+  if (!repoRoot || !nodeModulesPath) return undefined;
+  try {
+    const packageJsonPath = path.join(repoRoot, nodeModulesPath, 'package.json');
+    if (!existsSync(packageJsonPath)) return undefined;
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    return typeof packageJson.version === 'string' ? packageJson.version : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const buildNpmCveFinding = async (
+  viaItem,
+  packageName,
+  packageSeverity,
+  component,
+  scanner,
+  packageMetadata,
+) => {
   if (typeof viaItem === 'string') {
     const id = normalizeCveId(viaItem);
     if (id) {
@@ -738,6 +763,7 @@ const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, compone
         severity: packageSeverity,
         component,
         scanner,
+        ...packageMetadata,
       };
     }
 
@@ -754,6 +780,7 @@ const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, compone
       severity: packageSeverity,
       component,
       scanner,
+      ...packageMetadata,
     };
   }
 
@@ -777,6 +804,7 @@ const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, compone
       severity: normalizeSeverityLabel(via.severity ?? packageSeverity),
       component,
       scanner,
+      ...packageMetadata,
     };
   }
 
@@ -800,6 +828,7 @@ const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, compone
     severity: normalizeSeverityLabel(via.severity ?? packageSeverity),
     component,
     scanner,
+    ...packageMetadata,
   };
 };
 
@@ -808,9 +837,20 @@ const extractNpmPackageCveFindings = async (
   packageVulnerability,
   component,
   scanner,
+  repoRoot,
 ) => {
   const viaItems = Array.isArray(packageVulnerability.via) ? packageVulnerability.via : [];
   const packageSeverity = normalizeSeverityLabel(packageVulnerability.severity);
+  const nodePath = Array.isArray(packageVulnerability.nodes) ? packageVulnerability.nodes[0] : null;
+  const fixAvailable = packageVulnerability.fixAvailable;
+  const packageMetadata = {
+    packageName,
+    installedVersion: readInstalledPackageVersion(repoRoot, nodePath),
+    fixedVersion:
+      fixAvailable && typeof fixAvailable === 'object' ? fixAvailable.version : undefined,
+    path: packageVulnerability.isDirect ? 'direct' : 'transitive',
+    status: fixAvailable ? 'patch-available' : 'open',
+  };
   const findings = [];
 
   for (const viaItem of viaItems) {
@@ -820,6 +860,7 @@ const extractNpmPackageCveFindings = async (
       packageSeverity,
       component,
       scanner,
+      packageMetadata,
     );
     if (finding) {
       findings.push(finding);
@@ -829,7 +870,7 @@ const extractNpmPackageCveFindings = async (
   return findings;
 };
 
-const parseNpmAuditCveFindings = async (output, component, scanner) => {
+const parseNpmAuditCveFindings = async (output, component, scanner, repoRoot) => {
   const payload = parseJsonFromOutput(output);
   if (!payload || typeof payload !== 'object') {
     return [];
@@ -848,7 +889,13 @@ const parseNpmAuditCveFindings = async (output, component, scanner) => {
     }
 
     findings.push(
-      ...(await extractNpmPackageCveFindings(packageName, packageValue, component, scanner)),
+      ...(await extractNpmPackageCveFindings(
+        packageName,
+        packageValue,
+        component,
+        scanner,
+        repoRoot,
+      )),
     );
   }
 
@@ -922,6 +969,11 @@ const parseTrivyCveFindings = (output, component, scanner) => {
         severity: normalizeSeverityLabel(vulnerability?.Severity),
         component,
         scanner,
+        packageName: vulnerability?.PkgName || undefined,
+        installedVersion: vulnerability?.InstalledVersion || undefined,
+        fixedVersion: vulnerability?.FixedVersion || undefined,
+        path: 'base-image',
+        status: vulnerability?.FixedVersion ? 'patch-available' : 'open',
       });
     }
   }
@@ -938,7 +990,7 @@ const scanNpmWorkspaceComponent = async (component, workspace, repoRoot) => {
 
   const output = `${response.stdout}\n${response.stderr}`.trim();
   const score = parseNpmAuditScore(output);
-  result.cveFindings = await parseNpmAuditCveFindings(output, component, result.scanner);
+  result.cveFindings = await parseNpmAuditCveFindings(output, component, result.scanner, repoRoot);
 
   if (score) {
     const activeCveAllowlist = readActiveCveAllowlist(repoRoot);

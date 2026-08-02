@@ -1,8 +1,8 @@
 /** Integration tests for developer-facing API endpoints and diagnostics. */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
@@ -32,6 +32,10 @@ type DeveloperStatusResponseBody = {
     passedCount?: number;
     failedCount?: number;
     areaLabel?: string;
+    testItems?: Array<{ name: string; suite: string; status: string; reason?: string }>;
+    lintIssues?: Array<{ rule: string; severity: string; file: string; line: number }>;
+    dbTestItems?: Array<{ name: string; category: string; status: string }>;
+    e2eSpecs?: Array<{ name: string; status: string }>;
     securityComponentScores?: Array<{
       component: string;
       critical: number;
@@ -42,6 +46,8 @@ type DeveloperStatusResponseBody = {
       cveFindings?: Array<{
         id: string;
         severity: string;
+        installedVersion?: string;
+        fixedVersion?: string;
       }>;
     }>;
     securityCveFindings?: Array<{
@@ -57,6 +63,14 @@ type DeveloperStatusResponseBody = {
     };
     failingAreas: string[];
   }>;
+  repoHealth: {
+    overallStatus: string;
+    failedChecks: number;
+    lastCiRun: { status: string; durationMs: number; at: string };
+    commitsThisWeek: number | null;
+    branchFreshness: { remoteRef: string; aheadCount: number | null; behindCount: number | null };
+    openPrCount: number | null;
+  };
 };
 
 type RuntimeResponseBody = {
@@ -110,7 +124,37 @@ type ExecFileResult = { stdout: string; stderr: string };
 type ExecFileMatcher = {
   matches: (joined: string) => boolean;
   result: ExecFileResult;
+  sideEffect?: (args: string[], options: { env?: Record<string, string> }) => void;
 };
+
+/** Writes `content` to the path from an inline `flag=value` style arg (e.g. `--outputFile.json=`). */
+const writeFixtureFromInlineArg = (args: string[], flagPrefix: string, content: string): void => {
+  const targetPath = args.find((arg) => arg.startsWith(flagPrefix))?.slice(flagPrefix.length);
+  if (!targetPath) return;
+  mkdirSync(dirname(targetPath), { recursive: true });
+  writeFileSync(targetPath, content, 'utf8');
+};
+
+/** Writes `content` to the path following a standalone flag arg (e.g. `--output-file <path>`). */
+const writeFixtureFromFlagValue = (args: string[], flag: string, content: string): void => {
+  const flagIndex = args.indexOf(flag);
+  const targetPath = flagIndex === -1 ? undefined : args[flagIndex + 1];
+  if (!targetPath) return;
+  mkdirSync(dirname(targetPath), { recursive: true });
+  writeFileSync(targetPath, content, 'utf8');
+};
+
+const vitestJsonFixture = (fullName: string, status: 'passed' | 'failed', suite: string): string =>
+  JSON.stringify({
+    testResults: [
+      {
+        name: suite,
+        assertionResults: [
+          { fullName, status, duration: 12, failureMessages: status === 'failed' ? ['boom'] : [] },
+        ],
+      },
+    ],
+  });
 
 const execFileMatchers: ExecFileMatcher[] = [
   {
@@ -154,11 +198,30 @@ const execFileMatchers: ExecFileMatcher[] = [
     result: { stdout: 'def5678\n', stderr: '' },
   },
   {
+    matches: (joined) => joined.includes('git rev-list --count --since=7 days ago HEAD'),
+    result: { stdout: '17\n', stderr: '' },
+  },
+  {
+    matches: (joined) =>
+      joined.includes('git rev-list --left-right --count origin/stage...origin/dev'),
+    result: { stdout: '1\t3\n', stderr: '' },
+  },
+  {
+    matches: (joined) => joined.includes('gh pr list'),
+    result: { stdout: '2\n', stderr: '' },
+  },
+  {
     matches: (joined) => joined.includes('npm') && joined.includes('run test:unit'),
     result: {
       stdout: 'Test Files  9 passed (9)\nTests  114 passed (114)\n',
       stderr: '',
     },
+    sideEffect: (args) =>
+      writeFixtureFromInlineArg(
+        args,
+        '--outputFile.json=',
+        vitestJsonFixture('a skipped unit test', 'passed', 'apps/web/src/App.test.tsx'),
+      ),
   },
   {
     matches: (joined) => joined.includes('npm') && joined.includes('run test:integration'),
@@ -166,12 +229,41 @@ const execFileMatchers: ExecFileMatcher[] = [
       stdout: 'Test Files  1 passed (1)\nTests  5 passed (5)\n',
       stderr: '',
     },
+    sideEffect: (args) =>
+      writeFixtureFromInlineArg(
+        args,
+        '--outputFile.json=',
+        vitestJsonFixture('an integration test', 'passed', 'apps/api/tests/server.test.ts'),
+      ),
   },
   {
     matches: (joined) => joined.includes('npm') && joined.includes('run test:e2e'),
     result: {
       stdout: 'Running 1 test using 1 worker\n\n  1 passed (7.0s)\n',
       stderr: '',
+    },
+    sideEffect: (_args, options) => {
+      const target = options.env?.PLAYWRIGHT_JSON_OUTPUT_NAME;
+      if (!target) return;
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(
+        target,
+        JSON.stringify({
+          suites: [
+            {
+              title: 'reconciliation.spec.ts',
+              specs: [
+                {
+                  title: 'requires login',
+                  ok: true,
+                  tests: [{ results: [{ status: 'passed', duration: 500, retry: 0, attachments: [] }] }],
+                },
+              ],
+            },
+          ],
+        }),
+        'utf8',
+      );
     },
   },
   {
@@ -180,6 +272,35 @@ const execFileMatchers: ExecFileMatcher[] = [
       stdout: 'Test Files  2 passed (2)\nTests  11 passed (11)\n',
       stderr: '',
     },
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run test:postgres') && joined.includes('--reporter=json'),
+    result: { stdout: '', stderr: '' },
+    sideEffect: (args) =>
+      writeFixtureFromInlineArg(
+        args,
+        '--outputFile.json=',
+        vitestJsonFixture(
+          'migration_apply_clean_db',
+          'passed',
+          'packages/persistence/tests/liquibase-migrations.test.ts',
+        ),
+      ),
+  },
+  {
+    matches: (joined) => joined.includes('npm') && joined.includes('run lint') && joined.includes('--format'),
+    result: { stdout: '', stderr: '' },
+    sideEffect: (args) =>
+      writeFixtureFromFlagValue(
+        args,
+        '--output-file',
+        JSON.stringify([
+          {
+            filePath: '/app/apps/web/src/App.tsx',
+            messages: [{ ruleId: 'no-unused-vars', severity: 1, line: 10, message: 'unused' }],
+          },
+        ]),
+      ),
   },
   {
     matches: (joined) => joined.includes('npm') && joined.includes('run lint'),
@@ -296,12 +417,18 @@ const execFileMatchers: ExecFileMatcher[] = [
 ];
 
 const mockExecFile = vi.fn(
-  (command: string, args: string[], _options: unknown, callback: ExecFileCallback) => {
+  (
+    command: string,
+    args: string[],
+    options: { env?: Record<string, string> },
+    callback: ExecFileCallback,
+  ) => {
     const joined = [command, ...args].join(' ');
 
     const matched = execFileMatchers.find((matcher) => matcher.matches(joined));
 
     if (matched) {
+      matched.sideEffect?.(args, options);
       callback(null, matched.result);
       return;
     }
@@ -337,6 +464,9 @@ describe('developer endpoints', () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     rmSync(statusCacheDir, { recursive: true, force: true });
+    // Some checks write real JSON-reporter fixtures under the repo's own .dev-status-tmp
+    // (mirroring what the real npm scripts would produce) — clean those up between tests.
+    rmSync(join(process.cwd(), '.dev-status-tmp'), { recursive: true, force: true });
   });
 
   it('returns health status', async () => {
@@ -524,6 +654,41 @@ describe('developer endpoints', () => {
       },
       failingAreas: [],
     });
+
+    const unitCheck = body.checks.find((check) => check.name === 'Unit tests');
+    expect(unitCheck?.testItems).toEqual([]);
+
+    const postgresCheck = body.checks.find((check) => check.name === 'Postgres DB tests');
+    expect(postgresCheck?.dbTestItems).toEqual([
+      expect.objectContaining({ name: 'migration_apply_clean_db', category: 'migration', status: 'passed' }),
+    ]);
+
+    const lintCheck = body.checks.find((check) => check.name === 'Static analysis (lint)');
+    expect(lintCheck?.lintIssues).toEqual([
+      expect.objectContaining({ rule: 'no-unused-vars', severity: 'warning', line: 10 }),
+    ]);
+
+    const e2eCheck = body.checks.find((check) => check.name === 'E2E tests');
+    expect(e2eCheck?.e2eSpecs).toEqual([
+      expect.objectContaining({ name: expect.stringContaining('requires login'), status: 'passed' }),
+    ]);
+
+    expect(databaseSecurityScore?.cveFindings?.[0]).toMatchObject({
+      id: 'CVE-2026-33845',
+    });
+
+    expect(body.repoHealth).toMatchObject({
+      overallStatus: 'healthy',
+      failedChecks: 0,
+      commitsThisWeek: 17,
+      branchFreshness: {
+        remoteRef: 'origin/stage vs origin/dev',
+        aheadCount: 1,
+        behindCount: 3,
+      },
+      openPrCount: 2,
+    });
+    expect(body.repoHealth.lastCiRun.status).toBe('healthy');
   });
 
   it('returns warmup payload immediately for non-force cold starts in constrained runtimes', async () => {
@@ -567,6 +732,14 @@ describe('developer endpoints', () => {
           },
         ],
         history: [],
+        repoHealth: {
+          overallStatus: 'healthy',
+          failedChecks: 0,
+          lastCiRun: { status: 'healthy', durationMs: 1234, at: new Date().toISOString() },
+          commitsThisWeek: 5,
+          branchFreshness: { remoteRef: 'origin/stage vs origin/dev', aheadCount: 0, behindCount: 0 },
+          openPrCount: 1,
+        },
       },
       cachedAt: Date.now(),
       history: [],
