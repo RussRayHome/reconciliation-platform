@@ -567,6 +567,27 @@ export interface MappingProfileVersion {
   createdAt: string;
 }
 
+/** A canonical transaction field the mapping canvas can target, derived from `BusinessField`. */
+export interface CanonicalField {
+  id: BusinessField;
+  type: 'text' | 'date' | 'numeric' | 'enum';
+  required: boolean;
+  note: string;
+}
+
+/** A single mapped source column, keyed to the canonical field it feeds. */
+export interface MappingProfilePair {
+  col: string;
+  db: BusinessField;
+}
+
+/** Client-submitted payload for saving a combined GL + Bank mapping profile in one action. */
+export interface MappingProfileSavePayload {
+  name: string;
+  gl: MappingProfilePair[];
+  bank: MappingProfilePair[];
+}
+
 /** A parsed, mapped transaction awaiting validation and approval before canonical promotion. Stored in `reconciliation_staged_transaction`. */
 export interface StagedTransaction {
   id: string;

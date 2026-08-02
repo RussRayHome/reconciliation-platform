@@ -26,6 +26,7 @@ import type { ReviewerDecision } from '@recon/domain';
 import { DocsOverview } from './components/DocsOverview';
 import { DeveloperDashboard } from './components/DeveloperDashboard';
 import { ComingSoonPage } from './components/ComingSoonPage';
+import { CreateMappingScreen } from './components/CreateMappingScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
 import { SourceDropZone } from './components/SourceDropZone';
@@ -1102,15 +1103,7 @@ function ReconciliationApp({
                   />
                 }
               />
-              <Route
-                path={routePaths.mappingCreate}
-                element={
-                  <ComingSoonPage
-                    title="Create Mapping"
-                    description="Creating a new column mapping profile is coming soon."
-                  />
-                }
-              />
+              <Route path={routePaths.mappingCreate} element={<CreateMappingScreen />} />
               <Route
                 path={routePaths.mappingHistory}
                 element={
