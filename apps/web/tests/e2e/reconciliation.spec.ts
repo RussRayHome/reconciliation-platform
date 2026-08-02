@@ -7,7 +7,7 @@ test('requires login and lands on the application after successful authenticatio
   page,
 }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
   await loginToApplication(page);
 });
 

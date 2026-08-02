@@ -56,8 +56,8 @@ const resolveLoginCandidates = (): LoginCredentials[] => {
 
 export const loginToApplication = async (page: Page): Promise<void> => {
   const candidates = resolveLoginCandidates();
-  const loginHeading = page.getByRole('heading', { name: 'Login' });
-  const submitButton = page.getByRole('button', { name: 'Submit' });
+  const loginHeading = page.getByRole('heading', { name: 'Log in' });
+  const submitButton = page.getByRole('button', { name: 'Log in' });
   const workspaceReady = page.getByRole('link', { name: 'Import Files' });
 
   await page.goto('/');

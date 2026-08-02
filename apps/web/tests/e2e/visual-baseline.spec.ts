@@ -21,15 +21,15 @@ const screenshotOptions = {
   animations: 'disabled',
 } as const;
 
-// loginToApplication waits for the Setup tab, which only superuser/admin roles see;
+// loginToApplication waits for the Import Files link, which only superuser/admin roles see;
 // this variant just submits credentials and lets each test wait for its own landmark.
 const loginAs = async (page: Page, username: string, password: string): Promise<void> => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
   await page.getByLabel('Username').fill(username);
   await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Submit' }).click();
-  await expect(page.getByRole('heading', { name: 'Login' })).toBeHidden({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeHidden({ timeout: 10_000 });
 };
 
 // The docs pages embed a full document preview (including diagram images) whose
@@ -84,12 +84,12 @@ for (const width of widths) {
 
     test(`login and error state @${width}`, async ({ page }) => {
       await page.goto('/');
-      await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
       await expect(page).toHaveScreenshot(`login-${width}.png`, screenshotOptions);
 
       await page.getByLabel('Username').fill('nobody');
       await page.getByLabel('Password').fill('wrong');
-      await page.getByRole('button', { name: 'Submit' }).click();
+      await page.getByRole('button', { name: 'Log in' }).click();
       await expect(page.locator('.login-error')).toBeVisible();
       await expect(page).toHaveScreenshot(`login-error-${width}.png`, screenshotOptions);
     });
