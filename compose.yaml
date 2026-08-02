@@ -54,8 +54,6 @@ services:
         POSTGRES_BASE_IMAGE: ${POSTGRES_BASE_IMAGE:-postgres:16.14}
         ENABLE_PGAUDIT: ${ENABLE_PGAUDIT:-false}
         BUILDKIT_INLINE_CACHE: "1"
-      cache_from:
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-data:latest
     environment:
       LANG: en_US.UTF-8
       LANGUAGE: en_US:en
@@ -96,8 +94,6 @@ services:
       dockerfile: Dockerfile
       args:
         LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.31}
-      cache_from:
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,10 +119,6 @@ services:
       dockerfile: apps/api/Dockerfile
       args:
         BUILDKIT_INLINE_CACHE: "1"
-      cache_from:
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api:latest
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api-dev:latest
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate:latest
     depends_on:
       redis:
         condition: service_healthy
@@ -167,8 +159,6 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         BUILDKIT_INLINE_CACHE: "1"
-      cache_from:
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-web:latest
     depends_on:
       api:
         condition: service_healthy
