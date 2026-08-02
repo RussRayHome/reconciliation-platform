@@ -246,6 +246,21 @@
     color: var(--accent);
   }
 
+  .detail-panel__expand {
+    justify-self: start;
+    padding: 0.3rem 0;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .detail-panel__expand:hover {
+    text-decoration: underline;
+  }
+
   .detail-panel table {
     width: 100%;
     border-collapse: collapse;

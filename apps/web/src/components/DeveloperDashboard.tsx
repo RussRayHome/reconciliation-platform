@@ -447,9 +447,16 @@ function CoverageMicroBar({ pct, warn }: Readonly<{ pct: number; warn: boolean }
 }
 
 function CoveragePanel({ check }: Readonly<{ check: DeveloperCheckResponse | undefined }>) {
+  const [expanded, setExpanded] = useState(false);
   const files = check?.coverageFiles ?? [];
   const belowMinimum = files.filter((file) => !file.meetsMinimum).length;
-  const visible = files.slice(0, 15);
+  // Files are already sorted lowest-first. Always show every failing/borderline row (<80%
+  // lines); collapse the comfortably-passing tail behind a real, working expand button.
+  const previewCount = Math.max(
+    files.filter((file) => file.lines < 80).length,
+    Math.min(files.length, 15),
+  );
+  const visible = expanded ? files : files.slice(0, previewCount);
   const remaining = files.length - visible.length;
 
   return (
@@ -496,7 +503,13 @@ function CoveragePanel({ check }: Readonly<{ check: DeveloperCheckResponse | und
             </tbody>
           </table>
           {remaining > 0 ? (
-            <span className="detail-panel__sub">Show remaining {remaining} files — all ≥ 75%</span>
+            <button
+              type="button"
+              className="detail-panel__expand"
+              onClick={() => setExpanded(true)}
+            >
+              Show remaining {remaining} files
+            </button>
           ) : null}
         </>
       )}
