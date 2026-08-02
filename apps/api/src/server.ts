@@ -67,6 +67,10 @@ const closeHttpServer = async (server: HttpServer): Promise<void> =>
  * Logging is written to stdout in every environment and optionally mirrored to
  * a newline-delimited JSON file when `LOG_FILE` is configured.
  */
+// No `await` in the body since migrations moved to Liquibase (see packages/persistence/liquibase),
+// but `async` stays: callers rely on a thrown "DATABASE_URL is required" turning into a promise
+// rejection, not a synchronous throw.
+// eslint-disable-next-line @typescript-eslint/require-await
 export const createServerRuntime = async (): Promise<ServerRuntime> => {
   const isProduction = process.env.NODE_ENV === 'production';
   const logFile = process.env.LOG_FILE;

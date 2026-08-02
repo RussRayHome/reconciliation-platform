@@ -350,13 +350,13 @@ describe('App', () => {
   it('renders the login page when no authenticated user is stored', () => {
     renderApp();
 
-    expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
     expect(screen.getByLabelText('Username')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument();
   });
 
-  it('shows a red login error below username when credentials are invalid', async () => {
+  it('shows the invalid-credentials error banner without revealing which field failed', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ message: 'The user or password does not match.' }), {
         status: 401,
@@ -372,22 +372,13 @@ describe('App', () => {
       target: { value: 'wrong-password' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(
-        "That username and password don't match. Check both and try again.",
+        'Invalid username or password. Try again.',
       );
     });
-
-    const usernameFieldGroup = screen.getByLabelText('Username').closest('.field-group');
-    if (!(usernameFieldGroup instanceof HTMLElement)) {
-      throw new TypeError('Username field group was not found.');
-    }
-
-    expect(within(usernameFieldGroup).getByRole('alert')).toHaveTextContent(
-      "That username and password don't match. Check both and try again.",
-    );
   });
 
   it('lands on the application page after successful login', async () => {
@@ -411,11 +402,76 @@ describe('App', () => {
       target: { value: 'rray' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
       expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
     });
+  });
+
+  it('resets the URL to the app root after a successful login', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ username: 'rray', firstName: 'Ryan', lastName: 'Ray' }), {
+        status: 200,
+      }),
+    );
+
+    globalThis.history.pushState({}, '', '/login');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'rray' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'rray' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+    });
+    expect(globalThis.location.pathname).toBe('/');
+  });
+
+  it('navigates from login to Forgot Password and back via the placeholder screen', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('link', { name: 'Forgot password?' }));
+
+    expect(screen.getByRole('heading', { name: 'Forgot Password' })).toBeInTheDocument();
+    expect(screen.getByText('Placeholder')).toBeInTheDocument();
+    expect(screen.getByText("This page hasn't been designed yet.")).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/forgot-password');
+
+    await user.click(screen.getByRole('link', { name: '← Back to log in' }));
+
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/login');
+  });
+
+  it('navigates from login to the New Account placeholder via Create an account', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('link', { name: 'Create an account' }));
+
+    expect(screen.getByRole('heading', { name: 'New Account' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/signup');
+  });
+
+  it('navigates from login to the Contact Support placeholder via the footer link', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('link', { name: 'Contact support' }));
+
+    expect(screen.getByRole('heading', { name: 'Contact Support' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/support');
+  });
+
+  it('redirects a direct visit to an unknown path to /login when unauthenticated', () => {
+    globalThis.history.pushState({}, '', '/some/unknown/path');
+    renderApp();
+
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/login');
   });
 
   it('uses environment-prefixed docs links and an in-shell dashboard destination on an environment root route', () => {
@@ -1091,7 +1147,7 @@ describe('App', () => {
 
     fireEvent.click(within(nav).getByRole('button', { name: 'Log out' }));
 
-    expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
   });
 
   it('exposes Bank and GL template downloads under Mapping', () => {

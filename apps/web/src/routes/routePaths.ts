@@ -1,5 +1,9 @@
-/** Single source of truth for in-app workspace route paths, relative to the router basename. */
+/** Single source of truth for all route paths (pre-auth and in-app workspace), relative to the router basename. */
 export const routePaths = {
+  login: '/login',
+  forgotPassword: '/forgot-password',
+  signup: '/signup',
+  support: '/support',
   importFiles: '/',
   reconSummary: '/recon-summary',
   probableMatches: '/probable-matches',

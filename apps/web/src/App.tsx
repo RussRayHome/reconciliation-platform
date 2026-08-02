@@ -11,13 +11,22 @@ import {
   type ReactNode,
   type SetStateAction,
 } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { SectionCard } from '@recon/ui';
 import type { ReviewerDecision } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
 import { DeveloperDashboard } from './components/DeveloperDashboard';
 import { ComingSoonPage } from './components/ComingSoonPage';
+import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
 import { SourceDropZone } from './components/SourceDropZone';
 import {
@@ -78,7 +87,7 @@ const RUN_STORAGE_SCHEMA_VERSION = 2;
 const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
 const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
 const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-updated-at';
-const invalidLoginMessage = "That username and password don't match. Check both and try again.";
+const invalidLoginMessage = 'Invalid username or password. Try again.';
 
 const usersByUsername: Record<string, AppUser> = {
   rray2: { username: 'rray2', role: 'developer' },
@@ -411,11 +420,30 @@ function App() {
 
   if (!activeUser || !rolePermissions) {
     return (
-      <LoginShell
-        onAuthenticated={(session) => {
-          setAuthenticatedUserSession(session);
-        }}
-      />
+      <BrowserRouter basename={appHref}>
+        <Routes>
+          <Route
+            path={routePaths.login}
+            element={
+              <LoginShell
+                onAuthenticated={(session) => {
+                  // Reset the URL to the app root so a fresh authenticated load doesn't
+                  // linger on /login (or one of its sub-screens) after signing in.
+                  globalThis.history.replaceState(globalThis.history.state, '', appHref);
+                  setAuthenticatedUserSession(session);
+                }}
+              />
+            }
+          />
+          <Route
+            path={routePaths.forgotPassword}
+            element={<PlaceholderScreen title="Forgot Password" />}
+          />
+          <Route path={routePaths.signup} element={<PlaceholderScreen title="New Account" />} />
+          <Route path={routePaths.support} element={<PlaceholderScreen title="Contact Support" />} />
+          <Route path="*" element={<Navigate to={routePaths.login} replace />} />
+        </Routes>
+      </BrowserRouter>
     );
   }
 
@@ -1323,67 +1351,83 @@ function LoginShell({
   };
 
   return (
-    <div className="app-shell">
-      <div className="hero-backdrop" />
-      <main className="app-layout login-layout">
-        <section className="login-card" aria-label="Login page">
-          <div className="login-brand">
+    <div className="login-page">
+      <div className="login-wrap">
+        <div className="login-brand">
+          <span className="login-brand__logo">
             <img
-              className="login-brand__logo"
               src={kinneyHighlander}
-              alt="Small Scottish man in a kilt illustration"
+              alt="Kinney Software Solutions logo"
+              className="login-brand__logo-image"
             />
+          </span>
+          <div>
             <p className="login-brand__company">Kinney Software Solutions LLC</p>
+            <p className="login-brand__product">Reconciliation Platform</p>
+          </div>
+        </div>
+
+        <form className="login-card" aria-label="Login page" onSubmit={handleSubmit}>
+          <h1>Log in</h1>
+
+          <div className="login-field">
+            <label htmlFor="login-username">Username</label>
+            <input
+              id="login-username"
+              name="username"
+              autoComplete="username"
+              placeholder="your.name"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+            />
           </div>
 
-          <h1>Financial Reconciliation Platform</h1>
-          <p className="login-lede">
-            Audit-ready monthly workflow: upload source workbooks, preserve row-level traceability,
-            run evidence-based matching, and export accountant-friendly workpapers with repeatable
-            rules.
-          </p>
-
-          <h2 className="login-heading">Login</h2>
-
-          <form className="login-form" onSubmit={handleSubmit}>
-            <div className="field-group">
-              <label htmlFor="login-username">Username</label>
-              <input
-                id="login-username"
-                name="username"
-                autoComplete="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                required
-              />
-              {loginError ? (
-                <p className="login-error" role="alert">
-                  {invalidLoginMessage}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="field-group">
+          <div className="login-field">
+            <div className="login-field__label-row">
               <label htmlFor="login-password">Password</label>
-              <input
-                id="login-password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
+              <Link to={routePaths.forgotPassword}>Forgot password?</Link>
             </div>
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </div>
 
-            <div className="login-actions">
-              <button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Submitting...' : 'Submit'}
-              </button>
-            </div>
-          </form>
-        </section>
-      </main>
+          <button type="submit" className="login-btn-primary" disabled={isSubmitting}>
+            {isSubmitting ? 'Logging in...' : 'Log in'}
+          </button>
+
+          {loginError ? (
+            <p className="login-error" role="alert">
+              <span className="login-error__mark" aria-hidden="true">
+                !
+              </span>
+              {loginError}
+            </p>
+          ) : null}
+
+          <div className="login-divider">
+            <span className="login-divider__line" />
+            <span className="login-divider__text">New here?</span>
+            <span className="login-divider__line" />
+          </div>
+
+          <Link to={routePaths.signup} className="login-btn-secondary">
+            Create an account
+          </Link>
+        </form>
+
+        <p className="login-help">
+          Need help signing in? <Link to={routePaths.support}>Contact support</Link>
+        </p>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,15 @@
+import { routePaths } from '../routes/routePaths';
+
 export const readEnvString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
+
+// A single-segment path (e.g. "/dev") is inferred as the environment prefix unless it's actually
+// one of the app's own top-level routes (e.g. "/login") -- otherwise those routes would be
+// misread as environment prefixes on a deployment with no VITE_ENVIRONMENT_PATH_SEGMENT set.
+const knownTopLevelRouteSegments = new Set([
+  'docs',
+  ...Object.values(routePaths).map((path) => path.replace(/^\//, '')),
+]);
 
 export type EnvironmentPaths = {
   activeEnvironmentPathSegment: string;
@@ -34,7 +44,7 @@ export function resolveEnvironmentPaths(env: Record<string, unknown>): Environme
   const rootRouteEnvironmentPathSegment = /^\/([A-Za-z0-9_-]+)\/?$/.exec(pathname)?.[1] ?? '';
   const routeEnvironmentPathSegment =
     nestedRouteEnvironmentPathSegment ||
-    (rootRouteEnvironmentPathSegment.toLowerCase() === 'docs'
+    (knownTopLevelRouteSegments.has(rootRouteEnvironmentPathSegment.toLowerCase())
       ? ''
       : rootRouteEnvironmentPathSegment);
   const activeEnvironmentPathSegment =
