@@ -183,6 +183,14 @@ describe('Liquibase migrations', () => {
         runLiquibase(container.getId(), 'recon_synced', 'changelog-sync-to-tag', '--tag=v1-v9-baseline');
         runLiquibase(container.getId(), 'recon_synced', 'update');
 
+        // The pgTap and pg_stat_statements checks elsewhere in this file install those
+        // extensions into recon_fresh to verify the tooling itself works; neither extension
+        // is part of the Liquibase-managed application schema. Mirror them onto recon_synced
+        // so the migra diff below compares only Liquibase-managed schema objects instead of
+        // flagging this incidental test-harness setup as schema drift.
+        await syncedPool.query('CREATE EXTENSION IF NOT EXISTS pgtap');
+        await syncedPool.query('CREATE EXTENSION IF NOT EXISTS pg_stat_statements');
+
         const installResult = await container.exec([
           'bash',
           '-lc',
@@ -190,7 +198,7 @@ describe('Liquibase migrations', () => {
             'set -euo pipefail',
             'apt-get update',
             'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-pip python3-setuptools',
-            'python3 -m pip install --no-cache-dir --break-system-packages migra',
+            'python3 -m pip install --no-cache-dir --break-system-packages migra psycopg2-binary',
           ].join('; '),
         ]);
         expect(installResult.exitCode).toBe(0);
@@ -200,10 +208,10 @@ describe('Liquibase migrations', () => {
         const diffResult = await container.exec([
           'bash',
           '-lc',
-          `set -euo pipefail; python3 -m migra --unsafe --schema public "${syncedUrl}" "${freshUrl}"`,
+          `set -euo pipefail; migra --unsafe --schema public "${syncedUrl}" "${freshUrl}"`,
         ]);
 
-        // migra exits 0 with empty output when the two schemas are identical; exit 1 means it
+        // migra exits 0 with empty output when the two schemas are identical; exit 2 means it
         // found differences and printed the SQL to reconcile them.
         expect(diffResult.exitCode).toBe(0);
         expect(diffResult.output.trim()).toBe('');
