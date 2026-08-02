@@ -43,7 +43,7 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
 const buildException = (overrides: Partial<ExceptionItem>): ExceptionItem => ({
   id: overrides.id ?? randomUUID(),
   runId: overrides.runId ?? 'edge-case-run',
-  category: overrides.category ?? 'MissingFromQBO',
+  category: overrides.category ?? 'MissingFromGL',
   severity: overrides.severity ?? 'Medium',
   source: overrides.source ?? 'bank',
   spreadsheetFileName: overrides.spreadsheetFileName ?? 'workbook.xlsx',
@@ -66,7 +66,7 @@ const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => 
   ruleName: overrides.ruleName ?? 'Exact amount and normalized text',
   score: overrides.score ?? 0.99,
   bankTransactionId: overrides.bankTransactionId,
-  qboTransactionId: overrides.qboTransactionId,
+  glTransactionId: overrides.glTransactionId,
   dateDifferenceDays: overrides.dateDifferenceDays ?? 0,
   amountDifference: overrides.amountDifference ?? 0,
   evidence: overrides.evidence ?? ['Same amount and description'],
@@ -81,30 +81,30 @@ describe('Summary Edge Cases', () => {
       const transactions: NormalizedTransaction[] = [
         buildTransaction({ id: 'bank-1', source: 'bank', amount: 1000, isExcluded: true }),
         buildTransaction({ id: 'bank-2', source: 'bank', amount: 500, isExcluded: false }),
-        buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 1000, isExcluded: true }),
-        buildTransaction({ id: 'qbo-2', source: 'qbo', amount: 500, isExcluded: false }),
+        buildTransaction({ id: 'gl-1', source: 'gl', amount: 1000, isExcluded: true }),
+        buildTransaction({ id: 'gl-2', source: 'gl', amount: 500, isExcluded: false }),
       ];
       const exceptions: ExceptionItem[] = [];
 
       const summary = buildSummaryMetrics(transactions, [], exceptions);
 
       expect(summary.bankRecords).toBe(1);
-      expect(summary.qboRecords).toBe(1);
+      expect(summary.glRecords).toBe(1);
     });
 
     it('handles null amounts across all fields', () => {
       const transactions: NormalizedTransaction[] = [
         buildTransaction({ id: 'bank-1', source: 'bank', amount: null }),
-        buildTransaction({ id: 'qbo-1', source: 'qbo', amount: null }),
+        buildTransaction({ id: 'gl-1', source: 'gl', amount: null }),
       ];
       const exceptions: ExceptionItem[] = [
-        buildException({ source: 'bank', amount: null, category: 'MissingFromQBO' }),
+        buildException({ source: 'bank', amount: null, category: 'MissingFromGL' }),
       ];
 
       const summary = buildSummaryMetrics(transactions, [], exceptions);
 
       expect(summary.bankRecords).toBe(1);
-      expect(summary.unmatchedQboNetAmount).toBeDefined();
+      expect(summary.unmatchedGlNetAmount).toBeDefined();
     });
   });
 
@@ -130,13 +130,13 @@ describe('Summary Edge Cases', () => {
           buildTransaction({ id: 'bank-1', source: 'bank', amount: 1000.5 }),
         buildTransaction({ id: 'bank-2', source: 'bank', amount: -500.25 }),
         buildTransaction({ id: 'bank-3', source: 'bank', amount: 0 }),
-          buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 1000.5 }),
+          buildTransaction({ id: 'gl-1', source: 'gl', amount: 1000.5 }),
       ];
 
       const summary = buildSummaryMetrics(transactions, [], []);
 
       expect(summary.bankRecords).toBe(3);
-      expect(summary.qboRecords).toBe(1);
+      expect(summary.glRecords).toBe(1);
     });
   });
 
@@ -144,11 +144,11 @@ describe('Summary Edge Cases', () => {
     it('correctly categorizes all exception types', () => {
       const transactions: NormalizedTransaction[] = [
         buildTransaction({ id: 'bank-1', source: 'bank', amount: 100 }),
-        buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 100 }),
+        buildTransaction({ id: 'gl-1', source: 'gl', amount: 100 }),
       ];
       const exceptions: ExceptionItem[] = [
-        buildException({ category: 'MissingFromQBO', source: 'bank', amount: 100 }),
-        buildException({ category: 'MissingFromBank', source: 'qbo', amount: 100 }),
+        buildException({ category: 'MissingFromGL', source: 'bank', amount: 100 }),
+        buildException({ category: 'MissingFromBank', source: 'gl', amount: 100 }),
         buildException({ category: 'AmountMismatch', source: 'bank', amount: 50 }),
         buildException({ category: 'DateVariance', source: 'bank', amount: 75 }),
         buildException({ category: 'InvalidOrMissingData', source: 'bank', amount: 25 }),
@@ -157,7 +157,7 @@ describe('Summary Edge Cases', () => {
 
       const summary = buildSummaryMetrics(transactions, [], exceptions);
 
-      expect(summary.missingFromQBO).toBe(1);
+      expect(summary.missingFromGL).toBe(1);
       expect(summary.missingFromBank).toBe(1);
       expect(summary.amountMismatches).toBeGreaterThanOrEqual(0);
       expect(summary.dateVariances).toBeGreaterThanOrEqual(0);
@@ -170,7 +170,7 @@ describe('Summary Edge Cases', () => {
 
       const summary = buildSummaryMetrics(transactions, [], []);
 
-      expect(summary.missingFromQBO).toBe(0);
+      expect(summary.missingFromGL).toBe(0);
       expect(summary.missingFromBank).toBe(0);
       expect(summary.dataQualityIssues).toBe(0);
     });
@@ -180,12 +180,12 @@ describe('Summary Edge Cases', () => {
     it('handles exact, probable, and timing-difference matches', () => {
       const transactions: NormalizedTransaction[] = [
         buildTransaction({ id: 'bank-1', source: 'bank', amount: 1000 }),
-        buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 1000 }),
+        buildTransaction({ id: 'gl-1', source: 'gl', amount: 1000 }),
       ];
       const matchResults: MatchResult[] = [
         buildMatchResult({
           bankTransactionId: 'bank-1',
-          qboTransactionId: 'qbo-1',
+          glTransactionId: 'gl-1',
         }),
       ];
 
@@ -197,7 +197,7 @@ describe('Summary Edge Cases', () => {
   });
 
   describe('buildSummaryMetrics - data quality issues', () => {
-    it('aggregates QBO data quality issues only', () => {
+    it('aggregates GL data quality issues only', () => {
       const transactions: NormalizedTransaction[] = [
         buildTransaction({
           id: 'bank-1',
@@ -205,13 +205,13 @@ describe('Summary Edge Cases', () => {
           dataQualityIssues: ['Missing amount'],
         }),
         buildTransaction({
-          id: 'qbo-1',
-          source: 'qbo',
+          id: 'gl-1',
+          source: 'gl',
           dataQualityIssues: ['Invalid date format'],
         }),
         buildTransaction({
-          id: 'qbo-2',
-          source: 'qbo',
+          id: 'gl-2',
+          source: 'gl',
           dataQualityIssues: [],
         }),
       ];
@@ -259,8 +259,8 @@ describe('Summary Edge Cases', () => {
           amount: 50000,
         }),
         buildTransaction({
-          id: 'qbo-journal',
-          source: 'qbo',
+          id: 'gl-journal',
+          source: 'gl',
           spreadsheetFileName: 'large-operating-workbook.xlsx',
           description: 'Money Transfers',
           transactionDate: '2025-01-31',
@@ -272,7 +272,7 @@ describe('Summary Edge Cases', () => {
       const matchResults: MatchResult[] = [
         buildMatchResult({
           bankTransactionId: 'bank-transfer',
-          qboTransactionId: 'qbo-journal',
+          glTransactionId: 'gl-journal',
           disposition: 'ProbableMatch',
           confidence: 'Probable',
         }),
@@ -282,13 +282,13 @@ describe('Summary Edge Cases', () => {
           category: 'TimingDifference',
           source: 'bank',
           amount: 50000,
-          relatedTransactionIds: ['bank-transfer', 'qbo-journal'],
+          relatedTransactionIds: ['bank-transfer', 'gl-journal'],
         }),
         buildException({
           category: 'TimingDifference',
-          source: 'qbo',
+          source: 'gl',
           amount: 50000,
-          relatedTransactionIds: ['bank-transfer', 'qbo-journal'],
+          relatedTransactionIds: ['bank-transfer', 'gl-journal'],
         }),
       ];
 

@@ -14,7 +14,7 @@ export const sampleAccountOverrides: AccountOverrideConfig[] = [
         runningBalance: ['balance', 'running balance', 'current balance'],
       },
     },
-    qbo: {
+    gl: {
       columnAliases: {
         transactionDate: ['date', 'transaction date'],
         referenceNumber: ['num', 'reference', 'ref no'],
@@ -39,7 +39,7 @@ export const sampleAccountOverrides: AccountOverrideConfig[] = [
     bank: {
       transactionStartRow: 2,
     },
-    qbo: {
+    gl: {
       transactionStartRow: 2,
       excludeBeginningBalance: true,
       beginningBalancePatterns: ['BEGINNING BALANCE', 'OPENING BALANCE'],
@@ -66,7 +66,7 @@ export const sampleAccountOverrides: AccountOverrideConfig[] = [
     reporting: {
       severityByCategory: {
         DuplicateInBank: 'Critical',
-        DuplicateInQBO: 'Critical',
+        DuplicateInGL: 'Critical',
         AmountMismatch: 'Critical',
       },
     },

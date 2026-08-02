@@ -72,6 +72,7 @@ type RolePermissions = {
   canAccessDocumentation: boolean;
   canAccessDeveloperDashboard: boolean;
   canAdjustSliderDefaults: boolean;
+  canAccessRunBook: boolean;
 };
 
 type SelectOption = {
@@ -83,7 +84,7 @@ const LAST_SUCCESSFUL_RUN_STORAGE_KEY = 'reconciliation-platform:latest-report-r
 // Bump this whenever a change to display wording, category labels, or the RunData shape would
 // make a previously-persisted run render stale or incorrect content (e.g. the QBO->GL rename) --
 // loadPersistedRun() discards anything stored under a different version instead of trusting it.
-const RUN_STORAGE_SCHEMA_VERSION = 2;
+const RUN_STORAGE_SCHEMA_VERSION = 3;
 const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
 const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
 const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-updated-at';
@@ -109,24 +110,28 @@ const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessDocumentation: true,
     canAccessDeveloperDashboard: true,
     canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
   },
   'financial-analyst': {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAccessDeveloperDashboard: false,
     canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
   },
   admin: {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAccessDeveloperDashboard: false,
     canAdjustSliderDefaults: true,
+    canAccessRunBook: true,
   },
   superuser: {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAccessDeveloperDashboard: true,
     canAdjustSliderDefaults: true,
+    canAccessRunBook: true,
   },
 };
 
@@ -440,7 +445,10 @@ function App() {
             element={<PlaceholderScreen title="Forgot Password" />}
           />
           <Route path={routePaths.signup} element={<PlaceholderScreen title="New Account" />} />
-          <Route path={routePaths.support} element={<PlaceholderScreen title="Contact Support" />} />
+          <Route
+            path={routePaths.support}
+            element={<PlaceholderScreen title="Contact Support" />}
+          />
           <Route path="*" element={<Navigate to={routePaths.login} replace />} />
         </Routes>
       </BrowserRouter>
@@ -547,7 +555,7 @@ function ReconciliationApp({
   );
   const defaultMonth = monthsWithinYear[new Date().getMonth()] ?? 'January';
   const [bankFile, setBankFile] = useState<File | null>(null);
-  const [qboFile, setQboFile] = useState<File | null>(null);
+  const [glFile, setGlFile] = useState<File | null>(null);
   const [accountIdentifier, setAccountIdentifier] = useState('');
   const [reconciliationFrequency, setReconciliationFrequency] =
     useState<ReconciliationFrequency>('Monthly');
@@ -703,7 +711,11 @@ function ReconciliationApp({
 
     hasAppliedInitialRoleLanding.current = true;
 
-    if (location.pathname === routePaths.importFiles && !location.search && roleDefaultTab === 'review') {
+    if (
+      location.pathname === routePaths.importFiles &&
+      !location.search &&
+      roleDefaultTab === 'review'
+    ) {
       void navigate(routePaths.reconSummary, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally runs once on mount only; see hasAppliedInitialRoleLanding.
@@ -774,15 +786,15 @@ function ReconciliationApp({
 
   const trimmedPeriodLabel = periodLabel.trim();
   const isLabelMissing = trimmedPeriodLabel.length === 0;
-  const hasStartedUploadStep = Boolean(bankFile || qboFile);
-  const isUploadStepComplete = Boolean(bankFile && qboFile);
+  const hasStartedUploadStep = Boolean(bankFile || glFile);
+  const isUploadStepComplete = Boolean(bankFile && glFile);
   const isConfigurationStepComplete = isUploadStepComplete && !isLabelMissing;
   const isRunStepComplete = Boolean(run);
   const isRunStepCurrent = isConfigurationStepComplete && !isRunStepComplete;
   const isExportStepComplete = hasDownloadedWorkbook || hasExportedJson;
   const isExportStepCurrent = isRunStepComplete && !isExportStepComplete;
   const isRunPendingStep = isRunStepCurrent || reconciliation.isPending;
-  const canSubmit = Boolean(bankFile && qboFile && !reconciliation.isPending && !isLabelMissing);
+  const canSubmit = Boolean(bankFile && glFile && !reconciliation.isPending && !isLabelMissing);
 
   const progressSteps = useMemo<ProgressStep[]>(() => {
     const uploadMeterValue = resolveMeterValue(isUploadStepComplete, hasStartedUploadStep, 20);
@@ -867,7 +879,7 @@ function ReconciliationApp({
   const elapsedLabel = runElapsedMs === null ? null : formatElapsedLabel(runElapsedMs);
   const runBarSourceFileNames = reportRun
     ? reportRun.sourceFiles.map((file) => file.fileName)
-    : [bankFile?.name, qboFile?.name].filter((name): name is string => Boolean(name));
+    : [bankFile?.name, glFile?.name].filter((name): name is string => Boolean(name));
   const runBarAccountIdentifier = reportRun?.accountIdentifier ?? accountIdentifier;
   const runBarFrequency = reportRun?.reconciliationFrequency ?? reconciliationFrequency;
   const appliedVarianceOverrides = reportRun?.appliedVarianceOverrides;
@@ -910,7 +922,7 @@ function ReconciliationApp({
   const handleSubmit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();
 
-    if (!bankFile || !qboFile) {
+    if (!bankFile || !glFile) {
       return;
     }
 
@@ -918,7 +930,7 @@ function ReconciliationApp({
     setNowMs(Date.now());
     reconciliation.mutate({
       bankFile,
-      qboFile,
+      glFile,
       accountIdentifier,
       reconciliationFrequency,
       periodLabel: trimmedPeriodLabel,
@@ -956,6 +968,7 @@ function ReconciliationApp({
         docsHref={docsHref}
         showDeveloperDashboardLink={showDeveloperDashboardLink}
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
+        canAccessRunBook={rolePermissions.canAccessRunBook}
         username={username}
         profileLabel={profileLabel}
         roleLabel={roleLabel}
@@ -1012,7 +1025,7 @@ function ReconciliationApp({
                   <SourceUploadSection
                     annualYear={annualYear}
                     bankFile={bankFile}
-                    qboFile={qboFile}
+                    glFile={glFile}
                     canSubmit={canSubmit}
                     currentYear={currentYear}
                     handleSubmit={handleSubmit}
@@ -1029,7 +1042,7 @@ function ReconciliationApp({
                     setIsCustomPeriodLabel={setIsCustomPeriodLabel}
                     setMonthlyMonth={setMonthlyMonth}
                     setPeriodLabel={setPeriodLabel}
-                    setQboFile={setQboFile}
+                    setGlFile={setGlFile}
                     setReconciliationFrequency={setReconciliationFrequency}
                     suggestedPeriodLabel={suggestedPeriodLabel}
                     accountIdentifier={accountIdentifier}
@@ -1081,20 +1094,56 @@ function ReconciliationApp({
               ) : null}
 
               <Route
-                path={routePaths.mappingFields}
+                path={routePaths.mappingProfiles}
                 element={
                   <ComingSoonPage
-                    title="Mapping fields"
-                    description="Column mapping between source files and canonical fields is coming soon."
+                    title="Mapping Profiles"
+                    description="Browsing and managing saved mapping profiles is coming soon."
                   />
                 }
               />
               <Route
-                path={routePaths.mappingUpload}
+                path={routePaths.mappingCreate}
                 element={
                   <ComingSoonPage
-                    title="Upload files"
-                    description="Uploading files for a mapping profile preview is coming soon."
+                    title="Create Mapping"
+                    description="Creating a new column mapping profile is coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.mappingHistory}
+                element={
+                  <ComingSoonPage
+                    title="Mapping History"
+                    description="A history of past mapping profile changes is coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.approvalsPending}
+                element={
+                  <ComingSoonPage
+                    title="Pending Imports"
+                    description="Imports awaiting approval will be reviewable here."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.approvalsApproved}
+                element={
+                  <ComingSoonPage
+                    title="Approved Imports"
+                    description="A record of approved imports will be reviewable here."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.approvalsRejected}
+                element={
+                  <ComingSoonPage
+                    title="Rejected Imports"
+                    description="A record of rejected imports will be reviewable here."
                   />
                 }
               />
@@ -1137,15 +1186,17 @@ function ReconciliationApp({
                   />
                 }
               />
-              <Route
-                path={routePaths.documentationRulebook}
-                element={
-                  <ComingSoonPage
-                    title="Rulebook"
-                    description="A browsable rulebook for matching and exception rules is coming soon."
-                  />
-                }
-              />
+              {rolePermissions.canAccessRunBook ? (
+                <Route
+                  path={routePaths.documentationRunBook}
+                  element={
+                    <ComingSoonPage
+                      title="Run Book"
+                      description="A browsable run book for matching and exception rules is coming soon."
+                    />
+                  }
+                />
+              ) : null}
 
               <Route path="*" element={<Navigate to={routePaths.importFiles} replace />} />
             </Routes>
@@ -1167,7 +1218,7 @@ function SourceUploadSection({
   accountIdentifier,
   annualYear,
   bankFile,
-  qboFile,
+  glFile,
   canSubmit,
   currentYear,
   handleSubmit,
@@ -1184,14 +1235,14 @@ function SourceUploadSection({
   setIsCustomPeriodLabel,
   setMonthlyMonth,
   setPeriodLabel,
-  setQboFile,
+  setGlFile,
   setReconciliationFrequency,
   suggestedPeriodLabel,
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
   bankFile: File | null;
-  qboFile: File | null;
+  glFile: File | null;
   canSubmit: boolean;
   currentYear: number;
   handleSubmit: (event: { preventDefault: () => void }) => void;
@@ -1208,7 +1259,7 @@ function SourceUploadSection({
   setIsCustomPeriodLabel: Dispatch<SetStateAction<boolean>>;
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
   setPeriodLabel: Dispatch<SetStateAction<string>>;
-  setQboFile: Dispatch<SetStateAction<File | null>>;
+  setGlFile: Dispatch<SetStateAction<File | null>>;
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
 }>) {
@@ -1228,9 +1279,9 @@ function SourceUploadSection({
       >
         <SourceDropZone
           bankFile={bankFile}
-          qboFile={qboFile}
+          glFile={glFile}
           setBankFile={setBankFile}
-          setQboFile={setQboFile}
+          setGlFile={setGlFile}
         />
 
         <HelpedTextField
@@ -1483,6 +1534,9 @@ function UserRoleControls({
           {rolePermissions.canAdjustSliderDefaults
             ? 'Variance slider default adjustments enabled'
             : 'Variance slider default adjustments blocked'}
+        </li>
+        <li>
+          {rolePermissions.canAccessRunBook ? 'Run Book access enabled' : 'Run Book access blocked'}
         </li>
       </ul>
       <button

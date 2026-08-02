@@ -11,9 +11,9 @@ export interface GroupedReservationCandidate {
   evidence: string[];
   dateDifferenceDays: number | null;
   bankTransactions: Array<NormalizedTransaction & { amount: number }>;
-  qboTransactions: Array<NormalizedTransaction & { amount: number }>;
+  glTransactions: Array<NormalizedTransaction & { amount: number }>;
   bankTransactionIds: string[];
-  qboTransactionIds: string[];
+  glTransactionIds: string[];
   score: number;
 }
 
@@ -55,20 +55,20 @@ const inferTransactionKind = (
 
 const areTimingKindsCompatible = (
   bankTransaction: NormalizedTransaction,
-  qboTransaction: NormalizedTransaction,
+  glTransaction: NormalizedTransaction,
 ): boolean => {
   const bankKind = inferTransactionKind(bankTransaction);
-  const qboKind = inferTransactionKind(qboTransaction);
+  const glKind = inferTransactionKind(glTransaction);
 
-  if (bankKind === 'unknown' || qboKind === 'unknown') {
+  if (bankKind === 'unknown' || glKind === 'unknown') {
     return true;
   }
 
-  if (bankKind === qboKind) {
+  if (bankKind === glKind) {
     return true;
   }
 
-  return (bankKind === 'transfer' && qboKind === 'journal') || (bankKind === 'deposit' && qboKind === 'transfer');
+  return (bankKind === 'transfer' && glKind === 'journal') || (bankKind === 'deposit' && glKind === 'transfer');
 };
 
 const areGroupedTransactionsCompatible = (
@@ -130,15 +130,15 @@ const generateTransactionCombinations = <T>(
 
 const calculateGroupedDateDifference = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
 ): number | null => {
   let maxDifference: number | null = null;
 
   for (const bankTransaction of bankTransactions) {
-    for (const qboTransaction of qboTransactions) {
+    for (const glTransaction of glTransactions) {
       const dateDifference = dateDifferenceDays(
         bankTransaction.transactionDate ?? bankTransaction.postingDate,
-        qboTransaction.transactionDate ?? qboTransaction.postingDate,
+        glTransaction.transactionDate ?? glTransaction.postingDate,
       );
 
       if (dateDifference === null) {
@@ -154,40 +154,40 @@ const calculateGroupedDateDifference = (
 
 const buildGroupedReservationCandidate = (
   bankTransactions: Array<NormalizedTransaction & { amount: number }>,
-  qboTransactions: Array<NormalizedTransaction & { amount: number }>,
+  glTransactions: Array<NormalizedTransaction & { amount: number }>,
   matching: MatchingConfig,
 ): GroupedReservationCandidate | undefined => {
-  if (!bankTransactions.length || !qboTransactions.length) {
+  if (!bankTransactions.length || !glTransactions.length) {
     return undefined;
   }
 
-  if (bankTransactions.length === 1 && qboTransactions.length === 1) {
+  if (bankTransactions.length === 1 && glTransactions.length === 1) {
     return undefined;
   }
 
   const bankTotal = sumTransactionAmounts(bankTransactions);
-  const qboTotal = sumTransactionAmounts(qboTransactions);
+  const glTotal = sumTransactionAmounts(glTransactions);
 
-  if (!currencyEquals(bankTotal, qboTotal, matching.amountTolerance)) {
+  if (!currencyEquals(bankTotal, glTotal, matching.amountTolerance)) {
     return undefined;
   }
 
-  if (Math.sign(bankTotal) !== Math.sign(qboTotal)) {
+  if (Math.sign(bankTotal) !== Math.sign(glTotal)) {
     return undefined;
   }
 
-  if (!areGroupedTransactionsCompatible(bankTransactions, qboTransactions)) {
+  if (!areGroupedTransactionsCompatible(bankTransactions, glTransactions)) {
     return undefined;
   }
 
-  const dateDifference = calculateGroupedDateDifference(bankTransactions, qboTransactions);
+  const dateDifference = calculateGroupedDateDifference(bankTransactions, glTransactions);
   if (dateDifference === null || dateDifference > matching.timingDifferenceDays) {
     return undefined;
   }
 
   const bankKinds = formatKinds(bankTransactions);
-  const qboKinds = formatKinds(qboTransactions);
-  const category = bankTotal > 0 && qboTotal > 0 ? 'DepositGroupingIssue' : 'LikelySplitCombineIssue';
+  const glKinds = formatKinds(glTransactions);
+  const category = bankTotal > 0 && glTotal > 0 ? 'DepositGroupingIssue' : 'LikelySplitCombineIssue';
 
   return {
     category,
@@ -201,18 +201,18 @@ const buildGroupedReservationCandidate = (
         ? 'A balanced grouped deposit candidate was reserved before one-to-one review matching.'
         : 'A balanced grouped split/combine candidate was reserved before one-to-one review matching.',
     evidence: [
-      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); GL total is ${qboTotal.toFixed(2)} across ${qboTransactions.length} line(s).`,
+      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); GL total is ${glTotal.toFixed(2)} across ${glTransactions.length} line(s).`,
       `Maximum cross-source date difference is ${dateDifference} day(s).`,
-      `Observed transaction kinds are bank=${bankKinds} and gl=${qboKinds}.`,
+      `Observed transaction kinds are bank=${bankKinds} and gl=${glKinds}.`,
       `Bank members: ${describeTransactionGroup(bankTransactions)}.`,
-      `GL members: ${describeTransactionGroup(qboTransactions)}.`,
+      `GL members: ${describeTransactionGroup(glTransactions)}.`,
     ],
     dateDifferenceDays: dateDifference,
     bankTransactions,
-    qboTransactions,
+    glTransactions,
     bankTransactionIds: bankTransactions.map((transaction) => transaction.id),
-    qboTransactionIds: qboTransactions.map((transaction) => transaction.id),
-    score: 100 - dateDifference * 2 - (bankTransactions.length + qboTransactions.length),
+    glTransactionIds: glTransactions.map((transaction) => transaction.id),
+    score: 100 - dateDifference * 2 - (bankTransactions.length + glTransactions.length),
   };
 };
 
@@ -255,19 +255,19 @@ const collectGroupedCounterpartPool = (
 
 const findGroupedReservationCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
   const bankResiduals = bankTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } => transaction.amount !== null,
   );
-  const qboResiduals = qboTransactions.filter(
+  const glResiduals = glTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } => transaction.amount !== null,
   );
 
   for (const bankTransaction of bankResiduals) {
-    const counterpartPool = collectGroupedCounterpartPool(bankTransaction, qboResiduals, matching);
+    const counterpartPool = collectGroupedCounterpartPool(bankTransaction, glResiduals, matching);
     const combinations = generateTransactionCombinations(counterpartPool, 2, matching.groupedMatchMaxSize);
 
     for (const combination of combinations) {
@@ -279,12 +279,12 @@ const findGroupedReservationCandidates = (
     }
   }
 
-  for (const qboTransaction of qboResiduals) {
-    const counterpartPool = collectGroupedCounterpartPool(qboTransaction, bankResiduals, matching);
+  for (const glTransaction of glResiduals) {
+    const counterpartPool = collectGroupedCounterpartPool(glTransaction, bankResiduals, matching);
     const combinations = generateTransactionCombinations(counterpartPool, 2, matching.groupedMatchMaxSize);
 
     for (const combination of combinations) {
-      const candidate = buildGroupedReservationCandidate(combination, [qboTransaction], matching);
+      const candidate = buildGroupedReservationCandidate(combination, [glTransaction], matching);
 
       if (candidate) {
         candidates.push(candidate);
@@ -300,7 +300,7 @@ const FEE_NETTING_KEYWORDS = [
   'merchant service fee', 'discount fee', 'settlement fee', 'transaction fee', 'card fee',
 ];
 
-const isFeeLikeQboTransaction = (transaction: NormalizedTransaction): boolean => {
+const isFeeLikeGlTransaction = (transaction: NormalizedTransaction): boolean => {
   const text = [transaction.description, transaction.merchantName, transaction.payeeName]
     .filter(Boolean)
     .join(' ')
@@ -310,7 +310,7 @@ const isFeeLikeQboTransaction = (transaction: NormalizedTransaction): boolean =>
 
 const buildFeeNettingCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
@@ -319,7 +319,7 @@ const buildFeeNettingCandidates = (
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
       transaction.amount !== null && transaction.amount > 0,
   );
-  const qboRevenues = qboTransactions.filter(
+  const glRevenues = glTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
       transaction.amount !== null && transaction.amount > 0,
   );
@@ -327,23 +327,23 @@ const buildFeeNettingCandidates = (
   // the payroll/service-charge/loan builders above) keeps this to genuine fee-netting pairs —
   // without it, any two GL amounts that happen to sum near a bank credit within the timing
   // window get flagged, producing massive false-positive rates on real-sized datasets.
-  const qboFees = qboTransactions.filter(
+  const glFees = glTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
-      transaction.amount !== null && transaction.amount < 0 && isFeeLikeQboTransaction(transaction),
+      transaction.amount !== null && transaction.amount < 0 && isFeeLikeGlTransaction(transaction),
   );
 
   for (const bankCredit of bankCredits) {
     const bankDate = bankCredit.transactionDate ?? bankCredit.postingDate;
 
-    for (const qboRevenue of qboRevenues) {
-      for (const qboFee of qboFees) {
-        const netAmount = qboRevenue.amount + qboFee.amount;
+    for (const glRevenue of glRevenues) {
+      for (const glFee of glFees) {
+        const netAmount = glRevenue.amount + glFee.amount;
         if (!currencyEquals(bankCredit.amount, netAmount, matching.amountTolerance)) {
           continue;
         }
 
-        const revenueDate = qboRevenue.transactionDate ?? qboRevenue.postingDate;
-        const feeDate = qboFee.transactionDate ?? qboFee.postingDate;
+        const revenueDate = glRevenue.transactionDate ?? glRevenue.postingDate;
+        const feeDate = glFee.transactionDate ?? glFee.postingDate;
         const diffRevenue = dateDifferenceDays(bankDate, revenueDate);
         const diffFee = dateDifferenceDays(bankDate, feeDate);
 
@@ -365,15 +365,15 @@ const buildFeeNettingCandidates = (
           reason:
             'A bank credit matches the net of a GL revenue entry minus a fee expense, indicating a fee-netted payout.',
           evidence: [
-            `Bank credit of ${bankCredit.amount.toFixed(2)} matches GL revenue ${qboRevenue.amount.toFixed(2)} + fee ${qboFee.amount.toFixed(2)} = ${netAmount.toFixed(2)}.`,
+            `Bank credit of ${bankCredit.amount.toFixed(2)} matches GL revenue ${glRevenue.amount.toFixed(2)} + fee ${glFee.amount.toFixed(2)} = ${netAmount.toFixed(2)}.`,
             `Maximum cross-source date difference is ${maxDateDiff} day(s).`,
-            `Bank: ${bankCredit.spreadsheetFileName}:L${bankCredit.lineNumber}; GL revenue: ${qboRevenue.spreadsheetFileName}:L${qboRevenue.lineNumber}; GL fee: ${qboFee.spreadsheetFileName}:L${qboFee.lineNumber}.`,
+            `Bank: ${bankCredit.spreadsheetFileName}:L${bankCredit.lineNumber}; GL revenue: ${glRevenue.spreadsheetFileName}:L${glRevenue.lineNumber}; GL fee: ${glFee.spreadsheetFileName}:L${glFee.lineNumber}.`,
           ],
           dateDifferenceDays: maxDateDiff,
           bankTransactions: [bankCredit],
-          qboTransactions: [qboRevenue, qboFee],
+          glTransactions: [glRevenue, glFee],
           bankTransactionIds: [bankCredit.id],
-          qboTransactionIds: [qboRevenue.id, qboFee.id],
+          glTransactionIds: [glRevenue.id, glFee.id],
           score: 100 - maxDateDiff * 2,
         });
       }
@@ -399,7 +399,7 @@ const isPartialPaymentBankSignal = (transaction: NormalizedTransaction): boolean
 
 const buildPartialPaymentCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
@@ -411,13 +411,13 @@ const buildPartialPaymentCandidates = (
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
       transaction.amount !== null && transaction.amount < 0 && isPartialPaymentBankSignal(transaction),
   );
-  const qboDebits = qboTransactions.filter(
+  const glDebits = glTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
       transaction.amount !== null && transaction.amount < 0,
   );
 
-  for (const qboDebit of qboDebits) {
-    const qboDate = qboDebit.transactionDate ?? qboDebit.postingDate;
+  for (const glDebit of glDebits) {
+    const glDate = glDebit.transactionDate ?? glDebit.postingDate;
 
     // partialPaymentWindowDays (90 by default) is wide enough that "eligible" can mean most of
     // the dataset's bank debits. generateTransactionCombinations() has no internal size limit,
@@ -430,12 +430,12 @@ const buildPartialPaymentCandidates = (
     const eligibleBankDebits = bankDebits
       .filter((bankDebit) => {
         const bankDate = bankDebit.transactionDate ?? bankDebit.postingDate;
-        const diff = dateDifferenceDays(bankDate, qboDate);
+        const diff = dateDifferenceDays(bankDate, glDate);
         return diff !== null && diff <= matching.partialPaymentWindowDays;
       })
       .sort((left, right) => {
-        const leftDiff = dateDifferenceDays(left.transactionDate ?? left.postingDate, qboDate) ?? Number.MAX_SAFE_INTEGER;
-        const rightDiff = dateDifferenceDays(right.transactionDate ?? right.postingDate, qboDate) ?? Number.MAX_SAFE_INTEGER;
+        const leftDiff = dateDifferenceDays(left.transactionDate ?? left.postingDate, glDate) ?? Number.MAX_SAFE_INTEGER;
+        const rightDiff = dateDifferenceDays(right.transactionDate ?? right.postingDate, glDate) ?? Number.MAX_SAFE_INTEGER;
         return leftDiff - rightDiff;
       })
       .slice(0, PARTIAL_PAYMENT_POOL_SIZE);
@@ -445,7 +445,7 @@ const buildPartialPaymentCandidates = (
     for (const combination of combinations) {
       const bankTotal = combination.reduce((sum, tx) => sum + tx.amount, 0);
 
-      if (!currencyEquals(bankTotal, qboDebit.amount, matching.amountTolerance)) {
+      if (!currencyEquals(bankTotal, glDebit.amount, matching.amountTolerance)) {
         continue;
       }
 
@@ -477,7 +477,7 @@ const buildPartialPaymentCandidates = (
 
       const maxDateDiff = combination.reduce<number>((max, bankDebit) => {
         const bankDate = bankDebit.transactionDate ?? bankDebit.postingDate;
-        const diff = dateDifferenceDays(bankDate, qboDate) ?? 0;
+        const diff = dateDifferenceDays(bankDate, glDate) ?? 0;
         return Math.max(max, diff);
       }, 0);
 
@@ -488,17 +488,17 @@ const buildPartialPaymentCandidates = (
         reason:
           'Multiple bank debits with similar payee context accumulate to a single GL payable, indicating partial payments.',
         evidence: [
-          `Bank total of ${bankTotal.toFixed(2)} across ${combination.length} payment(s) matches GL payable of ${qboDebit.amount.toFixed(2)}.`,
+          `Bank total of ${bankTotal.toFixed(2)} across ${combination.length} payment(s) matches GL payable of ${glDebit.amount.toFixed(2)}.`,
           `Average inter-bank payee similarity is ${avgSimilarity.toFixed(2)}.`,
           `Maximum cross-source date difference is ${maxDateDiff} day(s) (window: ${matching.partialPaymentWindowDays} days).`,
           `Bank members: ${combination.map((tx) => `${tx.spreadsheetFileName}:L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join('; ')}.`,
-          `GL payable: ${qboDebit.spreadsheetFileName}:L${qboDebit.lineNumber}:${qboDebit.amount.toFixed(2)}.`,
+          `GL payable: ${glDebit.spreadsheetFileName}:L${glDebit.lineNumber}:${glDebit.amount.toFixed(2)}.`,
         ],
         dateDifferenceDays: maxDateDiff,
         bankTransactions: combination,
-        qboTransactions: [qboDebit],
+        glTransactions: [glDebit],
         bankTransactionIds: combination.map((tx) => tx.id),
-        qboTransactionIds: [qboDebit.id],
+        glTransactionIds: [glDebit.id],
         score: 100 - maxDateDiff + avgSimilarity * 10 - combination.length,
       });
     }
@@ -507,7 +507,7 @@ const buildPartialPaymentCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
-const PAYROLL_BATCH_MAX_QBO_LINES = 25;
+const PAYROLL_BATCH_MAX_GL_LINES = 25;
 const PAYROLL_BATCH_POOL_SIZE = 12;
 
 const PAYROLL_BANK_KEYWORDS = [
@@ -524,22 +524,22 @@ const isPayrollBankSignal = (transaction: NormalizedTransaction): boolean => {
   return PAYROLL_BANK_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
-const PAYROLL_QBO_KEYWORDS = [
+const PAYROLL_GL_KEYWORDS = [
   'payroll', 'wages', 'wage expense', 'salary', 'salaries', 'employee compensation',
   'payroll tax', 'payroll expense',
 ];
 
-const isPayrollQboSignal = (transaction: NormalizedTransaction): boolean => {
+const isPayrollGlSignal = (transaction: NormalizedTransaction): boolean => {
   const text = [transaction.description, transaction.merchantName, transaction.payeeName]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  return PAYROLL_QBO_KEYWORDS.some((keyword) => text.includes(keyword));
+  return PAYROLL_GL_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
 const buildPayrollBatchCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
@@ -553,9 +553,9 @@ const buildPayrollBatchCandidates = (
   // 11-day window around a payroll date can hold dozens of unrelated small debits from other
   // scenarios, crowding the real payroll lines out of the pool before the subset search ever
   // runs. Mirror the bank-side keyword gate on the GL description as well.
-  const qboDebitsWithAmount = qboTransactions.filter(
+  const glDebitsWithAmount = glTransactions.filter(
     (tx): tx is NormalizedTransaction & { amount: number } =>
-      tx.amount !== null && tx.amount < 0 && isPayrollQboSignal(tx),
+      tx.amount !== null && tx.amount < 0 && isPayrollGlSignal(tx),
   );
 
   for (const bankDebit of payrollBankDebits) {
@@ -565,14 +565,14 @@ const buildPayrollBatchCandidates = (
     // and loan-split builders do) only works if the pool is already exactly the intended group —
     // on a real-sized dataset, other unrelated small debits routinely fall in the same date window
     // and inflate the total past any tolerance, so this never fires. Search subsets instead, over a
-    // pool bounded generously (payroll batches run up to PAYROLL_BATCH_MAX_QBO_LINES lines) to keep
+    // pool bounded generously (payroll batches run up to PAYROLL_BATCH_MAX_GL_LINES lines) to keep
     // the combinatorial cost in check.
-    const pool = qboDebitsWithAmount
-      .filter((qboDebit) => {
-        const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate);
+    const pool = glDebitsWithAmount
+      .filter((glDebit) => {
+        const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .filter((glDebit) => Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
       .sort((left, right) => {
         const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
         const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
@@ -584,7 +584,7 @@ const buildPayrollBatchCandidates = (
       continue;
     }
 
-    const combos = generateTransactionCombinations(pool, 2, Math.min(PAYROLL_BATCH_MAX_QBO_LINES, pool.length));
+    const combos = generateTransactionCombinations(pool, 2, Math.min(PAYROLL_BATCH_MAX_GL_LINES, pool.length));
     const combo = combos.find((candidateCombo) =>
       currencyEquals(
         bankDebit.amount,
@@ -597,10 +597,10 @@ const buildPayrollBatchCandidates = (
       continue;
     }
 
-    const qboTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
+    const glTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
 
-    const maxDateDiff = combo.reduce<number>((max, qboDebit) => {
-      const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate) ?? 0;
+    const maxDateDiff = combo.reduce<number>((max, glDebit) => {
+      const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
       return Math.max(max, diff);
     }, 0);
 
@@ -611,16 +611,16 @@ const buildPayrollBatchCandidates = (
       reason:
         'A bank payroll ACH debit matches the aggregate of multiple GL payroll expense entries posted on the same payroll date.',
       evidence: [
-        `Bank payroll debit of ${bankDebit.amount.toFixed(2)} matches GL total of ${qboTotal.toFixed(2)} across ${combo.length} expense line(s).`,
+        `Bank payroll debit of ${bankDebit.amount.toFixed(2)} matches GL total of ${glTotal.toFixed(2)} across ${combo.length} expense line(s).`,
         `All GL entries fall within ${matching.dateToleranceDays} day(s) of the bank payroll date.`,
         `Payroll processor signal detected in bank description: "${bankDebit.description ?? bankDebit.merchantName ?? ''}"`,
         `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; GL lines: ${combo.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
       ],
       dateDifferenceDays: maxDateDiff,
       bankTransactions: [bankDebit],
-      qboTransactions: combo,
+      glTransactions: combo,
       bankTransactionIds: [bankDebit.id],
-      qboTransactionIds: combo.map((tx) => tx.id),
+      glTransactionIds: combo.map((tx) => tx.id),
       score: 100 - maxDateDiff * 2 - combo.length,
     });
   }
@@ -628,7 +628,7 @@ const buildPayrollBatchCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
-const BANK_SERVICE_CHARGE_MAX_QBO_LINES = 5;
+const BANK_SERVICE_CHARGE_MAX_GL_LINES = 5;
 const BANK_SERVICE_CHARGE_POOL_SIZE = 10;
 
 const BANK_SERVICE_CHARGE_KEYWORDS = [
@@ -645,21 +645,21 @@ const isServiceChargeBankSignal = (transaction: NormalizedTransaction): boolean 
   return BANK_SERVICE_CHARGE_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
-const SERVICE_CHARGE_QBO_KEYWORDS = [
+const SERVICE_CHARGE_GL_KEYWORDS = [
   'bank fee', 'bank charge', 'service charge', 'fee expense', 'bank service',
 ];
 
-const isServiceChargeQboSignal = (transaction: NormalizedTransaction): boolean => {
+const isServiceChargeGlSignal = (transaction: NormalizedTransaction): boolean => {
   const text = [transaction.description, transaction.merchantName, transaction.payeeName]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  return SERVICE_CHARGE_QBO_KEYWORDS.some((keyword) => text.includes(keyword));
+  return SERVICE_CHARGE_GL_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
 const buildBankServiceChargeAmortizationCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
@@ -671,9 +671,9 @@ const buildBankServiceChargeAmortizationCandidates = (
 
   // Same reasoning as buildPayrollBatchCandidates: gate the GL side on a fee-expense keyword too,
   // so the date-proximity pool isn't drowned out by unrelated debits in a dense dataset.
-  const qboDebitsWithAmount = qboTransactions.filter(
+  const glDebitsWithAmount = glTransactions.filter(
     (tx): tx is NormalizedTransaction & { amount: number } =>
-      tx.amount !== null && tx.amount < 0 && isServiceChargeQboSignal(tx),
+      tx.amount !== null && tx.amount < 0 && isServiceChargeGlSignal(tx),
   );
 
   for (const bankDebit of serviceChargeBankDebits) {
@@ -681,12 +681,12 @@ const buildBankServiceChargeAmortizationCandidates = (
 
     // Same fix as buildPayrollBatchCandidates: search subsets of the pool for one that sums to the
     // bank total, rather than requiring the entire date/amount-filtered pool to sum exactly.
-    const pool = qboDebitsWithAmount
-      .filter((qboDebit) => {
-        const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate);
+    const pool = glDebitsWithAmount
+      .filter((glDebit) => {
+        const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .filter((glDebit) => Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
       .sort((left, right) => {
         const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
         const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
@@ -701,7 +701,7 @@ const buildBankServiceChargeAmortizationCandidates = (
     const combos = generateTransactionCombinations(
       pool,
       2,
-      Math.min(BANK_SERVICE_CHARGE_MAX_QBO_LINES, pool.length),
+      Math.min(BANK_SERVICE_CHARGE_MAX_GL_LINES, pool.length),
     );
     const combo = combos.find((candidateCombo) =>
       currencyEquals(
@@ -715,10 +715,10 @@ const buildBankServiceChargeAmortizationCandidates = (
       continue;
     }
 
-    const qboTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
+    const glTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
 
-    const maxDateDiff = combo.reduce<number>((max, qboDebit) => {
-      const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate) ?? 0;
+    const maxDateDiff = combo.reduce<number>((max, glDebit) => {
+      const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
       return Math.max(max, diff);
     }, 0);
 
@@ -729,16 +729,16 @@ const buildBankServiceChargeAmortizationCandidates = (
       reason:
         'A bank service charge debit matches the aggregate of multiple GL fee expense entries, indicating an amortized or split posting across account categories.',
       evidence: [
-        `Bank service charge of ${bankDebit.amount.toFixed(2)} matches GL total of ${qboTotal.toFixed(2)} across ${combo.length} expense line(s).`,
+        `Bank service charge of ${bankDebit.amount.toFixed(2)} matches GL total of ${glTotal.toFixed(2)} across ${combo.length} expense line(s).`,
         `All GL entries fall within ${matching.dateToleranceDays} day(s) of the bank charge date.`,
         `Service charge signal detected in bank description: "${bankDebit.description ?? bankDebit.merchantName ?? ''}"`,
         `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; GL lines: ${combo.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
       ],
       dateDifferenceDays: maxDateDiff,
       bankTransactions: [bankDebit],
-      qboTransactions: combo,
+      glTransactions: combo,
       bankTransactionIds: [bankDebit.id],
-      qboTransactionIds: combo.map((tx) => tx.id),
+      glTransactionIds: combo.map((tx) => tx.id),
       score: 100 - maxDateDiff * 2 - combo.length,
     });
   }
@@ -746,7 +746,7 @@ const buildBankServiceChargeAmortizationCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
-const LOAN_PAYMENT_MAX_QBO_LINES = 3;
+const LOAN_PAYMENT_MAX_GL_LINES = 3;
 const LOAN_PAYMENT_POOL_SIZE = 15;
 
 const LOAN_PAYMENT_KEYWORDS = [
@@ -763,22 +763,22 @@ const isLoanPaymentBankSignal = (transaction: NormalizedTransaction): boolean =>
   return LOAN_PAYMENT_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
-const LOAN_PAYMENT_QBO_KEYWORDS = [
+const LOAN_PAYMENT_GL_KEYWORDS = [
   'loan principal', 'loan interest', 'principal reduction', 'interest expense',
   'note payable', 'mortgage', 'loan payment', 'debt service',
 ];
 
-const isLoanPaymentQboSignal = (transaction: NormalizedTransaction): boolean => {
+const isLoanPaymentGlSignal = (transaction: NormalizedTransaction): boolean => {
   const text = [transaction.description, transaction.merchantName, transaction.payeeName]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  return LOAN_PAYMENT_QBO_KEYWORDS.some((keyword) => text.includes(keyword));
+  return LOAN_PAYMENT_GL_KEYWORDS.some((keyword) => text.includes(keyword));
 };
 
 const buildLoanPaymentSplitCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
@@ -790,9 +790,9 @@ const buildLoanPaymentSplitCandidates = (
 
   // Same reasoning as buildPayrollBatchCandidates: gate the GL side too, so principal/interest
   // lines aren't crowded out of the date-proximity pool by unrelated debits.
-  const qboDebitsWithAmount = qboTransactions.filter(
+  const glDebitsWithAmount = glTransactions.filter(
     (tx): tx is NormalizedTransaction & { amount: number } =>
-      tx.amount !== null && tx.amount < 0 && isLoanPaymentQboSignal(tx),
+      tx.amount !== null && tx.amount < 0 && isLoanPaymentGlSignal(tx),
   );
 
   for (const bankDebit of loanBankDebits) {
@@ -800,12 +800,12 @@ const buildLoanPaymentSplitCandidates = (
 
     // Same combinatorial-size concern as buildPartialPaymentCandidates: bound the pool before
     // generateTransactionCombinations() rather than after, keeping the closest-dated entries.
-    const pool = qboDebitsWithAmount
-      .filter((qboDebit) => {
-        const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate);
+    const pool = glDebitsWithAmount
+      .filter((glDebit) => {
+        const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((qboDebit) => Math.abs(qboDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .filter((glDebit) => Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
       .sort((left, right) => {
         const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
         const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
@@ -817,17 +817,17 @@ const buildLoanPaymentSplitCandidates = (
       continue;
     }
 
-    const combos = generateTransactionCombinations(pool, 2, Math.min(LOAN_PAYMENT_MAX_QBO_LINES, pool.length));
+    const combos = generateTransactionCombinations(pool, 2, Math.min(LOAN_PAYMENT_MAX_GL_LINES, pool.length));
     let matched = false;
 
     for (const combo of combos) {
-      const qboTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
-      if (!currencyEquals(bankDebit.amount, qboTotal, matching.amountTolerance)) {
+      const glTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
+      if (!currencyEquals(bankDebit.amount, glTotal, matching.amountTolerance)) {
         continue;
       }
 
-      const maxDateDiff = combo.reduce<number>((max, qboDebit) => {
-        const diff = dateDifferenceDays(bankDate, qboDebit.transactionDate ?? qboDebit.postingDate) ?? 0;
+      const maxDateDiff = combo.reduce<number>((max, glDebit) => {
+        const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
         return Math.max(max, diff);
       }, 0);
 
@@ -838,16 +838,16 @@ const buildLoanPaymentSplitCandidates = (
         reason:
           'A bank loan payment debit matches the aggregate of GL principal and interest expense entries for the same obligation.',
         evidence: [
-          `Bank loan payment of ${bankDebit.amount.toFixed(2)} matches GL total of ${qboTotal.toFixed(2)} across ${combo.length} entry(ies).`,
+          `Bank loan payment of ${bankDebit.amount.toFixed(2)} matches GL total of ${glTotal.toFixed(2)} across ${combo.length} entry(ies).`,
           `All GL entries fall within ${matching.dateToleranceDays} day(s) of the bank payment date.`,
           `Loan payment signal detected in bank description: "${bankDebit.description ?? bankDebit.merchantName ?? ''}"`,
           `Bank: ${bankDebit.spreadsheetFileName}:L${bankDebit.lineNumber}; GL lines: ${combo.map((tx) => `L${tx.lineNumber}:${tx.amount.toFixed(2)}`).join(', ')}.`,
         ],
         dateDifferenceDays: maxDateDiff,
         bankTransactions: [bankDebit],
-        qboTransactions: combo,
+        glTransactions: combo,
         bankTransactionIds: [bankDebit.id],
-        qboTransactionIds: combo.map((tx) => tx.id),
+        glTransactionIds: combo.map((tx) => tx.id),
         score: 100 - maxDateDiff * 2 - combo.length,
       });
       matched = true;
@@ -863,7 +863,7 @@ const buildLoanPaymentSplitCandidates = (
 /** Output of `reserveGroupedTransactionIds`: the selected candidates and the ID sets reserved from further matching. */
 export interface GroupedReservationResult {
   reservedBankTransactionIds: Set<string>;
-  reservedQboTransactionIds: Set<string>;
+  reservedGlTransactionIds: Set<string>;
   selectedCandidates: GroupedReservationCandidate[];
 }
 
@@ -874,25 +874,25 @@ export interface GroupedReservationResult {
  */
 export const reserveGroupedTransactionIds = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedReservationResult => {
   const reservedBankTransactionIds = new Set<string>();
-  const reservedQboTransactionIds = new Set<string>();
+  const reservedGlTransactionIds = new Set<string>();
   const selectedCandidates: GroupedReservationCandidate[] = [];
   const candidates = [
-    ...findGroupedReservationCandidates(bankTransactions, qboTransactions, matching),
-    ...buildFeeNettingCandidates(bankTransactions, qboTransactions, matching),
-    ...buildPartialPaymentCandidates(bankTransactions, qboTransactions, matching),
-    ...buildPayrollBatchCandidates(bankTransactions, qboTransactions, matching),
-    ...buildBankServiceChargeAmortizationCandidates(bankTransactions, qboTransactions, matching),
-    ...buildLoanPaymentSplitCandidates(bankTransactions, qboTransactions, matching),
+    ...findGroupedReservationCandidates(bankTransactions, glTransactions, matching),
+    ...buildFeeNettingCandidates(bankTransactions, glTransactions, matching),
+    ...buildPartialPaymentCandidates(bankTransactions, glTransactions, matching),
+    ...buildPayrollBatchCandidates(bankTransactions, glTransactions, matching),
+    ...buildBankServiceChargeAmortizationCandidates(bankTransactions, glTransactions, matching),
+    ...buildLoanPaymentSplitCandidates(bankTransactions, glTransactions, matching),
   ].sort((left, right) => right.score - left.score);
 
   candidates.forEach((candidate) => {
     if (
       candidate.bankTransactionIds.some((transactionId) => reservedBankTransactionIds.has(transactionId)) ||
-      candidate.qboTransactionIds.some((transactionId) => reservedQboTransactionIds.has(transactionId))
+      candidate.glTransactionIds.some((transactionId) => reservedGlTransactionIds.has(transactionId))
     ) {
       return;
     }
@@ -900,15 +900,15 @@ export const reserveGroupedTransactionIds = (
     candidate.bankTransactionIds.forEach((transactionId) => {
       reservedBankTransactionIds.add(transactionId);
     });
-    candidate.qboTransactionIds.forEach((transactionId) => {
-      reservedQboTransactionIds.add(transactionId);
+    candidate.glTransactionIds.forEach((transactionId) => {
+      reservedGlTransactionIds.add(transactionId);
     });
     selectedCandidates.push(candidate);
   });
 
   return {
     reservedBankTransactionIds,
-    reservedQboTransactionIds,
+    reservedGlTransactionIds,
     selectedCandidates,
   };
 };

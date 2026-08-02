@@ -10,7 +10,7 @@ import {
   formatKinds,
   generateTransactionCombinations,
   inferTransactionKind,
-  isCheckLikeQboTransaction,
+  isCheckLikeGlTransaction,
   mergeComparisonTokens,
   mergeReferenceTokens,
   parseIsoDate,
@@ -71,21 +71,21 @@ describe('parseIsoDate', () => {
   });
 });
 
-describe('isCheckLikeQboTransaction', () => {
+describe('isCheckLikeGlTransaction', () => {
   it('returns true when checkNumber is set', () => {
-    expect(isCheckLikeQboTransaction(buildTransaction({ checkNumber: '1001' }))).toBe(true);
+    expect(isCheckLikeGlTransaction(buildTransaction({ checkNumber: '1001' }))).toBe(true);
   });
 
   it('returns true when serialNumber is set', () => {
-    expect(isCheckLikeQboTransaction(buildTransaction({ serialNumber: '5555' }))).toBe(true);
+    expect(isCheckLikeGlTransaction(buildTransaction({ serialNumber: '5555' }))).toBe(true);
   });
 
   it('returns true when transactionType contains "check"', () => {
-    expect(isCheckLikeQboTransaction(buildTransaction({ transactionType: 'Check' }))).toBe(true);
+    expect(isCheckLikeGlTransaction(buildTransaction({ transactionType: 'Check' }))).toBe(true);
   });
 
   it('returns false when no check-like fields are present', () => {
-    expect(isCheckLikeQboTransaction(buildTransaction({ transactionType: 'Deposit' }))).toBe(false);
+    expect(isCheckLikeGlTransaction(buildTransaction({ transactionType: 'Deposit' }))).toBe(false);
   });
 });
 
@@ -180,35 +180,35 @@ describe('areTimingKindsCompatible', () => {
 describe('areGroupedTransactionsCompatible', () => {
   it('returns true when all pairs are compatible', () => {
     const bank = [buildTransaction({ transactionType: 'Transfer' })];
-    const qbo = [buildTransaction({ transactionType: 'Journal Entry' })];
-    expect(areGroupedTransactionsCompatible(bank, qbo)).toBe(true);
+    const gl = [buildTransaction({ transactionType: 'Journal Entry' })];
+    expect(areGroupedTransactionsCompatible(bank, gl)).toBe(true);
   });
 
   it('returns false when any pair is incompatible', () => {
     const bank = [buildTransaction({ transactionType: 'Transfer' })];
-    const qbo = [
+    const gl = [
       buildTransaction({ transactionType: 'Journal Entry' }),
       buildTransaction({ checkNumber: '999' }),
     ];
-    expect(areGroupedTransactionsCompatible(bank, qbo)).toBe(false);
+    expect(areGroupedTransactionsCompatible(bank, gl)).toBe(false);
   });
 });
 
 describe('calculateGroupedDateDifference', () => {
-  it('returns the maximum date difference across all bank × qbo pairs', () => {
+  it('returns the maximum date difference across all bank × gl pairs', () => {
     const bank = [
       buildTransaction({ transactionDate: '2025-01-01' }),
       buildTransaction({ transactionDate: '2025-01-05' }),
     ];
-    const qbo = [buildTransaction({ transactionDate: '2025-01-03' })];
+    const gl = [buildTransaction({ transactionDate: '2025-01-03' })];
     // differences: |3-1|=2, |3-5|=2 → max = 2
-    expect(calculateGroupedDateDifference(bank, qbo)).toBe(2);
+    expect(calculateGroupedDateDifference(bank, gl)).toBe(2);
   });
 
   it('returns null when any transaction is missing a date', () => {
     const bank = [buildTransaction({ transactionDate: undefined, postingDate: undefined })];
-    const qbo = [buildTransaction({ transactionDate: '2025-01-03' })];
-    expect(calculateGroupedDateDifference(bank, qbo)).toBeNull();
+    const gl = [buildTransaction({ transactionDate: '2025-01-03' })];
+    expect(calculateGroupedDateDifference(bank, gl)).toBeNull();
   });
 });
 

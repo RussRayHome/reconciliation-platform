@@ -13,7 +13,7 @@ export type QueuedReconciliationJobPayload = {
   body: Record<string, unknown>;
   files: {
     bankFile: QueuedReconciliationFilePayload;
-    qboFile: QueuedReconciliationFilePayload;
+    glFile: QueuedReconciliationFilePayload;
   };
 };
 

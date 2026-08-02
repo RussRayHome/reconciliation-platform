@@ -43,7 +43,7 @@ export const buildAmountFrequency = (
  * containing "check", or a description that reads as a check ("check"/"chk" as a whole word) —
  * the last fallback matters for GL exports that record the disbursement type only in free text.
  */
-export const isCheckLikeQboTransaction = (transaction: NormalizedTransaction): boolean => {
+export const isCheckLikeGlTransaction = (transaction: NormalizedTransaction): boolean => {
   const transactionType = (transaction.transactionType ?? '').toLowerCase();
   if (Boolean(transaction.checkNumber || transaction.serialNumber) || transactionType.includes('check')) {
     return true;
@@ -89,7 +89,7 @@ export const inferTransactionKind = (transaction: NormalizedTransaction): Transa
   const description = normalizeTransactionType(transaction.description);
 
   if (
-    isCheckLikeQboTransaction(transaction) ||
+    isCheckLikeGlTransaction(transaction) ||
     transaction.checkNumber ||
     transaction.serialNumber
   ) {
@@ -126,22 +126,22 @@ export const inferTransactionKind = (transaction: NormalizedTransaction): Transa
 /** Returns `true` when the inferred kinds of two transactions are directionally compatible for timing classification. */
 export const areTimingKindsCompatible = (
   bankTransaction: NormalizedTransaction,
-  qboTransaction: NormalizedTransaction,
+  glTransaction: NormalizedTransaction,
 ): boolean => {
   const bankKind = inferTransactionKind(bankTransaction);
-  const qboKind = inferTransactionKind(qboTransaction);
+  const glKind = inferTransactionKind(glTransaction);
 
-  if (bankKind === 'unknown' || qboKind === 'unknown') {
+  if (bankKind === 'unknown' || glKind === 'unknown') {
     return true;
   }
 
-  if (bankKind === qboKind) {
+  if (bankKind === glKind) {
     return true;
   }
 
   return (
-    (bankKind === 'transfer' && qboKind === 'journal') ||
-    (bankKind === 'deposit' && qboKind === 'transfer')
+    (bankKind === 'transfer' && glKind === 'journal') ||
+    (bankKind === 'deposit' && glKind === 'transfer')
   );
 };
 
@@ -163,15 +163,15 @@ export const areGroupedTransactionsCompatible = (
 /** Returns the maximum pairwise date difference (in days) across all bank/GL transaction combinations, or `null` if any date is missing. */
 export const calculateGroupedDateDifference = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
 ): number | null => {
   let maxDifference: number | null = null;
 
   for (const bankTransaction of bankTransactions) {
-    for (const qboTransaction of qboTransactions) {
+    for (const glTransaction of glTransactions) {
       const dateDifference = dateDifferenceDays(
         bankTransaction.transactionDate ?? bankTransaction.postingDate,
-        qboTransaction.transactionDate ?? qboTransaction.postingDate,
+        glTransaction.transactionDate ?? glTransaction.postingDate,
       );
 
       if (dateDifference === null) {

@@ -8,7 +8,7 @@ import { currencyEquals } from '../matching/similarity';
 import { dateDifferenceDays, tokenSimilarity } from '../matching/similarity';
 import {
   inferTransactionKind,
-  isCheckLikeQboTransaction,
+  isCheckLikeGlTransaction,
   parseIsoDate,
 } from './exceptionClassifierUtils';
 import type {
@@ -47,7 +47,7 @@ const isCheckLikeBankTransaction = (transaction: NormalizedTransaction): boolean
 const resolveMatchResultCategory = (params: {
   result: MatchResult;
   bankTransaction?: NormalizedTransaction;
-  qboTransaction?: NormalizedTransaction;
+  glTransaction?: NormalizedTransaction;
   matching: MatchingConfig;
   miscodingThresholds: MiscodingThresholds;
 }): {
@@ -55,18 +55,18 @@ const resolveMatchResultCategory = (params: {
   matchedMiscodingCandidate?: MiscodingCandidate;
   matchedTimingDifferenceCandidate?: TimingDifferenceCandidate;
 } => {
-  const { result, bankTransaction, qboTransaction, matching, miscodingThresholds } = params;
+  const { result, bankTransaction, glTransaction, matching, miscodingThresholds } = params;
   let resultCategory: ExceptionItem['category'] | undefined = result.exceptionCategory;
 
   const matchedMiscodingCandidate =
     resultCategory === 'DateVariance' &&
     bankTransaction &&
-    qboTransaction &&
+    glTransaction &&
     bankTransaction.amount !== null &&
-    qboTransaction.amount !== null
+    glTransaction.amount !== null
       ? buildLikelyMiscodingCandidate(
           bankTransaction as NormalizedTransaction & { amount: number },
-          qboTransaction as NormalizedTransaction & { amount: number },
+          glTransaction as NormalizedTransaction & { amount: number },
           matching,
           miscodingThresholds,
         )
@@ -75,12 +75,12 @@ const resolveMatchResultCategory = (params: {
   const matchedTimingDifferenceCandidate =
     resultCategory === 'DateVariance' &&
     bankTransaction &&
-    qboTransaction &&
+    glTransaction &&
     bankTransaction.amount !== null &&
-    qboTransaction.amount !== null
+    glTransaction.amount !== null
       ? buildTimingDifferenceCandidate(
           bankTransaction as NormalizedTransaction & { amount: number },
-          qboTransaction as NormalizedTransaction & { amount: number },
+          glTransaction as NormalizedTransaction & { amount: number },
           matching,
         )
       : undefined;
@@ -108,13 +108,13 @@ export const buildMatchResultClassification = (params: {
   const bankTransaction = result.bankTransactionId
     ? transactionById.get(result.bankTransactionId)
     : undefined;
-  const qboTransaction = result.qboTransactionId
-    ? transactionById.get(result.qboTransactionId)
+  const glTransaction = result.glTransactionId
+    ? transactionById.get(result.glTransactionId)
     : undefined;
   const categoryResolution = resolveMatchResultCategory({
     result,
     bankTransaction,
-    qboTransaction,
+    glTransaction,
     matching,
     miscodingThresholds,
   });
@@ -123,17 +123,17 @@ export const buildMatchResultClassification = (params: {
     return undefined;
   }
 
-  if (!bankTransaction && !qboTransaction) {
+  if (!bankTransaction && !glTransaction) {
     return undefined;
   }
 
   return {
     bankTransaction,
-    qboTransaction,
+    glTransaction,
     resultCategory: categoryResolution.resultCategory,
     matchedMiscodingCandidate: categoryResolution.matchedMiscodingCandidate,
     matchedTimingDifferenceCandidate: categoryResolution.matchedTimingDifferenceCandidate,
-    relatedTransactionIds: [result.bankTransactionId, result.qboTransactionId].filter(
+    relatedTransactionIds: [result.bankTransactionId, result.glTransactionId].filter(
       Boolean,
     ) as string[],
     sourceTrace: {
@@ -153,25 +153,25 @@ export const buildMatchResultClassification = (params: {
 export const buildMatchResultTargets = (
   classification: MatchResultClassification,
 ): Array<{ target: NormalizedTransaction; counterpart?: NormalizedTransaction }> => {
-  const { bankTransaction, qboTransaction, resultCategory } = classification;
+  const { bankTransaction, glTransaction, resultCategory } = classification;
 
   if (
     (resultCategory === 'TimingDifference' || resultCategory === 'LikelyMiscoding') &&
     bankTransaction &&
-    qboTransaction
+    glTransaction
   ) {
     return [
-      { target: bankTransaction, counterpart: qboTransaction },
-      { target: qboTransaction, counterpart: bankTransaction },
+      { target: bankTransaction, counterpart: glTransaction },
+      { target: glTransaction, counterpart: bankTransaction },
     ];
   }
 
-  const target = bankTransaction ?? qboTransaction;
+  const target = bankTransaction ?? glTransaction;
   if (!target) {
     return [];
   }
 
-  const counterpart = target.id === bankTransaction?.id ? qboTransaction : bankTransaction;
+  const counterpart = target.id === bankTransaction?.id ? glTransaction : bankTransaction;
   return [{ target, counterpart }];
 };
 
@@ -186,12 +186,12 @@ const getTransactionsByIds = (
 const findMatchResultByPair = (
   matchResults: MatchResult[],
   bankTransactionId: string,
-  qboTransactionId: string,
+  glTransactionId: string,
 ): MatchResult | undefined =>
   matchResults.find(
     (result) =>
       result.bankTransactionId === bankTransactionId &&
-      result.qboTransactionId === qboTransactionId,
+      result.glTransactionId === glTransactionId,
   );
 
 const buildReconciliationAnchorDate = (
@@ -215,14 +215,14 @@ const classifyStaleOutstandingChecksStage = (params: ResidualStageParams): Set<s
     runId,
     reporting,
     transactionById,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     normalizedTransactions,
     upsertTransactionException,
   } = params;
-  const staleOutstandingQboIds = new Set<string>();
+  const staleOutstandingGlIds = new Set<string>();
   const reconciliationAnchorDate = buildReconciliationAnchorDate(normalizedTransactions);
 
-  remainingUnmatchedQbo.forEach((transactionId) => {
+  remainingUnmatchedGl.forEach((transactionId) => {
     const transaction = transactionById.get(transactionId);
     const transactionDate = parseIsoDate(transaction?.transactionDate ?? transaction?.postingDate);
 
@@ -232,7 +232,7 @@ const classifyStaleOutstandingChecksStage = (params: ResidualStageParams): Set<s
       !reconciliationAnchorDate ||
       transaction.amount === null ||
       transaction.amount >= 0 ||
-      !isCheckLikeQboTransaction(transaction)
+      !isCheckLikeGlTransaction(transaction)
     ) {
       return;
     }
@@ -265,15 +265,15 @@ const classifyStaleOutstandingChecksStage = (params: ResidualStageParams): Set<s
         ),
       }),
     );
-    staleOutstandingQboIds.add(transaction.id);
+    staleOutstandingGlIds.add(transaction.id);
   });
 
-  return staleOutstandingQboIds;
+  return staleOutstandingGlIds;
 };
 
 const classifyOutstandingChecksStage = (
   params: ResidualStageParams,
-  staleOutstandingQboIds: Set<string>,
+  staleOutstandingGlIds: Set<string>,
   anchorDate: Date | undefined,
 ): Set<string> => {
   const {
@@ -281,17 +281,17 @@ const classifyOutstandingChecksStage = (
     reporting,
     matching,
     transactionById,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     upsertTransactionException,
   } = params;
-  const outstandingCheckQboIds = new Set<string>();
+  const outstandingCheckGlIds = new Set<string>();
 
   if (!anchorDate) {
-    return outstandingCheckQboIds;
+    return outstandingCheckGlIds;
   }
 
-  remainingUnmatchedQbo.forEach((transactionId) => {
-    if (staleOutstandingQboIds.has(transactionId)) {
+  remainingUnmatchedGl.forEach((transactionId) => {
+    if (staleOutstandingGlIds.has(transactionId)) {
       return;
     }
 
@@ -303,7 +303,7 @@ const classifyOutstandingChecksStage = (
       !transactionDate ||
       transaction.amount === null ||
       transaction.amount >= 0 ||
-      !isCheckLikeQboTransaction(transaction)
+      !isCheckLikeGlTransaction(transaction)
     ) {
       return;
     }
@@ -338,10 +338,10 @@ const classifyOutstandingChecksStage = (
         ),
       }),
     );
-    outstandingCheckQboIds.add(transaction.id);
+    outstandingCheckGlIds.add(transaction.id);
   });
 
-  return outstandingCheckQboIds;
+  return outstandingCheckGlIds;
 };
 
 const ACH_RETURN_KEYWORDS = ['RETURN', 'RTN', 'NSF', 'R01', 'R09'];
@@ -722,21 +722,21 @@ const hasIntercompanyKeyword = (transaction: NormalizedTransaction): boolean => 
 const classifyIntercompanyMismatchStage = (
   params: ResidualStageParams,
   alreadyConsumedBankIds: Set<string>,
-  alreadyConsumedQboIds: Set<string>,
+  alreadyConsumedGlIds: Set<string>,
 ): {
   intercompanyBankIds: Set<string>;
-  intercompanyQboIds: Set<string>;
+  intercompanyGlIds: Set<string>;
 } => {
   const {
     runId,
     reporting,
     transactionById,
     remainingUnmatchedBank,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     upsertTransactionException,
   } = params;
   const intercompanyBankIds = new Set<string>();
-  const intercompanyQboIds = new Set<string>();
+  const intercompanyGlIds = new Set<string>();
 
   for (const bankId of remainingUnmatchedBank) {
     if (alreadyConsumedBankIds.has(bankId)) {
@@ -770,12 +770,12 @@ const classifyIntercompanyMismatchStage = (
     intercompanyBankIds.add(bankId);
   }
 
-  for (const qboId of remainingUnmatchedQbo) {
-    if (alreadyConsumedQboIds.has(qboId)) {
+  for (const glId of remainingUnmatchedGl) {
+    if (alreadyConsumedGlIds.has(glId)) {
       continue;
     }
 
-    const transaction = transactionById.get(qboId);
+    const transaction = transactionById.get(glId);
     if (!transaction || !hasIntercompanyKeyword(transaction)) {
       continue;
     }
@@ -799,20 +799,20 @@ const classifyIntercompanyMismatchStage = (
         ),
       }),
     );
-    intercompanyQboIds.add(qboId);
+    intercompanyGlIds.add(glId);
   }
 
-  return { intercompanyBankIds, intercompanyQboIds };
+  return { intercompanyBankIds, intercompanyGlIds };
 };
 
 const classifyMiscodingStage = (
   params: ResidualStageParams,
-  excludedQboIds: Set<string>,
+  excludedGlIds: Set<string>,
   achReturnBankIds: Set<string>,
   reversalVoidBankIds: Set<string>,
 ): {
   miscodingBankIds: Set<string>;
-  miscodingQboIds: Set<string>;
+  miscodingGlIds: Set<string>;
   miscodingThresholds: MiscodingThresholds;
 } => {
   const {
@@ -821,7 +821,7 @@ const classifyMiscodingStage = (
     matching,
     transactionById,
     remainingUnmatchedBank,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     upsertTransactionException,
   } = params;
   const miscodingCandidates = findLikelyMiscodingCandidates(
@@ -832,8 +832,8 @@ const classifyMiscodingStage = (
       transactionById,
     ),
     getTransactionsByIds(
-      [...remainingUnmatchedQbo].filter(
-        (transactionId) => !excludedQboIds.has(transactionId),
+      [...remainingUnmatchedGl].filter(
+        (transactionId) => !excludedGlIds.has(transactionId),
       ),
       transactionById,
     ),
@@ -841,12 +841,12 @@ const classifyMiscodingStage = (
   );
   const miscodingThresholds = buildMiscodingThresholds(matching);
   const miscodingBankIds = new Set<string>();
-  const miscodingQboIds = new Set<string>();
+  const miscodingGlIds = new Set<string>();
 
   miscodingCandidates.forEach((candidate) => {
     if (
       miscodingBankIds.has(candidate.bankTransaction.id) ||
-      miscodingQboIds.has(candidate.qboTransaction.id)
+      miscodingGlIds.has(candidate.glTransaction.id)
     ) {
       return;
     }
@@ -864,26 +864,26 @@ const classifyMiscodingStage = (
         transaction: candidate.bankTransaction,
         category: 'LikelyMiscoding',
         reporting,
-        relatedTransactionIds: [candidate.bankTransaction.id, candidate.qboTransaction.id],
-        likelyMatchingReference: candidate.qboTransaction.id,
+        relatedTransactionIds: [candidate.bankTransaction.id, candidate.glTransaction.id],
+        likelyMatchingReference: candidate.glTransaction.id,
         matchConfidence: 'Probable',
         ruleTrace: buildExceptionRuleTrace(
           'likely-miscoding',
           'Likely Miscoding',
           'A same-amount, near-date GL transaction exists, but description or reference context conflicts materially.',
           sharedEvidence,
-          buildCounterpartTrace(candidate.qboTransaction, candidate.qboTransaction.id),
+          buildCounterpartTrace(candidate.glTransaction, candidate.glTransaction.id),
         ),
       }),
     );
 
-    upsertTransactionException(candidate.qboTransaction, () =>
+    upsertTransactionException(candidate.glTransaction, () =>
       createException({
         runId,
-        transaction: candidate.qboTransaction,
+        transaction: candidate.glTransaction,
         category: 'LikelyMiscoding',
         reporting,
-        relatedTransactionIds: [candidate.bankTransaction.id, candidate.qboTransaction.id],
+        relatedTransactionIds: [candidate.bankTransaction.id, candidate.glTransaction.id],
         likelyMatchingReference: candidate.bankTransaction.id,
         matchConfidence: 'Probable',
         ruleTrace: buildExceptionRuleTrace(
@@ -897,10 +897,10 @@ const classifyMiscodingStage = (
     );
 
     miscodingBankIds.add(candidate.bankTransaction.id);
-    miscodingQboIds.add(candidate.qboTransaction.id);
+    miscodingGlIds.add(candidate.glTransaction.id);
   });
 
-  return { miscodingBankIds, miscodingQboIds, miscodingThresholds };
+  return { miscodingBankIds, miscodingGlIds, miscodingThresholds };
 };
 
 const NSF_RETURNED_DEPOSIT_KEYWORDS = [
@@ -1012,17 +1012,17 @@ const classifyVoidedCheckClearedStage = (
 
 const classifyTimingStage = (
   params: ResidualStageParams,
-  staleOutstandingQboIds: Set<string>,
-  outstandingCheckQboIds: Set<string>,
+  staleOutstandingGlIds: Set<string>,
+  outstandingCheckGlIds: Set<string>,
   achReturnBankIds: Set<string>,
   reversalVoidBankIds: Set<string>,
   miscodingBankIds: Set<string>,
-  miscodingQboIds: Set<string>,
+  miscodingGlIds: Set<string>,
   groupedBankIds: Set<string>,
-  groupedQboIds: Set<string>,
+  groupedGlIds: Set<string>,
 ): {
   timingBankIds: Set<string>;
-  timingQboIds: Set<string>;
+  timingGlIds: Set<string>;
 } => {
   const {
     runId,
@@ -1031,7 +1031,7 @@ const classifyTimingStage = (
     matchResults,
     transactionById,
     remainingUnmatchedBank,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     upsertTransactionException,
   } = params;
   const residualTimingCandidates = findResidualTimingDifferenceCandidates(
@@ -1044,22 +1044,22 @@ const classifyTimingStage = (
       transactionById,
     ),
     getTransactionsByIds(
-      [...remainingUnmatchedQbo]
-        .filter((transactionId) => !staleOutstandingQboIds.has(transactionId))
-        .filter((transactionId) => !outstandingCheckQboIds.has(transactionId))
-        .filter((transactionId) => !miscodingQboIds.has(transactionId))
-        .filter((transactionId) => !groupedQboIds.has(transactionId)),
+      [...remainingUnmatchedGl]
+        .filter((transactionId) => !staleOutstandingGlIds.has(transactionId))
+        .filter((transactionId) => !outstandingCheckGlIds.has(transactionId))
+        .filter((transactionId) => !miscodingGlIds.has(transactionId))
+        .filter((transactionId) => !groupedGlIds.has(transactionId)),
       transactionById,
     ),
     matching,
   );
   const timingBankIds = new Set<string>();
-  const timingQboIds = new Set<string>();
+  const timingGlIds = new Set<string>();
 
   residualTimingCandidates.forEach((candidate) => {
     if (
       timingBankIds.has(candidate.bankTransaction.id) ||
-      timingQboIds.has(candidate.qboTransaction.id)
+      timingGlIds.has(candidate.glTransaction.id)
     ) {
       return;
     }
@@ -1068,11 +1068,11 @@ const classifyTimingStage = (
       'Same-amount residual transactions remained unmatched after exact and review matching.',
       `Date difference is ${candidate.dateDifference} day(s), which is outside the primary tolerance and within the timing-difference window.`,
       `Narrative similarity score is ${candidate.textSimilarity.toFixed(2)} and reference similarity score is ${candidate.referenceSimilarity.toFixed(2)}.`,
-      `Transaction kinds remain timing-compatible: bank=${inferTransactionKind(candidate.bankTransaction)}, gl=${inferTransactionKind(candidate.qboTransaction)}.`,
+      `Transaction kinds remain timing-compatible: bank=${inferTransactionKind(candidate.bankTransaction)}, gl=${inferTransactionKind(candidate.glTransaction)}.`,
     ];
-    const qboCounterpartTrace = buildCounterpartTrace(
-      candidate.qboTransaction,
-      candidate.qboTransaction.id,
+    const glCounterpartTrace = buildCounterpartTrace(
+      candidate.glTransaction,
+      candidate.glTransaction.id,
     );
     const bankCounterpartTrace = buildCounterpartTrace(
       candidate.bankTransaction,
@@ -1088,7 +1088,7 @@ const classifyTimingStage = (
     const sourceMatchResult = findMatchResultByPair(
       matchResults,
       candidate.bankTransaction.id,
-      candidate.qboTransaction.id,
+      candidate.glTransaction.id,
     );
 
     upsertTransactionException(candidate.bankTransaction, () =>
@@ -1097,31 +1097,31 @@ const classifyTimingStage = (
         transaction: candidate.bankTransaction,
         category: 'TimingDifference',
         reporting,
-        relatedTransactionIds: [candidate.bankTransaction.id, candidate.qboTransaction.id],
-        likelyMatchingReference: candidate.qboTransaction.id,
+        relatedTransactionIds: [candidate.bankTransaction.id, candidate.glTransaction.id],
+        likelyMatchingReference: candidate.glTransaction.id,
         matchConfidence: 'TimingDifference',
         priorRuleTraces: buildPriorRuleTracesFromMatchResult(
           sourceMatchResult,
           derivedTrace,
-          qboCounterpartTrace,
+          glCounterpartTrace,
         ),
         ruleTrace: buildExceptionRuleTrace(
           'residual-timing-difference',
           'Residual Timing Difference',
           'A same-amount, timing-compatible GL transaction remains unmatched within the extended timing window.',
           sharedEvidence,
-          qboCounterpartTrace,
+          glCounterpartTrace,
         ),
       }),
     );
 
-    upsertTransactionException(candidate.qboTransaction, () =>
+    upsertTransactionException(candidate.glTransaction, () =>
       createException({
         runId,
-        transaction: candidate.qboTransaction,
+        transaction: candidate.glTransaction,
         category: 'TimingDifference',
         reporting,
-        relatedTransactionIds: [candidate.bankTransaction.id, candidate.qboTransaction.id],
+        relatedTransactionIds: [candidate.bankTransaction.id, candidate.glTransaction.id],
         likelyMatchingReference: candidate.bankTransaction.id,
         matchConfidence: 'TimingDifference',
         priorRuleTraces: buildPriorRuleTracesFromMatchResult(
@@ -1140,10 +1140,10 @@ const classifyTimingStage = (
     );
 
     timingBankIds.add(candidate.bankTransaction.id);
-    timingQboIds.add(candidate.qboTransaction.id);
+    timingGlIds.add(candidate.glTransaction.id);
   });
 
-  return { timingBankIds, timingQboIds };
+  return { timingBankIds, timingGlIds };
 };
 
 const ENGINE_GROUPED_CATEGORIES = new Set([
@@ -1160,11 +1160,11 @@ const classifyEngineReservedGroupsStage = (
   params: ResidualStageParams,
 ): {
   engineGroupedBankIds: Set<string>;
-  engineGroupedQboIds: Set<string>;
+  engineGroupedGlIds: Set<string>;
 } => {
   const { runId, reporting, transactionById, upsertTransactionException, engineReservedGroups } = params;
   const engineGroupedBankIds = new Set<string>();
-  const engineGroupedQboIds = new Set<string>();
+  const engineGroupedGlIds = new Set<string>();
 
   for (const groupedResult of engineReservedGroups) {
     if (!groupedResult.category || !ENGINE_GROUPED_CATEGORIES.has(groupedResult.category as EngineGroupedCategory)) {
@@ -1175,13 +1175,13 @@ const classifyEngineReservedGroupsStage = (
     const bankTxns = groupedResult.bankTransactionIds
       .map((id) => transactionById.get(id))
       .filter((tx): tx is NonNullable<typeof tx> => tx !== undefined);
-    const qboTxns = groupedResult.qboTransactionIds
+    const glTxns = groupedResult.glTransactionIds
       .map((id) => transactionById.get(id))
       .filter((tx): tx is NonNullable<typeof tx> => tx !== undefined);
-    const allRelatedIds = [...groupedResult.bankTransactionIds, ...groupedResult.qboTransactionIds];
+    const allRelatedIds = [...groupedResult.bankTransactionIds, ...groupedResult.glTransactionIds];
 
     for (const bankTx of bankTxns) {
-      const primaryCounterpart = qboTxns[0];
+      const primaryCounterpart = glTxns[0];
       upsertTransactionException(bankTx, () =>
         createException({
           runId,
@@ -1197,19 +1197,19 @@ const classifyEngineReservedGroupsStage = (
             groupedResult.reason,
             groupedResult.evidence,
             buildCounterpartTrace(primaryCounterpart, primaryCounterpart?.id),
-            buildCounterpartTraces(qboTxns),
+            buildCounterpartTraces(glTxns),
           ),
         }),
       );
       engineGroupedBankIds.add(bankTx.id);
     }
 
-    for (const qboTx of qboTxns) {
+    for (const glTx of glTxns) {
       const primaryCounterpart = bankTxns[0];
-      upsertTransactionException(qboTx, () =>
+      upsertTransactionException(glTx, () =>
         createException({
           runId,
-          transaction: qboTx,
+          transaction: glTx,
           category,
           reporting,
           relatedTransactionIds: allRelatedIds,
@@ -1225,31 +1225,31 @@ const classifyEngineReservedGroupsStage = (
           ),
         }),
       );
-      engineGroupedQboIds.add(qboTx.id);
+      engineGroupedGlIds.add(glTx.id);
     }
   }
 
-  return { engineGroupedBankIds, engineGroupedQboIds };
+  return { engineGroupedBankIds, engineGroupedGlIds };
 };
 
 const classifyGroupedStage = (
   params: ResidualStageParams,
   stageState: Pick<
     ResidualStageState,
-    | 'staleOutstandingQboIds'
-    | 'outstandingCheckQboIds'
+    | 'staleOutstandingGlIds'
+    | 'outstandingCheckGlIds'
     | 'achReturnBankIds'
     | 'reversalVoidBankIds'
     | 'miscodingBankIds'
-    | 'miscodingQboIds'
+    | 'miscodingGlIds'
     | 'timingBankIds'
-    | 'timingQboIds'
+    | 'timingGlIds'
     | 'groupedBankIds'
-    | 'groupedQboIds'
+    | 'groupedGlIds'
   >,
 ): {
   groupedBankIds: Set<string>;
-  groupedQboIds: Set<string>;
+  groupedGlIds: Set<string>;
 } => {
   const {
     runId,
@@ -1257,7 +1257,7 @@ const classifyGroupedStage = (
     matching,
     transactionById,
     remainingUnmatchedBank,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     upsertTransactionException,
   } = params;
   const groupedResidualCandidates = findGroupedResidualCandidates(
@@ -1271,26 +1271,26 @@ const classifyGroupedStage = (
       transactionById,
     ),
     getTransactionsByIds(
-      [...remainingUnmatchedQbo]
-        .filter((transactionId) => !stageState.staleOutstandingQboIds.has(transactionId))
-        .filter((transactionId) => !stageState.outstandingCheckQboIds.has(transactionId))
-        .filter((transactionId) => !stageState.miscodingQboIds.has(transactionId))
-        .filter((transactionId) => !stageState.timingQboIds.has(transactionId))
-        .filter((transactionId) => !stageState.groupedQboIds.has(transactionId)),
+      [...remainingUnmatchedGl]
+        .filter((transactionId) => !stageState.staleOutstandingGlIds.has(transactionId))
+        .filter((transactionId) => !stageState.outstandingCheckGlIds.has(transactionId))
+        .filter((transactionId) => !stageState.miscodingGlIds.has(transactionId))
+        .filter((transactionId) => !stageState.timingGlIds.has(transactionId))
+        .filter((transactionId) => !stageState.groupedGlIds.has(transactionId)),
       transactionById,
     ),
     matching,
   );
   const groupedBankIds = new Set<string>();
-  const groupedQboIds = new Set<string>();
+  const groupedGlIds = new Set<string>();
 
   groupedResidualCandidates.forEach((candidate) => {
     const bankIds = candidate.bankTransactions.map((transaction) => transaction.id);
-    const qboIds = candidate.qboTransactions.map((transaction) => transaction.id);
+    const glIds = candidate.glTransactions.map((transaction) => transaction.id);
 
     if (
       bankIds.some((transactionId) => groupedBankIds.has(transactionId)) ||
-      qboIds.some((transactionId) => groupedQboIds.has(transactionId))
+      glIds.some((transactionId) => groupedGlIds.has(transactionId))
     ) {
       return;
     }
@@ -1324,37 +1324,37 @@ const classifyGroupedStage = (
     };
 
     candidate.bankTransactions.forEach((transaction) => {
-      recordGroupedException(transaction, candidate.qboTransactions);
+      recordGroupedException(transaction, candidate.glTransactions);
       groupedBankIds.add(transaction.id);
     });
 
-    candidate.qboTransactions.forEach((transaction) => {
+    candidate.glTransactions.forEach((transaction) => {
       recordGroupedException(transaction, candidate.bankTransactions);
-      groupedQboIds.add(transaction.id);
+      groupedGlIds.add(transaction.id);
     });
   });
 
-  return { groupedBankIds, groupedQboIds };
+  return { groupedBankIds, groupedGlIds };
 };
 
 const classifyMissingFallbackStage = (
   params: ResidualStageParams,
   stageState: Pick<
     ResidualStageState,
-    | 'staleOutstandingQboIds'
-    | 'outstandingCheckQboIds'
+    | 'staleOutstandingGlIds'
+    | 'outstandingCheckGlIds'
     | 'achReturnBankIds'
     | 'reversalVoidBankIds'
     | 'chargebackBankIds'
     | 'interestBankIds'
     | 'intercompanyBankIds'
-    | 'intercompanyQboIds'
+    | 'intercompanyGlIds'
     | 'miscodingBankIds'
-    | 'miscodingQboIds'
+    | 'miscodingGlIds'
     | 'timingBankIds'
-    | 'timingQboIds'
+    | 'timingGlIds'
     | 'groupedBankIds'
-    | 'groupedQboIds'
+    | 'groupedGlIds'
     | 'nsfReturnedDepositBankIds'
     | 'voidedCheckClearedBankIds'
   >,
@@ -1366,7 +1366,7 @@ const classifyMissingFallbackStage = (
     matching,
     transactionById,
     remainingUnmatchedBank,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     upsertTransactionException,
   } = params;
 
@@ -1395,10 +1395,10 @@ const classifyMissingFallbackStage = (
       createException({
         runId,
         transaction,
-        category: 'MissingFromQBO',
+        category: 'MissingFromGL',
         reporting,
         ruleTrace: buildExceptionRuleTrace(
-          'missing-from-qbo',
+          'missing-from-gl',
           'Missing from GL',
           'No GL-side transaction remained after exact, review, and variance matching rules were applied.',
           ['Transaction stayed unmatched after cross-source candidate selection.'],
@@ -1407,14 +1407,14 @@ const classifyMissingFallbackStage = (
     );
   });
 
-  remainingUnmatchedQbo.forEach((transactionId) => {
+  remainingUnmatchedGl.forEach((transactionId) => {
     if (
-      stageState.miscodingQboIds.has(transactionId) ||
-      stageState.timingQboIds.has(transactionId) ||
-      stageState.groupedQboIds.has(transactionId) ||
-      stageState.staleOutstandingQboIds.has(transactionId) ||
-      stageState.outstandingCheckQboIds.has(transactionId) ||
-      stageState.intercompanyQboIds.has(transactionId)
+      stageState.miscodingGlIds.has(transactionId) ||
+      stageState.timingGlIds.has(transactionId) ||
+      stageState.groupedGlIds.has(transactionId) ||
+      stageState.staleOutstandingGlIds.has(transactionId) ||
+      stageState.outstandingCheckGlIds.has(transactionId) ||
+      stageState.intercompanyGlIds.has(transactionId)
     ) {
       return;
     }
@@ -1428,7 +1428,7 @@ const classifyMissingFallbackStage = (
       anchorDate !== undefined &&
       transaction.amount !== null &&
       transaction.amount > 0 &&
-      !isCheckLikeQboTransaction(transaction) &&
+      !isCheckLikeGlTransaction(transaction) &&
       (() => {
         const txDate = parseIsoDate(transaction.transactionDate ?? transaction.postingDate);
         if (!txDate) {
@@ -1481,8 +1481,8 @@ const classifyMissingFallbackStage = (
 
 export const classifyResidualStages = (params: ResidualStageParams): ResidualStageState => {
   const anchorDate = buildReconciliationAnchorDate(params.normalizedTransactions);
-  const staleOutstandingQboIds = classifyStaleOutstandingChecksStage(params);
-  const outstandingCheckQboIds = classifyOutstandingChecksStage(params, staleOutstandingQboIds, anchorDate);
+  const staleOutstandingGlIds = classifyStaleOutstandingChecksStage(params);
+  const outstandingCheckGlIds = classifyOutstandingChecksStage(params, staleOutstandingGlIds, anchorDate);
   const achReturnBankIds = classifyAchReturnStage(params);
   const nsfReturnedDepositBankIds = classifyNSFReturnedDepositStage(params, achReturnBankIds);
   const reversalVoidBankIds = classifyReversalVoidStage(params, achReturnBankIds);
@@ -1494,39 +1494,39 @@ export const classifyResidualStages = (params: ResidualStageParams): ResidualSta
   const intercompanyStage = classifyIntercompanyMismatchStage(
     params,
     new Set([...achReturnBankIds, ...reversalVoidBankIds, ...chargebackBankIds, ...interestBankIds]),
-    new Set([...staleOutstandingQboIds, ...outstandingCheckQboIds]),
+    new Set([...staleOutstandingGlIds, ...outstandingCheckGlIds]),
   );
   const miscodingStage = classifyMiscodingStage(
     params,
-    new Set([...staleOutstandingQboIds, ...outstandingCheckQboIds]),
+    new Set([...staleOutstandingGlIds, ...outstandingCheckGlIds]),
     achReturnBankIds,
     reversalVoidBankIds,
   );
   const engineGroupedStage = classifyEngineReservedGroupsStage(params);
   const groupedStage = classifyGroupedStage(params, {
-    staleOutstandingQboIds,
-    outstandingCheckQboIds,
+    staleOutstandingGlIds,
+    outstandingCheckGlIds,
     achReturnBankIds,
     reversalVoidBankIds,
     miscodingBankIds: miscodingStage.miscodingBankIds,
-    miscodingQboIds: miscodingStage.miscodingQboIds,
+    miscodingGlIds: miscodingStage.miscodingGlIds,
     timingBankIds: new Set<string>(),
-    timingQboIds: new Set<string>(),
+    timingGlIds: new Set<string>(),
     groupedBankIds: engineGroupedStage.engineGroupedBankIds,
-    groupedQboIds: engineGroupedStage.engineGroupedQboIds,
+    groupedGlIds: engineGroupedStage.engineGroupedGlIds,
   });
   const allGroupedBankIds = new Set([...engineGroupedStage.engineGroupedBankIds, ...groupedStage.groupedBankIds]);
-  const allGroupedQboIds = new Set([...engineGroupedStage.engineGroupedQboIds, ...groupedStage.groupedQboIds]);
+  const allGroupedGlIds = new Set([...engineGroupedStage.engineGroupedGlIds, ...groupedStage.groupedGlIds]);
   const timingStage = classifyTimingStage(
     params,
-    staleOutstandingQboIds,
-    outstandingCheckQboIds,
+    staleOutstandingGlIds,
+    outstandingCheckGlIds,
     achReturnBankIds,
     reversalVoidBankIds,
     miscodingStage.miscodingBankIds,
-    miscodingStage.miscodingQboIds,
+    miscodingStage.miscodingGlIds,
     allGroupedBankIds,
-    allGroupedQboIds,
+    allGroupedGlIds,
   );
 
   const allConsumedBankIds = new Set([
@@ -1543,21 +1543,21 @@ export const classifyResidualStages = (params: ResidualStageParams): ResidualSta
   const voidedCheckClearedBankIds = classifyVoidedCheckClearedStage(params, allConsumedBankIds);
 
   const stageState: ResidualStageState = {
-    staleOutstandingQboIds,
-    outstandingCheckQboIds,
+    staleOutstandingGlIds,
+    outstandingCheckGlIds,
     achReturnBankIds,
     nsfReturnedDepositBankIds,
     reversalVoidBankIds,
     chargebackBankIds,
     interestBankIds,
     intercompanyBankIds: intercompanyStage.intercompanyBankIds,
-    intercompanyQboIds: intercompanyStage.intercompanyQboIds,
+    intercompanyGlIds: intercompanyStage.intercompanyGlIds,
     miscodingBankIds: miscodingStage.miscodingBankIds,
-    miscodingQboIds: miscodingStage.miscodingQboIds,
+    miscodingGlIds: miscodingStage.miscodingGlIds,
     timingBankIds: timingStage.timingBankIds,
-    timingQboIds: timingStage.timingQboIds,
+    timingGlIds: timingStage.timingGlIds,
     groupedBankIds: allGroupedBankIds,
-    groupedQboIds: allGroupedQboIds,
+    groupedGlIds: allGroupedGlIds,
     voidedCheckClearedBankIds,
     miscodingThresholds: miscodingStage.miscodingThresholds,
   };

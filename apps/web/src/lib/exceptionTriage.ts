@@ -3,7 +3,7 @@ import { errorCategoryDisplayNames, type ExceptionItem } from '@recon/domain';
 import { formatCurrency, formatDate } from './format';
 
 /** Uppercased display label for a transaction source; the GL source is displayed as "GL", not "GL". */
-const toSourceLabel = (source: string): string => (source === 'qbo' ? 'GL' : source.toUpperCase());
+const toSourceLabel = (source: string): string => (source === 'gl' ? 'GL' : source.toUpperCase());
 
 /** Sort keys available in the triage list. */
 export type TriageSortKey = 'severity' | 'amount' | 'date';
@@ -260,7 +260,7 @@ export const sortDisplays = (
 /** Derives the Bank-side and GL-side lines for the detail comparison from an exception and its counterparts. */
 export const buildComparisonSides = (
   item: ExceptionItem,
-): { bank: ComparisonLine[]; qbo: ComparisonLine[] } => {
+): { bank: ComparisonLine[]; gl: ComparisonLine[] } => {
   const selfLine: ComparisonLine = {
     fileName: item.spreadsheetFileName,
     lineNumber: item.lineNumber,
@@ -274,9 +274,9 @@ export const buildComparisonSides = (
       ? (item.ruleTrace?.counterparts ?? [])
       : [item.ruleTrace.counterpart];
 
-  const counterpartLines: Array<{ source: 'bank' | 'qbo'; line: ComparisonLine }> =
+  const counterpartLines: Array<{ source: 'bank' | 'gl'; line: ComparisonLine }> =
     counterparts.map((counterpart) => ({
-      source: counterpart.source ?? (item.source === 'bank' ? 'qbo' : 'bank'),
+      source: counterpart.source ?? (item.source === 'bank' ? 'gl' : 'bank'),
       line: {
         fileName: counterpart.spreadsheetFileName ?? counterpart.transactionId ?? 'N/A',
         lineNumber: counterpart.lineNumber,
@@ -287,19 +287,19 @@ export const buildComparisonSides = (
     }));
 
   const bank: ComparisonLine[] = [];
-  const qbo: ComparisonLine[] = [];
+  const gl: ComparisonLine[] = [];
 
   if (item.source === 'bank') {
     bank.push(selfLine);
   } else {
-    qbo.push(selfLine);
+    gl.push(selfLine);
   }
 
   for (const counterpart of counterpartLines) {
-    (counterpart.source === 'bank' ? bank : qbo).push(counterpart.line);
+    (counterpart.source === 'bank' ? bank : gl).push(counterpart.line);
   }
 
-  return { bank, qbo };
+  return { bank, gl };
 };
 
 /** Amount and date drift between the exception and its primary counterpart, for the compare header. */

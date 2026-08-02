@@ -17,7 +17,7 @@ export const severityRank: Record<string, number> = {
 export const categoryPrecedence: Record<ExceptionItem['category'], number> = {
   InvalidOrMissingData: 0,
   DuplicateInBank: 1,
-  DuplicateInQBO: 1,
+  DuplicateInGL: 1,
   AmountMismatch: 2,
   LikelySplitCombineIssue: 3,
   DepositGroupingIssue: 3,
@@ -37,7 +37,7 @@ export const categoryPrecedence: Record<ExceptionItem['category'], number> = {
   AmbiguousMatchRequiringReview: 9,
   StaleOutstandingCheck: 10,
   OutstandingCheck: 11,
-  MissingFromQBO: 12,
+  MissingFromGL: 12,
   MissingFromBank: 12,
   ACHReturn: 2,
   ReversalVoid: 3,
@@ -59,7 +59,7 @@ export const advisoryReviewCategoriesExcludedFromResidualStages = new Set<
 
 export interface MiscodingCandidate {
   bankTransaction: NormalizedTransaction;
-  qboTransaction: NormalizedTransaction;
+  glTransaction: NormalizedTransaction;
   dateDifference: number;
   textSimilarity: number;
   referenceSimilarity: number;
@@ -73,7 +73,7 @@ export interface MiscodingThresholds {
 
 export interface TimingDifferenceCandidate {
   bankTransaction: NormalizedTransaction & { amount: number };
-  qboTransaction: NormalizedTransaction & { amount: number };
+  glTransaction: NormalizedTransaction & { amount: number };
   dateDifference: number;
   textSimilarity: number;
   referenceSimilarity: number;
@@ -87,14 +87,14 @@ export interface GroupedResidualCandidate {
   reason: string;
   evidence: string[];
   bankTransactions: Array<NormalizedTransaction & { amount: number }>;
-  qboTransactions: Array<NormalizedTransaction & { amount: number }>;
+  glTransactions: Array<NormalizedTransaction & { amount: number }>;
   relatedTransactionIds: string[];
   score: number;
 }
 
 export interface MatchResultClassification {
   bankTransaction?: NormalizedTransaction;
-  qboTransaction?: NormalizedTransaction;
+  glTransaction?: NormalizedTransaction;
   resultCategory: ExceptionItem['category'];
   matchedMiscodingCandidate?: MiscodingCandidate;
   matchedTimingDifferenceCandidate?: TimingDifferenceCandidate;
@@ -125,27 +125,27 @@ export interface ResidualStageParams {
   matchResults: MatchResult[];
   transactionById: Map<string, NormalizedTransaction>;
   remainingUnmatchedBank: Set<string>;
-  remainingUnmatchedQbo: Set<string>;
+  remainingUnmatchedGl: Set<string>;
   normalizedTransactions: NormalizedTransaction[];
   upsertTransactionException: UpsertTransactionException;
   engineReservedGroups: GroupedMatchResult[];
 }
 
 export interface ResidualStageState {
-  staleOutstandingQboIds: Set<string>;
-  outstandingCheckQboIds: Set<string>;
+  staleOutstandingGlIds: Set<string>;
+  outstandingCheckGlIds: Set<string>;
   achReturnBankIds: Set<string>;
   reversalVoidBankIds: Set<string>;
   chargebackBankIds: Set<string>;
   interestBankIds: Set<string>;
   intercompanyBankIds: Set<string>;
-  intercompanyQboIds: Set<string>;
+  intercompanyGlIds: Set<string>;
   miscodingBankIds: Set<string>;
-  miscodingQboIds: Set<string>;
+  miscodingGlIds: Set<string>;
   timingBankIds: Set<string>;
-  timingQboIds: Set<string>;
+  timingGlIds: Set<string>;
   groupedBankIds: Set<string>;
-  groupedQboIds: Set<string>;
+  groupedGlIds: Set<string>;
   nsfReturnedDepositBankIds: Set<string>;
   voidedCheckClearedBankIds: Set<string>;
   miscodingThresholds: MiscodingThresholds;

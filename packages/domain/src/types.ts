@@ -134,7 +134,7 @@ export interface RuleEvaluation {
 /** A proposed bank/GL pair produced by the scoring phase, before the highest-scoring candidate is selected. */
 export interface MatchCandidate {
   bankTransactionId: string;
-  qboTransactionId: string;
+  glTransactionId: string;
   confidence: MatchConfidence;
   exceptionCategory?: ErrorCategory;
   score: number;
@@ -149,7 +149,7 @@ export interface MatchCandidate {
 
 /**
  * The final outcome of the matching engine for one bank/GL transaction pair (or an unmatched
- * singleton). Pairwise results have both `bankTransactionId` and `qboTransactionId` set;
+ * singleton). Pairwise results have both `bankTransactionId` and `glTransactionId` set;
  * unmatched results have only one side populated.
  */
 export interface MatchResult {
@@ -161,7 +161,7 @@ export interface MatchResult {
   reason?: string;
   score: number;
   bankTransactionId?: string;
-  qboTransactionId?: string;
+  glTransactionId?: string;
   dateDifferenceDays: number | null;
   amountDifference: number;
   evidence: string[];
@@ -185,7 +185,7 @@ export interface GroupedMatchMember {
 /**
  * A many-to-many match where multiple bank transactions together correspond to one or more GL
  * transactions (e.g. a single GL deposit that was split across several bank entries).
- * `bankMembers` and `qboMembers` carry display-level detail for the workbook export.
+ * `bankMembers` and `glMembers` carry display-level detail for the workbook export.
  */
 export interface GroupedMatchResult {
   id: string;
@@ -200,9 +200,9 @@ export interface GroupedMatchResult {
     | 'BankServiceChargeAmortization'
     | 'LoanPaymentSplit';
   bankTransactionIds: string[];
-  qboTransactionIds: string[];
+  glTransactionIds: string[];
   bankMembers: GroupedMatchMember[];
-  qboMembers: GroupedMatchMember[];
+  glMembers: GroupedMatchMember[];
   totalAmount: number;
   dateDifferenceDays: number | null;
   score: number;
@@ -279,21 +279,21 @@ export interface ChartSeries {
 export interface SummaryMetrics {
   totalRecordsReviewed: number;
   bankRecords: number;
-  qboRecords: number;
+  glRecords: number;
   exactMatches: number;
   probableMatches: number;
   unmatchedItems: number;
   duplicates: number;
   bankDuplicates: number;
-  qboDuplicates: number;
+  glDuplicates: number;
   dateVariances: number;
   timingDifferences: number;
   dataQualityIssues: number;
   amountMismatches: number;
   missingFromBank: number;
-  missingFromQBO: number;
+  missingFromGL: number;
   unmatchedBankNetAmount: number;
-  unmatchedQboNetAmount: number;
+  unmatchedGlNetAmount: number;
   cleanMatchedAmount: number;
   unresolvedExposure: number;
   countsByCategory: Record<string, number>;
@@ -468,7 +468,7 @@ type SourceConfigOverride = Omit<Partial<SourceReconciliationConfig>, 'columnAli
 export interface AccountOverrideConfig {
   accountIdentifier: string;
   bank?: SourceConfigOverride;
-  qbo?: SourceConfigOverride;
+  gl?: SourceConfigOverride;
   matching?: Partial<MatchingConfig>;
   reporting?: {
     exceptionSortOrder?: ReportingConfig['exceptionSortOrder'];
@@ -483,7 +483,7 @@ export interface AccountOverrideConfig {
  */
 export interface ReconciliationConfig {
   bank: SourceReconciliationConfig;
-  qbo: SourceReconciliationConfig;
+  gl: SourceReconciliationConfig;
   textNormalization: TextNormalizationConfig;
   matching: MatchingConfig;
   reporting: ReportingConfig;
@@ -514,7 +514,7 @@ export interface PayeeAlias {
   bankPattern: string;
   canonicalPayeeName: string;
   normalizedTokens: string[];
-  sourceDirection: 'bank_to_qbo' | 'bidirectional';
+  sourceDirection: 'bank_to_gl' | 'bidirectional';
   matchConfidence: number;
   isActive: boolean;
 }

@@ -25,7 +25,7 @@ const PAYEE_ROW = {
   bank_pattern: 'GOOGLE',
   canonical_payee_name: 'Google LLC',
   normalized_tokens: ['google'],
-  source_direction: 'bank_to_qbo' as const,
+  source_direction: 'bank_to_gl' as const,
   match_confidence: 0.95,
   is_active: true,
 };
@@ -60,9 +60,9 @@ const GROUPED_MATCH_ROW = {
   confidence: 'High' as const,
   category: 'ExactMatch' as const,
   bank_transaction_ids: ['bt-1'],
-  qbo_transaction_ids: ['qt-1'],
+  gl_transaction_ids: ['qt-1'],
   bank_members_json: [{ id: 'bt-1', amount: 100 }],
-  qbo_members_json: [{ id: 'qt-1', amount: 100 }],
+  gl_members_json: [{ id: 'qt-1', amount: 100 }],
   total_amount: '100.00',
   date_difference_days: 0,
   score: 1,
@@ -75,7 +75,7 @@ const GROUPED_MATCH_ROW = {
 const MATCH_RESULT_ROW = {
   id: 'mr-1',
   bank_transaction_id: 'bt-2',
-  qbo_transaction_id: 'qt-2',
+  gl_transaction_id: 'qt-2',
   disposition: 'Probable' as const,
   confidence: 'Medium' as const,
   rule_id: 'rule-probable',
@@ -91,14 +91,14 @@ const MATCH_RESULT_ROW = {
 
 const EXCEPTION_ROW = {
   id: 'ex-1',
-  category: 'MissingFromQBO' as const,
+  category: 'MissingFromGL' as const,
   severity: 'High' as const,
   source_system: 'bank' as const,
   spreadsheet_file_name: 'bank.xlsx',
   line_number: 3,
   transaction_date: '2026-05-15',
   amount: '500.00',
-  error_message: 'No matching QBO transaction found',
+  error_message: 'No matching GL transaction found',
   rule_trace_json: { ruleId: 'rule-1', outcome: 'NoMatch' },
   prior_rule_traces_json: [],
   recommended_next_actions: ['Review manually'],
@@ -135,25 +135,25 @@ const REVIEWER_DECISION_ROW = {
 const SUMMARY_ROW = {
   total_records_reviewed: 10,
   bank_records: 5,
-  qbo_records: 5,
+  gl_records: 5,
   exact_matches: 4,
   probable_matches: 1,
   unmatched_items: 2,
   duplicates: 0,
   bank_duplicates: 0,
-  qbo_duplicates: 0,
+  gl_duplicates: 0,
   date_variances: 0,
   timing_differences: 0,
   data_quality_issues: 1,
   amount_mismatches: 0,
   missing_from_bank: 0,
-  missing_from_qbo: 2,
+  missing_from_gl: 2,
   unmatched_bank_net_amount: '150.00',
-  unmatched_qbo_net_amount: '200.00',
+  unmatched_gl_net_amount: '200.00',
   clean_matched_amount: '1000.00',
   unresolved_exposure: '350.00',
-  counts_by_category_json: { MissingFromQBO: 2 },
-  amount_by_category_json: { MissingFromQBO: 200 },
+  counts_by_category_json: { MissingFromGL: 2 },
+  amount_by_category_json: { MissingFromGL: 200 },
   charts_json: [{ type: 'bar' }],
 };
 
@@ -298,7 +298,7 @@ describe('PostgresReconciliationReadModelStore', () => {
       expect(report?.probableMatches[0]).toMatchObject({
         id: 'mr-1',
         bankTransactionId: 'bt-2',
-        qboTransactionId: 'qt-2',
+        glTransactionId: 'qt-2',
         amountDifference: 2.5,
         likelyMatchingReference: 'REF-001',
       });
@@ -313,7 +313,7 @@ describe('PostgresReconciliationReadModelStore', () => {
       expect(report?.exceptions[0]).toMatchObject({
         id: 'ex-1',
         runId: 'run-1',
-        category: 'MissingFromQBO',
+        category: 'MissingFromGL',
         amount: 500,
         normalizedComparisonTokens: ['payment'],
       });
@@ -384,10 +384,10 @@ describe('PostgresReconciliationReadModelStore', () => {
       expect(report?.summary).toMatchObject({
         totalRecordsReviewed: 10,
         unmatchedBankNetAmount: 150,
-        unmatchedQboNetAmount: 200,
+        unmatchedGlNetAmount: 200,
         cleanMatchedAmount: 1000,
         unresolvedExposure: 350,
-        countsByCategory: { MissingFromQBO: 2 },
+        countsByCategory: { MissingFromGL: 2 },
       });
     });
 
@@ -461,7 +461,7 @@ describe('PostgresReconciliationReadModelStore', () => {
             {
               ...MATCH_RESULT_ROW,
               bank_transaction_id: null,
-              qbo_transaction_id: null,
+              gl_transaction_id: null,
               rule_id: null,
               reason: null,
               likely_matching_reference: null,
@@ -480,7 +480,7 @@ describe('PostgresReconciliationReadModelStore', () => {
       const mr = report?.probableMatches[0];
 
       expect(mr?.bankTransactionId).toBeUndefined();
-      expect(mr?.qboTransactionId).toBeUndefined();
+      expect(mr?.glTransactionId).toBeUndefined();
       expect(mr?.ruleId).toBeUndefined();
       expect(mr?.reason).toBeUndefined();
     });
@@ -495,9 +495,9 @@ describe('PostgresReconciliationReadModelStore', () => {
               ...GROUPED_MATCH_ROW,
               category: null,
               bank_transaction_ids: null,
-              qbo_transaction_ids: 'not-an-array',
+              gl_transaction_ids: 'not-an-array',
               bank_members_json: null,
-              qbo_members_json: null,
+              gl_members_json: null,
               evidence_json: null,
             },
           ],
@@ -515,7 +515,7 @@ describe('PostgresReconciliationReadModelStore', () => {
 
       expect(gm?.category).toBeUndefined();
       expect(gm?.bankTransactionIds).toEqual([]);
-      expect(gm?.qboTransactionIds).toEqual([]);
+      expect(gm?.glTransactionIds).toEqual([]);
       expect(gm?.bankMembers).toEqual([]);
       expect(gm?.evidence).toEqual([]);
     });
@@ -683,7 +683,7 @@ describe('createPayeeAlias', () => {
       bankPattern: 'GOOGLE',
       canonicalPayeeName: 'Google LLC',
       normalizedTokens: ['google'],
-      sourceDirection: 'bank_to_qbo',
+      sourceDirection: 'bank_to_gl',
       matchConfidence: 0.95,
     });
     expect(alias.id).toBe('alias-1');
@@ -702,7 +702,7 @@ describe('createPayeeAlias', () => {
     const params = call[1] as unknown[];
     // $1 = accountIdentifier (null), $5 = direction, $6 = confidence
     expect(params[0]).toBeNull();
-    expect(params[4]).toBe('bank_to_qbo');
+    expect(params[4]).toBe('bank_to_gl');
     expect(params[5]).toBe(1);
   });
 

@@ -41,7 +41,7 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
 });
 
 describe('reserveGroupedTransactionIds', () => {
-  it('prefers the higher-scoring overlapping grouped candidate when one qbo batch could satisfy multiple bank anchors', () => {
+  it('prefers the higher-scoring overlapping grouped candidate when one gl batch could satisfy multiple bank anchors', () => {
     const bankTransactions = [
       buildTransaction({
         id: 'bank-preferred',
@@ -60,18 +60,18 @@ describe('reserveGroupedTransactionIds', () => {
         amount: 300,
       }),
     ];
-    const qboTransactions = [
+    const glTransactions = [
       buildTransaction({
-        id: 'qbo-batch-1',
-        source: 'qbo',
+        id: 'gl-batch-1',
+        source: 'gl',
         transactionDate: '2025-10-01',
         transactionType: 'Deposit',
         description: 'Card receipt alpha',
         amount: 100,
       }),
       buildTransaction({
-        id: 'qbo-batch-2',
-        source: 'qbo',
+        id: 'gl-batch-2',
+        source: 'gl',
         transactionDate: '2025-10-02',
         transactionType: 'Deposit',
         description: 'Card receipt beta',
@@ -81,12 +81,12 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       bankTransactions,
-      qboTransactions,
+      glTransactions,
       defaultReconciliationConfig.matching,
     );
 
     expect([...result.reservedBankTransactionIds]).toEqual(['bank-preferred']);
-    expect([...result.reservedQboTransactionIds].sort()).toEqual(['qbo-batch-1', 'qbo-batch-2']);
+    expect([...result.reservedGlTransactionIds].sort()).toEqual(['gl-batch-1', 'gl-batch-2']);
     expect(result.reservedBankTransactionIds.has('bank-overlap-loser')).toBe(false);
   });
 
@@ -109,34 +109,34 @@ describe('reserveGroupedTransactionIds', () => {
         amount: 180,
       }),
     ];
-    const qboTransactions = [
+    const glTransactions = [
       buildTransaction({
-        id: 'qbo-batch-1a',
-        source: 'qbo',
+        id: 'gl-batch-1a',
+        source: 'gl',
         transactionDate: '2025-11-01',
         transactionType: 'Deposit',
         description: 'Batch 1 alpha',
         amount: 120,
       }),
       buildTransaction({
-        id: 'qbo-batch-1b',
-        source: 'qbo',
+        id: 'gl-batch-1b',
+        source: 'gl',
         transactionDate: '2025-11-02',
         transactionType: 'Deposit',
         description: 'Batch 1 beta',
         amount: 180,
       }),
       buildTransaction({
-        id: 'qbo-batch-2a',
-        source: 'qbo',
+        id: 'gl-batch-2a',
+        source: 'gl',
         transactionDate: '2025-11-05',
         transactionType: 'Deposit',
         description: 'Batch 2 alpha',
         amount: 70,
       }),
       buildTransaction({
-        id: 'qbo-batch-2b',
-        source: 'qbo',
+        id: 'gl-batch-2b',
+        source: 'gl',
         transactionDate: '2025-11-06',
         transactionType: 'Deposit',
         description: 'Batch 2 beta',
@@ -146,20 +146,20 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       bankTransactions,
-      qboTransactions,
+      glTransactions,
       defaultReconciliationConfig.matching,
     );
 
     expect([...result.reservedBankTransactionIds].sort()).toEqual(['bank-batch-1', 'bank-batch-2']);
-    expect([...result.reservedQboTransactionIds].sort()).toEqual([
-      'qbo-batch-1a',
-      'qbo-batch-1b',
-      'qbo-batch-2a',
-      'qbo-batch-2b',
+    expect([...result.reservedGlTransactionIds].sort()).toEqual([
+      'gl-batch-1a',
+      'gl-batch-1b',
+      'gl-batch-2a',
+      'gl-batch-2b',
     ]);
   });
 
-  it('reserves a payroll batch when bank debit has a payroll keyword and QBO debits sum to it within date tolerance', () => {
+  it('reserves a payroll batch when bank debit has a payroll keyword and GL debits sum to it within date tolerance', () => {
     const bankPayroll = buildTransaction({
       id: 'bank-payroll',
       source: 'bank',
@@ -168,25 +168,25 @@ describe('reserveGroupedTransactionIds', () => {
       description: 'ADP PAYROLL ACH BATCH 20250515',
       amount: -12500,
     });
-    const qboPayroll1 = buildTransaction({
-      id: 'qbo-payroll-1',
-      source: 'qbo',
+    const glPayroll1 = buildTransaction({
+      id: 'gl-payroll-1',
+      source: 'gl',
       lineNumber: 10,
       transactionDate: '2025-05-15',
       description: 'Salaries - Alice',
       amount: -5000,
     });
-    const qboPayroll2 = buildTransaction({
-      id: 'qbo-payroll-2',
-      source: 'qbo',
+    const glPayroll2 = buildTransaction({
+      id: 'gl-payroll-2',
+      source: 'gl',
       lineNumber: 11,
       transactionDate: '2025-05-15',
       description: 'Salaries - Bob',
       amount: -4500,
     });
-    const qboPayroll3 = buildTransaction({
-      id: 'qbo-payroll-3',
-      source: 'qbo',
+    const glPayroll3 = buildTransaction({
+      id: 'gl-payroll-3',
+      source: 'gl',
       lineNumber: 12,
       transactionDate: '2025-05-15',
       description: 'Salaries - Carol',
@@ -195,7 +195,7 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       [bankPayroll],
-      [qboPayroll1, qboPayroll2, qboPayroll3],
+      [glPayroll1, glPayroll2, glPayroll3],
       defaultReconciliationConfig.matching,
     );
 
@@ -203,12 +203,12 @@ describe('reserveGroupedTransactionIds', () => {
     expect(result.selectedCandidates[0]?.category).toBe('PayrollBatchMatch');
     expect(result.selectedCandidates[0]?.ruleId).toBe('payroll-batch-reserved');
     expect(result.reservedBankTransactionIds.has('bank-payroll')).toBe(true);
-    expect(result.reservedQboTransactionIds.has('qbo-payroll-1')).toBe(true);
-    expect(result.reservedQboTransactionIds.has('qbo-payroll-2')).toBe(true);
-    expect(result.reservedQboTransactionIds.has('qbo-payroll-3')).toBe(true);
+    expect(result.reservedGlTransactionIds.has('gl-payroll-1')).toBe(true);
+    expect(result.reservedGlTransactionIds.has('gl-payroll-2')).toBe(true);
+    expect(result.reservedGlTransactionIds.has('gl-payroll-3')).toBe(true);
   });
 
-  it('reserves a bank service charge when bank debit has a service charge keyword and QBO debits sum to it', () => {
+  it('reserves a bank service charge when bank debit has a service charge keyword and GL debits sum to it', () => {
     const bankCharge = buildTransaction({
       id: 'bank-svc-charge',
       source: 'bank',
@@ -217,17 +217,17 @@ describe('reserveGroupedTransactionIds', () => {
       description: 'MONTHLY SERVICE CHARGE',
       amount: -45,
     });
-    const qboFee1 = buildTransaction({
-      id: 'qbo-fee-1',
-      source: 'qbo',
+    const glFee1 = buildTransaction({
+      id: 'gl-fee-1',
+      source: 'gl',
       lineNumber: 20,
       transactionDate: '2025-07-31',
       description: 'Bank Fees - Maintenance',
       amount: -25,
     });
-    const qboFee2 = buildTransaction({
-      id: 'qbo-fee-2',
-      source: 'qbo',
+    const glFee2 = buildTransaction({
+      id: 'gl-fee-2',
+      source: 'gl',
       lineNumber: 21,
       transactionDate: '2025-07-31',
       description: 'Bank Fees - Transaction',
@@ -236,7 +236,7 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       [bankCharge],
-      [qboFee1, qboFee2],
+      [glFee1, glFee2],
       defaultReconciliationConfig.matching,
     );
 
@@ -244,8 +244,8 @@ describe('reserveGroupedTransactionIds', () => {
     expect(result.selectedCandidates[0]?.category).toBe('BankServiceChargeAmortization');
     expect(result.selectedCandidates[0]?.ruleId).toBe('bank-service-charge-reserved');
     expect(result.reservedBankTransactionIds.has('bank-svc-charge')).toBe(true);
-    expect(result.reservedQboTransactionIds.has('qbo-fee-1')).toBe(true);
-    expect(result.reservedQboTransactionIds.has('qbo-fee-2')).toBe(true);
+    expect(result.reservedGlTransactionIds.has('gl-fee-1')).toBe(true);
+    expect(result.reservedGlTransactionIds.has('gl-fee-2')).toBe(true);
   });
 
   it('does not reserve a bank service charge when the bank description has no service charge signal', () => {
@@ -257,16 +257,16 @@ describe('reserveGroupedTransactionIds', () => {
       description: 'VENDOR PAYMENT ACH',
       amount: -45,
     });
-    const qboDebit1 = buildTransaction({
-      id: 'qbo-debit-1',
-      source: 'qbo',
+    const glDebit1 = buildTransaction({
+      id: 'gl-debit-1',
+      source: 'gl',
       lineNumber: 20,
       transactionDate: '2025-07-31',
       amount: -25,
     });
-    const qboDebit2 = buildTransaction({
-      id: 'qbo-debit-2',
-      source: 'qbo',
+    const glDebit2 = buildTransaction({
+      id: 'gl-debit-2',
+      source: 'gl',
       lineNumber: 21,
       transactionDate: '2025-07-31',
       amount: -20,
@@ -274,7 +274,7 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       [bankGeneric],
-      [qboDebit1, qboDebit2],
+      [glDebit1, glDebit2],
       defaultReconciliationConfig.matching,
     );
 
@@ -293,16 +293,16 @@ describe('reserveGroupedTransactionIds', () => {
       description: 'ACH DEBIT VENDOR PAYMENT',
       amount: -12500,
     });
-    const qboLine1 = buildTransaction({
-      id: 'qbo-line-1',
-      source: 'qbo',
+    const glLine1 = buildTransaction({
+      id: 'gl-line-1',
+      source: 'gl',
       lineNumber: 10,
       transactionDate: '2025-05-15',
       amount: -5000,
     });
-    const qboLine2 = buildTransaction({
-      id: 'qbo-line-2',
-      source: 'qbo',
+    const glLine2 = buildTransaction({
+      id: 'gl-line-2',
+      source: 'gl',
       lineNumber: 11,
       transactionDate: '2025-05-15',
       amount: -7500,
@@ -310,7 +310,7 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       [bankGeneric],
-      [qboLine1, qboLine2],
+      [glLine1, glLine2],
       defaultReconciliationConfig.matching,
     );
 
@@ -318,7 +318,7 @@ describe('reserveGroupedTransactionIds', () => {
     expect(payrollCandidates).toHaveLength(0);
   });
 
-  it('does not reserve a bank service charge when QBO pool total does not match bank debit amount', () => {
+  it('does not reserve a bank service charge when GL pool total does not match bank debit amount', () => {
     const bankDebit = buildTransaction({
       id: 'bank-svc-mismatch',
       source: 'bank',
@@ -327,16 +327,16 @@ describe('reserveGroupedTransactionIds', () => {
       description: 'MONTHLY SERVICE CHARGE FEE',
       amount: -100,
     });
-    const qbo1 = buildTransaction({
-      id: 'qbo-fee-m1',
-      source: 'qbo',
+    const gl1 = buildTransaction({
+      id: 'gl-fee-m1',
+      source: 'gl',
       lineNumber: 10,
       transactionDate: '2025-06-15',
       amount: -40,
     });
-    const qbo2 = buildTransaction({
-      id: 'qbo-fee-m2',
-      source: 'qbo',
+    const gl2 = buildTransaction({
+      id: 'gl-fee-m2',
+      source: 'gl',
       lineNumber: 11,
       transactionDate: '2025-06-15',
       amount: -40,
@@ -344,7 +344,7 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       [bankDebit],
-      [qbo1, qbo2],
+      [gl1, gl2],
       defaultReconciliationConfig.matching,
     );
 
@@ -352,7 +352,7 @@ describe('reserveGroupedTransactionIds', () => {
     expect(result.selectedCandidates.filter((c) => c.category === 'BankServiceChargeAmortization')).toHaveLength(0);
   });
 
-  it('does not reserve a loan payment split when fewer than two QBO debits are within the date window', () => {
+  it('does not reserve a loan payment split when fewer than two GL debits are within the date window', () => {
     const bankDebit = buildTransaction({
       id: 'bank-loan-solo',
       source: 'bank',
@@ -361,9 +361,9 @@ describe('reserveGroupedTransactionIds', () => {
       description: 'MORTGAGE PAYMENT WELLS FARGO',
       amount: -1500,
     });
-    const qboSingle = buildTransaction({
-      id: 'qbo-loan-only',
-      source: 'qbo',
+    const glSingle = buildTransaction({
+      id: 'gl-loan-only',
+      source: 'gl',
       lineNumber: 10,
       transactionDate: '2025-07-01',
       amount: -1500,
@@ -371,7 +371,7 @@ describe('reserveGroupedTransactionIds', () => {
 
     const result = reserveGroupedTransactionIds(
       [bankDebit],
-      [qboSingle],
+      [glSingle],
       defaultReconciliationConfig.matching,
     );
 

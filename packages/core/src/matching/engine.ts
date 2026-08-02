@@ -99,7 +99,7 @@ const includesText = (value: string | undefined, fragment: string): boolean =>
 
 const isMonthEndTransferProbable = (
   bankTransaction: NormalizedTransaction,
-  qboTransaction: NormalizedTransaction,
+  glTransaction: NormalizedTransaction,
   dateDifference: number | null,
 ): boolean => {
   if (dateDifference === null || dateDifference < 3 || dateDifference > 31) {
@@ -110,46 +110,46 @@ const isMonthEndTransferProbable = (
     return false;
   }
 
-  if ((qboTransaction.transactionType ?? '').toLowerCase() !== 'journal entry') {
+  if ((glTransaction.transactionType ?? '').toLowerCase() !== 'journal entry') {
     return false;
   }
 
-  if (!includesText(qboTransaction.description, 'money transfers')) {
+  if (!includesText(glTransaction.description, 'money transfers')) {
     return false;
   }
 
   const bankDateValue = bankTransaction.transactionDate ?? bankTransaction.postingDate;
-  const qboDateValue = qboTransaction.transactionDate ?? qboTransaction.postingDate;
+  const glDateValue = glTransaction.transactionDate ?? glTransaction.postingDate;
   const bankDate = parseIsoDate(bankDateValue);
-  const qboDate = parseIsoDate(qboDateValue);
+  const glDate = parseIsoDate(glDateValue);
 
-  if (!bankDate || !qboDate || !isMonthEndDate(qboDateValue)) {
+  if (!bankDate || !glDate || !isMonthEndDate(glDateValue)) {
     return false;
   }
 
-  return qboDate >= bankDate &&
-    bankDate.getUTCFullYear() === qboDate.getUTCFullYear() &&
-    bankDate.getUTCMonth() === qboDate.getUTCMonth();
+  return glDate >= bankDate &&
+    bankDate.getUTCFullYear() === glDate.getUTCFullYear() &&
+    bankDate.getUTCMonth() === glDate.getUTCMonth();
 };
 
 const isDistinctiveShortContextExactMatch = (
   bankTransaction: NormalizedTransaction,
-  qboTransaction: NormalizedTransaction,
+  glTransaction: NormalizedTransaction,
   bankAmountFrequency: Map<number, number>,
-  qboAmountFrequency: Map<number, number>,
+  glAmountFrequency: Map<number, number>,
 ): boolean => {
   if (bankTransaction.amount === null) {
     return false;
   }
 
   return (bankAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
-    (qboAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
-    qboTransaction.normalizedComparisonTokens.length <= SHORT_CONTEXT_TOKEN_LIMIT;
+    (glAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
+    glTransaction.normalizedComparisonTokens.length <= SHORT_CONTEXT_TOKEN_LIMIT;
 };
 
 const buildCandidate = (
   bankTransaction: NormalizedTransaction,
-  qboTransaction: NormalizedTransaction,
+  glTransaction: NormalizedTransaction,
   ruleName: string,
   score: number,
   confidence: MatchCandidate['confidence'],
@@ -158,26 +158,26 @@ const buildCandidate = (
 ): MatchCandidate => {
   const dateDifference = dateDifferenceDays(
     bankTransaction.transactionDate ?? bankTransaction.postingDate,
-    qboTransaction.transactionDate ?? qboTransaction.postingDate,
+    glTransaction.transactionDate ?? glTransaction.postingDate,
   );
   const textSimilarity = tokenSimilarity(
     bankTransaction.normalizedComparisonTokens,
-    qboTransaction.normalizedComparisonTokens,
+    glTransaction.normalizedComparisonTokens,
   );
   const referenceSimilarity = tokenSimilarity(
     bankTransaction.normalizedReferenceTokens,
-    qboTransaction.normalizedReferenceTokens,
+    glTransaction.normalizedReferenceTokens,
   );
 
   return {
     bankTransactionId: bankTransaction.id,
-    qboTransactionId: qboTransaction.id,
+    glTransactionId: glTransaction.id,
     confidence,
     exceptionCategory,
     score,
     ruleName,
     dateDifferenceDays: dateDifference,
-    amountDifference: amountDifference(bankTransaction.amount, qboTransaction.amount),
+    amountDifference: amountDifference(bankTransaction.amount, glTransaction.amount),
     textSimilarity,
     referenceSimilarity,
     evidence,
@@ -189,7 +189,7 @@ const buildCandidate = (
         score,
         reason: evidence.join(' '),
         evidence,
-        candidateTransactionId: qboTransaction.id,
+        candidateTransactionId: glTransaction.id,
       },
     ],
   };
@@ -208,11 +208,11 @@ const createMatchResult = (
   reason: candidate.evaluations[0]?.reason ?? candidate.evidence.join(' '),
   score: candidate.score,
   bankTransactionId: candidate.bankTransactionId,
-  qboTransactionId: candidate.qboTransactionId,
+  glTransactionId: candidate.glTransactionId,
   dateDifferenceDays: candidate.dateDifferenceDays,
   amountDifference: candidate.amountDifference,
   evidence: candidate.evidence,
-  likelyMatchingReference: candidate.qboTransactionId,
+  likelyMatchingReference: candidate.glTransactionId,
   exceptionCategory,
 });
 
@@ -235,9 +235,9 @@ const createGroupedMatchResult = (
   confidence: 'Probable',
   category: candidate.category,
   bankTransactionIds: candidate.bankTransactionIds,
-  qboTransactionIds: candidate.qboTransactionIds,
+  glTransactionIds: candidate.glTransactionIds,
   bankMembers: buildGroupedMatchMembers(candidate.bankTransactions),
-  qboMembers: buildGroupedMatchMembers(candidate.qboTransactions),
+  glMembers: buildGroupedMatchMembers(candidate.glTransactions),
   totalAmount: candidate.bankTransactions.reduce((total, transaction) => total + transaction.amount, 0),
   dateDifferenceDays: candidate.dateDifferenceDays,
   score: candidate.score,
@@ -305,13 +305,13 @@ const detectDuplicates = (
 
 const rankCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   config: MatchingConfig,
   aliases: PayeeAlias[] = [],
 ): MatchCandidate[] => {
   const candidates: MatchCandidate[] = [];
   const bankAmountFrequency = buildAmountFrequency(bankTransactions);
-  const qboAmountFrequency = buildAmountFrequency(qboTransactions);
+  const glAmountFrequency = buildAmountFrequency(glTransactions);
   const amountDrivenMatching = config.textSimilarityThreshold <= 0.12;
 
   // Pre-compute per-bank alias hits once to avoid repeated scanning in the inner loop.
@@ -326,31 +326,31 @@ const rankCandidates = (
   }
 
   for (const bankTransaction of bankTransactions) {
-    for (const qboTransaction of qboTransactions) {
-      if (bankTransaction.amount === null || qboTransaction.amount === null) {
+    for (const glTransaction of glTransactions) {
+      if (bankTransaction.amount === null || glTransaction.amount === null) {
         continue;
       }
 
-      const sameAmount = currencyEquals(bankTransaction.amount, qboTransaction.amount, config.amountTolerance);
+      const sameAmount = currencyEquals(bankTransaction.amount, glTransaction.amount, config.amountTolerance);
       const dateDifference = dateDifferenceDays(
         bankTransaction.transactionDate ?? bankTransaction.postingDate,
-        qboTransaction.transactionDate ?? qboTransaction.postingDate,
+        glTransaction.transactionDate ?? glTransaction.postingDate,
       );
       const textSimilarity = tokenSimilarity(
         bankTransaction.normalizedComparisonTokens,
-        qboTransaction.normalizedComparisonTokens,
+        glTransaction.normalizedComparisonTokens,
       );
       const referenceSimilarity = tokenSimilarity(
         bankTransaction.normalizedReferenceTokens,
-        qboTransaction.normalizedReferenceTokens,
+        glTransaction.normalizedReferenceTokens,
       );
       const hasCheckOrReferenceValues =
-        Boolean(bankTransaction.checkNumber || qboTransaction.checkNumber) ||
-        Boolean(bankTransaction.referenceNumber || qboTransaction.referenceNumber) ||
-        (bankTransaction.normalizedReferenceTokens.length > 0 && qboTransaction.normalizedReferenceTokens.length > 0);
+        Boolean(bankTransaction.checkNumber || glTransaction.checkNumber) ||
+        Boolean(bankTransaction.referenceNumber || glTransaction.referenceNumber) ||
+        (bankTransaction.normalizedReferenceTokens.length > 0 && glTransaction.normalizedReferenceTokens.length > 0);
 
       const referenceMismatchCategory: MatchCandidate['exceptionCategory'] =
-        bankTransaction.checkNumber || qboTransaction.checkNumber
+        bankTransaction.checkNumber || glTransaction.checkNumber
           ? 'CheckNumberMismatch'
           : 'ReferenceNumberMismatch';
       const lowContextExactMatch =
@@ -359,9 +359,9 @@ const rankCandidates = (
         textSimilarity === 0 &&
         isDistinctiveShortContextExactMatch(
           bankTransaction,
-          qboTransaction,
+          glTransaction,
           bankAmountFrequency,
-          qboAmountFrequency,
+          glAmountFrequency,
         );
       const reviewSimilarityThreshold = Math.min(config.probableTextSimilarityThreshold, 0.4);
 
@@ -370,14 +370,14 @@ const rankCandidates = (
       // Match rule so that check-specific evidence is preserved in the exception category.
       if (
         bankTransaction.checkNumber &&
-        qboTransaction.checkNumber &&
+        glTransaction.checkNumber &&
         referenceSimilarity >= config.referenceSimilarityThreshold
       ) {
         if (!sameAmount && (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays) {
           candidates.push(
             buildCandidate(
               bankTransaction,
-              qboTransaction,
+              glTransaction,
               'Check Number Amount Mismatch',
               0.86,
               'AmountMismatch',
@@ -399,7 +399,7 @@ const rankCandidates = (
           candidates.push(
             buildCandidate(
               bankTransaction,
-              qboTransaction,
+              glTransaction,
               'Check Number Date Variance',
               0.87,
               'DateVariance',
@@ -417,7 +417,7 @@ const rankCandidates = (
 
       if (sameAmount && referenceSimilarity >= config.referenceSimilarityThreshold) {
         candidates.push(
-          buildCandidate(bankTransaction, qboTransaction, 'Reference + Amount Match', 1, 'Exact', [
+          buildCandidate(bankTransaction, glTransaction, 'Reference + Amount Match', 1, 'Exact', [
             'Reference or check values align strongly.',
             'Amounts agree within configured tolerance.',
           ]),
@@ -436,7 +436,7 @@ const rankCandidates = (
         candidates.push(
           buildCandidate(
             bankTransaction,
-            qboTransaction,
+            glTransaction,
             'Reference Match with Amount Variance',
             0.83,
             'AmountMismatch',
@@ -456,7 +456,7 @@ const rankCandidates = (
         sameAmount &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
-        const aliasSimilarity = tokenSimilarity(aliasHit.canonicalTokens, qboTransaction.normalizedComparisonTokens);
+        const aliasSimilarity = tokenSimilarity(aliasHit.canonicalTokens, glTransaction.normalizedComparisonTokens);
         const effectiveSimilarity = aliasSimilarity * aliasHit.alias.matchConfidence;
 
         if (effectiveSimilarity >= config.textSimilarityThreshold) {
@@ -464,7 +464,7 @@ const rankCandidates = (
           candidates.push(
             buildCandidate(
               bankTransaction,
-              qboTransaction,
+              glTransaction,
               'Historical Pattern Match',
               withinPrimaryWindow ? 0.88 : 0.8,
               withinPrimaryWindow ? 'Exact' : 'DateVariance',
@@ -480,11 +480,11 @@ const rankCandidates = (
         }
       }
 
-      if (sameAmount && isMonthEndTransferProbable(bankTransaction, qboTransaction, dateDifference)) {
+      if (sameAmount && isMonthEndTransferProbable(bankTransaction, glTransaction, dateDifference)) {
         candidates.push(
           buildCandidate(
             bankTransaction,
-            qboTransaction,
+            glTransaction,
             'Month-End Transfer Review Match',
             0.79,
             'Probable',
@@ -509,7 +509,7 @@ const rankCandidates = (
         candidates.push(
           buildCandidate(
             bankTransaction,
-            qboTransaction,
+            glTransaction,
             'Amount + Date + Text with Reference Variance',
             0.78,
             'Probable',
@@ -531,7 +531,7 @@ const rankCandidates = (
         (textSimilarity >= config.textSimilarityThreshold || lowContextExactMatch)
       ) {
         candidates.push(
-          buildCandidate(bankTransaction, qboTransaction, 'Amount + Date + Text Match', 0.93, 'Exact', [
+          buildCandidate(bankTransaction, glTransaction, 'Amount + Date + Text Match', 0.93, 'Exact', [
             'Amounts agree within configured tolerance.',
             'Dates fall within the primary tolerance window.',
             'Merchant, payee, or description tokens align strongly.',
@@ -550,7 +550,7 @@ const rankCandidates = (
         candidates.push(
           buildCandidate(
             bankTransaction,
-            qboTransaction,
+            glTransaction,
             'Amount + Date with Description Variance',
             0.72,
             'Probable',
@@ -569,7 +569,7 @@ const rankCandidates = (
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
         candidates.push(
-          buildCandidate(bankTransaction, qboTransaction, 'Amount + Extended Date Window Match', 0.82, 'DateVariance', [
+          buildCandidate(bankTransaction, glTransaction, 'Amount + Extended Date Window Match', 0.82, 'DateVariance', [
             'Amounts agree within configured tolerance.',
             'Date variance remains outside the primary tolerance but inside the extended review window.',
           ], 'DateVariance'),
@@ -580,21 +580,21 @@ const rankCandidates = (
       // Wire Correspondent Fee: same direction, small absolute amount difference, strong text match.
       if (
         !sameAmount &&
-        Math.sign(bankTransaction.amount) === Math.sign(qboTransaction.amount) &&
+        Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
-        Math.abs(bankTransaction.amount - qboTransaction.amount) <= config.wireFeeTolerance &&
+        Math.abs(bankTransaction.amount - glTransaction.amount) <= config.wireFeeTolerance &&
         textSimilarity >= config.textSimilarityThreshold
       ) {
-        const feeDeducted = Math.abs(bankTransaction.amount - qboTransaction.amount);
+        const feeDeducted = Math.abs(bankTransaction.amount - glTransaction.amount);
         candidates.push(
           buildCandidate(
             bankTransaction,
-            qboTransaction,
+            glTransaction,
             'Wire Correspondent Fee Deduction',
             0.77,
             'AmountMismatch',
             [
-              `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${qboTransaction.amount.toFixed(2)} differ by ${feeDeducted.toFixed(2)}.`,
+              `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${glTransaction.amount.toFixed(2)} differ by ${feeDeducted.toFixed(2)}.`,
               'Amounts share the same sign and the difference is within the wire-fee tolerance, suggesting a correspondent bank or processing fee was deducted in transit.',
               'Reviewer should confirm against wire advice or settlement detail.',
             ],
@@ -609,22 +609,22 @@ const rankCandidates = (
       const FX_VARIANCE_MAX_PCT = 0.15;
       if (
         !sameAmount &&
-        Math.sign(bankTransaction.amount) === Math.sign(qboTransaction.amount) &&
+        Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
         textSimilarity >= config.textSimilarityThreshold
       ) {
-        const larger = Math.max(Math.abs(bankTransaction.amount), Math.abs(qboTransaction.amount));
-        const diffPct = larger > 0 ? Math.abs(bankTransaction.amount - qboTransaction.amount) / larger : 0;
+        const larger = Math.max(Math.abs(bankTransaction.amount), Math.abs(glTransaction.amount));
+        const diffPct = larger > 0 ? Math.abs(bankTransaction.amount - glTransaction.amount) / larger : 0;
         if (diffPct >= FX_VARIANCE_MIN_PCT && diffPct <= FX_VARIANCE_MAX_PCT) {
           candidates.push(
             buildCandidate(
               bankTransaction,
-              qboTransaction,
+              glTransaction,
               'FX Rate Variance',
               0.74,
               'AmountMismatch',
               [
-                `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${qboTransaction.amount.toFixed(2)} differ by ${(diffPct * 100).toFixed(2)}%.`,
+                `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${glTransaction.amount.toFixed(2)} differ by ${(diffPct * 100).toFixed(2)}%.`,
                 'The percentage variance is consistent with a foreign exchange rate difference or a processing discount.',
                 'Reviewer should confirm the FX rate or discount applied and record an adjusting entry if needed.',
               ],
@@ -641,7 +641,7 @@ const rankCandidates = (
         textSimilarity >= config.amountMismatchTextSimilarityThreshold
       ) {
         candidates.push(
-          buildCandidate(bankTransaction, qboTransaction, 'Possible Amount Mismatch', 0.7, 'AmountMismatch', [
+          buildCandidate(bankTransaction, glTransaction, 'Possible Amount Mismatch', 0.7, 'AmountMismatch', [
             'Dates and narrative context indicate likely related transactions.',
             'Recorded amounts differ beyond configured tolerance.',
           ]),
@@ -660,7 +660,7 @@ export interface MatchEngineResult {
   groupedMatchResults: GroupedMatchResult[];
   probableMatches: MatchResult[];
   unmatchedBankTransactionIds: Set<string>;
-  unmatchedQboTransactionIds: Set<string>;
+  unmatchedGlTransactionIds: Set<string>;
   duplicateTransactionIds: Set<string>;
 }
 
@@ -683,41 +683,41 @@ export const reconcileMatches = (
     (transaction) => !transaction.isExcluded && transaction.dataQualityIssues.length === 0,
   );
   const bankTransactions = activeTransactions.filter((transaction) => transaction.source === 'bank');
-  const qboTransactions = activeTransactions.filter((transaction) => transaction.source === 'qbo');
+  const glTransactions = activeTransactions.filter((transaction) => transaction.source === 'gl');
 
   const duplicateBank = detectDuplicates(bankTransactions, config);
-  const duplicateQbo = detectDuplicates(qboTransactions, config);
+  const duplicateGl = detectDuplicates(glTransactions, config);
   const duplicateIds = new Set<string>([
     ...duplicateBank.duplicateTransactionIds,
-    ...duplicateQbo.duplicateTransactionIds,
+    ...duplicateGl.duplicateTransactionIds,
   ]);
 
   const remainingBank = bankTransactions.filter((transaction) => !duplicateIds.has(transaction.id));
-  const remainingQbo = qboTransactions.filter((transaction) => !duplicateIds.has(transaction.id));
+  const remainingGl = glTransactions.filter((transaction) => !duplicateIds.has(transaction.id));
 
-  const candidates = rankCandidates(remainingBank, remainingQbo, config, aliases);
+  const candidates = rankCandidates(remainingBank, remainingGl, config, aliases);
   const exactMatchedBank = new Set<string>();
-  const exactMatchedQbo = new Set<string>();
+  const exactMatchedGl = new Set<string>();
   const reviewedBank = new Set<string>();
-  const reviewedQbo = new Set<string>();
-  const groupedReservations = reserveGroupedTransactionIds(remainingBank, remainingQbo, config);
+  const reviewedGl = new Set<string>();
+  const groupedReservations = reserveGroupedTransactionIds(remainingBank, remainingGl, config);
   const matchResults: MatchResult[] = [];
   const groupedMatchResults = groupedReservations.selectedCandidates.map(createGroupedMatchResult);
   const probableMatches: MatchResult[] = [];
 
   for (const candidate of candidates) {
-    if (exactMatchedBank.has(candidate.bankTransactionId) || exactMatchedQbo.has(candidate.qboTransactionId)) {
+    if (exactMatchedBank.has(candidate.bankTransactionId) || exactMatchedGl.has(candidate.glTransactionId)) {
       continue;
     }
 
     const isGroupedReserved =
       groupedReservations.reservedBankTransactionIds.has(candidate.bankTransactionId) ||
-      groupedReservations.reservedQboTransactionIds.has(candidate.qboTransactionId);
+      groupedReservations.reservedGlTransactionIds.has(candidate.glTransactionId);
 
     const siblingCandidates = candidates.filter(
       (item) =>
         item.bankTransactionId === candidate.bankTransactionId ||
-        item.qboTransactionId === candidate.qboTransactionId,
+        item.glTransactionId === candidate.glTransactionId,
     );
     const topScore = siblingCandidates[0]?.score ?? candidate.score;
     const closeAlternatives = siblingCandidates.filter((item) => topScore - item.score < 0.1);
@@ -731,7 +731,7 @@ export const reconcileMatches = (
       if (
         isGroupedReserved ||
         reviewedBank.has(candidate.bankTransactionId) ||
-        reviewedQbo.has(candidate.qboTransactionId)
+        reviewedGl.has(candidate.glTransactionId)
       ) {
         continue;
       }
@@ -744,7 +744,7 @@ export const reconcileMatches = (
       probableMatches.push(ambiguousResult);
       matchResults.push(ambiguousResult);
       reviewedBank.add(candidate.bankTransactionId);
-      reviewedQbo.add(candidate.qboTransactionId);
+      reviewedGl.add(candidate.glTransactionId);
       continue;
     }
 
@@ -770,14 +770,14 @@ export const reconcileMatches = (
     if (disposition === 'ExactMatch') {
       matchResults.push(result);
       exactMatchedBank.add(candidate.bankTransactionId);
-      exactMatchedQbo.add(candidate.qboTransactionId);
+      exactMatchedGl.add(candidate.glTransactionId);
       continue;
     }
 
     if (
       isGroupedReserved ||
       reviewedBank.has(candidate.bankTransactionId) ||
-      reviewedQbo.has(candidate.qboTransactionId)
+      reviewedGl.has(candidate.glTransactionId)
     ) {
       continue;
     }
@@ -787,7 +787,7 @@ export const reconcileMatches = (
     }
     matchResults.push(result);
     reviewedBank.add(candidate.bankTransactionId);
-    reviewedQbo.add(candidate.qboTransactionId);
+    reviewedGl.add(candidate.glTransactionId);
   }
 
   return {
@@ -797,8 +797,8 @@ export const reconcileMatches = (
     unmatchedBankTransactionIds: new Set(
       remainingBank.filter((transaction) => !exactMatchedBank.has(transaction.id)).map((transaction) => transaction.id),
     ),
-    unmatchedQboTransactionIds: new Set(
-      remainingQbo.filter((transaction) => !exactMatchedQbo.has(transaction.id)).map((transaction) => transaction.id),
+    unmatchedGlTransactionIds: new Set(
+      remainingGl.filter((transaction) => !exactMatchedGl.has(transaction.id)).map((transaction) => transaction.id),
     ),
     duplicateTransactionIds: duplicateIds,
   };

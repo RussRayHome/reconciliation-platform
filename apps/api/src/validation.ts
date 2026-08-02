@@ -207,7 +207,7 @@ export const createAliasBodySchema = z.object({
   canonicalPayeeName: requiredTrimmedString('canonicalPayeeName is required.'),
   normalizedTokens: optionalNormalizedTokens,
   accountIdentifier: z.string().optional().catch(undefined),
-  sourceDirection: z.enum(['bidirectional', 'bank_to_qbo']).catch('bank_to_qbo'),
+  sourceDirection: z.enum(['bidirectional', 'bank_to_gl']).catch('bank_to_gl'),
   matchConfidence: z.number().min(0).max(1).catch(1),
 });
 
@@ -228,6 +228,6 @@ export const updateAliasBodySchema = z.object({
     .transform((tokens) =>
       tokens ? tokens.filter((token): token is string => typeof token === 'string') : undefined,
     ),
-  sourceDirection: z.enum(['bidirectional', 'bank_to_qbo']).optional().catch(undefined),
+  sourceDirection: z.enum(['bidirectional', 'bank_to_gl']).optional().catch(undefined),
   matchConfidence: z.number().min(0).max(1).optional().catch(undefined),
 });

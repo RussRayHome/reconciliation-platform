@@ -65,7 +65,7 @@ export const runReconciliation = async (
     normalizedTransactions,
     matchResults: matching.matchResults,
     unmatchedBankTransactionIds: matching.unmatchedBankTransactionIds,
-    unmatchedQboTransactionIds: matching.unmatchedQboTransactionIds,
+    unmatchedGlTransactionIds: matching.unmatchedGlTransactionIds,
     duplicateTransactionIds: matching.duplicateTransactionIds,
     groupedMatchResults: matching.groupedMatchResults,
     reporting: input.config.reporting,

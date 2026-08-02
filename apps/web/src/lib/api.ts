@@ -35,7 +35,7 @@ interface LoginResponse {
 /** Form payload sent to `POST /api/reconciliation/run`. */
 export interface RunReconciliationPayload {
   bankFile: File;
-  qboFile: File;
+  glFile: File;
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
@@ -119,7 +119,7 @@ const waitForQueuedReconciliationRun = async (
 /** Submits a reconciliation run request with bank and GL file uploads and optional metadata. */
 export const runReconciliationRequest = async ({
   bankFile,
-  qboFile,
+  glFile,
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
@@ -127,7 +127,7 @@ export const runReconciliationRequest = async ({
 }: RunReconciliationPayload): Promise<ReconciliationRunResponse> => {
   const formData = new FormData();
   formData.append('bankFile', bankFile);
-  formData.append('qboFile', qboFile);
+  formData.append('glFile', glFile);
   if (accountIdentifier) {
     formData.append('accountIdentifier', accountIdentifier);
   }

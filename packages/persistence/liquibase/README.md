@@ -17,6 +17,68 @@ schema, replacing the old `postgresMigrations` array in
 - `changesets/0019` through `0021` complete the canonical pipeline: durable
   preservation of uploaded file bytes, the staging-to-canonical linkage, and the
   recovery/lineage views. See "Canonical pipeline" below.
+- `changesets/0022` through `0024` retire the legacy "qbo" vocabulary and
+  standardize table conventions. See "The qbo → gl rename" and "Table
+  conventions" below.
+
+## The qbo → gl rename
+
+The product renamed the QuickBooks Online side to the general ledger some time
+ago — `packages/domain/src/messages.ts` has long mapped `MissingFromQBO` to the
+display string "Missing from GL" — but only the display layer followed. Changesets
+0022 and 0023 retire the old vocabulary everywhere else:
+
+- **0022** renames the seven `qbo_*` columns to `gl_*`, plus the one index whose
+  *name* embedded the old term (renaming a column does not rename its indexes).
+- **0023** migrates stored enum values: `source_system`/`source_type`/
+  `template_type` `'qbo'` → `'gl'`, `source_direction` `'bank_to_qbo'` →
+  `'bank_to_gl'`, and the two `ErrorCategory` values `MissingFromQBO` /
+  `DuplicateInQBO` → `MissingFromGL` / `DuplicateInGL`, across nine CHECK
+  constraints, the category keys inside the summary JSONB, and `rule_id`.
+
+Because the display strings were already correct, this rename is invisible to
+users; it only removes the split between what the UI says and what the database
+stores.
+
+**What 0023 deliberately does not touch.** Uploaded file names
+(`reconciliation_source_file.file_name`, `..._content.original_file_name`,
+`..._row/exception.spreadsheet_file_name`) keep values like `qbo.xlsx`. Those
+record the file a user actually uploaded — rewriting them would fabricate audit
+history and contradict the preserved bytes from 0019. Free text quoting those
+names (for example a review observation reading "qbo.xlsx is missing transactions
+for: Feb, Mar…") is left alone for the same reason: it stays accurate only
+because the name it cites is unchanged. This is why the JSONB rewrites match the
+quote-delimited token `"qbo"` rather than a bare `qbo` — the quoted form matches a
+complete JSON string and cannot match inside `"qbo.xlsx"`.
+
+Two parser traps worth knowing if you extend 0023:
+
+- A comment line must never *begin* with the word `changeset` or `rollback`.
+  Liquibase's formatted-SQL parser matches `--\s*changeset`, so ordinary prose
+  starting with that word is read as a malformed directive.
+- Use `jsonb_exists_any(col, ARRAY[…])` rather than the equivalent JSONB
+  key-existence operator. Liquibase sends SQL through JDBC, which reads that
+  operator's leading question mark as a bind placeholder.
+
+## Table conventions
+
+Changeset 0024 brings every application table to the house convention: a UUID
+`id` and `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`. Liquibase's own
+`databasechangelog` / `databasechangeloglock` are excluded — they belong to the
+migration tool.
+
+Four tables had a meaningful natural primary key and gained `id` as a UNIQUE
+surrogate rather than a replacement PK:
+
+| Table | Retained PK | Why it was not replaced |
+| --- | --- | --- |
+| `reconciliation_job_summary` | `job_id` | enforces one summary per job |
+| `reconciliation_source_file_content` | `source_file_id` | enforces one preserved copy per file |
+| `reconciliation_user` | `user_name` | five foreign keys reference it |
+| `reconciliation_audit_event` | `event_id` | BIGSERIAL carries append order a UUID cannot |
+
+Promoting `id` to PK on the first two would silently allow duplicates the schema
+currently prevents structurally, so the natural keys stay.
 
 ## Canonical pipeline
 

@@ -87,7 +87,7 @@ describe('normalizeTransactions', () => {
         {
           ...baseRow,
           id: 'row-paren',
-          source: 'qbo',
+          source: 'gl',
           transactionDateRaw: '2025-01-04',
           amountRaw: '(1,250.40)',
           debitRaw: '',
@@ -96,7 +96,7 @@ describe('normalizeTransactions', () => {
         {
           ...baseRow,
           id: 'row-dr',
-          source: 'qbo',
+          source: 'gl',
           transactionDateRaw: '2025-01-05',
           amountRaw: '900 DR',
           debitRaw: '',
@@ -105,7 +105,7 @@ describe('normalizeTransactions', () => {
         {
           ...baseRow,
           id: 'row-cr',
-          source: 'qbo',
+          source: 'gl',
           transactionDateRaw: '2025-01-06',
           amountRaw: '900 CR',
           debitRaw: '',

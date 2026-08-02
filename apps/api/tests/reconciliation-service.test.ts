@@ -18,7 +18,7 @@ const defaultConfig = {
   bank: {
     headerRow: 1,
   },
-  qbo: {
+  gl: {
     headerRow: 1,
   },
   reporting: {},
@@ -54,7 +54,7 @@ const makeUploadedFile = (name: string) => ({
   buffer: Buffer.from('xlsx-data'),
 });
 
-const makeParseResult = (source: 'bank' | 'qbo', fileName: string) => ({
+const makeParseResult = (source: 'bank' | 'gl', fileName: string) => ({
   sourceFile: {
     id: `${source}-file-id`,
     source,
@@ -77,7 +77,7 @@ const makeMatchingOutput = () => ({
   groupedMatchResults: [{ id: 'grouped-1' }],
   probableMatches: [{ id: 'probable-1' }],
   unmatchedBankTransactionIds: new Set(['bank-unmatched']),
-  unmatchedQboTransactionIds: new Set(['qbo-unmatched']),
+  unmatchedGlTransactionIds: new Set(['gl-unmatched']),
   duplicateTransactionIds: new Set(['duplicate-1']),
 });
 
@@ -86,7 +86,7 @@ const makeSummary = () => ({
   timingDifferences: 2,
   dataQualityIssues: 3,
   missingFromBank: 4,
-  missingFromQBO: 5,
+  missingFromGL: 5,
   duplicates: 6,
   unresolvedExposure: 42,
 });
@@ -124,7 +124,7 @@ const originalEnv = { ...process.env };
 const arrangeHappyMocks = (): void => {
   parseWorkbookMock
     .mockResolvedValueOnce(makeParseResult('bank', 'bank.xlsx'))
-    .mockResolvedValueOnce(makeParseResult('qbo', 'qbo.xlsx'));
+    .mockResolvedValueOnce(makeParseResult('gl', 'gl.xlsx'));
   normalizeTransactionsMock.mockReturnValue([
     { id: 'normalized-1', dataQualityIssues: [], isExcluded: false },
   ]);
@@ -188,9 +188,9 @@ describe('executeReconciliation', () => {
       correlationId: 'corr-1',
       runId: 'provided-run-id',
       lifecycleStore: lifecycleStore as never,
-      sourceFileIds: { bank: 'bank-source-id', qbo: 'qbo-source-id' },
+      sourceFileIds: { bank: 'bank-source-id', gl: 'gl-source-id' },
       bankFile: makeUploadedFile('bank.xlsx'),
-      qboFile: makeUploadedFile('qbo.xlsx'),
+      glFile: makeUploadedFile('gl.xlsx'),
       accountIdentifier: 'OPERATING-001',
       reconciliationFrequency: 'Monthly',
       periodLabel: '2026-01',
@@ -211,9 +211,9 @@ describe('executeReconciliation', () => {
     expect(parseWorkbookMock).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        source: 'qbo',
-        sourceFileId: 'qbo-source-id',
-        fileName: 'qbo.xlsx',
+        source: 'gl',
+        sourceFileId: 'gl-source-id',
+        fileName: 'gl.xlsx',
       }),
     );
 
@@ -241,7 +241,7 @@ describe('executeReconciliation', () => {
     const run = await executeReconciliation({
       correlationId: 'corr-2',
       bankFile: makeUploadedFile('bank-debug.xlsx'),
-      qboFile: makeUploadedFile('qbo-debug.xlsx'),
+      glFile: makeUploadedFile('gl-debug.xlsx'),
     });
 
     expect(run.id).toBe('generated-run-id');
@@ -253,11 +253,11 @@ describe('executeReconciliation', () => {
     );
     expect(parseWorkbookMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ config: defaultConfig.qbo }),
+      expect.objectContaining({ config: defaultConfig.gl }),
     );
 
     expect(hasLoggedAction(childLogger.debug.mock.calls, 'service.parse.bank.sample')).toBe(true);
-    expect(hasLoggedAction(childLogger.debug.mock.calls, 'service.parse.qbo.sample')).toBe(true);
+    expect(hasLoggedAction(childLogger.debug.mock.calls, 'service.parse.gl.sample')).toBe(true);
   });
 
   it('logs and rethrows parse failures', async () => {
@@ -269,7 +269,7 @@ describe('executeReconciliation', () => {
       executeReconciliation({
         correlationId: 'corr-3',
         bankFile: makeUploadedFile('bank-bad.xlsx'),
-        qboFile: makeUploadedFile('qbo-bad.xlsx'),
+        glFile: makeUploadedFile('gl-bad.xlsx'),
       }),
     ).rejects.toThrow('parse exploded');
 
@@ -286,7 +286,7 @@ describe('executeReconciliation', () => {
       executeReconciliation({
         correlationId: 'corr-4',
         bankFile: makeUploadedFile('bank-fail.xlsx'),
-        qboFile: makeUploadedFile('qbo-fail.xlsx'),
+        glFile: makeUploadedFile('gl-fail.xlsx'),
       }),
     ).rejects.toThrow('normalize exploded');
 

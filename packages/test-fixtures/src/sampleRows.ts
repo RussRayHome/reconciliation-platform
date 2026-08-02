@@ -1,7 +1,7 @@
 /**
  * Raw spreadsheet row arrays for every exception scenario and edge case used across unit,
  * integration, and E2E test suites. Each named export is a self-contained set of header +
- * data rows for a specific bank or QBO file. Workbook factory helpers at the bottom of the
+ * data rows for a specific bank or GL file. Workbook factory helpers at the bottom of the
  * file convert any row array into an ExcelJS buffer.
  */
 import { Buffer } from 'node:buffer';
@@ -11,7 +11,7 @@ export const bankHeaderOnlyRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
 ];
 
-export const qboHeaderOnlyRows = [
+export const glHeaderOnlyRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
 ];
 
@@ -25,7 +25,7 @@ export const sampleBankRows = [
   ['2025-01-11', 'CARD ADJUSTMENT', '', '0', '', '6674.50'],
 ];
 
-export const sampleQboRows = [
+export const sampleGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-01-01', 'Journal', '', '', 'Beginning Balance', '15000.00'],
   ['2025-01-02', 'Expense', '', 'Acme Office Supplies', 'Office supplies order', '-125.50'],
@@ -40,7 +40,7 @@ export const referenceMismatchBankRows = [
   ['2025-02-05', 'LANDLORD RENT CHECK 2150 FEB', '2150', '1600.00', '', '8400.00'],
 ];
 
-export const referenceMismatchQboRows = [
+export const referenceMismatchGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-02-05', 'Check', '2151', 'Landlord Rent', 'Landlord rent check 2151 feb', '-1600.00'],
 ];
@@ -50,7 +50,7 @@ export const amountMismatchBankRows = [
   ['2025-03-04', 'WIRE VENDOR ALPHA INV-993', '', '500.00', '', '7900.00'],
 ];
 
-export const amountMismatchQboRows = [
+export const amountMismatchGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-03-04', 'Expense', '', 'Vendor Alpha', 'Invoice 993 payment', '-520.00'],
 ];
@@ -60,7 +60,7 @@ export const timingDifferenceBankRows = [
   ['2025-04-29', 'PAYROLL PROCESSOR APRIL BATCH', '', '2400.00', '', '5500.00'],
 ];
 
-export const timingDifferenceQboRows = [
+export const timingDifferenceGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-05-18', 'Expense', '', 'Payroll Processor', 'Payroll processor April batch', '-2400.00'],
 ];
@@ -70,7 +70,7 @@ export const splitCombineBankRows = [
   ['2025-07-15', 'VENDOR SETTLEMENT BATCH', '', '300.00', '', '6400.00'],
 ];
 
-export const splitCombineQboRows = [
+export const splitCombineGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-07-15', 'Expense', '', 'Vendor Alpha', 'Vendor settlement part 1', '-120.00'],
   ['2025-07-16', 'Expense', '', 'Vendor Alpha', 'Vendor settlement part 2', '-180.00'],
@@ -81,7 +81,7 @@ export const depositGroupingBankRows = [
   ['2025-08-05', 'MERCHANT SERVICES BATCH DEPOSIT', '', '', '3200.00', '9600.00'],
 ];
 
-export const depositGroupingQboRows = [
+export const depositGroupingGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-08-04', 'Deposit', '', 'Customer A', 'Batch receipt A', '2000.00'],
   ['2025-08-05', 'Deposit', '', 'Customer B', 'Batch receipt B', '1200.00'],
@@ -92,7 +92,7 @@ export const splitCombineNearMissBankRows = [
   ['2025-07-22', 'VENDOR SETTLEMENT BATCH', '', '300.00', '', '6100.00'],
 ];
 
-export const splitCombineNearMissQboRows = [
+export const splitCombineNearMissGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-07-22', 'Expense', '', 'Vendor Alpha', 'Vendor settlement part 1', '-120.00'],
   ['2025-07-23', 'Expense', '', 'Vendor Alpha', 'Vendor settlement part 2', '-179.97'],
@@ -103,7 +103,7 @@ export const depositGroupingOversizedBankRows = [
   ['2025-08-12', 'MERCHANT SERVICES BATCH DEPOSIT', '', '', '3200.00', '12800.00'],
 ];
 
-export const depositGroupingOversizedQboRows = [
+export const depositGroupingOversizedGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-08-01', 'Deposit', '', 'Customer A', 'Batch receipt A', '1000.00'],
   ['2025-08-01', 'Deposit', '', 'Customer B', 'Batch receipt B', '800.00'],
@@ -116,22 +116,22 @@ export const ambiguousBankRows = [
   ['2025-06-10', 'CARD SHELL FUEL', '', '85.00', '', '4900.00'],
 ];
 
-export const ambiguousQboRows = [
+export const ambiguousGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-06-15', 'Expense', '', 'Merchant A', 'Card shell fuel tag-a', '-85.00'],
   ['2025-06-15', 'Expense', '', 'Vendor B', 'Card shell fuel tag-b', '-85.00'],
 ];
 
-export const missingFromQboBankRows = [
+export const missingFromGlBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-09-02', 'UNBOOKED BANK FEE', '', '45.00', '', '9955.00'],
 ];
 
-export const missingFromQboQboRows = qboHeaderOnlyRows;
+export const missingFromGlGlRows = glHeaderOnlyRows;
 
 export const missingFromBankBankRows = bankHeaderOnlyRows;
 
-export const missingFromBankQboRows = [
+export const missingFromBankGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-09-03', 'Expense', '', 'North Vendor', 'Vendor payment missing from bank', '-450.00'],
 ];
@@ -142,17 +142,17 @@ export const duplicateInBankBankRows = [
   ['2025-09-05', 'VENDOR OMEGA EFT', '', '210.00', '', '9535.00'],
 ];
 
-export const duplicateInBankQboRows = [
+export const duplicateInBankGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-09-04', 'Expense', '', 'Vendor Omega', 'Vendor omega eft', '-210.00'],
 ];
 
-export const duplicateInQboBankRows = [
+export const duplicateInGlBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-09-06', 'CLIENT REFUND SIGMA', '', '180.00', '', '9355.00'],
 ];
 
-export const duplicateInQboQboRows = [
+export const duplicateInGlGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-09-06', 'Expense', '', 'Client Sigma', 'Client refund sigma', '-180.00'],
   ['2025-09-07', 'Expense', '', 'Client Sigma', 'Client refund sigma', '-180.00'],
@@ -163,7 +163,7 @@ export const likelyMiscodingBankRows = [
   ['2025-03-10', 'ACME PAYROLL', '', '575.00', '', '9425.00'],
 ];
 
-export const likelyMiscodingQboRows = [
+export const likelyMiscodingGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-03-11', 'Expense', '', 'Office Depot', 'Office supplies', '-575.00'],
 ];
@@ -173,7 +173,7 @@ export const dateVarianceBankRows = [
   ['2025-04-01', 'CLIENT BATCH DEPOSIT', '', '', '3200.00', '8200.00'],
 ];
 
-export const dateVarianceQboRows = [
+export const dateVarianceGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-04-15', 'Journal Entry', '', 'Client Batch', 'Client batch deposit clearing', '3200.00'],
 ];
@@ -183,7 +183,7 @@ export const referenceNumberMismatchBankRows = [
   ['2025-02-12', 'WIRE CLIENT REF 7788 SETTLEMENT', '7788', '450.00', '', '9550.00'],
 ];
 
-export const referenceNumberMismatchQboRows = [
+export const referenceNumberMismatchGlRows = [
   ['Date', 'Type', 'Reference', 'Name', 'Memo', 'Amount'],
   ['2025-02-12', 'Expense', '7799', 'Client Wire', 'Wire client ref settlement', '-450.00'],
 ];
@@ -193,7 +193,7 @@ export const descriptionVarianceBankRows = [
   ['2025-02-18', 'OFFICE DEPOT MONTHLY RUN', '', '245.00', '', '9305.00'],
 ];
 
-export const descriptionVarianceQboRows = [
+export const descriptionVarianceGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-02-18', 'Expense', '', 'Office Depot', 'Client charge', '-245.00'],
 ];
@@ -203,7 +203,7 @@ export const outstandingCheckBankRows = [
   ['2025-11-15', 'MONTH-END OPERATING', '', '350.00', '', '9000.00'],
 ];
 
-export const outstandingCheckQboRows = [
+export const outstandingCheckGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-11-07', 'Check', '1201', 'Vendor B', 'Normal uncleared check', '-273.50'],
 ];
@@ -214,7 +214,7 @@ export const staleOutstandingBankRows = [
   ['2025-04-30', 'MONTH-END ACTIVITY', '', '100.00', '', '700.00'],
 ];
 
-export const staleOutstandingQboRows = [
+export const staleOutstandingGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-02-10', 'Check', '1124', 'Vendor A', 'Uncleared check', '-150.00'],
 ];
@@ -224,7 +224,7 @@ export const staleOutstandingBelowThresholdBankRows = [
   ['2025-04-29', 'OPERATING ACTIVITY', '', '200.00', '', '800.00'],
 ];
 
-export const staleOutstandingBelowThresholdQboRows = [
+export const staleOutstandingBelowThresholdGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-03-16', 'Check', '1045', 'Vendor A', 'Recent unmatched check', '-150.00'],
 ];
@@ -235,7 +235,7 @@ export const staleOutstandingMixedResidualBankRows = [
   ['2025-04-30', 'MONTH-END ACTIVITY', '', '100.00', '', '750.00'],
 ];
 
-export const staleOutstandingMixedResidualQboRows = [
+export const staleOutstandingMixedResidualGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-03-16', 'Check', '1045', 'Vendor A', 'Uncleared check', '-150.00'],
 ];
@@ -245,7 +245,7 @@ export const invalidDataBankRows = [
   ['', 'WIRE WITHOUT DATE', '', '250.00', '', '999.00'],
 ];
 
-export const invalidDataQboRows = [
+export const invalidDataGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-03-04', 'Expense', '', 'Vendor', 'Wire without date', '-250.00'],
 ];
@@ -262,7 +262,7 @@ export const nonStandardHeaderBankRows = [
   ['2025-01-05', 'CLIENT PAYMENT NORTH', '', '3200.00', '13074.50'],
 ];
 
-export const nonStandardHeaderQboRows = [
+export const nonStandardHeaderGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-01-02', 'Expense', '', 'Acme Office Supply', 'ACME OFFICE SUPPLY', '-125.50'],
   ['2025-01-05', 'Deposit', '', 'North Client', 'CLIENT PAYMENT NORTH', '3200.00'],
@@ -274,7 +274,7 @@ export const reversalVoidBankRows = [
   ['2025-10-02', 'BANK CREDIT JOURNAL ENTRY', '', '', '500.00', '10000.00'],
 ];
 
-export const reversalVoidQboRows = qboHeaderOnlyRows;
+export const reversalVoidGlRows = glHeaderOnlyRows;
 
 export const achReturnBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
@@ -282,14 +282,14 @@ export const achReturnBankRows = [
   ['2025-10-11', 'NSF RETURN ACH VENDOR GAMMA', '', '', '300.00', '10000.00'],
 ];
 
-export const achReturnQboRows = qboHeaderOnlyRows;
+export const achReturnGlRows = glHeaderOnlyRows;
 
 export const depositInTransitBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-11-15', 'OPERATING EXPENSE UNMATCHED', '', '100.00', '', '9900.00'],
 ];
 
-export const depositInTransitQboRows = [
+export const depositInTransitGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-11-12', 'Deposit', '', 'Remote Client', 'Client deposit in transit', '250.00'],
 ];
@@ -300,7 +300,7 @@ export const chargebackReturnBankRows = [
   ['2025-10-25', 'CHARGEBACK DISPUTED CLIENT ALPHA', '', '750.00', '', '10000.00'],
 ];
 
-export const chargebackReturnQboRows = [
+export const chargebackReturnGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-09-20', 'Income', '', 'Client Alpha', 'Client invoice settlement alpha', '750.00'],
 ];
@@ -310,92 +310,92 @@ export const interestIncomeBankRows = [
   ['2025-09-30', 'INTEREST EARNED SAVINGS', '', '', '12.50', '10012.50'],
 ];
 
-export const interestIncomeQboRows = qboHeaderOnlyRows;
+export const interestIncomeGlRows = glHeaderOnlyRows;
 
 export const intercompanyMismatchBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-09-25', 'DUE FROM SUBSIDIARY ALPHA', '', '1000.00', '', '9000.00'],
 ];
 
-export const intercompanyMismatchQboRows = qboHeaderOnlyRows;
+export const intercompanyMismatchGlRows = glHeaderOnlyRows;
 
-// FeeNettingMatch: bank credit = QBO revenue + QBO fee
+// FeeNettingMatch: bank credit = GL revenue + GL fee
 export const feeNettingMatchBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-10-01', 'STRIPE PAYOUT NET', '', '', '93.17', '10093.17'],
 ];
 
-export const feeNettingMatchQboRows = [
+export const feeNettingMatchGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-10-01', 'Sales Receipt', '', 'Stripe', 'Stripe gross revenue payout', '101.80'],
   ['2025-10-01', 'Expense', '', 'Stripe', 'Stripe processing fee', '-8.63'],
 ];
 
-// PartialPaymentMatch: two bank debits sum to one QBO debit
+// PartialPaymentMatch: two bank debits sum to one GL debit
 export const partialPaymentMatchBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-10-05', 'INSTALLMENT VENDOR DELTA INV-992 PART 1', '', '150.75', '', '9849.25'],
   ['2025-10-09', 'INSTALLMENT VENDOR DELTA INV-992 PART 2', '', '150.75', '', '9698.50'],
 ];
 
-export const partialPaymentMatchQboRows = [
+export const partialPaymentMatchGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-10-05', 'Bill Payment', '', 'Vendor Delta', 'Vendor delta inv 992 installment plan', '-301.50'],
 ];
 
-// PayrollBatchMatch: one bank payroll debit matches multiple QBO payroll lines
+// PayrollBatchMatch: one bank payroll debit matches multiple GL payroll lines
 export const payrollBatchMatchBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-11-01', 'PAYROLL DIRECT DEPOSIT BATCH', '', '5001.00', '', '4999.00'],
 ];
 
-export const payrollBatchMatchQboRows = [
+export const payrollBatchMatchGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-11-01', 'Expense', '', 'Employee A', 'Payroll employee a salary nov', '-3001.00'],
   ['2025-11-01', 'Expense', '', 'Employee B', 'Payroll employee b salary nov', '-2000.00'],
 ];
 
-// BankServiceChargeAmortization: one bank fee debit matches multiple QBO expense lines
+// BankServiceChargeAmortization: one bank fee debit matches multiple GL expense lines
 export const bankServiceChargeAmortizationBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-10-15', 'MONTHLY SERVICE FEE ACCOUNT MAINTENANCE', '', '121.00', '', '9879.00'],
 ];
 
-export const bankServiceChargeAmortizationQboRows = [
+export const bankServiceChargeAmortizationGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-10-15', 'Expense', '', 'Bank', 'Bank fee admin account maintenance', '-61.00'],
   ['2025-10-15', 'Expense', '', 'Bank', 'Bank fee wire transfer services', '-60.00'],
 ];
 
-// LoanPaymentSplit: one bank mortgage debit matches two QBO principal+interest lines
+// LoanPaymentSplit: one bank mortgage debit matches two GL principal+interest lines
 export const loanPaymentSplitBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-11-10', 'MORTGAGE PAYMENT WELLS FARGO', '', '1250.00', '', '8750.00'],
 ];
 
-export const loanPaymentSplitQboRows = [
+export const loanPaymentSplitGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
   ['2025-11-10', 'Expense', '', 'Wells Fargo', 'Mortgage loan principal reduction', '-1000.00'],
   ['2025-11-10', 'Expense', '', 'Wells Fargo', 'Mortgage loan interest expense', '-250.00'],
 ];
 
-// NSFReturnedDeposit: bank debit with NSF keywords and no QBO counterpart
+// NSFReturnedDeposit: bank debit with NSF keywords and no GL counterpart
 export const nsfReturnedDepositBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-11-08', 'NSF RETURNED CHECK CUSTOMER ALPHA', '', '317.89', '', '9682.11'],
 ];
 
-export const nsfReturnedDepositQboRows = [
+export const nsfReturnedDepositGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
 ];
 
-// VoidedCheckCleared: bank check debit with check number and no QBO counterpart
+// VoidedCheckCleared: bank check debit with check number and no GL counterpart
 export const voidedCheckClearedBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-11-12', 'CHECK', '1042', '657.33', '', '9342.67'],
 ];
 
-export const voidedCheckClearedQboRows = [
+export const voidedCheckClearedGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
 ];
 
@@ -426,8 +426,8 @@ const buildWorkbookBuffer = async (rows: Array<Array<string | number>>): Promise
 
 /** Creates an Excel workbook buffer from the default sample bank rows. */
 export const createSampleBankWorkbook = () => buildWorkbookBuffer(sampleBankRows);
-/** Creates an Excel workbook buffer from the default sample QBO rows. */
-export const createSampleQboWorkbook = () => buildWorkbookBuffer(sampleQboRows);
+/** Creates an Excel workbook buffer from the default sample GL rows. */
+export const createSampleGlWorkbook = () => buildWorkbookBuffer(sampleGlRows);
 
 /** Creates an Excel workbook buffer from arbitrary row data. */
 export const createWorkbookFromRows = (rows: Array<Array<string | number>>) => buildWorkbookBuffer(rows);

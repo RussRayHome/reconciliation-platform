@@ -3,10 +3,10 @@ import type { ErrorCategory } from './enums';
 /** Human-readable display label for each exception category used in the UI and workbook export. */
 export const errorCategoryDisplayNames: Record<ErrorCategory, string> = {
   MissingFromBank: 'Missing from Bank',
-  MissingFromQBO: 'Missing from GL',
+  MissingFromGL: 'Missing from GL',
   AmountMismatch: 'Amount Mismatch',
   DuplicateInBank: 'Duplicate in Bank',
-  DuplicateInQBO: 'Duplicate in GL',
+  DuplicateInGL: 'Duplicate in GL',
   LikelySplitCombineIssue: 'Likely Split/Combine Issue',
   DepositGroupingIssue: 'Deposit Grouping Issue',
   LikelyMiscoding: 'Likely Miscoding',
@@ -38,13 +38,13 @@ export const errorCategoryDisplayNames: Record<ErrorCategory, string> = {
 export const professionalErrorMessages: Record<ErrorCategory, string> = {
   MissingFromBank:
     'Transaction appears in GL activity but no corresponding bank entry was identified within the permitted date and amount tolerance.',
-  MissingFromQBO:
+  MissingFromGL:
     'Transaction appears in bank activity but no corresponding GL entry was identified within the permitted date and amount tolerance.',
   AmountMismatch:
     'Likely matched transaction found in both sources; however, recorded amounts differ and require review of original source documentation.',
   DuplicateInBank:
     'Bank entry appears duplicated based on same amount, date proximity, and materially similar description.',
-  DuplicateInQBO:
+  DuplicateInGL:
     'GL entry appears duplicated based on same amount, date proximity, and materially similar description.',
   LikelySplitCombineIssue:
     'Transaction appears to participate in a one-to-many or many-to-one relationship that the current one-to-one matcher cannot resolve automatically.',
@@ -104,7 +104,7 @@ export const recommendedNextActionsByCategory: Record<ErrorCategory, string[]> =
     'Inspect the bank statement around the transaction date for an omitted, reversed, or delayed posting.',
     'Confirm whether the GL transaction should be voided, reclassified, or carried as an outstanding item.',
   ],
-  MissingFromQBO: [
+  MissingFromGL: [
     'Check whether the bank transaction was recorded to the correct GL account and period.',
     'Create or correct the GL entry if source support confirms the bank activity is valid.',
   ],
@@ -116,7 +116,7 @@ export const recommendedNextActionsByCategory: Record<ErrorCategory, string[]> =
     'Review bank posting detail to determine whether the item is an actual duplicate or a reversal pattern.',
     'If duplicated, document the bank-side resolution and remove the extra item from reconciliation support.',
   ],
-  DuplicateInQBO: [
+  DuplicateInGL: [
     'Review the originating GL entries and linked source documents for duplicate posting.',
     'Void or reverse the duplicate GL item once the correct entry is confirmed.',
   ],

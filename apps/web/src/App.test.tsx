@@ -93,7 +93,7 @@ const createRunResponse = () => ({
   completedAt: new Date().toISOString(),
   sourceFiles: [
     { id: '1', source: 'bank', fileName: 'bank.xlsx' },
-    { id: '2', source: 'qbo', fileName: 'qbo.xlsx' },
+    { id: '2', source: 'gl', fileName: 'gl.xlsx' },
   ],
   rawRows: [],
   normalizedTransactions: [],
@@ -112,23 +112,23 @@ const createRunResponse = () => ({
   exceptions: [
     {
       id: 'exception-1',
-      category: 'MissingFromQBO',
+      category: 'MissingFromGL',
       severity: 'High',
       source: 'bank',
       spreadsheetFileName: 'bank.xlsx',
       lineNumber: 5,
       amount: 125.5,
-      errorMessage: 'Missing from QBO',
+      errorMessage: 'Missing from GL',
       ruleTrace: {
-        ruleId: 'missing-from-qbo',
-        ruleName: 'Missing from QBO',
+        ruleId: 'missing-from-gl',
+        ruleName: 'Missing from GL',
         reason:
-          'No QBO-side transaction remained after exact, review, and variance matching rules were applied.',
+          'No GL-side transaction remained after exact, review, and variance matching rules were applied.',
         evidence: ['Transaction stayed unmatched after cross-source candidate selection.'],
       },
       recommendedNextActions: [
-        'Check whether the bank transaction was recorded to the correct QBO account and period.',
-        'Create or correct the QBO entry if source support confirms the bank activity is valid.',
+        'Check whether the bank transaction was recorded to the correct GL account and period.',
+        'Create or correct the GL entry if source support confirms the bank activity is valid.',
       ],
       normalizedComparisonTokens: ['ACME'],
       relatedTransactionIds: [],
@@ -149,23 +149,23 @@ const createRunResponse = () => ({
           'Residual unmatched transactions form a one-to-many relationship that the one-to-one matcher cannot settle cleanly.',
         evidence: ['Grouped total balances across sources.'],
         counterpart: {
-          source: 'qbo',
-          spreadsheetFileName: 'qbo.xlsx',
+          source: 'gl',
+          spreadsheetFileName: 'gl.xlsx',
           lineNumber: 4,
-          transactionId: 'qbo-4',
+          transactionId: 'gl-4',
         },
         counterparts: [
           {
-            source: 'qbo',
-            spreadsheetFileName: 'qbo.xlsx',
+            source: 'gl',
+            spreadsheetFileName: 'gl.xlsx',
             lineNumber: 4,
-            transactionId: 'qbo-4',
+            transactionId: 'gl-4',
           },
           {
-            source: 'qbo',
-            spreadsheetFileName: 'qbo.xlsx',
+            source: 'gl',
+            spreadsheetFileName: 'gl.xlsx',
             lineNumber: 5,
-            transactionId: 'qbo-5',
+            transactionId: 'gl-5',
           },
         ],
       },
@@ -173,14 +173,14 @@ const createRunResponse = () => ({
         'Review nearby transactions for one-to-many or many-to-one combinations that sum to the same net activity.',
       ],
       normalizedComparisonTokens: ['GROUPED', 'PAYMENT'],
-      relatedTransactionIds: ['bank-8', 'qbo-4', 'qbo-5'],
+      relatedTransactionIds: ['bank-8', 'gl-4', 'gl-5'],
     },
     {
       id: 'exception-3',
       category: 'DepositGroupingIssue',
       severity: 'High',
-      source: 'qbo',
-      spreadsheetFileName: 'qbo.xlsx',
+      source: 'gl',
+      spreadsheetFileName: 'gl.xlsx',
       lineNumber: 12,
       amount: 410,
       errorMessage: 'Deposit grouping issue',
@@ -209,7 +209,7 @@ const createRunResponse = () => ({
         'Compare the bank deposit to underlying receipts or batch detail to confirm whether multiple book entries roll into one deposit.',
       ],
       normalizedComparisonTokens: ['BATCH', 'DEPOSIT'],
-      relatedTransactionIds: ['bank-12', 'qbo-8', 'qbo-9'],
+      relatedTransactionIds: ['bank-12', 'gl-8', 'gl-9'],
     },
     {
       id: 'exception-4',
@@ -227,17 +227,17 @@ const createRunResponse = () => ({
           'A same-amount, timing-compatible counterpart exists outside the primary date tolerance but within the timing-difference window.',
         evidence: ['Same amount paired within the extended timing window.'],
         counterpart: {
-          source: 'qbo',
-          spreadsheetFileName: 'qbo.xlsx',
+          source: 'gl',
+          spreadsheetFileName: 'gl.xlsx',
           lineNumber: 21,
-          transactionId: 'qbo-21',
+          transactionId: 'gl-21',
         },
         counterparts: [
           {
-            source: 'qbo',
-            spreadsheetFileName: 'qbo.xlsx',
+            source: 'gl',
+            spreadsheetFileName: 'gl.xlsx',
             lineNumber: 21,
-            transactionId: 'qbo-21',
+            transactionId: 'gl-21',
           },
         ],
       },
@@ -248,17 +248,17 @@ const createRunResponse = () => ({
           reason: 'Original date variance classification',
           evidence: ['Amounts agree within configured tolerance.'],
           counterpart: {
-            source: 'qbo',
-            spreadsheetFileName: 'qbo.xlsx',
+            source: 'gl',
+            spreadsheetFileName: 'gl.xlsx',
             lineNumber: 21,
-            transactionId: 'qbo-21',
+            transactionId: 'gl-21',
           },
           counterparts: [
             {
-              source: 'qbo',
-              spreadsheetFileName: 'qbo.xlsx',
+              source: 'gl',
+              spreadsheetFileName: 'gl.xlsx',
               lineNumber: 21,
-              transactionId: 'qbo-21',
+              transactionId: 'gl-21',
             },
           ],
         },
@@ -267,37 +267,37 @@ const createRunResponse = () => ({
         'Carry as timing support and monitor the next reconciliation cycle.',
       ],
       normalizedComparisonTokens: ['PAYROLL', 'APRIL'],
-      relatedTransactionIds: ['bank-18', 'qbo-21'],
+      relatedTransactionIds: ['bank-18', 'gl-21'],
     },
   ],
   summary: {
     totalRecordsReviewed: 12,
     bankRecords: 6,
-    qboRecords: 6,
+    glRecords: 6,
     exactMatches: 4,
     probableMatches: 1,
     unmatchedItems: 2,
     duplicates: 1,
     bankDuplicates: 1,
-    qboDuplicates: 0,
+    glDuplicates: 0,
     dateVariances: 1,
     timingDifferences: 1,
     dataQualityIssues: 1,
     amountMismatches: 0,
     missingFromBank: 1,
-    missingFromQBO: 1,
+    missingFromGL: 1,
     unmatchedBankNetAmount: 125.5,
-    unmatchedQboNetAmount: 0,
+    unmatchedGlNetAmount: 0,
     cleanMatchedAmount: 6400,
     unresolvedExposure: 125.5,
     countsByCategory: {
-      MissingFromQBO: 1,
+      MissingFromGL: 1,
       LikelySplitCombineIssue: 1,
       DepositGroupingIssue: 1,
       TimingDifference: 1,
     },
     amountByCategory: {
-      MissingFromQBO: 125.5,
+      MissingFromGL: 125.5,
       LikelySplitCombineIssue: 250,
       DepositGroupingIssue: 410,
       TimingDifference: 2400,
@@ -524,11 +524,11 @@ describe('App', () => {
       'aria-current',
       'page',
     );
-    expect(screen.getByRole('link', { name: /Recon summary/i })).not.toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Reconciliation/i })).not.toHaveAttribute(
       'aria-current',
     );
     expect(screen.getByRole('link', { name: /Exceptions/i })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('link', { name: /Export/i })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: /Reports/i })).not.toHaveAttribute('aria-current');
     expect(screen.getByText('Source Upload')).toBeInTheDocument();
   });
 
@@ -539,17 +539,17 @@ describe('App', () => {
 
     renderApp();
 
-    await user.click(screen.getByRole('link', { name: /Recon summary/i }));
+    await user.click(screen.getByRole('link', { name: /Reconciliation/i }));
 
-    expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
       'aria-current',
       'page',
     );
     expect(globalThis.location.pathname).toBe('/recon-summary');
 
-    await user.click(screen.getByRole('link', { name: /Export/i }));
+    await user.click(screen.getByRole('link', { name: /Reports/i }));
 
-    expect(screen.getByRole('link', { name: /Export/i })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: /Reports/i })).toHaveAttribute('aria-current', 'page');
     expect(globalThis.location.pathname).toBe('/export');
   });
 
@@ -566,7 +566,7 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
@@ -576,7 +576,7 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Review' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -589,9 +589,9 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('link', { name: /Exceptions/i }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/GL qbo.xlsx \/ 4 \| GL qbo.xlsx \/ 5/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/GL gl.xlsx \/ 4 \| GL gl.xlsx \/ 5/i).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('link', { name: /Export/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Reports/i }));
 
     expect(screen.getByText('run-1.xlsx')).toBeInTheDocument();
     expect(screen.getByText(/Summary \| Probable Matches \| Exceptions/i)).toBeInTheDocument();
@@ -601,12 +601,14 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     globalThis.localStorage.setItem(
       'reconciliation-platform:latest-report-run',
-      JSON.stringify({ version: 2, run: createRunResponse() }),
+      // Must track RUN_STORAGE_SCHEMA_VERSION in App.tsx: a persisted run stored under an older
+      // version is deliberately discarded, so a stale literal here silently stops testing hydration.
+      JSON.stringify({ version: 3, run: createRunResponse() }),
     );
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
 
     return waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -633,7 +635,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
 
     await waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -650,7 +652,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading review output');
 
@@ -667,7 +669,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Backend unavailable.');
@@ -699,9 +701,9 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
 
-    expect(screen.getByRole('link', { name: /Recon summary/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Reconciliation/i })).toBeInTheDocument();
     expect(screen.getByText('Loading review output')).toBeInTheDocument();
   });
 
@@ -744,7 +746,7 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
 
     expect((overallMeter as HTMLProgressElement).value).toBe(50);
@@ -787,7 +789,7 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
@@ -820,7 +822,7 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
@@ -842,7 +844,7 @@ describe('App', () => {
     const bankFile = new File(['bank-data'], 'bank.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
-    const qboFile = new File(['qbo-data'], 'qbo.xlsx', {
+    const glFile = new File(['gl-data'], 'gl.xlsx', {
       type: 'application/octet-stream',
     });
 
@@ -850,7 +852,7 @@ describe('App', () => {
       target: { files: [bankFile] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [qboFile] },
+      target: { files: [glFile] },
     });
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
@@ -875,7 +877,7 @@ describe('App', () => {
 
     const formData = options.body as FormData;
     expect(formData.get('bankFile')).toBe(bankFile);
-    expect(formData.get('qboFile')).toBe(qboFile);
+    expect(formData.get('glFile')).toBe(glFile);
     expect(formData.get('accountIdentifier')).toBe('OPERATING-001');
     expect(formData.get('reconciliationFrequency')).toBe('Annual');
     expect(formData.get('periodLabel')).toBe('Annual Recon for 2023');
@@ -893,7 +895,7 @@ describe('App', () => {
     const bankFile = new File(['bank-data'], 'bank.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
-    const qboFile = new File(['qbo-data'], 'qbo.xlsx', {
+    const glFile = new File(['gl-data'], 'gl.xlsx', {
       type: 'application/octet-stream',
     });
 
@@ -901,7 +903,7 @@ describe('App', () => {
       target: { files: [bankFile] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [qboFile] },
+      target: { files: [glFile] },
     });
     fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
       target: { value: 'March' },
@@ -933,7 +935,7 @@ describe('App', () => {
       target: { files: [new File(['bank-data'], 'bank.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['qbo-data'], 'qbo.xlsx')] },
+      target: { files: [new File(['gl-data'], 'gl.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: 'Custom Monthly Label' },
@@ -984,17 +986,17 @@ describe('App', () => {
     expect(labelInput).toHaveValue(`Monthly Recon for ${month} ${currentYear}`);
   });
 
-  it('assigns bank and QBO files from the merged drop zone by file name', () => {
+  it('assigns bank and GL files from the merged drop zone by file name', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
     fireEvent.change(screen.getByLabelText('Source workbooks'), {
-      target: { files: [new File(['bank'], 'bank.xlsx'), new File(['qbo'], 'qbo.xlsx')] },
+      target: { files: [new File(['bank'], 'bank.xlsx'), new File(['gl'], 'gl.xlsx')] },
     });
 
     expect(screen.getByRole('button', { name: 'Run reconciliation' })).not.toBeDisabled();
     expect(screen.getAllByText('bank.xlsx').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('qbo.xlsx').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('gl.xlsx').length).toBeGreaterThan(0);
   });
 
   it('lands financial analysts on the Review tab', async () => {
@@ -1002,7 +1004,7 @@ describe('App', () => {
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -1015,7 +1017,7 @@ describe('App', () => {
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -1044,7 +1046,7 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
@@ -1065,7 +1067,7 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'bank.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['qbo'], 'qbo.xlsx')] },
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: '   ' },
@@ -1181,14 +1183,21 @@ describe('App', () => {
     ).toBe('false');
   });
 
-  it('routes placeholder destinations to the shared coming-soon page', () => {
+  it('routes placeholder destinations to the shared coming-soon page', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
     fireEvent.click(screen.getByRole('link', { name: 'Profile' }));
 
     expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
-    expect(screen.getByText('This screen is coming soon.')).toBeInTheDocument();
+    expect(screen.getByText('Placeholder')).toBeInTheDocument();
+    expect(screen.getByText('Profile settings are coming soon.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '← Back' }));
+
+    await waitFor(() => {
+      expect(globalThis.location.pathname).toBe('/');
+    });
   });
 
   it('opens the Remove account confirmation dialog and requires typing the username to confirm', () => {
@@ -1211,5 +1220,34 @@ describe('App', () => {
     });
 
     expect(confirmButton).not.toBeDisabled();
+  });
+
+  it('drops Probable matches from the rail and routes the new Approvals items', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    expect(screen.queryByRole('link', { name: /Probable matches/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Pending Imports' }));
+
+    expect(screen.getByRole('heading', { name: 'Pending Imports' })).toBeInTheDocument();
+  });
+
+  it('shows the Run Book link for admin and superuser roles', () => {
+    setAuthenticatedUser('rray3');
+    renderApp();
+
+    expect(screen.getByRole('link', { name: 'Run Book' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Run Book' }));
+
+    expect(screen.getByRole('heading', { name: 'Run Book' })).toBeInTheDocument();
+  });
+
+  it('hides the Run Book link for roles without run book access', () => {
+    setAuthenticatedUser('bray');
+    renderApp();
+
+    expect(screen.queryByRole('link', { name: 'Run Book' })).toBeNull();
   });
 });

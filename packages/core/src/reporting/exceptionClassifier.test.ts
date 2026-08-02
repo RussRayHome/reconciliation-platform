@@ -63,7 +63,7 @@ const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => 
   reason: overrides.reason,
   score: overrides.score ?? 0.82,
   bankTransactionId: overrides.bankTransactionId,
-  qboTransactionId: overrides.qboTransactionId,
+  glTransactionId: overrides.glTransactionId,
   dateDifferenceDays: overrides.dateDifferenceDays ?? 2,
   amountDifference: overrides.amountDifference ?? 0,
   evidence: overrides.evidence ?? ['Amounts agree within configured tolerance.'],
@@ -74,7 +74,7 @@ const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => 
 
 describe('classifyExceptions', () => {
   it('classifies a stale outstanding check at the 45-day threshold and attaches recommended actions', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const anchorBank = buildTransaction({
       id: 'bank-anchor',
@@ -87,11 +87,11 @@ describe('classifyExceptions', () => {
       description: 'Anchor activity',
       normalizedComparisonTokens: ['ANCHOR', 'ACTIVITY'],
     });
-    const staleQbo = buildTransaction({
-      id: 'qbo-stale',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const staleGl = buildTransaction({
+      id: 'gl-stale',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 12,
       transactionDate: '2025-03-16',
       transactionType: 'Check',
@@ -103,11 +103,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-1',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [anchorBank, staleQbo],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [anchorBank, staleGl],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-stale']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-stale']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -127,7 +127,7 @@ describe('classifyExceptions', () => {
   });
 
   it('does not classify a check as stale before the threshold', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const anchorBank = buildTransaction({
       id: 'bank-anchor',
@@ -138,11 +138,11 @@ describe('classifyExceptions', () => {
       transactionDate: '2025-04-29',
       amount: -25,
     });
-    const qboCheck = buildTransaction({
-      id: 'qbo-check',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glCheck = buildTransaction({
+      id: 'gl-check',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 12,
       transactionDate: '2025-03-16',
       transactionType: 'Check',
@@ -152,11 +152,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-1',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [anchorBank, qboCheck],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [anchorBank, glCheck],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-check']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-check']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -168,8 +168,8 @@ describe('classifyExceptions', () => {
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
-  it('classifies a non-stale QBO check as OutstandingCheck and excludes it from MissingFromBank', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+  it('classifies a non-stale GL check as OutstandingCheck and excludes it from MissingFromBank', () => {
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const anchorBank = buildTransaction({
       id: 'bank-anchor',
@@ -184,10 +184,10 @@ describe('classifyExceptions', () => {
     });
     // 20 days before the anchor → within the 45-day window → OutstandingCheck
     const recentCheck = buildTransaction({
-      id: 'qbo-recent-check',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+      id: 'gl-recent-check',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 5,
       transactionDate: '2025-04-10',
       transactionType: 'Check',
@@ -199,11 +199,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-outstanding',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [anchorBank, recentCheck],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-recent-check']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-recent-check']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -223,7 +223,7 @@ describe('classifyExceptions', () => {
   });
 
   it('classifies a check at exactly the stale threshold as StaleOutstandingCheck not OutstandingCheck', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     // anchor: 2025-04-30, check: 2025-03-16 → exactly 45 days → stale
     const anchorBank = buildTransaction({
@@ -237,10 +237,10 @@ describe('classifyExceptions', () => {
       normalizedComparisonTokens: ['ANCHOR'],
     });
     const staleCheck = buildTransaction({
-      id: 'qbo-stale-check',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+      id: 'gl-stale-check',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 3,
       transactionDate: '2025-03-16',
       transactionType: 'Check',
@@ -251,11 +251,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-boundary',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [anchorBank, staleCheck],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-stale-check']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-stale-check']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -265,8 +265,8 @@ describe('classifyExceptions', () => {
     expect(output.exceptions.some((item) => item.category === 'OutstandingCheck')).toBe(false);
   });
 
-  it('does not classify a QBO debit without check-like signals as OutstandingCheck', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+  it('does not classify a GL debit without check-like signals as OutstandingCheck', () => {
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const anchorBank = buildTransaction({
       id: 'bank-anchor',
@@ -278,11 +278,11 @@ describe('classifyExceptions', () => {
       amount: -50,
       normalizedComparisonTokens: ['ANCHOR'],
     });
-    const nonCheckQbo = buildTransaction({
-      id: 'qbo-expense',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const nonCheckGl = buildTransaction({
+      id: 'gl-expense',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 4,
       transactionDate: '2025-04-15',
       transactionType: 'Expense',
@@ -293,11 +293,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-non-check',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [anchorBank, nonCheckQbo],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [anchorBank, nonCheckGl],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-expense']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-expense']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -307,8 +307,8 @@ describe('classifyExceptions', () => {
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(true);
   });
 
-  it('does not classify a QBO check with no date as OutstandingCheck (falls to MissingFromBank)', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+  it('does not classify a GL check with no date as OutstandingCheck (falls to MissingFromBank)', () => {
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const anchorBank = buildTransaction({
       id: 'bank-anchor',
@@ -322,10 +322,10 @@ describe('classifyExceptions', () => {
     });
     // No transactionDate or postingDate → parseIsoDate returns undefined → outstanding check guard returns early
     const undatedCheck = buildTransaction({
-      id: 'qbo-undated-check',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+      id: 'gl-undated-check',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 3,
       transactionType: 'Check',
       checkNumber: '1070',
@@ -335,11 +335,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-undated-check',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [anchorBank, undatedCheck],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-undated-check']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-undated-check']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -349,8 +349,8 @@ describe('classifyExceptions', () => {
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(true);
   });
 
-  it('classifies a check-type QBO transaction by transactionType alone as OutstandingCheck', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+  it('classifies a check-type GL transaction by transactionType alone as OutstandingCheck', () => {
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const anchorBank = buildTransaction({
       id: 'bank-anchor',
@@ -363,10 +363,10 @@ describe('classifyExceptions', () => {
       normalizedComparisonTokens: ['ANCHOR'],
     });
     const typeOnlyCheck = buildTransaction({
-      id: 'qbo-type-check',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+      id: 'gl-type-check',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 6,
       transactionDate: '2025-04-20',
       transactionType: 'Check',
@@ -377,11 +377,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-type-check',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [anchorBank, typeOnlyCheck],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-type-check']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-type-check']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -393,7 +393,7 @@ describe('classifyExceptions', () => {
 
   it('promotes a weak date variance pair into likely miscoding with counterpart trace and recommended actions', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-1',
       source: 'bank',
@@ -405,11 +405,11 @@ describe('classifyExceptions', () => {
       description: 'ACME PAYROLL',
       normalizedComparisonTokens: ['ACME', 'PAYROLL'],
     });
-    const qboTransaction = buildTransaction({
-      id: 'qbo-1',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransaction = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 8,
       transactionDate: '2025-03-11',
       amount: -500,
@@ -419,7 +419,7 @@ describe('classifyExceptions', () => {
     });
     const matchResult = buildMatchResult({
       bankTransactionId: bankTransaction.id,
-      qboTransactionId: qboTransaction.id,
+      glTransactionId: glTransaction.id,
       exceptionCategory: 'DateVariance',
       ruleId: 'amount-extended-date-window-match',
       reason: 'Original date variance classification',
@@ -427,11 +427,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-2',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTransaction, qboTransaction],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, glTransaction],
       matchResults: [matchResult],
       unmatchedBankTransactionIds: new Set<string>(),
-      unmatchedQboTransactionIds: new Set<string>(),
+      unmatchedGlTransactionIds: new Set<string>(),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -451,7 +451,7 @@ describe('classifyExceptions', () => {
     ).toBe(true);
     expect(
       miscodingItems.every(
-        (item) => item.ruleTrace?.counterpart?.spreadsheetFileName === 'bank.xlsx' || item.ruleTrace?.counterpart?.spreadsheetFileName === 'qbo.xlsx',
+        (item) => item.ruleTrace?.counterpart?.spreadsheetFileName === 'bank.xlsx' || item.ruleTrace?.counterpart?.spreadsheetFileName === 'gl.xlsx',
       ),
     ).toBe(true);
     expect(
@@ -463,7 +463,7 @@ describe('classifyExceptions', () => {
     ).toBe(true);
   });
 
-  it('attaches recommended next actions to missing-from-qbo exceptions', () => {
+  it('attaches recommended next actions to missing-from-gl exceptions', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-1',
@@ -483,14 +483,14 @@ describe('classifyExceptions', () => {
       normalizedTransactions: [bankTransaction],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-1']),
-      unmatchedQboTransactionIds: new Set<string>(),
+      unmatchedGlTransactionIds: new Set<string>(),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
       reconciliationFrequency: 'Monthly',
     });
 
-    const missing = output.exceptions.find((item) => item.category === 'MissingFromQBO');
+    const missing = output.exceptions.find((item) => item.category === 'MissingFromGL');
 
     expect(missing).toBeDefined();
     expect(missing?.recommendedNextActions).toEqual(
@@ -498,12 +498,12 @@ describe('classifyExceptions', () => {
         'Check whether the bank transaction was recorded to the correct GL account and period.',
       ]),
     );
-    expect(missing?.ruleTrace?.ruleId).toBe('missing-from-qbo');
+    expect(missing?.ruleTrace?.ruleId).toBe('missing-from-gl');
   });
 
   it('preserves full grouped counterpart arrays for residual split-combine classifications', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-grouped',
       source: 'bank',
@@ -516,11 +516,11 @@ describe('classifyExceptions', () => {
       description: 'Vendor batch payment',
       normalizedComparisonTokens: ['VENDOR', 'BATCH', 'PAYMENT'],
     });
-    const qboTransactionOne = buildTransaction({
-      id: 'qbo-grouped-1',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionOne = buildTransaction({
+      id: 'gl-grouped-1',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 31,
       transactionDate: '2025-03-10',
       transactionType: 'Expense',
@@ -528,11 +528,11 @@ describe('classifyExceptions', () => {
       description: 'Vendor batch payment part 1',
       normalizedComparisonTokens: ['VENDOR', 'BATCH', 'PAYMENT'],
     });
-    const qboTransactionTwo = buildTransaction({
-      id: 'qbo-grouped-2',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionTwo = buildTransaction({
+      id: 'gl-grouped-2',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 32,
       transactionDate: '2025-03-11',
       transactionType: 'Expense',
@@ -543,11 +543,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-grouped',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTransaction, qboTransactionOne, qboTransactionTwo],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, glTransactionOne, glTransactionTwo],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-grouped']),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-grouped-1', 'qbo-grouped-2']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-grouped-1', 'gl-grouped-2']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -562,7 +562,7 @@ describe('classifyExceptions', () => {
 
   it('classifies unmatched same-amount residuals as timing differences before missing-item fallback', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-timing',
       source: 'bank',
@@ -575,11 +575,11 @@ describe('classifyExceptions', () => {
       transactionType: 'Expense',
       normalizedComparisonTokens: ['PAYROLL', 'PROCESSOR', 'APRIL', 'BATCH'],
     });
-    const qboTransaction = buildTransaction({
-      id: 'qbo-timing',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransaction = buildTransaction({
+      id: 'gl-timing',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 19,
       transactionDate: '2025-05-18',
       amount: -2400,
@@ -590,11 +590,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-4',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTransaction, qboTransaction],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, glTransaction],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-timing']),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-timing']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-timing']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -605,12 +605,12 @@ describe('classifyExceptions', () => {
 
     expect(timingItems).toHaveLength(2);
     expect(timingItems.every((item) => item.ruleTrace?.ruleId === 'residual-timing-difference')).toBe(true);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('prefers stale outstanding check over missing fallback in a mixed residual run', () => {
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const bankOnlyTransaction = buildTransaction({
       id: 'bank-residual',
@@ -634,11 +634,11 @@ describe('classifyExceptions', () => {
       description: 'MONTH-END ACTIVITY',
       normalizedComparisonTokens: ['MONTH', 'END', 'ACTIVITY'],
     });
-    const staleQbo = buildTransaction({
-      id: 'qbo-stale-overlap',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const staleGl = buildTransaction({
+      id: 'gl-stale-overlap',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 17,
       transactionDate: '2025-03-16',
       transactionType: 'Check',
@@ -650,11 +650,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-8',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankOnlyTransaction, anchorBank, staleQbo],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankOnlyTransaction, anchorBank, staleGl],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-residual']),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-stale-overlap']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-stale-overlap']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -662,13 +662,13 @@ describe('classifyExceptions', () => {
     });
 
     expect(output.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
-    expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(1);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('classifies one-to-many residuals as likely split/combine issues before missing fallback', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-grouped',
       source: 'bank',
@@ -681,11 +681,11 @@ describe('classifyExceptions', () => {
       transactionType: 'Expense',
       normalizedComparisonTokens: ['VENDOR', 'SETTLEMENT', 'BATCH'],
     });
-    const qboTransactionOne = buildTransaction({
-      id: 'qbo-grouped-1',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionOne = buildTransaction({
+      id: 'gl-grouped-1',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 31,
       transactionDate: '2025-07-15',
       amount: -120,
@@ -693,11 +693,11 @@ describe('classifyExceptions', () => {
       transactionType: 'Expense',
       normalizedComparisonTokens: ['VENDOR', 'SETTLEMENT', 'PART'],
     });
-    const qboTransactionTwo = buildTransaction({
-      id: 'qbo-grouped-2',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionTwo = buildTransaction({
+      id: 'gl-grouped-2',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 32,
       transactionDate: '2025-07-16',
       amount: -180,
@@ -708,11 +708,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-5',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTransaction, qboTransactionOne, qboTransactionTwo],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, glTransactionOne, glTransactionTwo],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-grouped']),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-grouped-1', 'qbo-grouped-2']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-grouped-1', 'gl-grouped-2']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -724,13 +724,13 @@ describe('classifyExceptions', () => {
     expect(groupedItems).toHaveLength(3);
     expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-split-combine-residual')).toBe(true);
     expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=withdrawal')))).toBe(true);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('classifies grouped receipt residuals as deposit grouping issues', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-deposit-grouped',
       source: 'bank',
@@ -743,11 +743,11 @@ describe('classifyExceptions', () => {
       transactionType: 'Deposit',
       normalizedComparisonTokens: ['MERCHANT', 'SERVICES', 'BATCH', 'DEPOSIT'],
     });
-    const qboTransactionOne = buildTransaction({
-      id: 'qbo-deposit-grouped-1',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionOne = buildTransaction({
+      id: 'gl-deposit-grouped-1',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 41,
       transactionDate: '2025-08-04',
       amount: 2000,
@@ -755,11 +755,11 @@ describe('classifyExceptions', () => {
       transactionType: 'Deposit',
       normalizedComparisonTokens: ['BATCH', 'RECEIPT'],
     });
-    const qboTransactionTwo = buildTransaction({
-      id: 'qbo-deposit-grouped-2',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionTwo = buildTransaction({
+      id: 'gl-deposit-grouped-2',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 42,
       transactionDate: '2025-08-05',
       amount: 1200,
@@ -770,11 +770,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-6',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTransaction, qboTransactionOne, qboTransactionTwo],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, glTransactionOne, glTransactionTwo],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-deposit-grouped']),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-deposit-grouped-1', 'qbo-deposit-grouped-2']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-deposit-grouped-1', 'gl-deposit-grouped-2']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -786,13 +786,13 @@ describe('classifyExceptions', () => {
     expect(groupedItems).toHaveLength(3);
     expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual')).toBe(true);
     expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=deposit')))).toBe(true);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('does not classify grouped near-miss totals as split/combine issues', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-near-miss',
       source: 'bank',
@@ -805,11 +805,11 @@ describe('classifyExceptions', () => {
       transactionType: 'Expense',
       normalizedComparisonTokens: ['VENDOR', 'SETTLEMENT', 'BATCH'],
     });
-    const qboTransactionOne = buildTransaction({
-      id: 'qbo-near-miss-1',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionOne = buildTransaction({
+      id: 'gl-near-miss-1',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 51,
       transactionDate: '2025-07-22',
       amount: -120,
@@ -817,11 +817,11 @@ describe('classifyExceptions', () => {
       transactionType: 'Expense',
       normalizedComparisonTokens: ['VENDOR', 'SETTLEMENT', 'PART'],
     });
-    const qboTransactionTwo = buildTransaction({
-      id: 'qbo-near-miss-2',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glTransactionTwo = buildTransaction({
+      id: 'gl-near-miss-2',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 52,
       transactionDate: '2025-07-23',
       amount: -179.97,
@@ -832,11 +832,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-7',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTransaction, qboTransactionOne, qboTransactionTwo],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, glTransactionOne, glTransactionTwo],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-near-miss']),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-near-miss-1', 'qbo-near-miss-2']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-near-miss-1', 'gl-near-miss-2']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -844,13 +844,13 @@ describe('classifyExceptions', () => {
     });
 
     expect(output.exceptions.some((item) => item.category === 'LikelySplitCombineIssue')).toBe(false);
-    expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(1);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(2);
   });
 
   it('does not classify oversized grouped deposits beyond the supported residual group limit', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankTransaction = buildTransaction({
       id: 'bank-oversized-group',
       source: 'bank',
@@ -863,12 +863,12 @@ describe('classifyExceptions', () => {
       transactionType: 'Deposit',
       normalizedComparisonTokens: ['MERCHANT', 'SERVICES', 'BATCH', 'DEPOSIT'],
     });
-    const qboTransactions = [
+    const glTransactions = [
       buildTransaction({
-        id: 'qbo-oversized-1',
-        source: 'qbo',
-        sourceFileId: qboFile.id,
-        spreadsheetFileName: qboFile.fileName,
+        id: 'gl-oversized-1',
+        source: 'gl',
+        sourceFileId: glFile.id,
+        spreadsheetFileName: glFile.fileName,
         lineNumber: 61,
         transactionDate: '2025-07-15',
         amount: 1000,
@@ -877,10 +877,10 @@ describe('classifyExceptions', () => {
         normalizedComparisonTokens: ['BATCH', 'RECEIPT'],
       }),
       buildTransaction({
-        id: 'qbo-oversized-2',
-        source: 'qbo',
-        sourceFileId: qboFile.id,
-        spreadsheetFileName: qboFile.fileName,
+        id: 'gl-oversized-2',
+        source: 'gl',
+        sourceFileId: glFile.id,
+        spreadsheetFileName: glFile.fileName,
         lineNumber: 62,
         transactionDate: '2025-07-15',
         amount: 800,
@@ -889,10 +889,10 @@ describe('classifyExceptions', () => {
         normalizedComparisonTokens: ['BATCH', 'RECEIPT'],
       }),
       buildTransaction({
-        id: 'qbo-oversized-3',
-        source: 'qbo',
-        sourceFileId: qboFile.id,
-        spreadsheetFileName: qboFile.fileName,
+        id: 'gl-oversized-3',
+        source: 'gl',
+        sourceFileId: glFile.id,
+        spreadsheetFileName: glFile.fileName,
         lineNumber: 63,
         transactionDate: '2025-07-15',
         amount: 700,
@@ -901,10 +901,10 @@ describe('classifyExceptions', () => {
         normalizedComparisonTokens: ['BATCH', 'RECEIPT'],
       }),
       buildTransaction({
-        id: 'qbo-oversized-4',
-        source: 'qbo',
-        sourceFileId: qboFile.id,
-        spreadsheetFileName: qboFile.fileName,
+        id: 'gl-oversized-4',
+        source: 'gl',
+        sourceFileId: glFile.id,
+        spreadsheetFileName: glFile.fileName,
         lineNumber: 64,
         transactionDate: '2025-07-15',
         amount: 700,
@@ -916,11 +916,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-8',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTransaction, ...qboTransactions],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, ...glTransactions],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-oversized-group']),
-      unmatchedQboTransactionIds: new Set<string>(qboTransactions.map((transaction) => transaction.id)),
+      unmatchedGlTransactionIds: new Set<string>(glTransactions.map((transaction) => transaction.id)),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -928,13 +928,13 @@ describe('classifyExceptions', () => {
     });
 
     expect(output.exceptions.some((item) => item.category === 'DepositGroupingIssue')).toBe(false);
-    expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(1);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(4);
   });
 
   it('classifies an unmatched bank debit with chargeback keyword as ChargebackReturn when a matched bank credit of the same amount exists', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
 
     const originalCredit = buildTransaction({
       id: 'bank-original-credit',
@@ -946,11 +946,11 @@ describe('classifyExceptions', () => {
       description: 'SALE SETTLED',
       amount: 500,
     });
-    const qboRevenue = buildTransaction({
-      id: 'qbo-revenue',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glRevenue = buildTransaction({
+      id: 'gl-revenue',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 1,
       transactionDate: '2025-04-01',
       description: 'Sale Revenue',
@@ -969,18 +969,18 @@ describe('classifyExceptions', () => {
 
     const matchResult = buildMatchResult({
       bankTransactionId: 'bank-original-credit',
-      qboTransactionId: 'qbo-revenue',
+      glTransactionId: 'gl-revenue',
       disposition: 'ExactMatch',
       exceptionCategory: undefined,
     });
 
     const output = classifyExceptions({
       runId: 'run-chargeback',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [originalCredit, qboRevenue, chargebackDebit],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [originalCredit, glRevenue, chargebackDebit],
       matchResults: [matchResult],
       unmatchedBankTransactionIds: new Set<string>(['bank-chargeback']),
-      unmatchedQboTransactionIds: new Set<string>(),
+      unmatchedGlTransactionIds: new Set<string>(),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -990,12 +990,12 @@ describe('classifyExceptions', () => {
     const chargebackException = output.exceptions.find((item) => item.category === 'ChargebackReturn');
     expect(chargebackException).toBeDefined();
     expect(chargebackException?.ruleTrace?.ruleId).toBe('chargeback-return');
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
   });
 
-  it('classifies an unmatched bank credit with interest keyword as InterestIncome instead of MissingFromQBO', () => {
+  it('classifies an unmatched bank credit with interest keyword as InterestIncome instead of MissingFromGL', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
 
     const interestCredit = buildTransaction({
       id: 'bank-interest',
@@ -1010,11 +1010,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-interest',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [interestCredit],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-interest']),
-      unmatchedQboTransactionIds: new Set<string>(),
+      unmatchedGlTransactionIds: new Set<string>(),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -1024,12 +1024,12 @@ describe('classifyExceptions', () => {
     const interestException = output.exceptions.find((item) => item.category === 'InterestIncome');
     expect(interestException).toBeDefined();
     expect(interestException?.ruleTrace?.ruleId).toBe('interest-income');
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
   });
 
   it('does not classify a bank debit with interest keyword as InterestIncome — only credits qualify', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
 
     const interestDebit = buildTransaction({
       id: 'bank-interest-debit',
@@ -1044,11 +1044,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-interest-debit',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [interestDebit],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-interest-debit']),
-      unmatchedQboTransactionIds: new Set<string>(),
+      unmatchedGlTransactionIds: new Set<string>(),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -1056,12 +1056,12 @@ describe('classifyExceptions', () => {
     });
 
     expect(output.exceptions.some((item) => item.category === 'InterestIncome')).toBe(false);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(true);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(true);
   });
 
   it('classifies an unmatched transaction with intercompany keywords as IntercompanyMismatch on both sides', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo', fileName: 'qbo.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
 
     const bankIntercompany = buildTransaction({
       id: 'bank-ico',
@@ -1073,11 +1073,11 @@ describe('classifyExceptions', () => {
       description: 'INTERCOMPANY TRANSFER ENTITY B',
       amount: -25000,
     });
-    const qboIntercompany = buildTransaction({
-      id: 'qbo-ico',
-      source: 'qbo',
-      sourceFileId: qboFile.id,
-      spreadsheetFileName: qboFile.fileName,
+    const glIntercompany = buildTransaction({
+      id: 'gl-ico',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
       lineNumber: 8,
       transactionDate: '2025-06-03',
       description: 'Due to Parent Company Settlement',
@@ -1086,11 +1086,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-ico',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankIntercompany, qboIntercompany],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankIntercompany, glIntercompany],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-ico']),
-      unmatchedQboTransactionIds: new Set<string>(['qbo-ico']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-ico']),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -1101,24 +1101,24 @@ describe('classifyExceptions', () => {
     const intercompanyExceptions = output.exceptions.filter((item) => item.category === 'IntercompanyMismatch');
     expect(intercompanyExceptions).toHaveLength(2);
     expect(intercompanyExceptions.some((item) => item.source === 'bank')).toBe(true);
-    expect(intercompanyExceptions.some((item) => item.source === 'qbo')).toBe(true);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(intercompanyExceptions.some((item) => item.source === 'gl')).toBe(true);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
 
     void bankException;
   });
 
   const buildGroupedMatchResult = (
-    overrides: Partial<GroupedMatchResult> & { bankTransactionIds: string[]; qboTransactionIds: string[] },
+    overrides: Partial<GroupedMatchResult> & { bankTransactionIds: string[]; glTransactionIds: string[] },
   ): GroupedMatchResult => ({
     id: randomUUID(),
     disposition: 'GroupedReviewMatch',
     confidence: 'Probable',
     category: overrides.category,
     bankTransactionIds: overrides.bankTransactionIds,
-    qboTransactionIds: overrides.qboTransactionIds,
+    glTransactionIds: overrides.glTransactionIds,
     bankMembers: [],
-    qboMembers: [],
+    glMembers: [],
     totalAmount: 0,
     dateDifferenceDays: 0,
     score: 90,
@@ -1128,28 +1128,28 @@ describe('classifyExceptions', () => {
     evidence: overrides.evidence ?? ['Test evidence.'],
   });
 
-  it('classifies engine-reserved FeeNettingMatch groups and excludes members from MissingFromQBO/MissingFromBank', () => {
+  it('classifies engine-reserved FeeNettingMatch groups and excludes members from MissingFromGL/MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: 93.17, lineNumber: 2 });
-    const qboRevenue = buildTransaction({ id: 'qbo-1', source: 'qbo', sourceFileId: 'qbo-file', amount: 101.80, lineNumber: 2 });
-    const qboFee = buildTransaction({ id: 'qbo-2', source: 'qbo', sourceFileId: 'qbo-file', amount: -8.63, lineNumber: 3 });
+    const glRevenue = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: 101.80, lineNumber: 2 });
+    const glFee = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -8.63, lineNumber: 3 });
 
     const grouped = buildGroupedMatchResult({
       category: 'FeeNettingMatch',
       ruleId: 'fee-netting-reserved',
       ruleName: 'Fee Netting Candidate',
       bankTransactionIds: [bankTx.id],
-      qboTransactionIds: [qboRevenue.id, qboFee.id],
+      glTransactionIds: [glRevenue.id, glFee.id],
     });
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTx, qboRevenue, qboFee],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTx, glRevenue, glFee],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set([qboRevenue.id, qboFee.id]),
+      unmatchedGlTransactionIds: new Set([glRevenue.id, glFee.id]),
       duplicateTransactionIds: new Set(),
       groupedMatchResults: [grouped],
       reporting: defaultReconciliationConfig.reporting,
@@ -1159,31 +1159,31 @@ describe('classifyExceptions', () => {
     const feeNettingExceptions = output.exceptions.filter((e) => e.category === 'FeeNettingMatch');
     expect(feeNettingExceptions).toHaveLength(3);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
 
   it('classifies engine-reserved PartialPaymentMatch groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bank1 = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -150.75, lineNumber: 2 });
     const bank2 = buildTransaction({ id: 'bank-2', source: 'bank', sourceFileId: 'bank-file', amount: -150.75, lineNumber: 3 });
-    const qboTx = buildTransaction({ id: 'qbo-1', source: 'qbo', sourceFileId: 'qbo-file', amount: -301.50, lineNumber: 2 });
+    const glTx = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -301.50, lineNumber: 2 });
 
     const grouped = buildGroupedMatchResult({
       category: 'PartialPaymentMatch',
       ruleId: 'partial-payment-reserved',
       ruleName: 'Partial Payment Candidate',
       bankTransactionIds: [bank1.id, bank2.id],
-      qboTransactionIds: [qboTx.id],
+      glTransactionIds: [glTx.id],
     });
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bank1, bank2, qboTx],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bank1, bank2, glTx],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bank1.id, bank2.id]),
-      unmatchedQboTransactionIds: new Set([qboTx.id]),
+      unmatchedGlTransactionIds: new Set([glTx.id]),
       duplicateTransactionIds: new Set(),
       groupedMatchResults: [grouped],
       reporting: defaultReconciliationConfig.reporting,
@@ -1193,31 +1193,31 @@ describe('classifyExceptions', () => {
     const partialPaymentExceptions = output.exceptions.filter((e) => e.category === 'PartialPaymentMatch');
     expect(partialPaymentExceptions).toHaveLength(3);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
 
   it('classifies engine-reserved PayrollBatchMatch groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -5001.00, lineNumber: 2 });
-    const qbo1 = buildTransaction({ id: 'qbo-1', source: 'qbo', sourceFileId: 'qbo-file', amount: -3001.00, lineNumber: 2 });
-    const qbo2 = buildTransaction({ id: 'qbo-2', source: 'qbo', sourceFileId: 'qbo-file', amount: -2000.00, lineNumber: 3 });
+    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -3001.00, lineNumber: 2 });
+    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -2000.00, lineNumber: 3 });
 
     const grouped = buildGroupedMatchResult({
       category: 'PayrollBatchMatch',
       ruleId: 'payroll-batch-reserved',
       ruleName: 'Payroll Batch Candidate',
       bankTransactionIds: [bankTx.id],
-      qboTransactionIds: [qbo1.id, qbo2.id],
+      glTransactionIds: [gl1.id, gl2.id],
     });
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTx, qbo1, qbo2],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTx, gl1, gl2],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set([qbo1.id, qbo2.id]),
+      unmatchedGlTransactionIds: new Set([gl1.id, gl2.id]),
       duplicateTransactionIds: new Set(),
       groupedMatchResults: [grouped],
       reporting: defaultReconciliationConfig.reporting,
@@ -1227,31 +1227,31 @@ describe('classifyExceptions', () => {
     const payrollExceptions = output.exceptions.filter((e) => e.category === 'PayrollBatchMatch');
     expect(payrollExceptions).toHaveLength(3);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
 
   it('classifies engine-reserved BankServiceChargeAmortization groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -121.00, lineNumber: 2 });
-    const qbo1 = buildTransaction({ id: 'qbo-1', source: 'qbo', sourceFileId: 'qbo-file', amount: -61.00, lineNumber: 2 });
-    const qbo2 = buildTransaction({ id: 'qbo-2', source: 'qbo', sourceFileId: 'qbo-file', amount: -60.00, lineNumber: 3 });
+    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -61.00, lineNumber: 2 });
+    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -60.00, lineNumber: 3 });
 
     const grouped = buildGroupedMatchResult({
       category: 'BankServiceChargeAmortization',
       ruleId: 'bank-service-charge-reserved',
       ruleName: 'Bank Service Charge Candidate',
       bankTransactionIds: [bankTx.id],
-      qboTransactionIds: [qbo1.id, qbo2.id],
+      glTransactionIds: [gl1.id, gl2.id],
     });
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTx, qbo1, qbo2],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTx, gl1, gl2],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set([qbo1.id, qbo2.id]),
+      unmatchedGlTransactionIds: new Set([gl1.id, gl2.id]),
       duplicateTransactionIds: new Set(),
       groupedMatchResults: [grouped],
       reporting: defaultReconciliationConfig.reporting,
@@ -1261,31 +1261,31 @@ describe('classifyExceptions', () => {
     const serviceChargeExceptions = output.exceptions.filter((e) => e.category === 'BankServiceChargeAmortization');
     expect(serviceChargeExceptions).toHaveLength(3);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
 
   it('classifies LikelySplitCombineIssue via residual grouped stage even when present in groupedMatchResults', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -300.00, lineNumber: 2, transactionDate: '2025-07-15' });
-    const qbo1 = buildTransaction({ id: 'qbo-1', source: 'qbo', sourceFileId: 'qbo-file', amount: -120.00, lineNumber: 2, transactionDate: '2025-07-15' });
-    const qbo2 = buildTransaction({ id: 'qbo-2', source: 'qbo', sourceFileId: 'qbo-file', amount: -180.00, lineNumber: 3, transactionDate: '2025-07-16' });
+    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -120.00, lineNumber: 2, transactionDate: '2025-07-15' });
+    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -180.00, lineNumber: 3, transactionDate: '2025-07-16' });
 
     const grouped = buildGroupedMatchResult({
       category: 'LikelySplitCombineIssue',
       ruleId: 'grouped-split-combine-reserved',
       ruleName: 'Grouped Split/Combine Candidate',
       bankTransactionIds: [bankTx.id],
-      qboTransactionIds: [qbo1.id, qbo2.id],
+      glTransactionIds: [gl1.id, gl2.id],
     });
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTx, qbo1, qbo2],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTx, gl1, gl2],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set([qbo1.id, qbo2.id]),
+      unmatchedGlTransactionIds: new Set([gl1.id, gl2.id]),
       duplicateTransactionIds: new Set(),
       groupedMatchResults: [grouped],
       reporting: defaultReconciliationConfig.reporting,
@@ -1294,31 +1294,31 @@ describe('classifyExceptions', () => {
 
     expect(output.exceptions.filter((e) => e.category === 'LikelySplitCombineIssue')).toHaveLength(3);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
 
   it('classifies engine-reserved LoanPaymentSplit groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -1250.00, lineNumber: 2, description: 'MORTGAGE PAYMENT' });
-    const qbo1 = buildTransaction({ id: 'qbo-1', source: 'qbo', sourceFileId: 'qbo-file', amount: -1000.00, lineNumber: 2 });
-    const qbo2 = buildTransaction({ id: 'qbo-2', source: 'qbo', sourceFileId: 'qbo-file', amount: -250.00, lineNumber: 3 });
+    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -1000.00, lineNumber: 2 });
+    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -250.00, lineNumber: 3 });
 
     const grouped = buildGroupedMatchResult({
       category: 'LoanPaymentSplit',
       ruleId: 'loan-payment-split-reserved',
       ruleName: 'Loan Payment Split Candidate',
       bankTransactionIds: [bankTx.id],
-      qboTransactionIds: [qbo1.id, qbo2.id],
+      glTransactionIds: [gl1.id, gl2.id],
     });
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
-      normalizedTransactions: [bankTx, qbo1, qbo2],
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTx, gl1, gl2],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set([qbo1.id, qbo2.id]),
+      unmatchedGlTransactionIds: new Set([gl1.id, gl2.id]),
       duplicateTransactionIds: new Set(),
       groupedMatchResults: [grouped],
       reporting: defaultReconciliationConfig.reporting,
@@ -1326,13 +1326,13 @@ describe('classifyExceptions', () => {
     });
 
     expect(output.exceptions.filter((e) => e.category === 'LoanPaymentSplit')).toHaveLength(3);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
   });
 
   it('classifies NSFReturnedDeposit for unmatched bank debit with NSF keywords', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({
       id: 'bank-1',
       source: 'bank',
@@ -1344,23 +1344,23 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [bankTx],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set(),
+      unmatchedGlTransactionIds: new Set(),
       duplicateTransactionIds: new Set(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
     });
 
     expect(output.exceptions.filter((e) => e.category === 'NSFReturnedDeposit')).toHaveLength(1);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
 
   it('does not classify ACH return pair as NSFReturnedDeposit', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankDebit = buildTransaction({
       id: 'bank-1',
       source: 'bank',
@@ -1382,11 +1382,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [bankDebit, bankCredit],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankDebit.id, bankCredit.id]),
-      unmatchedQboTransactionIds: new Set(),
+      unmatchedGlTransactionIds: new Set(),
       duplicateTransactionIds: new Set(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -1398,7 +1398,7 @@ describe('classifyExceptions', () => {
 
   it('classifies VoidedCheckCleared for unmatched bank check debit with check number', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({
       id: 'bank-1',
       source: 'bank',
@@ -1412,23 +1412,23 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [bankTx],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set(),
+      unmatchedGlTransactionIds: new Set(),
       duplicateTransactionIds: new Set(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
     });
 
     expect(output.exceptions.filter((e) => e.category === 'VoidedCheckCleared')).toHaveLength(1);
-    expect(output.exceptions.some((e) => e.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
 
   it('does not classify unmatched bank debit without check signal as VoidedCheckCleared', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
-    const qboFile = buildSourceFile({ id: 'qbo-file', source: 'qbo' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
     const bankTx = buildTransaction({
       id: 'bank-1',
       source: 'bank',
@@ -1440,23 +1440,23 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'test-run',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [bankTx],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([bankTx.id]),
-      unmatchedQboTransactionIds: new Set(),
+      unmatchedGlTransactionIds: new Set(),
       duplicateTransactionIds: new Set(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
     });
 
     expect(output.exceptions.some((e) => e.category === 'VoidedCheckCleared')).toBe(false);
-    expect(output.exceptions.filter((e) => e.category === 'MissingFromQBO')).toHaveLength(1);
+    expect(output.exceptions.filter((e) => e.category === 'MissingFromGL')).toHaveLength(1);
   });
 
   it('annual mode: skips date-less transactions when computing month coverage gaps', () => {
     const bankFile = buildSourceFile({ id: 'bank-annual-nd', source: 'bank', fileName: 'bank-annual.xlsx' });
-    const qboFile = buildSourceFile({ id: 'qbo-annual-nd', source: 'qbo', fileName: 'qbo-annual.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-annual-nd', source: 'gl', fileName: 'gl-annual.xlsx' });
 
     const dated = buildTransaction({
       id: 'tx-dated',
@@ -1478,11 +1478,11 @@ describe('classifyExceptions', () => {
 
     const output = classifyExceptions({
       runId: 'run-annual-nodatex',
-      sourceFiles: [bankFile, qboFile],
+      sourceFiles: [bankFile, glFile],
       normalizedTransactions: [dated, undated],
       matchResults: [],
       unmatchedBankTransactionIds: new Set([dated.id, undated.id]),
-      unmatchedQboTransactionIds: new Set(),
+      unmatchedGlTransactionIds: new Set(),
       duplicateTransactionIds: new Set(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -1517,7 +1517,7 @@ describe('classifyExceptions', () => {
       normalizedTransactions: allMonths,
       matchResults: [],
       unmatchedBankTransactionIds: new Set(allMonths.map((t) => t.id)),
-      unmatchedQboTransactionIds: new Set(),
+      unmatchedGlTransactionIds: new Set(),
       duplicateTransactionIds: new Set(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,

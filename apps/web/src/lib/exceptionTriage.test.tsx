@@ -19,7 +19,7 @@ const makeException = (
   overrides: Partial<ExceptionItem> & Pick<ExceptionItem, 'id'>,
 ): ExceptionItem => ({
   runId: 'run-1',
-  category: 'MissingFromQBO',
+  category: 'MissingFromGL',
   severity: 'High',
   source: 'bank',
   spreadsheetFileName: 'bank.xlsx',
@@ -57,7 +57,7 @@ describe('resolveAmountBand', () => {
 describe('toExceptionDisplay', () => {
   it('derives display fields and falls back to a derived rule label without a rule trace', () => {
     const display = toExceptionDisplay(
-      makeException({ id: 'e1', ruleTrace: undefined, amount: 2500, source: 'qbo' }),
+      makeException({ id: 'e1', ruleTrace: undefined, amount: 2500, source: 'gl' }),
     );
 
     expect(display.ruleLabel).toBe('Derived classification');
@@ -98,12 +98,12 @@ describe('toExceptionDisplay', () => {
           ruleName: 'R',
           reason: '',
           evidence: [],
-          counterpart: { source: 'qbo', spreadsheetFileName: 'qbo.xlsx', lineNumber: 9 },
+          counterpart: { source: 'gl', spreadsheetFileName: 'gl.xlsx', lineNumber: 9 },
         },
       }),
     );
 
-    expect(display.counterpartLabel).toBe('GL qbo.xlsx / 9');
+    expect(display.counterpartLabel).toBe('GL gl.xlsx / 9');
   });
 
   it('falls back to transaction id when a counterpart has no spreadsheet file', () => {
@@ -139,8 +139,8 @@ describe('buildFacetOptions and matchesFacets', () => {
       makeException({
         id: 'b',
         severity: 'High',
-        category: 'MissingFromQBO',
-        source: 'qbo',
+        category: 'MissingFromGL',
+        source: 'gl',
         amount: 50,
       }),
     ),
@@ -148,8 +148,8 @@ describe('buildFacetOptions and matchesFacets', () => {
       makeException({
         id: 'c',
         severity: 'High',
-        category: 'MissingFromQBO',
-        source: 'qbo',
+        category: 'MissingFromGL',
+        source: 'gl',
         amount: 50,
       }),
     ),
@@ -258,7 +258,7 @@ describe('sortDisplays', () => {
 
 describe('buildComparisonSides', () => {
   it('places the primary line on the bank side and routes counterparts by explicit source', () => {
-    const { bank, qbo } = buildComparisonSides(
+    const { bank, gl } = buildComparisonSides(
       makeException({
         id: 'c1',
         source: 'bank',
@@ -267,22 +267,22 @@ describe('buildComparisonSides', () => {
           ruleName: 'R',
           reason: '',
           evidence: [],
-          counterparts: [{ source: 'qbo', spreadsheetFileName: 'qbo.xlsx', lineNumber: 2 }],
+          counterparts: [{ source: 'gl', spreadsheetFileName: 'gl.xlsx', lineNumber: 2 }],
         },
       }),
     );
 
     expect(bank).toHaveLength(1);
     expect(bank[0]?.isPrimary).toBe(true);
-    expect(qbo).toHaveLength(1);
-    expect(qbo[0]?.fileName).toBe('qbo.xlsx');
+    expect(gl).toHaveLength(1);
+    expect(gl[0]?.fileName).toBe('gl.xlsx');
   });
 
   it('infers counterpart source and uses transaction id when file name is absent', () => {
-    const { bank, qbo } = buildComparisonSides(
+    const { bank, gl } = buildComparisonSides(
       makeException({
         id: 'c2',
-        source: 'qbo',
+        source: 'gl',
         ruleTrace: {
           ruleId: 'r',
           ruleName: 'R',
@@ -293,7 +293,7 @@ describe('buildComparisonSides', () => {
       }),
     );
 
-    expect(qbo[0]?.isPrimary).toBe(true);
+    expect(gl[0]?.isPrimary).toBe(true);
     expect(bank).toHaveLength(1);
     expect(bank[0]?.fileName).toBe('txn-9');
   });
@@ -312,7 +312,7 @@ describe('buildComparisonDelta', () => {
           ruleName: 'R',
           reason: '',
           evidence: [],
-          counterpart: { source: 'qbo', amount: 3118.24, transactionDate: '2026-03-29' },
+          counterpart: { source: 'gl', amount: 3118.24, transactionDate: '2026-03-29' },
         },
       }),
     );

@@ -47,21 +47,21 @@ describe('parseWorkbook', () => {
     expect(rawRows.every((row) => !row.excluded)).toBe(true);
   });
 
-  it('excludes beginning-balance and configured excluded rows for QBO sources', async () => {
+  it('excludes beginning-balance and configured excluded rows for GL sources', async () => {
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('QBO');
+    const sheet = workbook.addWorksheet('GL');
     sheet.addRow(['Date', 'Memo', 'Amount', 'Name']);
     sheet.addRow(['2026-03-01', 'Beginning Balance', 0, 'System']);
     sheet.addRow(['2026-03-02', 'Vendor payment', -50, 'Acme']);
     sheet.addRow(['2026-03-03', 'Manually excluded', -75, 'Beta']);
 
     const { rawRows } = await parseWorkbook({
-      source: 'qbo',
-      fileName: 'qbo.xlsx',
+      source: 'gl',
+      fileName: 'gl.xlsx',
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       sizeBytes: 2048,
       buffer: await toBuffer(workbook),
-      config: { ...defaultReconciliationConfig.qbo, excludedRows: [4] },
+      config: { ...defaultReconciliationConfig.gl, excludedRows: [4] },
     });
 
     const beginning = rawRows.find((row) => row.descriptionRaw === 'Beginning Balance');

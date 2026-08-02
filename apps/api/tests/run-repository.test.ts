@@ -9,21 +9,21 @@ import { tmpdir } from 'node:os';
 const createSummary = (): SummaryMetrics => ({
   totalRecordsReviewed: 0,
   bankRecords: 0,
-  qboRecords: 0,
+  glRecords: 0,
   exactMatches: 0,
   probableMatches: 0,
   unmatchedItems: 0,
   duplicates: 0,
   bankDuplicates: 0,
-  qboDuplicates: 0,
+  glDuplicates: 0,
   dateVariances: 0,
   timingDifferences: 0,
   dataQualityIssues: 0,
   amountMismatches: 0,
   missingFromBank: 0,
-  missingFromQBO: 0,
+  missingFromGL: 0,
   unmatchedBankNetAmount: 0,
-  unmatchedQboNetAmount: 0,
+  unmatchedGlNetAmount: 0,
   cleanMatchedAmount: 0,
   unresolvedExposure: 0,
   countsByCategory: {},
@@ -85,7 +85,7 @@ describe('runRepository', () => {
     const replacement = createDecision({
       id: 'decision-new',
       outcome: 'ReclassifiedException',
-      finalCategory: 'MissingFromQBO',
+      finalCategory: 'MissingFromGL',
       notes: 'Reclassified after follow-up review.',
       updatedAt: '2026-06-28T00:03:00.000Z',
     });
@@ -98,7 +98,7 @@ describe('runRepository', () => {
     expect(savedDecision.updatedAt).toBe(replacement.updatedAt);
     expect(decisions).toHaveLength(1);
     expect(decisions[0]?.outcome).toBe('ReclassifiedException');
-    expect(decisions[0]?.finalCategory).toBe('MissingFromQBO');
+    expect(decisions[0]?.finalCategory).toBe('MissingFromGL');
   });
 
   it('hydrates safely when a file-backed snapshot exists without a latest run', () => {

@@ -1,6 +1,6 @@
 import { type Dispatch, type DragEvent, type SetStateAction, useState } from 'react';
 
-type SourceKind = 'bank' | 'qbo';
+type SourceKind = 'bank' | 'gl';
 
 const detectSource = (fileName: string): SourceKind | null => {
   const lower = fileName.toLowerCase();
@@ -9,8 +9,8 @@ const detectSource = (fileName: string): SourceKind | null => {
     return 'bank';
   }
 
-  if (lower.includes('qbo') || lower.includes('quickbook')) {
-    return 'qbo';
+  if (lower.includes('gl') || lower.includes('quickbook')) {
+    return 'gl';
   }
 
   return null;
@@ -32,14 +32,14 @@ const formatFileSize = (bytes: number): string => {
  */
 export function SourceDropZone({
   bankFile,
-  qboFile,
+  glFile,
   setBankFile,
-  setQboFile,
+  setGlFile,
 }: Readonly<{
   bankFile: File | null;
-  qboFile: File | null;
+  glFile: File | null;
   setBankFile: Dispatch<SetStateAction<File | null>>;
-  setQboFile: Dispatch<SetStateAction<File | null>>;
+  setGlFile: Dispatch<SetStateAction<File | null>>;
 }>) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -52,8 +52,8 @@ export function SourceDropZone({
 
       if (detected === 'bank') {
         setBankFile(file);
-      } else if (detected === 'qbo') {
-        setQboFile(file);
+      } else if (detected === 'gl') {
+        setGlFile(file);
       } else {
         unassigned.push(file);
       }
@@ -62,8 +62,8 @@ export function SourceDropZone({
     for (const file of unassigned) {
       if (!bankFile) {
         setBankFile(file);
-      } else if (!qboFile) {
-        setQboFile(file);
+      } else if (!glFile) {
+        setGlFile(file);
       }
     }
   };
@@ -115,11 +115,11 @@ export function SourceDropZone({
           onChange={(file) => setBankFile(file)}
         />
         <SourceSlot
-          slot="qbo"
+          slot="gl"
           label="GL workbook"
-          inputId="qbo-workbook-input"
-          file={qboFile}
-          onChange={(file) => setQboFile(file)}
+          inputId="gl-workbook-input"
+          file={glFile}
+          onChange={(file) => setGlFile(file)}
         />
       </div>
 

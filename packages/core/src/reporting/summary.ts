@@ -40,8 +40,8 @@ export const buildSummaryMetrics = (
   const bankRecords = normalizedTransactions.filter(
     (transaction) => transaction.source === 'bank' && !transaction.isExcluded,
   );
-  const qboRecords = normalizedTransactions.filter(
-    (transaction) => transaction.source === 'qbo' && !transaction.isExcluded,
+  const glRecords = normalizedTransactions.filter(
+    (transaction) => transaction.source === 'gl' && !transaction.isExcluded,
   );
 
   const countsByCategory = Object.fromEntries(
@@ -59,44 +59,44 @@ export const buildSummaryMetrics = (
   );
 
   const missingFromBankItems = exceptions.filter((item) => item.category === 'MissingFromBank');
-  const missingFromQboItems = exceptions.filter((item) => item.category === 'MissingFromQBO');
+  const missingFromGlItems = exceptions.filter((item) => item.category === 'MissingFromGL');
   const dataQualityItems = exceptions.filter((item) => item.category === 'InvalidOrMissingData');
   const bankDataQualityItems = dataQualityItems.filter((item) => item.source === 'bank');
-  const qboDataQualityItems = dataQualityItems.filter((item) => item.source === 'qbo');
+  const glDataQualityItems = dataQualityItems.filter((item) => item.source === 'gl');
   const bankDuplicateItems = exceptions.filter(
     (item) => item.category === 'DuplicateInBank',
   );
-  const qboDuplicateItems = exceptions.filter(
-    (item) => item.category === 'DuplicateInQBO',
+  const glDuplicateItems = exceptions.filter(
+    (item) => item.category === 'DuplicateInGL',
   );
   const dateVarianceCount = countExceptionCases(exceptions, 'DateVariance');
   const timingDifferenceCount = countExceptionCases(exceptions, 'TimingDifference');
 
   const summary: SummaryMetrics = {
-    totalRecordsReviewed: bankRecords.length + qboRecords.length,
+    totalRecordsReviewed: bankRecords.length + glRecords.length,
     bankRecords: bankRecords.length,
-    qboRecords: qboRecords.length,
+    glRecords: glRecords.length,
     exactMatches: exactMatches.length,
     probableMatches: probableMatches.length,
     unmatchedItems:
       missingFromBankItems.length +
-      missingFromQboItems.length +
+      missingFromGlItems.length +
       bankDataQualityItems.length +
-      qboDataQualityItems.length,
-    duplicates: bankDuplicateItems.length + qboDuplicateItems.length,
+      glDataQualityItems.length,
+    duplicates: bankDuplicateItems.length + glDuplicateItems.length,
     bankDuplicates: bankDuplicateItems.length,
-    qboDuplicates: qboDuplicateItems.length,
+    glDuplicates: glDuplicateItems.length,
     dateVariances: dateVarianceCount,
     timingDifferences: timingDifferenceCount,
     dataQualityIssues: dataQualityItems.length,
     amountMismatches: countsByCategory.AmountMismatch ?? 0,
     missingFromBank: missingFromBankItems.length,
-    missingFromQBO: missingFromQboItems.length,
+    missingFromGL: missingFromGlItems.length,
     unmatchedBankNetAmount: sumAmounts(
-      [...missingFromQboItems, ...bankDataQualityItems].map((item) => item.amount ?? 0),
+      [...missingFromGlItems, ...bankDataQualityItems].map((item) => item.amount ?? 0),
     ),
-    unmatchedQboNetAmount: sumAmounts(
-      [...missingFromBankItems, ...qboDataQualityItems].map((item) => item.amount ?? 0),
+    unmatchedGlNetAmount: sumAmounts(
+      [...missingFromBankItems, ...glDataQualityItems].map((item) => item.amount ?? 0),
     ),
     cleanMatchedAmount: sumAmounts(
       exactMatches

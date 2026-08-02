@@ -1,73 +1,73 @@
 import {
   ambiguousBankRows,
-  ambiguousQboRows,
+  ambiguousGlRows,
   amountMismatchBankRows,
-  amountMismatchQboRows,
+  amountMismatchGlRows,
   createWorkbookFromRows,
   dateVarianceBankRows,
-  dateVarianceQboRows,
+  dateVarianceGlRows,
   depositGroupingBankRows,
   depositGroupingOversizedBankRows,
-  depositGroupingOversizedQboRows,
-  depositGroupingQboRows,
+  depositGroupingOversizedGlRows,
+  depositGroupingGlRows,
   descriptionVarianceBankRows,
-  descriptionVarianceQboRows,
+  descriptionVarianceGlRows,
   duplicateInBankBankRows,
-  duplicateInBankQboRows,
-  duplicateInQboBankRows,
-  duplicateInQboQboRows,
+  duplicateInBankGlRows,
+  duplicateInGlBankRows,
+  duplicateInGlGlRows,
   invalidDataBankRows,
-  invalidDataQboRows,
+  invalidDataGlRows,
   likelyMiscodingBankRows,
-  likelyMiscodingQboRows,
+  likelyMiscodingGlRows,
   missingFromBankBankRows,
-  missingFromBankQboRows,
-  missingFromQboBankRows,
-  missingFromQboQboRows,
+  missingFromBankGlRows,
+  missingFromGlBankRows,
+  missingFromGlGlRows,
   referenceMismatchBankRows,
-  referenceMismatchQboRows,
+  referenceMismatchGlRows,
   referenceNumberMismatchBankRows,
-  referenceNumberMismatchQboRows,
+  referenceNumberMismatchGlRows,
   splitCombineBankRows,
   splitCombineNearMissBankRows,
-  splitCombineNearMissQboRows,
-  splitCombineQboRows,
+  splitCombineNearMissGlRows,
+  splitCombineGlRows,
   staleOutstandingBankRows,
   staleOutstandingBelowThresholdBankRows,
-  staleOutstandingBelowThresholdQboRows,
+  staleOutstandingBelowThresholdGlRows,
   staleOutstandingMixedResidualBankRows,
-  staleOutstandingMixedResidualQboRows,
-  staleOutstandingQboRows,
+  staleOutstandingMixedResidualGlRows,
+  staleOutstandingGlRows,
   timingDifferenceBankRows,
-  timingDifferenceQboRows,
+  timingDifferenceGlRows,
   reversalVoidBankRows,
-  reversalVoidQboRows,
+  reversalVoidGlRows,
   achReturnBankRows,
-  achReturnQboRows,
+  achReturnGlRows,
   depositInTransitBankRows,
-  depositInTransitQboRows,
+  depositInTransitGlRows,
   chargebackReturnBankRows,
-  chargebackReturnQboRows,
+  chargebackReturnGlRows,
   interestIncomeBankRows,
-  interestIncomeQboRows,
+  interestIncomeGlRows,
   intercompanyMismatchBankRows,
-  intercompanyMismatchQboRows,
+  intercompanyMismatchGlRows,
   outstandingCheckBankRows,
-  outstandingCheckQboRows,
+  outstandingCheckGlRows,
   feeNettingMatchBankRows,
-  feeNettingMatchQboRows,
+  feeNettingMatchGlRows,
   partialPaymentMatchBankRows,
-  partialPaymentMatchQboRows,
+  partialPaymentMatchGlRows,
   payrollBatchMatchBankRows,
-  payrollBatchMatchQboRows,
+  payrollBatchMatchGlRows,
   bankServiceChargeAmortizationBankRows,
-  bankServiceChargeAmortizationQboRows,
+  bankServiceChargeAmortizationGlRows,
   loanPaymentSplitBankRows,
-  loanPaymentSplitQboRows,
+  loanPaymentSplitGlRows,
   nsfReturnedDepositBankRows,
-  nsfReturnedDepositQboRows,
+  nsfReturnedDepositGlRows,
   voidedCheckClearedBankRows,
-  voidedCheckClearedQboRows,
+  voidedCheckClearedGlRows,
 } from './sampleRows';
 
 import type { ErrorCategory } from '@recon/domain';
@@ -81,14 +81,14 @@ export interface ExceptionScenarioFixture {
   expectedCategory: ErrorCategory;
   expectedCount: number;
   bankRows: WorkbookRows;
-  qboRows: WorkbookRows;
+  glRows: WorkbookRows;
 }
 
 /** Fixture for an exception edge case that may produce multiple categories or none at all. */
 export interface ExceptionEdgeCaseFixture {
   name: string;
   bankRows: WorkbookRows;
-  qboRows: WorkbookRows;
+  glRows: WorkbookRows;
   expectedPresent: Array<{ category: ErrorCategory; count: number }>;
   expectedAbsent: ErrorCategory[];
 }
@@ -97,7 +97,7 @@ export interface ExceptionEdgeCaseFixture {
 export interface ExceptionPrecedenceFixture {
   name: string;
   bankRows: WorkbookRows;
-  qboRows: WorkbookRows;
+  glRows: WorkbookRows;
   expectedPresent: Array<{ category: ErrorCategory; count: number }>;
   expectedAbsent: ErrorCategory[];
 }
@@ -105,214 +105,214 @@ export interface ExceptionPrecedenceFixture {
 /** All single-category exception scenario fixtures, one per `ErrorCategory`. */
 export const exceptionScenarioFixtures: ExceptionScenarioFixture[] = [
   {
-    name: 'missing-from-qbo',
-    expectedCategory: 'MissingFromQBO',
+    name: 'missing-from-gl',
+    expectedCategory: 'MissingFromGL',
     expectedCount: 1,
-    bankRows: missingFromQboBankRows,
-    qboRows: missingFromQboQboRows,
+    bankRows: missingFromGlBankRows,
+    glRows: missingFromGlGlRows,
   },
   {
     name: 'missing-from-bank',
     expectedCategory: 'MissingFromBank',
     expectedCount: 1,
     bankRows: missingFromBankBankRows,
-    qboRows: missingFromBankQboRows,
+    glRows: missingFromBankGlRows,
   },
   {
     name: 'amount-mismatch',
     expectedCategory: 'AmountMismatch',
     expectedCount: 1,
     bankRows: amountMismatchBankRows,
-    qboRows: amountMismatchQboRows,
+    glRows: amountMismatchGlRows,
   },
   {
     name: 'duplicate-in-bank',
     expectedCategory: 'DuplicateInBank',
     expectedCount: 1,
     bankRows: duplicateInBankBankRows,
-    qboRows: duplicateInBankQboRows,
+    glRows: duplicateInBankGlRows,
   },
   {
-    name: 'duplicate-in-qbo',
-    expectedCategory: 'DuplicateInQBO',
+    name: 'duplicate-in-gl',
+    expectedCategory: 'DuplicateInGL',
     expectedCount: 1,
-    bankRows: duplicateInQboBankRows,
-    qboRows: duplicateInQboQboRows,
+    bankRows: duplicateInGlBankRows,
+    glRows: duplicateInGlGlRows,
   },
   {
     name: 'likely-split-combine-issue',
     expectedCategory: 'LikelySplitCombineIssue',
     expectedCount: 3,
     bankRows: splitCombineBankRows,
-    qboRows: splitCombineQboRows,
+    glRows: splitCombineGlRows,
   },
   {
     name: 'deposit-grouping-issue',
     expectedCategory: 'DepositGroupingIssue',
     expectedCount: 3,
     bankRows: depositGroupingBankRows,
-    qboRows: depositGroupingQboRows,
+    glRows: depositGroupingGlRows,
   },
   {
     name: 'likely-miscoding',
     expectedCategory: 'LikelyMiscoding',
     expectedCount: 2,
     bankRows: likelyMiscodingBankRows,
-    qboRows: likelyMiscodingQboRows,
+    glRows: likelyMiscodingGlRows,
   },
   {
     name: 'date-variance',
     expectedCategory: 'DateVariance',
     expectedCount: 1,
     bankRows: dateVarianceBankRows,
-    qboRows: dateVarianceQboRows,
+    glRows: dateVarianceGlRows,
   },
   {
     name: 'timing-difference',
     expectedCategory: 'TimingDifference',
     expectedCount: 2,
     bankRows: timingDifferenceBankRows,
-    qboRows: timingDifferenceQboRows,
+    glRows: timingDifferenceGlRows,
   },
   {
     name: 'check-number-mismatch',
     expectedCategory: 'CheckNumberMismatch',
     expectedCount: 1,
     bankRows: referenceMismatchBankRows,
-    qboRows: referenceMismatchQboRows,
+    glRows: referenceMismatchGlRows,
   },
   {
     name: 'reference-number-mismatch',
     expectedCategory: 'ReferenceNumberMismatch',
     expectedCount: 1,
     bankRows: referenceNumberMismatchBankRows,
-    qboRows: referenceNumberMismatchQboRows,
+    glRows: referenceNumberMismatchGlRows,
   },
   {
     name: 'description-merchant-variance',
     expectedCategory: 'DescriptionMerchantVariance',
     expectedCount: 1,
     bankRows: descriptionVarianceBankRows,
-    qboRows: descriptionVarianceQboRows,
+    glRows: descriptionVarianceGlRows,
   },
   {
     name: 'stale-outstanding-check',
     expectedCategory: 'StaleOutstandingCheck',
     expectedCount: 1,
     bankRows: staleOutstandingBankRows,
-    qboRows: staleOutstandingQboRows,
+    glRows: staleOutstandingGlRows,
   },
   {
     name: 'outstanding-check',
     expectedCategory: 'OutstandingCheck',
     expectedCount: 1,
     bankRows: outstandingCheckBankRows,
-    qboRows: outstandingCheckQboRows,
+    glRows: outstandingCheckGlRows,
   },
   {
     name: 'fee-netting-match',
     expectedCategory: 'FeeNettingMatch',
     expectedCount: 3,
     bankRows: feeNettingMatchBankRows,
-    qboRows: feeNettingMatchQboRows,
+    glRows: feeNettingMatchGlRows,
   },
   {
     name: 'partial-payment-match',
     expectedCategory: 'PartialPaymentMatch',
     expectedCount: 3,
     bankRows: partialPaymentMatchBankRows,
-    qboRows: partialPaymentMatchQboRows,
+    glRows: partialPaymentMatchGlRows,
   },
   {
     name: 'payroll-batch-match',
     expectedCategory: 'PayrollBatchMatch',
     expectedCount: 3,
     bankRows: payrollBatchMatchBankRows,
-    qboRows: payrollBatchMatchQboRows,
+    glRows: payrollBatchMatchGlRows,
   },
   {
     name: 'bank-service-charge-amortization',
     expectedCategory: 'BankServiceChargeAmortization',
     expectedCount: 3,
     bankRows: bankServiceChargeAmortizationBankRows,
-    qboRows: bankServiceChargeAmortizationQboRows,
+    glRows: bankServiceChargeAmortizationGlRows,
   },
   {
     name: 'loan-payment-split',
     expectedCategory: 'LoanPaymentSplit',
     expectedCount: 3,
     bankRows: loanPaymentSplitBankRows,
-    qboRows: loanPaymentSplitQboRows,
+    glRows: loanPaymentSplitGlRows,
   },
   {
     name: 'nsf-returned-deposit',
     expectedCategory: 'NSFReturnedDeposit',
     expectedCount: 1,
     bankRows: nsfReturnedDepositBankRows,
-    qboRows: nsfReturnedDepositQboRows,
+    glRows: nsfReturnedDepositGlRows,
   },
   {
     name: 'voided-check-cleared',
     expectedCategory: 'VoidedCheckCleared',
     expectedCount: 1,
     bankRows: voidedCheckClearedBankRows,
-    qboRows: voidedCheckClearedQboRows,
+    glRows: voidedCheckClearedGlRows,
   },
   {
     name: 'invalid-or-missing-data',
     expectedCategory: 'InvalidOrMissingData',
     expectedCount: 1,
     bankRows: invalidDataBankRows,
-    qboRows: invalidDataQboRows,
+    glRows: invalidDataGlRows,
   },
   {
     name: 'ambiguous-match-requiring-review',
     expectedCategory: 'AmbiguousMatchRequiringReview',
     expectedCount: 1,
     bankRows: ambiguousBankRows,
-    qboRows: ambiguousQboRows,
+    glRows: ambiguousGlRows,
   },
   {
     name: 'reversal-void',
     expectedCategory: 'ReversalVoid',
     expectedCount: 2,
     bankRows: reversalVoidBankRows,
-    qboRows: reversalVoidQboRows,
+    glRows: reversalVoidGlRows,
   },
   {
     name: 'ach-return',
     expectedCategory: 'ACHReturn',
     expectedCount: 2,
     bankRows: achReturnBankRows,
-    qboRows: achReturnQboRows,
+    glRows: achReturnGlRows,
   },
   {
     name: 'deposit-in-transit',
     expectedCategory: 'DepositInTransit',
     expectedCount: 1,
     bankRows: depositInTransitBankRows,
-    qboRows: depositInTransitQboRows,
+    glRows: depositInTransitGlRows,
   },
   {
     name: 'chargeback-return',
     expectedCategory: 'ChargebackReturn',
     expectedCount: 1,
     bankRows: chargebackReturnBankRows,
-    qboRows: chargebackReturnQboRows,
+    glRows: chargebackReturnGlRows,
   },
   {
     name: 'interest-income',
     expectedCategory: 'InterestIncome',
     expectedCount: 1,
     bankRows: interestIncomeBankRows,
-    qboRows: interestIncomeQboRows,
+    glRows: interestIncomeGlRows,
   },
   {
     name: 'intercompany-mismatch',
     expectedCategory: 'IntercompanyMismatch',
     expectedCount: 1,
     bankRows: intercompanyMismatchBankRows,
-    qboRows: intercompanyMismatchQboRows,
+    glRows: intercompanyMismatchGlRows,
   },
 ];
 
@@ -324,9 +324,9 @@ export const exceptionEdgeCaseFixtures: ExceptionEdgeCaseFixture[] = [
   {
     name: 'grouped-near-miss-falls-back-to-missing',
     bankRows: splitCombineNearMissBankRows,
-    qboRows: splitCombineNearMissQboRows,
+    glRows: splitCombineNearMissGlRows,
     expectedPresent: [
-      { category: 'MissingFromQBO', count: 1 },
+      { category: 'MissingFromGL', count: 1 },
       { category: 'MissingFromBank', count: 2 },
     ],
     expectedAbsent: ['LikelySplitCombineIssue'],
@@ -334,9 +334,9 @@ export const exceptionEdgeCaseFixtures: ExceptionEdgeCaseFixture[] = [
   {
     name: 'oversized-deposit-group-falls-back-to-missing',
     bankRows: depositGroupingOversizedBankRows,
-    qboRows: depositGroupingOversizedQboRows,
+    glRows: depositGroupingOversizedGlRows,
     expectedPresent: [
-      { category: 'MissingFromQBO', count: 1 },
+      { category: 'MissingFromGL', count: 1 },
       { category: 'MissingFromBank', count: 4 },
     ],
     expectedAbsent: ['DepositGroupingIssue'],
@@ -344,23 +344,23 @@ export const exceptionEdgeCaseFixtures: ExceptionEdgeCaseFixture[] = [
   {
     name: 'recent-check-stays-missing-until-stale-threshold',
     bankRows: staleOutstandingBelowThresholdBankRows,
-    qboRows: staleOutstandingBelowThresholdQboRows,
+    glRows: staleOutstandingBelowThresholdGlRows,
     expectedPresent: [{ category: 'OutstandingCheck', count: 1 }],
     expectedAbsent: ['StaleOutstandingCheck', 'MissingFromBank'],
   },
   {
     name: 'timing-incompatible-extended-window-stays-date-variance',
     bankRows: dateVarianceBankRows,
-    qboRows: dateVarianceQboRows,
+    glRows: dateVarianceGlRows,
     expectedPresent: [{ category: 'DateVariance', count: 1 }],
     expectedAbsent: ['TimingDifference'],
   },
   {
     name: 'invalid-data-does-not-double-classify-as-missing',
     bankRows: invalidDataBankRows,
-    qboRows: invalidDataQboRows,
+    glRows: invalidDataGlRows,
     expectedPresent: [{ category: 'InvalidOrMissingData', count: 1 }],
-    expectedAbsent: ['MissingFromQBO'],
+    expectedAbsent: ['MissingFromGL'],
   },
 ];
 
@@ -369,31 +369,31 @@ export const exceptionPrecedenceFixtures: ExceptionPrecedenceFixture[] = [
   {
     name: 'invalid-data-wins-over-missing-fallback',
     bankRows: invalidDataBankRows,
-    qboRows: invalidDataQboRows,
+    glRows: invalidDataGlRows,
     expectedPresent: [{ category: 'InvalidOrMissingData', count: 1 }],
-    expectedAbsent: ['MissingFromQBO'],
+    expectedAbsent: ['MissingFromGL'],
   },
   {
     name: 'timing-difference-wins-over-missing-fallback',
     bankRows: timingDifferenceBankRows,
-    qboRows: timingDifferenceQboRows,
+    glRows: timingDifferenceGlRows,
     expectedPresent: [{ category: 'TimingDifference', count: 2 }],
-    expectedAbsent: ['MissingFromQBO', 'MissingFromBank'],
+    expectedAbsent: ['MissingFromGL', 'MissingFromBank'],
   },
   {
     name: 'split-combine-wins-over-missing-fallback',
     bankRows: splitCombineBankRows,
-    qboRows: splitCombineQboRows,
+    glRows: splitCombineGlRows,
     expectedPresent: [{ category: 'LikelySplitCombineIssue', count: 3 }],
-    expectedAbsent: ['MissingFromQBO', 'MissingFromBank'],
+    expectedAbsent: ['MissingFromGL', 'MissingFromBank'],
   },
   {
     name: 'stale-check-wins-over-missing-fallback-in-mixed-residual-run',
     bankRows: staleOutstandingMixedResidualBankRows,
-    qboRows: staleOutstandingMixedResidualQboRows,
+    glRows: staleOutstandingMixedResidualGlRows,
     expectedPresent: [
       { category: 'StaleOutstandingCheck', count: 1 },
-      { category: 'MissingFromQBO', count: 2 },
+      { category: 'MissingFromGL', count: 2 },
     ],
     expectedAbsent: ['MissingFromBank'],
   },
@@ -422,7 +422,7 @@ const BANK_COLUMN_BY_NORMALIZED_HEADER: Record<string, string> = {
   'CURRENT BALANCE': 'balance',
 };
 
-const QBO_COLUMN_BY_NORMALIZED_HEADER: Record<string, string> = {
+const GL_COLUMN_BY_NORMALIZED_HEADER: Record<string, string> = {
   DATE: 'date',
   TYPE: 'type',
   NUM: 'num',
@@ -435,7 +435,7 @@ const QBO_COLUMN_BY_NORMALIZED_HEADER: Record<string, string> = {
 };
 
 const COMBINED_BANK_HEADER = ['Date', 'Description', 'Check Number', 'Reference', 'Debit', 'Credit', 'Balance'];
-const COMBINED_QBO_HEADER = ['Date', 'Type', 'Num', 'Reference', 'Name', 'Memo', 'Amount'];
+const COMBINED_GL_HEADER = ['Date', 'Type', 'Num', 'Reference', 'Name', 'Memo', 'Amount'];
 
 type RowRecord = Record<string, string | number>;
 
@@ -468,18 +468,18 @@ const rowsToCombinedRecord = (
 const recordToRow = (record: RowRecord, columns: string[]): Array<string | number> =>
   columns.map((column) => record[column] ?? '');
 
-/** Merges all scenario fixture rows into a single bank/QBO row set covering every exception category. */
-export const buildAllExceptionsCombinedRows = (): { bankRows: WorkbookRows; qboRows: WorkbookRows } => {
+/** Merges all scenario fixture rows into a single bank/GL row set covering every exception category. */
+export const buildAllExceptionsCombinedRows = (): { bankRows: WorkbookRows; glRows: WorkbookRows } => {
   const bankRecords = exceptionScenarioFixtures.flatMap((fixture) =>
     rowsToCombinedRecord(fixture.bankRows, BANK_COLUMN_BY_NORMALIZED_HEADER),
   );
-  const qboRecords = exceptionScenarioFixtures.flatMap((fixture) =>
-    rowsToCombinedRecord(fixture.qboRows, QBO_COLUMN_BY_NORMALIZED_HEADER),
+  const glRecords = exceptionScenarioFixtures.flatMap((fixture) =>
+    rowsToCombinedRecord(fixture.glRows, GL_COLUMN_BY_NORMALIZED_HEADER),
   );
 
   return {
     bankRows: [COMBINED_BANK_HEADER, ...bankRecords.map((record) => recordToRow(record, ['date', 'description', 'checkNumber', 'referenceNumber', 'debit', 'credit', 'balance']))],
-    qboRows: [COMBINED_QBO_HEADER, ...qboRecords.map((record) => recordToRow(record, ['date', 'type', 'num', 'reference', 'name', 'memo', 'amount']))],
+    glRows: [COMBINED_GL_HEADER, ...glRecords.map((record) => recordToRow(record, ['date', 'type', 'num', 'reference', 'name', 'memo', 'amount']))],
   };
 };
 
@@ -495,8 +495,8 @@ export const createAllExceptionsBankWorkbook = async (): Promise<Buffer> => {
   return createWorkbookFromRows(bankRows);
 };
 
-/** Creates an Excel workbook buffer containing QBO rows for every exception scenario combined. */
-export const createAllExceptionsQboWorkbook = async (): Promise<Buffer> => {
-  const { qboRows } = buildAllExceptionsCombinedRows();
-  return createWorkbookFromRows(qboRows);
+/** Creates an Excel workbook buffer containing GL rows for every exception scenario combined. */
+export const createAllExceptionsGlWorkbook = async (): Promise<Buffer> => {
+  const { glRows } = buildAllExceptionsCombinedRows();
+  return createWorkbookFromRows(glRows);
 };

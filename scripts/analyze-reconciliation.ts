@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
 type CliOptions = {
   accountId: string;
   bankPath: string;
-  qboPath: string;
+  glPath: string;
   windows: number[];
   thresholds: number[];
   similarityDays: number;
@@ -28,9 +28,9 @@ type MatchKind = 'Probable' | 'Exact' | 'Timing';
 
 type Candidate = {
   bankId: string;
-  qboId: string;
+  glId: string;
   bankLine: number;
-  qboLine: number;
+  glLine: number;
   score: number;
   kind: MatchKind;
 };
@@ -38,12 +38,12 @@ type Candidate = {
 const usage = (): string =>
   [
     'Usage:',
-    '  npm run analyze:reconciliation -- --account <accountId> --bank <bank.xlsx> --qbo <qbo.xlsx> [--windows <csv>] [--thresholds <csv>] [--similarity-days <int>] [--hybrid-thresholds <csv>] [--hybrid-occurrences <csv>]',
+    '  npm run analyze:reconciliation -- --account <accountId> --bank <bank.xlsx> --gl <gl.xlsx> [--windows <csv>] [--thresholds <csv>] [--similarity-days <int>] [--hybrid-thresholds <csv>] [--hybrid-occurrences <csv>]',
     '',
     'Example:',
-    '  npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --qbo ./data/qbo.xlsx',
-    '  npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --qbo ./data/qbo.xlsx --windows 0,1,3,5,10,21 --thresholds 0,0.05,0.1,0.2,0.3',
-    '  npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --qbo ./data/qbo.xlsx --similarity-days 7 --hybrid-thresholds 0.1,0.15,0.2 --hybrid-occurrences 1,2,3',
+    '  npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --gl ./data/gl.xlsx',
+    '  npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --gl ./data/gl.xlsx --windows 0,1,3,5,10,21 --thresholds 0,0.05,0.1,0.2,0.3',
+    '  npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --gl ./data/gl.xlsx --similarity-days 7 --hybrid-thresholds 0.1,0.15,0.2 --hybrid-occurrences 1,2,3',
   ].join('\n');
 
 const DEFAULT_WINDOWS = [0, 1, 2, 3, 4, 5, 7, 10, 14, 21];
@@ -103,7 +103,7 @@ const parseNumberList = (
 const parseArgs = (args: string[]): CliOptions => {
   const accountId = readArg(args, '--account');
   const bankPath = readArg(args, '--bank');
-  const qboPath = readArg(args, '--qbo');
+  const glPath = readArg(args, '--gl');
   const windows = parseNumberList(readArg(args, '--windows'), '--windows', DEFAULT_WINDOWS);
   const thresholds = parseNumberList(
     readArg(args, '--thresholds'),
@@ -123,7 +123,7 @@ const parseArgs = (args: string[]): CliOptions => {
     DEFAULT_HYBRID_OCCURRENCES,
   );
 
-  if (!accountId || !bankPath || !qboPath) {
+  if (!accountId || !bankPath || !glPath) {
     throw new Error(usage());
   }
 
@@ -150,7 +150,7 @@ const parseArgs = (args: string[]): CliOptions => {
   return {
     accountId,
     bankPath,
-    qboPath,
+    glPath,
     windows,
     thresholds,
     similarityDays,
@@ -209,12 +209,12 @@ const main = async (): Promise<void> => {
   const options = parseArgs(process.argv.slice(2));
   const config = resolveReconciliationConfig(options.accountId, sampleAccountOverrides);
 
-  const [bankBuffer, qboBuffer] = await Promise.all([
+  const [bankBuffer, glBuffer] = await Promise.all([
     readFile(options.bankPath),
-    readFile(options.qboPath),
+    readFile(options.glPath),
   ]);
 
-  const [bank, qbo] = await Promise.all([
+  const [bank, gl] = await Promise.all([
     parseWorkbook({
       source: 'bank',
       fileName: basename(options.bankPath),
@@ -224,18 +224,18 @@ const main = async (): Promise<void> => {
       config: config.bank,
     }),
     parseWorkbook({
-      source: 'qbo',
-      fileName: basename(options.qboPath),
+      source: 'gl',
+      fileName: basename(options.glPath),
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: qboBuffer.length,
-      buffer: qboBuffer,
-      config: config.qbo,
+      sizeBytes: glBuffer.length,
+      buffer: glBuffer,
+      config: config.gl,
     }),
   ]);
 
   const transactions = normalizeTransactions(
     `analysis-${options.accountId}`,
-    [...bank.rawRows, ...qbo.rawRows],
+    [...bank.rawRows, ...gl.rawRows],
     config,
   );
 
@@ -243,28 +243,28 @@ const main = async (): Promise<void> => {
     (item) => !item.isExcluded && item.dataQualityIssues.length === 0,
   );
   const bankTx = active.filter((item) => item.source === 'bank');
-  const qboTx = active.filter((item) => item.source === 'qbo');
+  const glTx = active.filter((item) => item.source === 'gl');
 
   const bankAmountFrequency = buildAmountFrequency(bankTx);
-  const qboAmountFrequency = buildAmountFrequency(qboTx);
+  const glAmountFrequency = buildAmountFrequency(glTx);
 
   const countGreedyMatches = (maxDays: number): number => {
-    const usedQbo = new Set<string>();
+    const usedGl = new Set<string>();
     let matched = 0;
 
     for (const bankItem of bankTx) {
       let bestIndex = -1;
       let bestDiff = Number.POSITIVE_INFINITY;
 
-      for (let index = 0; index < qboTx.length; index += 1) {
-        const qboItem = qboTx[index];
-        if (!qboItem || usedQbo.has(qboItem.id) || !sameAmount(bankItem.amount, qboItem.amount)) {
+      for (let index = 0; index < glTx.length; index += 1) {
+        const glItem = glTx[index];
+        if (!glItem || usedGl.has(glItem.id) || !sameAmount(bankItem.amount, glItem.amount)) {
           continue;
         }
 
         const diff = absDays(
           bankItem.transactionDate ?? bankItem.postingDate,
-          qboItem.transactionDate ?? qboItem.postingDate,
+          glItem.transactionDate ?? glItem.postingDate,
         );
         if (diff === null || diff > maxDays) {
           continue;
@@ -277,7 +277,7 @@ const main = async (): Promise<void> => {
       }
 
       if (bestIndex >= 0) {
-        usedQbo.add(qboTx[bestIndex]!.id);
+        usedGl.add(glTx[bestIndex]!.id);
         matched += 1;
       }
     }
@@ -286,22 +286,22 @@ const main = async (): Promise<void> => {
   };
 
   const countGreedyMatchesWithSimilarity = (maxDays: number, minSimilarity: number): number => {
-    const usedQbo = new Set<string>();
+    const usedGl = new Set<string>();
     let matched = 0;
 
     for (const bankItem of bankTx) {
       let bestIndex = -1;
       let bestScore = -1;
 
-      for (let index = 0; index < qboTx.length; index += 1) {
-        const qboItem = qboTx[index];
-        if (!qboItem || usedQbo.has(qboItem.id) || !sameAmount(bankItem.amount, qboItem.amount)) {
+      for (let index = 0; index < glTx.length; index += 1) {
+        const glItem = glTx[index];
+        if (!glItem || usedGl.has(glItem.id) || !sameAmount(bankItem.amount, glItem.amount)) {
           continue;
         }
 
         const diff = absDays(
           bankItem.transactionDate ?? bankItem.postingDate,
-          qboItem.transactionDate ?? qboItem.postingDate,
+          glItem.transactionDate ?? glItem.postingDate,
         );
         if (diff === null || diff > maxDays) {
           continue;
@@ -309,7 +309,7 @@ const main = async (): Promise<void> => {
 
         const similarity = tokenSimilarity(
           bankItem.normalizedComparisonTokens,
-          qboItem.normalizedComparisonTokens,
+          glItem.normalizedComparisonTokens,
         );
         if (similarity < minSimilarity) {
           continue;
@@ -323,7 +323,7 @@ const main = async (): Promise<void> => {
       }
 
       if (bestIndex >= 0) {
-        usedQbo.add(qboTx[bestIndex]!.id);
+        usedGl.add(glTx[bestIndex]!.id);
         matched += 1;
       }
     }
@@ -336,22 +336,22 @@ const main = async (): Promise<void> => {
     minSimilarity: number,
     maxOccurrences: number,
   ): number => {
-    const usedQbo = new Set<string>();
+    const usedGl = new Set<string>();
     let matched = 0;
 
     for (const bankItem of bankTx) {
       let bestIndex = -1;
       let bestScore = -1;
 
-      for (let index = 0; index < qboTx.length; index += 1) {
-        const qboItem = qboTx[index];
-        if (!qboItem || usedQbo.has(qboItem.id) || !sameAmount(bankItem.amount, qboItem.amount)) {
+      for (let index = 0; index < glTx.length; index += 1) {
+        const glItem = glTx[index];
+        if (!glItem || usedGl.has(glItem.id) || !sameAmount(bankItem.amount, glItem.amount)) {
           continue;
         }
 
         const diff = absDays(
           bankItem.transactionDate ?? bankItem.postingDate,
-          qboItem.transactionDate ?? qboItem.postingDate,
+          glItem.transactionDate ?? glItem.postingDate,
         );
         if (diff === null || diff > maxDays) {
           continue;
@@ -359,13 +359,13 @@ const main = async (): Promise<void> => {
 
         const similarity = tokenSimilarity(
           bankItem.normalizedComparisonTokens,
-          qboItem.normalizedComparisonTokens,
+          glItem.normalizedComparisonTokens,
         );
         const amount = bankItem.amount;
         const isDistinctive =
           amount !== null &&
           (bankAmountFrequency.get(amount) ?? 0) <= maxOccurrences &&
-          (qboAmountFrequency.get(amount) ?? 0) <= maxOccurrences;
+          (glAmountFrequency.get(amount) ?? 0) <= maxOccurrences;
 
         if (similarity < minSimilarity && !isDistinctive) {
           continue;
@@ -379,7 +379,7 @@ const main = async (): Promise<void> => {
       }
 
       if (bestIndex >= 0) {
-        usedQbo.add(qboTx[bestIndex]!.id);
+        usedGl.add(glTx[bestIndex]!.id);
         matched += 1;
       }
     }
@@ -389,10 +389,10 @@ const main = async (): Promise<void> => {
 
   const isMonthEndTransferProbable = (
     bankItem: (typeof bankTx)[number],
-    qboItem: (typeof qboTx)[number],
+    glItem: (typeof glTx)[number],
     diff: number | null,
   ): boolean => {
-    if (!sameAmount(bankItem.amount, qboItem.amount)) {
+    if (!sameAmount(bankItem.amount, glItem.amount)) {
       return false;
     }
 
@@ -404,33 +404,33 @@ const main = async (): Promise<void> => {
       return false;
     }
 
-    if ((qboItem.transactionType ?? '').toLowerCase() !== 'journal entry') {
+    if ((glItem.transactionType ?? '').toLowerCase() !== 'journal entry') {
       return false;
     }
 
-    if (!includesText(qboItem.description, 'money transfers')) {
+    if (!includesText(glItem.description, 'money transfers')) {
       return false;
     }
 
-    if (!isMonthEndDate(qboItem.transactionDate ?? qboItem.postingDate)) {
+    if (!isMonthEndDate(glItem.transactionDate ?? glItem.postingDate)) {
       return false;
     }
 
     const bankDateValue = bankItem.transactionDate ?? bankItem.postingDate;
-    const qboDateValue = qboItem.transactionDate ?? qboItem.postingDate;
-    if (!bankDateValue || !qboDateValue) {
+    const glDateValue = glItem.transactionDate ?? glItem.postingDate;
+    if (!bankDateValue || !glDateValue) {
       return false;
     }
 
     const bankDate = new Date(`${bankDateValue}T00:00:00Z`);
-    const qboDate = new Date(`${qboDateValue}T00:00:00Z`);
-    if (qboDate < bankDate) {
+    const glDate = new Date(`${glDateValue}T00:00:00Z`);
+    if (glDate < bankDate) {
       return false;
     }
 
     if (
-      bankDate.getUTCFullYear() !== qboDate.getUTCFullYear() ||
-      bankDate.getUTCMonth() !== qboDate.getUTCMonth()
+      bankDate.getUTCFullYear() !== glDate.getUTCFullYear() ||
+      bankDate.getUTCMonth() !== glDate.getUTCMonth()
     ) {
       return false;
     }
@@ -441,20 +441,20 @@ const main = async (): Promise<void> => {
   const classifyModeledMatches = (): {
     counts: Record<MatchKind, number>;
     unmatchedBank: number;
-    unmatchedQbo: number;
-    probablePairs: Array<{ bankLine: number; qboLine: number }>;
+    unmatchedGl: number;
+    probablePairs: Array<{ bankLine: number; glLine: number }>;
   } => {
     const candidates: Candidate[] = [];
 
     for (const bankItem of bankTx) {
-      for (const qboItem of qboTx) {
-        if (!sameAmount(bankItem.amount, qboItem.amount)) {
+      for (const glItem of glTx) {
+        if (!sameAmount(bankItem.amount, glItem.amount)) {
           continue;
         }
 
         const diff = absDays(
           bankItem.transactionDate ?? bankItem.postingDate,
-          qboItem.transactionDate ?? qboItem.postingDate,
+          glItem.transactionDate ?? glItem.postingDate,
         );
         if (diff === null) {
           continue;
@@ -462,33 +462,33 @@ const main = async (): Promise<void> => {
 
         const similarity = tokenSimilarity(
           bankItem.normalizedComparisonTokens,
-          qboItem.normalizedComparisonTokens,
+          glItem.normalizedComparisonTokens,
         );
         const amount = bankItem.amount;
         const distinctiveAmount =
           amount !== null &&
           (bankAmountFrequency.get(amount) ?? 0) <= 1 &&
-          (qboAmountFrequency.get(amount) ?? 0) <= 1;
+          (glAmountFrequency.get(amount) ?? 0) <= 1;
         const zeroSimilarityShortTokenFallback =
           similarity === 0 &&
           distinctiveAmount &&
           diff <= 3 &&
-          qboItem.normalizedComparisonTokens.length <= 2;
+          glItem.normalizedComparisonTokens.length <= 2;
 
-        const hasAlternativeTimingCandidate = qboTx.some((otherQboItem) => {
+        const hasAlternativeTimingCandidate = glTx.some((otherGlItem) => {
           if (
-            otherQboItem.id === qboItem.id ||
-            !sameAmount(bankItem.amount, otherQboItem.amount)
+            otherGlItem.id === glItem.id ||
+            !sameAmount(bankItem.amount, otherGlItem.amount)
           ) {
             return false;
           }
 
           const otherIsMonthEndTransfer = isMonthEndTransferProbable(
             bankItem,
-            otherQboItem,
+            otherGlItem,
             absDays(
               bankItem.transactionDate ?? bankItem.postingDate,
-              otherQboItem.transactionDate ?? otherQboItem.postingDate,
+              otherGlItem.transactionDate ?? otherGlItem.postingDate,
             ),
           );
           if (otherIsMonthEndTransfer) {
@@ -497,18 +497,18 @@ const main = async (): Promise<void> => {
 
           const otherDiff = absDays(
             bankItem.transactionDate ?? bankItem.postingDate,
-            otherQboItem.transactionDate ?? otherQboItem.postingDate,
+            otherGlItem.transactionDate ?? otherGlItem.postingDate,
           );
 
           return otherDiff !== null && otherDiff <= 21;
         });
 
-        if (isMonthEndTransferProbable(bankItem, qboItem, diff) && !hasAlternativeTimingCandidate) {
+        if (isMonthEndTransferProbable(bankItem, glItem, diff) && !hasAlternativeTimingCandidate) {
           candidates.push({
             bankId: bankItem.id,
-            qboId: qboItem.id,
+            glId: glItem.id,
             bankLine: bankItem.lineNumber,
-            qboLine: qboItem.lineNumber,
+            glLine: glItem.lineNumber,
             score: 100 - diff,
             kind: 'Probable',
           });
@@ -518,9 +518,9 @@ const main = async (): Promise<void> => {
         if (diff <= 5 && (similarity >= 0.12 || zeroSimilarityShortTokenFallback)) {
           candidates.push({
             bankId: bankItem.id,
-            qboId: qboItem.id,
+            glId: glItem.id,
             bankLine: bankItem.lineNumber,
-            qboLine: qboItem.lineNumber,
+            glLine: glItem.lineNumber,
             score: 80 + similarity - diff / 100,
             kind: 'Exact',
           });
@@ -530,9 +530,9 @@ const main = async (): Promise<void> => {
         if (diff <= 21) {
           candidates.push({
             bankId: bankItem.id,
-            qboId: qboItem.id,
+            glId: glItem.id,
             bankLine: bankItem.lineNumber,
-            qboLine: qboItem.lineNumber,
+            glLine: glItem.lineNumber,
             score: 40 - diff / 100,
             kind: 'Timing',
           });
@@ -543,27 +543,27 @@ const main = async (): Promise<void> => {
     candidates.sort((left, right) => right.score - left.score);
 
     const matchedBank = new Set<string>();
-    const matchedQbo = new Set<string>();
+    const matchedGl = new Set<string>();
     const counts: Record<MatchKind, number> = { Exact: 0, Timing: 0, Probable: 0 };
-    const probablePairs: Array<{ bankLine: number; qboLine: number }> = [];
+    const probablePairs: Array<{ bankLine: number; glLine: number }> = [];
 
     for (const candidate of candidates) {
-      if (matchedBank.has(candidate.bankId) || matchedQbo.has(candidate.qboId)) {
+      if (matchedBank.has(candidate.bankId) || matchedGl.has(candidate.glId)) {
         continue;
       }
 
       matchedBank.add(candidate.bankId);
-      matchedQbo.add(candidate.qboId);
+      matchedGl.add(candidate.glId);
       counts[candidate.kind] += 1;
       if (candidate.kind === 'Probable') {
-        probablePairs.push({ bankLine: candidate.bankLine, qboLine: candidate.qboLine });
+        probablePairs.push({ bankLine: candidate.bankLine, glLine: candidate.glLine });
       }
     }
 
     return {
       counts,
       unmatchedBank: bankTx.length - matchedBank.size,
-      unmatchedQbo: qboTx.length - matchedQbo.size,
+      unmatchedGl: glTx.length - matchedGl.size,
       probablePairs,
     };
   };
@@ -595,7 +595,7 @@ const main = async (): Promise<void> => {
     accountId: options.accountId,
     files: {
       bank: options.bankPath,
-      qbo: options.qboPath,
+      gl: options.glPath,
     },
     settings: {
       windows: options.windows,
@@ -605,12 +605,12 @@ const main = async (): Promise<void> => {
       hybridOccurrences: options.hybridOccurrences,
     },
     bankActive: bankTx.length,
-    qboActive: qboTx.length,
+    glActive: glTx.length,
     dataQualityBank: transactions.filter(
       (item) => item.source === 'bank' && item.dataQualityIssues.length > 0 && !item.isExcluded,
     ).length,
-    dataQualityQbo: transactions.filter(
-      (item) => item.source === 'qbo' && item.dataQualityIssues.length > 0 && !item.isExcluded,
+    dataQualityGl: transactions.filter(
+      (item) => item.source === 'gl' && item.dataQualityIssues.length > 0 && !item.isExcluded,
     ).length,
     countsByWindow,
     similarityCountsWithinConfiguredDays: similarityCounts,

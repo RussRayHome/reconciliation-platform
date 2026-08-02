@@ -50,9 +50,9 @@ describe('reconcileMatches', () => {
       description: 'ONLINE FROM ****1061 - TRUIST ONLINE TRANSFER',
       amount: 250000,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-month-end',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-month-end',
+      source: 'gl',
       lineNumber: 94,
       transactionDate: '2025-01-31',
       transactionType: 'Journal Entry',
@@ -61,7 +61,7 @@ describe('reconcileMatches', () => {
       amount: 250000,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
@@ -78,9 +78,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['wire', 'ref', '20250122', '15886'],
       amount: -167967.53,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-distinctive',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-distinctive',
+      source: 'gl',
       lineNumber: 71,
       transactionDate: '2025-01-23',
       description: 'Vendor',
@@ -88,7 +88,7 @@ describe('reconcileMatches', () => {
       amount: -167967.53,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('ExactMatch');
@@ -104,9 +104,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['ascensus', 'trust'],
       amount: -25450.76,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-timing',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-timing',
+      source: 'gl',
       lineNumber: 4,
       transactionDate: '2025-01-10',
       description: '401k Withholding',
@@ -114,7 +114,7 @@ describe('reconcileMatches', () => {
       amount: -25450.76,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('DateVariance');
@@ -132,9 +132,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['VENDOR', 'SUPPLIES'],
       normalizedReferenceTokens: ['1001'],
     });
-    const qbo = buildTransaction({
-      id: 'qbo-check-var',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-check-var',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-02-10',
       amount: -500,
@@ -142,7 +142,7 @@ describe('reconcileMatches', () => {
       normalizedReferenceTokens: ['1002'],
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
@@ -160,9 +160,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['OFFICE', 'DEPOT'],
       normalizedReferenceTokens: ['REF', '001'],
     });
-    const qbo = buildTransaction({
-      id: 'qbo-ref-var',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-ref-var',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-02-12',
       amount: -750,
@@ -171,7 +171,7 @@ describe('reconcileMatches', () => {
       normalizedReferenceTokens: ['REF', '002'],
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
@@ -189,16 +189,16 @@ describe('reconcileMatches', () => {
       amount: -300,
       normalizedComparisonTokens: ['ACME', 'OFFICE'],
     });
-    const qbo = buildTransaction({
-      id: 'qbo-desc-var',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-desc-var',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-03-06',
       amount: -300,
       normalizedComparisonTokens: ['ACME', 'OFFICE', 'SUPPLY', 'DEPOT'],
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
@@ -215,24 +215,24 @@ describe('reconcileMatches', () => {
       amount: -100,
       normalizedComparisonTokens: ['OFFICE', 'DEPOT'],
     });
-    const qbo = buildTransaction({
-      id: 'qbo-amt-mismatch',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-amt-mismatch',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-03-10',
       amount: -150,
       normalizedComparisonTokens: ['OFFICE', 'DEPOT', 'SUPPLIES'],
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
     expect(result.matchResults[0]?.exceptionCategory).toBe('AmountMismatch');
   });
 
-  it('flags a bank transaction as AmbiguousReview when two QBO candidates score equally well', () => {
-    // bank has 1 token; each QBO has 2 tokens with 1 shared → textSimilarity = 2/3 ≈ 0.667
+  it('flags a bank transaction as AmbiguousReview when two GL candidates score equally well', () => {
+    // bank has 1 token; each GL has 2 tokens with 1 shared → textSimilarity = 2/3 ≈ 0.667
     // 0.667 is in [reviewSimilarityThreshold(0.4), textSimilarityThreshold(0.7)) → Rule 5 fires
     // both candidates score 0.72 (< 0.95), within 0.1 of each other → AmbiguousReview
     const bank = buildTransaction({
@@ -243,24 +243,24 @@ describe('reconcileMatches', () => {
       amount: -100,
       normalizedComparisonTokens: ['ACME'],
     });
-    const qbo1 = buildTransaction({
-      id: 'qbo-ambig-1',
-      source: 'qbo',
+    const gl1 = buildTransaction({
+      id: 'gl-ambig-1',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-01-10',
       amount: -100,
       normalizedComparisonTokens: ['ACME', 'OFFICE'],
     });
-    const qbo2 = buildTransaction({
-      id: 'qbo-ambig-2',
-      source: 'qbo',
+    const gl2 = buildTransaction({
+      id: 'gl-ambig-2',
+      source: 'gl',
       lineNumber: 3,
       transactionDate: '2025-01-10',
       amount: -100,
       normalizedComparisonTokens: ['ACME', 'SUPPLY'],
     });
 
-    const result = reconcileMatches([bank, qbo1, qbo2], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl1, gl2], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.disposition).toBe('AmbiguousReview');
@@ -285,16 +285,16 @@ describe('reconcileMatches', () => {
       amount: -200,
       normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
     });
-    const qbo = buildTransaction({
-      id: 'qbo-original',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-original',
+      source: 'gl',
       lineNumber: 1,
       transactionDate: '2025-03-01',
       amount: -200,
       normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
     });
 
-    const result = reconcileMatches([bank1, bank2, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank1, bank2, gl], defaultReconciliationConfig.matching);
 
     expect(result.duplicateTransactionIds.size).toBe(1);
     expect(result.duplicateTransactionIds.has('bank-dup-2')).toBe(true);
@@ -337,20 +337,20 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['ACME'],
       isExcluded: true,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-active',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-active',
+      source: 'gl',
       lineNumber: 1,
       transactionDate: '2025-01-01',
       amount: -100,
       normalizedComparisonTokens: ['ACME'],
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(0);
     expect(result.unmatchedBankTransactionIds.has('bank-excl')).toBe(false);
-    expect(result.unmatchedQboTransactionIds.has('qbo-active')).toBe(true);
+    expect(result.unmatchedGlTransactionIds.has('gl-active')).toBe(true);
   });
 
   it('omits transactions with data quality issues from matching candidates', () => {
@@ -362,18 +362,18 @@ describe('reconcileMatches', () => {
       amount: -100,
       dataQualityIssues: ['Amount is missing or malformed.'],
     });
-    const qbo = buildTransaction({
-      id: 'qbo-clean',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-clean',
+      source: 'gl',
       lineNumber: 1,
       transactionDate: '2025-01-01',
       amount: -100,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(0);
-    expect(result.unmatchedQboTransactionIds.has('qbo-clean')).toBe(true);
+    expect(result.unmatchedGlTransactionIds.has('gl-clean')).toBe(true);
   });
 
   it('emits grouped review match results for balanced one-to-many grouped candidates', () => {
@@ -386,18 +386,18 @@ describe('reconcileMatches', () => {
       description: 'CARD SETTLEMENT BATCH',
       amount: 300,
     });
-    const qboAlpha = buildTransaction({
-      id: 'qbo-grouped-alpha',
-      source: 'qbo',
+    const glAlpha = buildTransaction({
+      id: 'gl-grouped-alpha',
+      source: 'gl',
       lineNumber: 20,
       transactionDate: '2025-04-01',
       transactionType: 'Deposit',
       description: 'Card receipt alpha',
       amount: 100,
     });
-    const qboBeta = buildTransaction({
-      id: 'qbo-grouped-beta',
-      source: 'qbo',
+    const glBeta = buildTransaction({
+      id: 'gl-grouped-beta',
+      source: 'gl',
       lineNumber: 21,
       transactionDate: '2025-04-02',
       transactionType: 'Deposit',
@@ -405,15 +405,15 @@ describe('reconcileMatches', () => {
       amount: 200,
     });
 
-    const result = reconcileMatches([bank, qboAlpha, qboBeta], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, glAlpha, glBeta], defaultReconciliationConfig.matching);
 
     expect(result.groupedMatchResults).toHaveLength(1);
     expect(result.groupedMatchResults[0]?.disposition).toBe('GroupedReviewMatch');
     expect(result.groupedMatchResults[0]?.category).toBe('DepositGroupingIssue');
     expect(result.groupedMatchResults[0]?.bankTransactionIds).toEqual(['bank-grouped']);
-    expect(result.groupedMatchResults[0]?.qboTransactionIds).toEqual([
-      'qbo-grouped-alpha',
-      'qbo-grouped-beta',
+    expect(result.groupedMatchResults[0]?.glTransactionIds).toEqual([
+      'gl-grouped-alpha',
+      'gl-grouped-beta',
     ]);
   });
 
@@ -428,9 +428,9 @@ describe('reconcileMatches', () => {
       normalizedReferenceTokens: ['1234'],
       amount: -525,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-check-amt',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-check-amt',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-04-10',
       checkNumber: '1234',
@@ -439,7 +439,7 @@ describe('reconcileMatches', () => {
       amount: -500,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.ruleName).toBe('Check Number Amount Mismatch');
@@ -458,9 +458,9 @@ describe('reconcileMatches', () => {
       normalizedReferenceTokens: ['5678'],
       amount: -750,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-check-date',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-check-date',
+      source: 'gl',
       lineNumber: 4,
       transactionDate: '2025-04-12',
       checkNumber: '5678',
@@ -469,7 +469,7 @@ describe('reconcileMatches', () => {
       amount: -750,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.ruleName).toBe('Check Number Date Variance');
@@ -482,7 +482,7 @@ describe('reconcileMatches', () => {
       bankPattern: 'AMZN MKTP US',
       canonicalPayeeName: 'Amazon',
       normalizedTokens: ['AMZN', 'MKTP'],
-      sourceDirection: 'bank_to_qbo',
+      sourceDirection: 'bank_to_gl',
       matchConfidence: 1.0,
       isActive: true,
     };
@@ -496,9 +496,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['AMZN', 'MKTP', 'AB12345'],
       amount: -49.99,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-amazon',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-amazon',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-03-10',
       description: 'Amazon',
@@ -507,7 +507,7 @@ describe('reconcileMatches', () => {
     });
 
     const result = reconcileMatches(
-      [bank, qbo],
+      [bank, gl],
       defaultReconciliationConfig.matching,
       [alias],
     );
@@ -516,10 +516,10 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.ruleName).toBe('Historical Pattern Match');
     expect(result.matchResults[0]?.disposition).toBe('ExactMatch');
     expect(result.unmatchedBankTransactionIds.size).toBe(0);
-    expect(result.unmatchedQboTransactionIds.size).toBe(0);
+    expect(result.unmatchedGlTransactionIds.size).toBe(0);
   });
 
-  it('classifies a wire where bank received less than QBO recorded as Wire Correspondent Fee Deduction', () => {
+  it('classifies a wire where bank received less than GL recorded as Wire Correspondent Fee Deduction', () => {
     const bank = buildTransaction({
       id: 'bank-wire',
       source: 'bank',
@@ -529,9 +529,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['WIRE', 'TRANSFER', 'ACB', 'INTERNATIONAL'],
       amount: 9850,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-wire',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-wire',
+      source: 'gl',
       lineNumber: 6,
       transactionDate: '2025-06-01',
       description: 'ACB International Invoice Wire',
@@ -539,7 +539,7 @@ describe('reconcileMatches', () => {
       amount: 10000,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.ruleName).toBe('Wire Correspondent Fee Deduction');
@@ -557,9 +557,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['GLOBAL', 'SUPPLIER', 'PAYMENT', 'EUR'],
       amount: -5800,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-fx',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-fx',
+      source: 'gl',
       lineNumber: 8,
       transactionDate: '2025-06-10',
       description: 'Global Supplier Invoice EUR',
@@ -567,7 +567,7 @@ describe('reconcileMatches', () => {
       amount: -5000,
     });
 
-    const result = reconcileMatches([bank, qbo], defaultReconciliationConfig.matching);
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.ruleName).toBe('FX Rate Variance');
@@ -581,7 +581,7 @@ describe('reconcileMatches', () => {
       bankPattern: 'AMZN MKTP US',
       canonicalPayeeName: 'Amazon',
       normalizedTokens: ['AMZN', 'MKTP'],
-      sourceDirection: 'bank_to_qbo',
+      sourceDirection: 'bank_to_gl',
       matchConfidence: 1.0,
       isActive: false,
     };
@@ -594,9 +594,9 @@ describe('reconcileMatches', () => {
       normalizedComparisonTokens: ['AMZN', 'MKTP', 'AB12345'],
       amount: -49.99,
     });
-    const qbo = buildTransaction({
-      id: 'qbo-amazon-inactive',
-      source: 'qbo',
+    const gl = buildTransaction({
+      id: 'gl-amazon-inactive',
+      source: 'gl',
       lineNumber: 2,
       transactionDate: '2025-03-10',
       normalizedComparisonTokens: ['AMAZON'],
@@ -604,7 +604,7 @@ describe('reconcileMatches', () => {
     });
 
     const result = reconcileMatches(
-      [bank, qbo],
+      [bank, gl],
       defaultReconciliationConfig.matching,
       [alias],
     );

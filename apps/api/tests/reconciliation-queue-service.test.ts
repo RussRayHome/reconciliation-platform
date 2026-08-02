@@ -54,7 +54,7 @@ const samplePayload = {
       mimetype: 'application/vnd.ms-excel',
       buffer: 'YmFuaw==',
     },
-    qboFile: { originalname: 'qbo.xlsx', mimetype: 'application/vnd.ms-excel', buffer: 'cWJv' },
+    glFile: { originalname: 'gl.xlsx', mimetype: 'application/vnd.ms-excel', buffer: 'cWJv' },
   },
 };
 

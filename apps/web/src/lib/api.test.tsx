@@ -28,7 +28,7 @@ const createPayload = () => ({
   bankFile: new File(['bank-bytes'], 'bank.xlsx', {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   }),
-  qboFile: new File(['qbo-bytes'], 'qbo.xlsx', {
+  glFile: new File(['gl-bytes'], 'gl.xlsx', {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   }),
   accountIdentifier: 'OPERATING-001',

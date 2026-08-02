@@ -1,4 +1,4 @@
-import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
+import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
 import { expect, test, type Page } from '@playwright/test';
 
 import { openSetup } from './auth';
@@ -50,9 +50,9 @@ const waitForStableLayout = async (page: Page): Promise<void> => {
 
 const runReconciliation = async (page: Page): Promise<void> => {
   const currentYear = new Date().getFullYear();
-  const [bankBuffer, qboBuffer] = await Promise.all([
+  const [bankBuffer, glBuffer] = await Promise.all([
     createSampleBankWorkbook(),
-    createSampleQboWorkbook(),
+    createSampleGlWorkbook(),
   ]);
 
   await openSetup(page);
@@ -62,10 +62,10 @@ const runReconciliation = async (page: Page): Promise<void> => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankBuffer,
   });
-  await page.locator('#qbo-workbook-input').setInputFiles({
-    name: 'qbo.xlsx',
+  await page.locator('#gl-workbook-input').setInputFiles({
+    name: 'gl.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer: qboBuffer,
+    buffer: glBuffer,
   });
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');

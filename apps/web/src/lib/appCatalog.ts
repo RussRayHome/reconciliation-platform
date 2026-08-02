@@ -478,7 +478,7 @@ export const rulesCatalog: RuleCatalogItem[] = [
     varianceMetrics: [depositInTransitMetric],
   },
   {
-    id: 'missing-from-qbo',
+    id: 'missing-from-gl',
     name: 'Missing from GL',
     description:
       'Classifies unmatched bank-side transactions as missing from GL after exact, review, and variance matching rules are exhausted.',
@@ -620,13 +620,13 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
     value: (summary) => summary.missingFromBank,
   },
   {
-    id: 'missing-in-qbo',
+    id: 'missing-in-gl',
     label: 'Missing in GL',
     helper: 'Bank-side items without GL support',
     tone: 'critical',
     icon: 'missing',
     iconLabel: 'Missing in GL items',
-    value: (summary) => summary.missingFromQBO,
+    value: (summary) => summary.missingFromGL,
   },
   {
     id: 'bank-duplicates',
@@ -638,13 +638,13 @@ export const summaryStatDefinitions: SummaryStatDefinition[] = [
     value: (summary) => summary.bankDuplicates,
   },
   {
-    id: 'qbo-duplicates',
+    id: 'gl-duplicates',
     label: 'GL duplicates',
     helper: 'Potential duplicate GL entries',
     tone: 'warning',
     icon: 'duplicate',
     iconLabel: 'Potential duplicate GL entries',
-    value: (summary) => summary.qboDuplicates,
+    value: (summary) => summary.glDuplicates,
   },
   {
     id: 'date-variances',

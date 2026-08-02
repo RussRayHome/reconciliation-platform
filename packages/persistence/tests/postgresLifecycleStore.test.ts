@@ -28,7 +28,7 @@ let container: StartedTestContainer;
 let pool: Pool;
 let startupError: Error | null = null;
 
-const buildSourceFile = (id: string, source: 'bank' | 'qbo'): SourceFile => ({
+const buildSourceFile = (id: string, source: 'bank' | 'gl'): SourceFile => ({
   id,
   source,
   fileName: `${source}.xlsx`,
@@ -44,7 +44,7 @@ const buildSourceFile = (id: string, source: 'bank' | 'qbo'): SourceFile => ({
 const buildRawRow = (
   id: string,
   sourceFileId: string,
-  source: 'bank' | 'qbo',
+  source: 'bank' | 'gl',
   lineNumber: number,
 ): RawTransactionRow => ({
   id,
@@ -64,7 +64,7 @@ const buildCanonicalRow = (
   id: string,
   rawRowId: string,
   sourceFileId: string,
-  source: 'bank' | 'qbo',
+  source: 'bank' | 'gl',
   lineNumber: number,
 ): NormalizedTransaction => ({
   id,
@@ -94,28 +94,28 @@ const buildCanonicalRow = (
 const buildSummary = (): SummaryMetrics => ({
   totalRecordsReviewed: 4,
   bankRecords: 2,
-  qboRecords: 2,
+  glRecords: 2,
   exactMatches: 1,
   probableMatches: 1,
   unmatchedItems: 1,
   duplicates: 0,
   bankDuplicates: 0,
-  qboDuplicates: 0,
+  glDuplicates: 0,
   dateVariances: 0,
   timingDifferences: 0,
   dataQualityIssues: 0,
   amountMismatches: 0,
   missingFromBank: 0,
-  missingFromQBO: 1,
+  missingFromGL: 1,
   unmatchedBankNetAmount: 0,
-  unmatchedQboNetAmount: 10,
+  unmatchedGlNetAmount: 10,
   cleanMatchedAmount: 20,
   unresolvedExposure: 10,
-  countsByCategory: { MissingFromQBO: 1 },
-  amountByCategory: { MissingFromQBO: 10 },
+  countsByCategory: { MissingFromGL: 1 },
+  amountByCategory: { MissingFromGL: 10 },
   charts: [
-    { id: 'countByCategory', title: 'Counts', data: [{ label: 'MissingFromQBO', value: 1 }] },
-    { id: 'exposureByCategory', title: 'Exposure', data: [{ label: 'MissingFromQBO', value: 10 }] },
+    { id: 'countByCategory', title: 'Counts', data: [{ label: 'MissingFromGL', value: 1 }] },
+    { id: 'exposureByCategory', title: 'Exposure', data: [{ label: 'MissingFromGL', value: 10 }] },
   ],
 });
 
@@ -125,7 +125,7 @@ const createRegisteredJob = async (
 ) => {
   const jobId = overrides.jobId ?? randomUUID();
   const bankSourceFileId = overrides.bankSourceFileId ?? randomUUID();
-  const qboSourceFileId = overrides.qboSourceFileId ?? randomUUID();
+  const glSourceFileId = overrides.glSourceFileId ?? randomUUID();
   const startedAt = overrides.startedAt ?? new Date().toISOString();
 
   await store.createJob({
@@ -149,25 +149,25 @@ const createRegisteredJob = async (
         uploadedAt: startedAt,
       },
       {
-        id: qboSourceFileId,
-        sourceSystem: 'qbo',
+        id: glSourceFileId,
+        sourceSystem: 'gl',
         sourceFormat: 'xlsx',
-        fileName: 'qbo.xlsx',
+        fileName: 'gl.xlsx',
         mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         sizeBytes: 1024,
-        sha256: 'qbo-sha',
+        sha256: 'gl-sha',
         uploadedAt: startedAt,
       },
     ],
   });
 
-  return { jobId, bankSourceFileId, qboSourceFileId, startedAt };
+  return { jobId, bankSourceFileId, glSourceFileId, startedAt };
 };
 
 type CreateJobOverrides = {
   jobId: string;
   bankSourceFileId: string;
-  qboSourceFileId: string;
+  glSourceFileId: string;
   startedAt: string;
   correlationId: string;
   rulepackVersion: string;
@@ -178,7 +178,7 @@ type CreateJobOverrides = {
 };
 
 const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore) => {
-  const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+  const { jobId, bankSourceFileId, glSourceFileId } = await createRegisteredJob(store, {
     correlationId: 'corr-review-ready',
     accountIdentifier: 'OPERATING-001',
     periodLabel: 'January 2025',
@@ -188,11 +188,11 @@ const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore)
 
   const sourceFiles = [
     buildSourceFile(bankSourceFileId, 'bank'),
-    buildSourceFile(qboSourceFileId, 'qbo'),
+    buildSourceFile(glSourceFileId, 'gl'),
   ];
   const rawRows = [
     buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
-    buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+    buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
   ];
   await store.persistParsedRows(jobId, sourceFiles, rawRows);
 
@@ -210,7 +210,7 @@ const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore)
     reason: 'Needs reviewer confirmation',
     score: 0.78,
     bankTransactionId: canonicalRows[0]?.id,
-    qboTransactionId: canonicalRows[1]?.id,
+    glTransactionId: canonicalRows[1]?.id,
     dateDifferenceDays: 1,
     amountDifference: 0,
     evidence: ['Reference mismatch'],
@@ -326,7 +326,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
         'reconciliation_job_completed_report_idx',
         'reconciliation_match_result_job_result_bucket_created_idx',
         'reconciliation_match_result_job_bank_transaction_lookup_idx',
-        'reconciliation_match_result_job_qbo_transaction_lookup_idx',
+        'reconciliation_match_result_job_gl_transaction_lookup_idx',
         'reconciliation_exception_job_line_order_idx',
         'reconciliation_exception_job_category_line_order_idx',
         'reconciliation_review_decision_job_created_idx',
@@ -368,12 +368,12 @@ describe('PostgresReconciliationLifecycleStore', () => {
         {
           // Registered without a buffer: must be reported as MISSING rather than implying a copy.
           id: randomUUID(),
-          sourceSystem: 'qbo',
+          sourceSystem: 'gl',
           sourceFormat: 'xlsx',
-          fileName: 'qbo.xlsx',
+          fileName: 'gl.xlsx',
           mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           sizeBytes: 1024,
-          sha256: 'qbo-sha',
+          sha256: 'gl-sha',
           uploadedAt: startedAt,
         },
       ],
@@ -405,7 +405,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
 
     expect(recovery.rows).toEqual([
       { source_system: 'bank', recovery_status: 'VERIFIED', ingestion_mode: 'DIRECT' },
-      { source_system: 'qbo', recovery_status: 'MISSING', ingestion_mode: 'DIRECT' },
+      { source_system: 'gl', recovery_status: 'MISSING', ingestion_mode: 'DIRECT' },
     ]);
   });
 
@@ -479,7 +479,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     });
     const jobId = randomUUID();
     const bankSourceFileId = randomUUID();
-    const qboSourceFileId = randomUUID();
+    const glSourceFileId = randomUUID();
     const startedAt = new Date().toISOString();
 
     await store.createJob({
@@ -503,13 +503,13 @@ describe('PostgresReconciliationLifecycleStore', () => {
           uploadedAt: startedAt,
         },
         {
-          id: qboSourceFileId,
-          sourceSystem: 'qbo',
+          id: glSourceFileId,
+          sourceSystem: 'gl',
           sourceFormat: 'xlsx',
-          fileName: 'qbo.xlsx',
+          fileName: 'gl.xlsx',
           mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           sizeBytes: 1024,
-          sha256: 'qbo-sha',
+          sha256: 'gl-sha',
           uploadedAt: startedAt,
         },
       ],
@@ -517,13 +517,13 @@ describe('PostgresReconciliationLifecycleStore', () => {
 
     const sourceFiles = [
       buildSourceFile(bankSourceFileId, 'bank'),
-      buildSourceFile(qboSourceFileId, 'qbo'),
+      buildSourceFile(glSourceFileId, 'gl'),
     ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 3),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 3),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 3),
     ];
     await store.persistParsedRows(jobId, sourceFiles, rawRows);
 
@@ -541,7 +541,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       reason: 'Exact match',
       score: 0.93,
       bankTransactionId: canonicalRows[0]?.id,
-      qboTransactionId: canonicalRows[2]?.id,
+      glTransactionId: canonicalRows[2]?.id,
       dateDifferenceDays: 0,
       amountDifference: 0,
       evidence: ['Amounts agree'],
@@ -555,7 +555,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       reason: 'Needs review',
       score: 0.78,
       bankTransactionId: canonicalRows[1]?.id,
-      qboTransactionId: canonicalRows[3]?.id,
+      glTransactionId: canonicalRows[3]?.id,
       dateDifferenceDays: 1,
       amountDifference: 0,
       evidence: ['Reference mismatch'],
@@ -567,7 +567,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       confidence: 'Probable',
       category: 'DepositGroupingIssue',
       bankTransactionIds: [canonicalRows[0]?.id ?? ''],
-      qboTransactionIds: [canonicalRows[2]?.id ?? ''],
+      glTransactionIds: [canonicalRows[2]?.id ?? ''],
       bankMembers: [
         {
           transactionId: canonicalRows[0]?.id ?? '',
@@ -577,11 +577,11 @@ describe('PostgresReconciliationLifecycleStore', () => {
           amount: 20,
         },
       ],
-      qboMembers: [
+      glMembers: [
         {
           transactionId: canonicalRows[2]?.id ?? '',
-          source: 'qbo',
-          spreadsheetFileName: 'qbo.xlsx',
+          source: 'gl',
+          spreadsheetFileName: 'gl.xlsx',
           lineNumber: 2,
           amount: 20,
         },
@@ -605,21 +605,21 @@ describe('PostgresReconciliationLifecycleStore', () => {
     const exception: ExceptionItem = {
       id: randomUUID(),
       runId: jobId,
-      category: 'MissingFromQBO',
+      category: 'MissingFromGL',
       severity: 'High',
       source: 'bank',
       spreadsheetFileName: 'bank.xlsx',
       lineNumber: 3,
       transactionDate: '2025-01-01',
       amount: 10,
-      errorMessage: 'No QBO counterpart found',
+      errorMessage: 'No GL counterpart found',
       ruleTrace: {
-        ruleId: 'residual-missing-from-qbo',
-        ruleName: 'Missing from QBO',
+        ruleId: 'residual-missing-from-gl',
+        ruleName: 'Missing from GL',
         reason: 'No counterpart remained after matching.',
-        evidence: ['No QBO candidate'],
+        evidence: ['No GL candidate'],
       },
-      recommendedNextActions: ['Verify QBO export completeness'],
+      recommendedNextActions: ['Verify GL export completeness'],
       normalizedComparisonTokens: ['ROW', '3'],
       relatedTransactionIds: [canonicalRows[1]?.id ?? ''],
     };
@@ -816,22 +816,22 @@ describe('PostgresReconciliationLifecycleStore', () => {
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
-    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+    const { jobId, bankSourceFileId, glSourceFileId } = await createRegisteredJob(store, {
       correlationId: 'corr-concurrent-import',
       inputFingerprint: 'fingerprint-concurrent-import',
     });
 
     const sourceFiles = [
       buildSourceFile(bankSourceFileId, 'bank'),
-      buildSourceFile(qboSourceFileId, 'qbo'),
+      buildSourceFile(glSourceFileId, 'gl'),
     ];
     const firstAttemptRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
     const secondAttemptRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 3),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 3),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 3),
     ];
 
     const outcomes = await Promise.allSettled([
@@ -1070,18 +1070,18 @@ describe('PostgresReconciliationLifecycleStore', () => {
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
-    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+    const { jobId, bankSourceFileId, glSourceFileId } = await createRegisteredJob(store, {
       correlationId: 'corr-orphan-match',
       inputFingerprint: 'fingerprint-orphan-match',
     });
 
     const sourceFiles = [
       buildSourceFile(bankSourceFileId, 'bank'),
-      buildSourceFile(qboSourceFileId, 'qbo'),
+      buildSourceFile(glSourceFileId, 'gl'),
     ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
     await store.persistParsedRows(jobId, sourceFiles, rawRows);
 
@@ -1103,7 +1103,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
             reason: 'Should fail because one referenced row does not exist.',
             score: 0.99,
             bankTransactionId: canonicalRows[0]?.id,
-            qboTransactionId: randomUUID(),
+            glTransactionId: randomUUID(),
             dateDifferenceDays: 0,
             amountDifference: 0,
             evidence: ['Foreign key should reject this row.'],
@@ -1138,18 +1138,18 @@ describe('PostgresReconciliationLifecycleStore', () => {
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
-    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+    const { jobId, bankSourceFileId, glSourceFileId } = await createRegisteredJob(store, {
       correlationId: 'corr-duplicate-probable-match',
       inputFingerprint: 'fingerprint-duplicate-probable-match',
     });
 
     const sourceFiles = [
       buildSourceFile(bankSourceFileId, 'bank'),
-      buildSourceFile(qboSourceFileId, 'qbo'),
+      buildSourceFile(glSourceFileId, 'gl'),
     ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
     await store.persistParsedRows(jobId, sourceFiles, rawRows);
 
@@ -1167,7 +1167,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       reason: 'Needs review',
       score: 0.78,
       bankTransactionId: canonicalRows[0]?.id,
-      qboTransactionId: canonicalRows[1]?.id,
+      glTransactionId: canonicalRows[1]?.id,
       dateDifferenceDays: 1,
       amountDifference: 0,
       evidence: ['Reference mismatch'],
@@ -1207,18 +1207,18 @@ describe('PostgresReconciliationLifecycleStore', () => {
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
-    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+    const { jobId, bankSourceFileId, glSourceFileId } = await createRegisteredJob(store, {
       correlationId: 'corr-orphan-review',
       inputFingerprint: 'fingerprint-orphan-review',
     });
 
     const sourceFiles = [
       buildSourceFile(bankSourceFileId, 'bank'),
-      buildSourceFile(qboSourceFileId, 'qbo'),
+      buildSourceFile(glSourceFileId, 'gl'),
     ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
     await store.persistParsedRows(jobId, sourceFiles, rawRows);
 
@@ -1241,7 +1241,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
           {
             id: randomUUID(),
             runId: jobId,
-            category: 'MissingFromQBO',
+            category: 'MissingFromGL',
             severity: 'High',
             source: 'bank',
             spreadsheetFileName: 'bank.xlsx',
@@ -1250,14 +1250,14 @@ describe('PostgresReconciliationLifecycleStore', () => {
             amount: 20,
             errorMessage: 'Should fail because the rule lineage points at a missing row.',
             ruleTrace: {
-              ruleId: 'residual-missing-from-qbo',
-              ruleName: 'Missing from QBO',
+              ruleId: 'residual-missing-from-gl',
+              ruleName: 'Missing from GL',
               reason: 'No counterpart remained after matching.',
               evidence: ['Missing counterpart'],
               counterpart: {
                 transactionId: randomUUID(),
-                source: 'qbo',
-                spreadsheetFileName: 'qbo.xlsx',
+                source: 'gl',
+                spreadsheetFileName: 'gl.xlsx',
                 lineNumber: 2,
               },
             },
@@ -1300,18 +1300,18 @@ describe('PostgresReconciliationLifecycleStore', () => {
     }
 
     const store = new PostgresReconciliationLifecycleStore(pool);
-    const { jobId, bankSourceFileId, qboSourceFileId } = await createRegisteredJob(store, {
+    const { jobId, bankSourceFileId, glSourceFileId } = await createRegisteredJob(store, {
       correlationId: 'corr-query-budget',
       inputFingerprint: 'fingerprint-query-budget',
     });
 
     const sourceFiles = [
       buildSourceFile(bankSourceFileId, 'bank'),
-      buildSourceFile(qboSourceFileId, 'qbo'),
+      buildSourceFile(glSourceFileId, 'gl'),
     ];
     const rawRows = [
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
-      buildRawRow(randomUUID(), qboSourceFileId, 'qbo', 2),
+      buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
     await store.persistParsedRows(jobId, sourceFiles, rawRows);
 
@@ -1330,7 +1330,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     const exceptions: ExceptionItem[] = Array.from({ length: 20 }, (_, index) => ({
       id: randomUUID(),
       runId: jobId,
-      category: 'MissingFromQBO',
+      category: 'MissingFromGL',
       severity: 'High',
       source: 'bank',
       spreadsheetFileName: 'bank.xlsx',
@@ -1339,8 +1339,8 @@ describe('PostgresReconciliationLifecycleStore', () => {
       amount: 10 + index,
       errorMessage: `Synthetic exception ${index + 1}`,
       ruleTrace: {
-        ruleId: 'residual-missing-from-qbo',
-        ruleName: 'Missing from QBO',
+        ruleId: 'residual-missing-from-gl',
+        ruleName: 'Missing from GL',
         reason: 'Synthetic query-budget scenario',
         evidence: ['Synthetic fixture row'],
       },

@@ -1,12 +1,12 @@
 import {
   allExceptionCategories,
   createAllExceptionsBankWorkbook,
-  createAllExceptionsQboWorkbook,
+  createAllExceptionsGlWorkbook,
   createSampleBankWorkbook,
-  createSampleQboWorkbook,
+  createSampleGlWorkbook,
   createWorkbookFromRows,
   nonStandardHeaderBankRows,
-  nonStandardHeaderQboRows,
+  nonStandardHeaderGlRows,
 } from '@recon/test-fixtures';
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -51,7 +51,7 @@ const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
 
   const exceptionRows = Array.from({ length: exceptionCount }, (_, index) => ({
     id: `exception-${index + 1}`,
-    category: 'MissingFromQBO',
+    category: 'MissingFromGL',
     severity: 'High',
     source_system: 'bank',
     spreadsheet_file_name: 'bank.xlsx',
@@ -60,8 +60,8 @@ const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
     amount: 10 + index,
     error_message: `Synthetic exception ${index + 1}`,
     rule_trace_json: {
-      ruleId: 'residual-missing-from-qbo',
-      ruleName: 'Missing from QBO',
+      ruleId: 'residual-missing-from-gl',
+      ruleName: 'Missing from GL',
       reason: 'Synthetic query-budget fixture',
       evidence: ['fixture'],
     },
@@ -77,25 +77,25 @@ const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
   const summaryRow = {
     total_records_reviewed: exceptionCount,
     bank_records: exceptionCount,
-    qbo_records: exceptionCount,
+    gl_records: exceptionCount,
     exact_matches: 0,
     probable_matches: 0,
     unmatched_items: exceptionCount,
     duplicates: 0,
     bank_duplicates: 0,
-    qbo_duplicates: 0,
+    gl_duplicates: 0,
     date_variances: 0,
     timing_differences: 0,
     data_quality_issues: 0,
     amount_mismatches: 0,
     missing_from_bank: 0,
-    missing_from_qbo: exceptionCount,
+    missing_from_gl: exceptionCount,
     unmatched_bank_net_amount: 0,
-    unmatched_qbo_net_amount: exceptionCount * 10,
+    unmatched_gl_net_amount: exceptionCount * 10,
     clean_matched_amount: 0,
     unresolved_exposure: exceptionCount * 10,
-    counts_by_category_json: { MissingFromQBO: exceptionCount },
-    amount_by_category_json: { MissingFromQBO: exceptionCount * 10 },
+    counts_by_category_json: { MissingFromGL: exceptionCount },
+    amount_by_category_json: { MissingFromGL: exceptionCount * 10 },
     charts_json: [],
   };
 
@@ -191,9 +191,9 @@ const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
 describe('reconciliation API', () => {
   it('runs reconciliation and exposes summary, exceptions, and workbook export endpoints', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
@@ -204,8 +204,8 @@ describe('reconciliation API', () => {
         filename: 'bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -331,9 +331,9 @@ describe('reconciliation API', () => {
 
   it('handles non-standard bank headers for account 5703 without cascading invalid amount errors', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createWorkbookFromRows(nonStandardHeaderBankRows),
-      createWorkbookFromRows(nonStandardHeaderQboRows),
+      createWorkbookFromRows(nonStandardHeaderGlRows),
     ]);
 
     const runResponse = await request(app)
@@ -344,8 +344,8 @@ describe('reconciliation API', () => {
         filename: 'bank-5703.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo-5703.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl-5703.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -363,9 +363,9 @@ describe('reconciliation API', () => {
 
   it('accepts the combined all-exceptions workbook pair and surfaces every exception category through the API', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createAllExceptionsBankWorkbook(),
-      createAllExceptionsQboWorkbook(),
+      createAllExceptionsGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
@@ -376,8 +376,8 @@ describe('reconciliation API', () => {
         filename: 'sample-all-exceptions-bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'sample-all-exceptions-qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'sample-all-exceptions-gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -414,9 +414,9 @@ describe('reconciliation API', () => {
 
   it('supports paginated exception responses when limit and offset are provided', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createAllExceptionsBankWorkbook(),
-      createAllExceptionsQboWorkbook(),
+      createAllExceptionsGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
@@ -427,8 +427,8 @@ describe('reconciliation API', () => {
         filename: 'sample-all-exceptions-bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'sample-all-exceptions-qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'sample-all-exceptions-gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -457,9 +457,9 @@ describe('reconciliation API', () => {
 
   it('filters paged exceptions by category and severity and rejects unknown filter values', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createAllExceptionsBankWorkbook(),
-      createAllExceptionsQboWorkbook(),
+      createAllExceptionsGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
@@ -470,8 +470,8 @@ describe('reconciliation API', () => {
         filename: 'sample-all-exceptions-bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'sample-all-exceptions-qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'sample-all-exceptions-gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -570,9 +570,9 @@ describe('reconciliation API', () => {
 
   it('accepts browser uploads when the workbook MIME type is application/octet-stream', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const response = await request(app)
@@ -581,8 +581,8 @@ describe('reconciliation API', () => {
         filename: 'bank.xlsx',
         contentType: 'application/octet-stream',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/octet-stream',
       })
       .expect(201);
@@ -592,13 +592,13 @@ describe('reconciliation API', () => {
       summary: { totalRecordsReviewed: number };
     };
 
-    expect(payload.sourceFiles.map((file) => file.fileName)).toEqual(['bank.xlsx', 'qbo.xlsx']);
+    expect(payload.sourceFiles.map((file) => file.fileName)).toEqual(['bank.xlsx', 'gl.xlsx']);
     expect(payload.summary.totalRecordsReviewed).toBeGreaterThan(0);
   });
 
   it('rejects non-xlsx uploads with a validation error', async () => {
     const app = createApp();
-    const qboBuffer = await createSampleQboWorkbook();
+    const glBuffer = await createSampleGlWorkbook();
 
     const response = await request(app)
       .post('/api/reconciliation/run')
@@ -606,8 +606,8 @@ describe('reconciliation API', () => {
         filename: 'bank.txt',
         contentType: 'text/plain',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/octet-stream',
       })
       .expect(400);
@@ -621,7 +621,7 @@ describe('reconciliation API', () => {
 
     const response = await request(app).post('/api/reconciliation/run').expect(400);
     const payload = response.body as { message: string };
-    expect(payload.message).toContain('Both bankFile and qboFile');
+    expect(payload.message).toContain('Both bankFile and glFile');
   });
 
   it('returns 404 when no latest reconciliation run has been stored yet', async () => {
@@ -641,9 +641,9 @@ describe('reconciliation API', () => {
     try {
       const repositoryFilePath = path.join(snapshotDirectory, 'latest-run.json');
       const firstApp = createApp(new FileBackedRunRepository(repositoryFilePath));
-      const [bankBuffer, qboBuffer] = await Promise.all([
+      const [bankBuffer, glBuffer] = await Promise.all([
         createSampleBankWorkbook(),
-        createSampleQboWorkbook(),
+        createSampleGlWorkbook(),
       ]);
 
       const runResponse = await request(firstApp)
@@ -652,8 +652,8 @@ describe('reconciliation API', () => {
           filename: 'bank.xlsx',
           contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         })
-        .attach('qboFile', qboBuffer, {
-          filename: 'qbo.xlsx',
+        .attach('glFile', glBuffer, {
+          filename: 'gl.xlsx',
           contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         })
         .expect(201);
@@ -721,15 +721,15 @@ describe('reconciliation API', () => {
   it('clears a reviewer decision through the delete endpoint and is idempotent', async () => {
     const app = createApp();
     const spreadsheetMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, { filename: 'bank.xlsx', contentType: spreadsheetMime })
-      .attach('qboFile', qboBuffer, { filename: 'qbo.xlsx', contentType: spreadsheetMime })
+      .attach('glFile', glBuffer, { filename: 'gl.xlsx', contentType: spreadsheetMime })
       .expect(201);
 
     const runPayload = runResponse.body as {
@@ -773,15 +773,15 @@ describe('reconciliation API', () => {
   it('rejects a reviewer decision delete without a valid targetType', async () => {
     const app = createApp();
     const spreadsheetMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, { filename: 'bank.xlsx', contentType: spreadsheetMime })
-      .attach('qboFile', qboBuffer, { filename: 'qbo.xlsx', contentType: spreadsheetMime })
+      .attach('glFile', glBuffer, { filename: 'gl.xlsx', contentType: spreadsheetMime })
       .expect(201);
 
     const { id } = runResponse.body as { id: string };
@@ -818,9 +818,9 @@ describe('reconciliation API', () => {
 
   it('accepts ConfirmedException and ReclassifiedException decisions for ExceptionItem targets', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
@@ -829,8 +829,8 @@ describe('reconciliation API', () => {
         filename: 'bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -863,7 +863,7 @@ describe('reconciliation API', () => {
         targetType: 'ExceptionItem',
         targetId: exception2?.id,
         outcome: 'ReclassifiedException',
-        finalCategory: 'MissingFromQBO',
+        finalCategory: 'MissingFromGL',
       })
       .expect(201);
 
@@ -872,14 +872,14 @@ describe('reconciliation API', () => {
       finalCategory: string;
     };
     expect(reclassifiedDecision.outcome).toBe('ReclassifiedException');
-    expect(reclassifiedDecision.finalCategory).toBe('MissingFromQBO');
+    expect(reclassifiedDecision.finalCategory).toBe('MissingFromGL');
   });
 
   it('rejects reviewer decisions with missing or invalid field values', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
@@ -888,8 +888,8 @@ describe('reconciliation API', () => {
         filename: 'bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -931,9 +931,9 @@ describe('reconciliation API', () => {
 
   it('rejects invalid reviewer decision payloads', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const runResponse = await request(app)
@@ -942,8 +942,8 @@ describe('reconciliation API', () => {
         filename: 'bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);

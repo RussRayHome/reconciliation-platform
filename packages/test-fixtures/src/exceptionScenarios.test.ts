@@ -23,17 +23,17 @@ describe('exception scenario combined rows', () => {
 
     const restoreFixture = addTemporaryFixture({
       name: 'coverage-empty-rows',
-      expectedCategory: 'MissingFromQBO',
+      expectedCategory: 'MissingFromGL',
       expectedCount: 1,
       bankRows: [],
-      qboRows: [],
+      glRows: [],
     });
 
     try {
       const combined = buildAllExceptionsCombinedRows();
 
       expect(combined.bankRows).toHaveLength(baseline.bankRows.length);
-      expect(combined.qboRows).toHaveLength(baseline.qboRows.length);
+      expect(combined.glRows).toHaveLength(baseline.glRows.length);
     } finally {
       restoreFixture();
     }
@@ -42,25 +42,25 @@ describe('exception scenario combined rows', () => {
   it('ignores unmapped columns while preserving mapped values', () => {
     const restoreFixture = addTemporaryFixture({
       name: 'coverage-unmapped-header',
-      expectedCategory: 'MissingFromQBO',
+      expectedCategory: 'MissingFromGL',
       expectedCount: 1,
       bankRows: [
         ['Unknown Header', 'Date'],
         ['ignored-bank-value', '2026-06-01'],
       ],
-      qboRows: [
+      glRows: [
         ['Unknown Header', 'Amount'],
-        ['ignored-qbo-value', 123.45],
+        ['ignored-gl-value', 123.45],
       ],
     });
 
     try {
       const combined = buildAllExceptionsCombinedRows();
       const bankRow = combined.bankRows.at(-1);
-      const qboRow = combined.qboRows.at(-1);
+      const glRow = combined.glRows.at(-1);
 
       expect(bankRow).toEqual(['2026-06-01', '', '', '', '', '', '']);
-      expect(qboRow).toEqual(['', '', '', '', '', '', 123.45]);
+      expect(glRow).toEqual(['', '', '', '', '', '', 123.45]);
     } finally {
       restoreFixture();
     }

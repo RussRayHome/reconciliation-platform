@@ -39,7 +39,7 @@ describe('normalizeTransactions edge cases', () => {
       [
         buildRow({
           id: 'serial-date',
-          source: 'qbo',
+          source: 'gl',
           transactionDateRaw: '45315',
           amountRaw: '125.00',
         }),
@@ -64,10 +64,10 @@ describe('normalizeTransactions edge cases', () => {
     const normalized = normalizeTransactions(
       'run-edge-amounts',
       [
-        buildRow({ id: 'paren-negative', source: 'qbo', amountRaw: '(1000.00)' }),
-        buildRow({ id: 'trailing-minus', source: 'qbo', amountRaw: '250-' }),
-        buildRow({ id: 'dr-marker', source: 'qbo', amountRaw: '900 DR' }),
-        buildRow({ id: 'cr-marker', source: 'qbo', amountRaw: '900 CR' }),
+        buildRow({ id: 'paren-negative', source: 'gl', amountRaw: '(1000.00)' }),
+        buildRow({ id: 'trailing-minus', source: 'gl', amountRaw: '250-' }),
+        buildRow({ id: 'dr-marker', source: 'gl', amountRaw: '900 DR' }),
+        buildRow({ id: 'cr-marker', source: 'gl', amountRaw: '900 CR' }),
       ],
       defaultReconciliationConfig,
     );
@@ -84,20 +84,20 @@ describe('normalizeTransactions edge cases', () => {
       [
         buildRow({
           id: 'missing-amount',
-          source: 'qbo',
+          source: 'gl',
           transactionDateRaw: '2025-01-15',
           amountRaw: undefined,
         }),
         buildRow({
           id: 'missing-date',
-          source: 'qbo',
+          source: 'gl',
           transactionDateRaw: 'not-a-date',
           postingDateRaw: undefined,
           amountRaw: '50.00',
         }),
         buildRow({
           id: 'zero-amount',
-          source: 'qbo',
+          source: 'gl',
           transactionDateRaw: '2025-01-15',
           amountRaw: '0',
         }),

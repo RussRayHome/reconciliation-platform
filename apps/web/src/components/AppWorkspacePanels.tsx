@@ -129,11 +129,11 @@ const metricConsequenceByMetric: Record<
   },
   'duplicate-date-window-days': {
     label: 'duplicate entries',
-    value: (summary) => summary.bankDuplicates + summary.qboDuplicates,
+    value: (summary) => summary.bankDuplicates + summary.glDuplicates,
   },
   'duplicate-similarity-threshold': {
     label: 'duplicate entries',
-    value: (summary) => summary.bankDuplicates + summary.qboDuplicates,
+    value: (summary) => summary.bankDuplicates + summary.glDuplicates,
   },
 };
 
@@ -294,7 +294,7 @@ function SummaryVerdict({
   run: RunData;
 }>) {
   const summary = run.summary;
-  const difference = summary.unmatchedBankNetAmount - summary.unmatchedQboNetAmount;
+  const difference = summary.unmatchedBankNetAmount - summary.unmatchedGlNetAmount;
 
   const figures: ReadonlyArray<{
     label: string;
@@ -302,7 +302,7 @@ function SummaryVerdict({
     tone: 'neutral' | 'warning' | 'critical' | 'positive';
   }> = [
     { label: 'Bank unmatched (net)', value: summary.unmatchedBankNetAmount, tone: 'neutral' },
-    { label: 'Book unmatched (net)', value: summary.unmatchedQboNetAmount, tone: 'neutral' },
+    { label: 'Book unmatched (net)', value: summary.unmatchedGlNetAmount, tone: 'neutral' },
     { label: 'Difference', value: difference, tone: difference === 0 ? 'neutral' : 'warning' },
     {
       label: 'Unexplained residual',

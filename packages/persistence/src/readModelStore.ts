@@ -52,9 +52,9 @@ type GroupedMatchRow = {
   confidence: GroupedMatchResult['confidence'];
   category: GroupedMatchResult['category'] | null;
   bank_transaction_ids: unknown;
-  qbo_transaction_ids: unknown;
+  gl_transaction_ids: unknown;
   bank_members_json: unknown;
-  qbo_members_json: unknown;
+  gl_members_json: unknown;
   total_amount: string | number;
   date_difference_days: number | null;
   score: number;
@@ -67,7 +67,7 @@ type GroupedMatchRow = {
 type MatchResultRow = {
   id: string;
   bank_transaction_id: string | null;
-  qbo_transaction_id: string | null;
+  gl_transaction_id: string | null;
   disposition: MatchResult['disposition'];
   confidence: MatchResult['confidence'];
   rule_id: string | null;
@@ -127,21 +127,21 @@ type ReviewerDecisionRow = {
 type SummaryRow = {
   total_records_reviewed: number;
   bank_records: number;
-  qbo_records: number;
+  gl_records: number;
   exact_matches: number;
   probable_matches: number;
   unmatched_items: number;
   duplicates: number;
   bank_duplicates: number;
-  qbo_duplicates: number;
+  gl_duplicates: number;
   date_variances: number;
   timing_differences: number;
   data_quality_issues: number;
   amount_mismatches: number;
   missing_from_bank: number;
-  missing_from_qbo: number;
+  missing_from_gl: number;
   unmatched_bank_net_amount: string | number;
-  unmatched_qbo_net_amount: string | number;
+  unmatched_gl_net_amount: string | number;
   clean_matched_amount: string | number;
   unresolved_exposure: string | number;
   counts_by_category_json: unknown;
@@ -229,9 +229,9 @@ const mapGroupedMatch = (row: GroupedMatchRow): GroupedMatchResult => ({
   confidence: row.confidence,
   category: row.category ?? undefined,
   bankTransactionIds: asStringArray(row.bank_transaction_ids),
-  qboTransactionIds: asStringArray(row.qbo_transaction_ids),
+  glTransactionIds: asStringArray(row.gl_transaction_ids),
   bankMembers: mapGroupedMembers(row.bank_members_json),
-  qboMembers: mapGroupedMembers(row.qbo_members_json),
+  glMembers: mapGroupedMembers(row.gl_members_json),
   totalAmount: asNumber(row.total_amount) ?? 0,
   dateDifferenceDays: row.date_difference_days,
   score: row.score,
@@ -244,7 +244,7 @@ const mapGroupedMatch = (row: GroupedMatchRow): GroupedMatchResult => ({
 const mapMatchResult = (row: MatchResultRow): MatchResult => ({
   id: row.id,
   bankTransactionId: row.bank_transaction_id ?? undefined,
-  qboTransactionId: row.qbo_transaction_id ?? undefined,
+  glTransactionId: row.gl_transaction_id ?? undefined,
   disposition: row.disposition,
   confidence: row.confidence,
   ruleId: row.rule_id ?? undefined,
@@ -310,21 +310,21 @@ const mapReviewerDecision = (runId: string, row: ReviewerDecisionRow): ReviewerD
 const mapSummary = (row: SummaryRow): SummaryMetrics => ({
   totalRecordsReviewed: row.total_records_reviewed,
   bankRecords: row.bank_records,
-  qboRecords: row.qbo_records,
+  glRecords: row.gl_records,
   exactMatches: row.exact_matches,
   probableMatches: row.probable_matches,
   unmatchedItems: row.unmatched_items,
   duplicates: row.duplicates,
   bankDuplicates: row.bank_duplicates,
-  qboDuplicates: row.qbo_duplicates,
+  glDuplicates: row.gl_duplicates,
   dateVariances: row.date_variances,
   timingDifferences: row.timing_differences,
   dataQualityIssues: row.data_quality_issues,
   amountMismatches: row.amount_mismatches,
   missingFromBank: row.missing_from_bank,
-  missingFromQBO: row.missing_from_qbo,
+  missingFromGL: row.missing_from_gl,
   unmatchedBankNetAmount: asNumber(row.unmatched_bank_net_amount) ?? 0,
-  unmatchedQboNetAmount: asNumber(row.unmatched_qbo_net_amount) ?? 0,
+  unmatchedGlNetAmount: asNumber(row.unmatched_gl_net_amount) ?? 0,
   cleanMatchedAmount: asNumber(row.clean_matched_amount) ?? 0,
   unresolvedExposure: asNumber(row.unresolved_exposure) ?? 0,
   countsByCategory: asObject<Record<string, number>>(row.counts_by_category_json, {}),
@@ -438,21 +438,21 @@ export class PostgresReconciliationReadModelStore {
       summary: summary ?? {
         totalRecordsReviewed: 0,
         bankRecords: 0,
-        qboRecords: 0,
+        glRecords: 0,
         exactMatches: 0,
         probableMatches: 0,
         unmatchedItems: 0,
         duplicates: 0,
         bankDuplicates: 0,
-        qboDuplicates: 0,
+        glDuplicates: 0,
         dateVariances: 0,
         timingDifferences: 0,
         dataQualityIssues: 0,
         amountMismatches: 0,
         missingFromBank: 0,
-        missingFromQBO: 0,
+        missingFromGL: 0,
         unmatchedBankNetAmount: 0,
-        unmatchedQboNetAmount: 0,
+        unmatchedGlNetAmount: 0,
         cleanMatchedAmount: 0,
         unresolvedExposure: 0,
         countsByCategory: {},
@@ -470,10 +470,10 @@ export class PostgresReconciliationReadModelStore {
    */
   async findRunSummaryById(runId: string): Promise<SummaryMetrics | undefined> {
     const result = await this.pool.query<SummaryRow>(
-      `SELECT total_records_reviewed, bank_records, qbo_records, exact_matches, probable_matches,
-              unmatched_items, duplicates, bank_duplicates, qbo_duplicates, date_variances,
+      `SELECT total_records_reviewed, bank_records, gl_records, exact_matches, probable_matches,
+              unmatched_items, duplicates, bank_duplicates, gl_duplicates, date_variances,
               timing_differences, data_quality_issues, amount_mismatches, missing_from_bank,
-              missing_from_qbo, unmatched_bank_net_amount, unmatched_qbo_net_amount,
+              missing_from_gl, unmatched_bank_net_amount, unmatched_gl_net_amount,
               clean_matched_amount, unresolved_exposure, counts_by_category_json,
               amount_by_category_json, charts_json
          FROM reconciliation_job_summary
@@ -588,8 +588,8 @@ export class PostgresReconciliationReadModelStore {
 
   private async listGroupedMatchResults(runId: string): Promise<GroupedMatchResult[]> {
     const result = await this.pool.query<GroupedMatchRow>(
-      `SELECT id, disposition, confidence, category, bank_transaction_ids, qbo_transaction_ids,
-              bank_members_json, qbo_members_json, total_amount, date_difference_days,
+      `SELECT id, disposition, confidence, category, bank_transaction_ids, gl_transaction_ids,
+              bank_members_json, gl_members_json, total_amount, date_difference_days,
               score, rule_id, rule_name, reason, evidence_json
          FROM reconciliation_match_group
         WHERE job_id = $1
@@ -602,7 +602,7 @@ export class PostgresReconciliationReadModelStore {
 
   private async listProbableMatches(runId: string): Promise<MatchResult[]> {
     const result = await this.pool.query<MatchResultRow>(
-      `SELECT id, bank_transaction_id, qbo_transaction_id, disposition, confidence, rule_id,
+      `SELECT id, bank_transaction_id, gl_transaction_id, disposition, confidence, rule_id,
               rule_name, reason, score, amount_difference, date_difference_days,
               evidence_json, likely_matching_reference, exception_category
          FROM reconciliation_match_result
@@ -647,7 +647,7 @@ type PayeeAliasRow = {
   bank_pattern: string;
   canonical_payee_name: string;
   normalized_tokens: string[] | null;
-  source_direction: 'bank_to_qbo' | 'bidirectional';
+  source_direction: 'bank_to_gl' | 'bidirectional';
   match_confidence: number;
   is_active: boolean;
 };
@@ -669,7 +669,7 @@ export interface CreatePayeeAliasInput {
   bankPattern: string;
   canonicalPayeeName: string;
   normalizedTokens: string[];
-  sourceDirection?: 'bank_to_qbo' | 'bidirectional';
+  sourceDirection?: 'bank_to_gl' | 'bidirectional';
   matchConfidence?: number;
 }
 
@@ -700,7 +700,7 @@ export const createPayeeAlias = async (
       input.bankPattern,
       input.canonicalPayeeName,
       input.normalizedTokens,
-      input.sourceDirection ?? 'bank_to_qbo',
+      input.sourceDirection ?? 'bank_to_gl',
       input.matchConfidence ?? 1,
     ],
   );

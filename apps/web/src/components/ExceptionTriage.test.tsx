@@ -12,7 +12,7 @@ const makeException = (
   overrides: Partial<ExceptionItem> & Pick<ExceptionItem, 'id'>,
 ): ExceptionItem => ({
   runId: 'run-1',
-  category: 'MissingFromQBO',
+  category: 'MissingFromGL',
   severity: 'High',
   source: 'bank',
   spreadsheetFileName: 'bank.xlsx',
@@ -43,7 +43,7 @@ const exceptions: ExceptionItem[] = [
   }),
   makeException({
     id: 'exception-2',
-    category: 'MissingFromQBO',
+    category: 'MissingFromGL',
     severity: 'High',
     amount: 125.5,
     lineNumber: 8,

@@ -141,7 +141,7 @@ const acceptedMimeTypes = new Set([
 
 type UploadFileMap = {
   bankFile?: Express.Multer.File[];
-  qboFile?: Express.Multer.File[];
+  glFile?: Express.Multer.File[];
 };
 
 type ReconciliationRequestInput = {
@@ -153,18 +153,18 @@ type ReconciliationRequestInput = {
 
 type ReconciliationUploadFiles = {
   bankFile: Express.Multer.File;
-  qboFile: Express.Multer.File;
+  glFile: Express.Multer.File;
 };
 
 type QueuedReconciliationFiles = {
   bankFile: QueuedReconciliationFilePayload;
-  qboFile: QueuedReconciliationFilePayload;
+  glFile: QueuedReconciliationFilePayload;
 };
 
 type LifecycleRegistrationContext = {
   runId: string;
   bankSourceFileId: string;
-  qboSourceFileId: string;
+  glSourceFileId: string;
 };
 
 type ReconciliationWorkflowResult = ReconciliationRequestInput & {
@@ -268,7 +268,7 @@ const buildInputFingerprint = (input: {
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
   bankSha256: string;
-  qboSha256: string;
+  glSha256: string;
 }): string =>
   createHash('sha256')
     .update(
@@ -277,20 +277,20 @@ const buildInputFingerprint = (input: {
         reconciliationFrequency: input.reconciliationFrequency ?? null,
         periodLabel: input.periodLabel ?? null,
         bankSha256: input.bankSha256,
-        qboSha256: input.qboSha256,
+        glSha256: input.glSha256,
       }),
     )
     .digest('hex');
 
 const getUploadedReconciliationFiles = (files: UploadFileMap): ReconciliationUploadFiles | null => {
   const bankFile = files.bankFile?.[0];
-  const qboFile = files.qboFile?.[0];
+  const glFile = files.glFile?.[0];
 
-  if (!bankFile || !qboFile) {
+  if (!bankFile || !glFile) {
     return null;
   }
 
-  return { bankFile, qboFile };
+  return { bankFile, glFile };
 };
 
 const toQueuedReconciliationFiles = (
@@ -301,10 +301,10 @@ const toQueuedReconciliationFiles = (
     mimetype: files.bankFile.mimetype,
     buffer: files.bankFile.buffer.toString('base64'),
   },
-  qboFile: {
-    originalname: files.qboFile.originalname,
-    mimetype: files.qboFile.mimetype,
-    buffer: files.qboFile.buffer.toString('base64'),
+  glFile: {
+    originalname: files.glFile.originalname,
+    mimetype: files.glFile.mimetype,
+    buffer: files.glFile.buffer.toString('base64'),
   },
 });
 
@@ -312,7 +312,7 @@ const fromQueuedReconciliationFiles = (
   files: QueuedReconciliationFiles,
 ): ReconciliationUploadFiles => {
   const bankBuffer = Buffer.from(files.bankFile.buffer, 'base64');
-  const qboBuffer = Buffer.from(files.qboFile.buffer, 'base64');
+  const glBuffer = Buffer.from(files.glFile.buffer, 'base64');
 
   return {
     bankFile: {
@@ -327,17 +327,17 @@ const fromQueuedReconciliationFiles = (
       path: '',
       stream: Readable.from(bankBuffer),
     },
-    qboFile: {
-      fieldname: 'qboFile',
-      originalname: files.qboFile.originalname,
+    glFile: {
+      fieldname: 'glFile',
+      originalname: files.glFile.originalname,
       encoding: '7bit',
-      mimetype: files.qboFile.mimetype,
-      size: qboBuffer.byteLength,
-      buffer: qboBuffer,
+      mimetype: files.glFile.mimetype,
+      size: glBuffer.byteLength,
+      buffer: glBuffer,
       destination: '',
-      filename: files.qboFile.originalname,
+      filename: files.glFile.originalname,
       path: '',
-      stream: Readable.from(qboBuffer),
+      stream: Readable.from(glBuffer),
     },
   };
 };
@@ -401,15 +401,15 @@ const registerLifecycleJob = async (
 ): Promise<LifecycleRegistrationContext> => {
   const runId = randomUUID();
   const bankSourceFileId = randomUUID();
-  const qboSourceFileId = randomUUID();
+  const glSourceFileId = randomUUID();
 
   if (!lifecycleStore) {
-    return { runId, bankSourceFileId, qboSourceFileId };
+    return { runId, bankSourceFileId, glSourceFileId };
   }
 
   const startedAt = new Date().toISOString();
   const bankSha256 = computeSha256Hex(files.bankFile.buffer);
-  const qboSha256 = computeSha256Hex(files.qboFile.buffer);
+  const glSha256 = computeSha256Hex(files.glFile.buffer);
 
   await lifecycleStore.createJob({
     jobId: runId,
@@ -424,7 +424,7 @@ const registerLifecycleJob = async (
       reconciliationFrequency: input.reconciliationFrequency,
       periodLabel: input.periodLabel,
       bankSha256,
-      qboSha256,
+      glSha256,
     }),
     sourceFiles: [
       {
@@ -441,20 +441,20 @@ const registerLifecycleJob = async (
         content: files.bankFile.buffer,
       },
       {
-        id: qboSourceFileId,
-        sourceSystem: 'qbo',
-        sourceFormat: resolveSourceFormat(files.qboFile.originalname),
-        fileName: files.qboFile.originalname,
-        mimeType: files.qboFile.mimetype,
-        sizeBytes: files.qboFile.size,
-        sha256: qboSha256,
+        id: glSourceFileId,
+        sourceSystem: 'gl',
+        sourceFormat: resolveSourceFormat(files.glFile.originalname),
+        fileName: files.glFile.originalname,
+        mimeType: files.glFile.mimetype,
+        sizeBytes: files.glFile.size,
+        sha256: glSha256,
         uploadedAt: startedAt,
-        content: files.qboFile.buffer,
+        content: files.glFile.buffer,
       },
     ],
   });
 
-  return { runId, bankSourceFileId, qboSourceFileId };
+  return { runId, bankSourceFileId, glSourceFileId };
 };
 
 const runReconciliationWorkflow = async (input: {
@@ -490,10 +490,10 @@ const runReconciliationWorkflow = async (input: {
     lifecycleStore: input.lifecycleStore,
     sourceFileIds: {
       bank: lifecycleContext.bankSourceFileId,
-      qbo: lifecycleContext.qboSourceFileId,
+      gl: lifecycleContext.glSourceFileId,
     },
     bankFile: input.files.bankFile,
-    qboFile: input.files.qboFile,
+    glFile: input.files.glFile,
     accountIdentifier,
     reconciliationFrequency,
     periodLabel,
@@ -865,10 +865,10 @@ export const buildOpenApiSpec = () => ({
             'multipart/form-data': {
               schema: {
                 type: 'object',
-                required: ['bankFile', 'qboFile'],
+                required: ['bankFile', 'glFile'],
                 properties: {
                   bankFile: { type: 'string', format: 'binary' },
-                  qboFile: { type: 'string', format: 'binary' },
+                  glFile: { type: 'string', format: 'binary' },
                   accountIdentifier: { type: 'string' },
                   periodLabel: { type: 'string' },
                   reconciliationFrequency: {
@@ -1375,7 +1375,7 @@ export const createApp = (
     '/api/reconciliation/run',
     upload.fields([
       { name: 'bankFile', maxCount: 1 },
-      { name: 'qboFile', maxCount: 1 },
+      { name: 'glFile', maxCount: 1 },
     ]),
     async (request, response, next) => {
       const started = Date.now();
@@ -1385,7 +1385,7 @@ export const createApp = (
 
         if (!files) {
           response.status(400).json({
-            message: 'Both bankFile and qboFile must be provided as .xlsx uploads.',
+            message: 'Both bankFile and glFile must be provided as .xlsx uploads.',
           });
           return;
         }

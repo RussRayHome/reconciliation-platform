@@ -1,7 +1,7 @@
 import type { createReconciliationQueue } from '../src/services/reconciliationQueue';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
+import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
 
 import { InMemoryRunRepository } from '../src/services/runRepository';
 import { createApp } from '../src/app';
@@ -51,9 +51,9 @@ describe('reconciliation queue API', () => {
 
   it('returns 202 with job metadata when queue mode accepts a run', async () => {
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const response = await request(app)
@@ -65,8 +65,8 @@ describe('reconciliation queue API', () => {
         filename: 'bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(202);
@@ -80,7 +80,7 @@ describe('reconciliation queue API', () => {
         body: Record<string, unknown>;
         files: {
           bankFile: { originalname: string; buffer: string };
-          qboFile: { originalname: string; buffer: string };
+          glFile: { originalname: string; buffer: string };
         };
       },
     ];
@@ -92,9 +92,9 @@ describe('reconciliation queue API', () => {
       periodLabel: 'Queue Test',
     });
     expect(payload.files.bankFile.originalname).toBe('bank.xlsx');
-    expect(payload.files.qboFile.originalname).toBe('qbo.xlsx');
+    expect(payload.files.glFile.originalname).toBe('gl.xlsx');
     expect(payload.files.bankFile.buffer.length).toBeGreaterThan(0);
-    expect(payload.files.qboFile.buffer.length).toBeGreaterThan(0);
+    expect(payload.files.glFile.buffer.length).toBeGreaterThan(0);
   });
 
   it('returns 404 for job status when queue mode is disabled', async () => {
@@ -143,9 +143,9 @@ describe('reconciliation queue API', () => {
 
     queueState.enabled = false;
     const syncApp = createApp(repository);
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     const syncRunResponse = await request(syncApp)
@@ -154,8 +154,8 @@ describe('reconciliation queue API', () => {
         filename: 'bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);

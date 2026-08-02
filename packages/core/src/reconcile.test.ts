@@ -7,28 +7,28 @@ import {
 } from '../../test-fixtures/src/exceptionScenarios';
 import {
   ambiguousBankRows,
-  ambiguousQboRows,
+  ambiguousGlRows,
   amountMismatchBankRows,
-  amountMismatchQboRows,
+  amountMismatchGlRows,
   createSampleBankWorkbook,
-  createSampleQboWorkbook,
+  createSampleGlWorkbook,
   createWorkbookFromRows,
   depositGroupingBankRows,
   depositGroupingOversizedBankRows,
-  depositGroupingOversizedQboRows,
-  depositGroupingQboRows,
+  depositGroupingOversizedGlRows,
+  depositGroupingGlRows,
   nonStandardHeaderBankRows,
-  nonStandardHeaderQboRows,
+  nonStandardHeaderGlRows,
   referenceMismatchBankRows,
-  referenceMismatchQboRows,
+  referenceMismatchGlRows,
   splitCombineBankRows,
   splitCombineNearMissBankRows,
-  splitCombineNearMissQboRows,
-  splitCombineQboRows,
+  splitCombineNearMissGlRows,
+  splitCombineGlRows,
   staleOutstandingMixedResidualBankRows,
-  staleOutstandingMixedResidualQboRows,
+  staleOutstandingMixedResidualGlRows,
   timingDifferenceBankRows,
-  timingDifferenceQboRows,
+  timingDifferenceGlRows,
 } from '../../test-fixtures/src/sampleRows';
 import { describe, expect, it } from 'vitest';
 
@@ -41,12 +41,12 @@ import { randomUUID } from 'node:crypto';
 import { runReconciliation } from './reconcile';
 
 const buildRun = async () => {
-  const [bankBuffer, qboBuffer] = await Promise.all([
+  const [bankBuffer, glBuffer] = await Promise.all([
     createSampleBankWorkbook(),
-    createSampleQboWorkbook(),
+    createSampleGlWorkbook(),
   ]);
 
-  const [bankParsed, qboParsed] = await Promise.all([
+  const [bankParsed, glParsed] = await Promise.all([
     parseWorkbook({
       source: 'bank',
       fileName: 'bank.xlsx',
@@ -56,20 +56,20 @@ const buildRun = async () => {
       config: defaultReconciliationConfig.bank,
     }),
     parseWorkbook({
-      source: 'qbo',
-      fileName: 'qbo.xlsx',
+      source: 'gl',
+      fileName: 'gl.xlsx',
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: qboBuffer.length,
-      buffer: qboBuffer,
-      config: defaultReconciliationConfig.qbo,
+      sizeBytes: glBuffer.length,
+      buffer: glBuffer,
+      config: defaultReconciliationConfig.gl,
     }),
   ]);
 
   return runReconciliation({
     runId: randomUUID(),
     correlationId: 'test-correlation',
-    sourceFiles: [bankParsed.sourceFile, qboParsed.sourceFile],
-    rawRows: [...bankParsed.rawRows, ...qboParsed.rawRows],
+    sourceFiles: [bankParsed.sourceFile, glParsed.sourceFile],
+    rawRows: [...bankParsed.rawRows, ...glParsed.rawRows],
     config: defaultReconciliationConfig,
     accountIdentifier: 'OPERATING-001',
     periodLabel: 'January 2025',
@@ -78,19 +78,19 @@ const buildRun = async () => {
 
 const buildRunFromRows = async (
   bankRows: Array<Array<string | number>>,
-  qboRows: Array<Array<string | number>>,
+  glRows: Array<Array<string | number>>,
   options?: {
     reconciliationFrequency?: 'Monthly' | 'Annual';
     config?: ReconciliationConfig;
   },
 ) => {
   const config = options?.config ?? defaultReconciliationConfig;
-  const [bankBuffer, qboBuffer] = await Promise.all([
+  const [bankBuffer, glBuffer] = await Promise.all([
     createWorkbookFromRows(bankRows),
-    createWorkbookFromRows(qboRows),
+    createWorkbookFromRows(glRows),
   ]);
 
-  const [bankParsed, qboParsed] = await Promise.all([
+  const [bankParsed, glParsed] = await Promise.all([
     parseWorkbook({
       source: 'bank',
       fileName: 'bank-edge.xlsx',
@@ -100,20 +100,20 @@ const buildRunFromRows = async (
       config: config.bank,
     }),
     parseWorkbook({
-      source: 'qbo',
-      fileName: 'qbo-edge.xlsx',
+      source: 'gl',
+      fileName: 'gl-edge.xlsx',
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: qboBuffer.length,
-      buffer: qboBuffer,
-      config: config.qbo,
+      sizeBytes: glBuffer.length,
+      buffer: glBuffer,
+      config: config.gl,
     }),
   ]);
 
   return runReconciliation({
     runId: randomUUID(),
     correlationId: 'edge-case-correlation',
-    sourceFiles: [bankParsed.sourceFile, qboParsed.sourceFile],
-    rawRows: [...bankParsed.rawRows, ...qboParsed.rawRows],
+    sourceFiles: [bankParsed.sourceFile, glParsed.sourceFile],
+    rawRows: [...bankParsed.rawRows, ...glParsed.rawRows],
     config,
     accountIdentifier: 'OPERATING-001',
     reconciliationFrequency: options?.reconciliationFrequency,
@@ -122,11 +122,11 @@ const buildRunFromRows = async (
 };
 
 const splitCombineNearMissBankFixture = splitCombineNearMissBankRows as Array<Array<string | number>>;
-const splitCombineNearMissQboFixture = splitCombineNearMissQboRows as Array<Array<string | number>>;
+const splitCombineNearMissGlFixture = splitCombineNearMissGlRows as Array<Array<string | number>>;
 const depositGroupingOversizedBankFixture = depositGroupingOversizedBankRows as Array<Array<string | number>>;
-const depositGroupingOversizedQboFixture = depositGroupingOversizedQboRows as Array<Array<string | number>>;
+const depositGroupingOversizedGlFixture = depositGroupingOversizedGlRows as Array<Array<string | number>>;
 const staleOutstandingMixedResidualBankFixture = staleOutstandingMixedResidualBankRows as Array<Array<string | number>>;
-const staleOutstandingMixedResidualQboFixture = staleOutstandingMixedResidualQboRows as Array<Array<string | number>>;
+const staleOutstandingMixedResidualGlFixture = staleOutstandingMixedResidualGlRows as Array<Array<string | number>>;
 
 const countExceptionsByCategory = (
   output: Awaited<ReturnType<typeof buildRunFromRows>>,
@@ -141,13 +141,13 @@ describe('runReconciliation', () => {
   });
 
   it.each(exceptionScenarioFixtures)('produces $expectedCategory from the $name fixture', async (fixture) => {
-    const output = await buildRunFromRows(fixture.bankRows, fixture.qboRows);
+    const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
 
     expect(countExceptionsByCategory(output, fixture.expectedCategory)).toBe(fixture.expectedCount);
   });
 
   it.each(exceptionEdgeCaseFixtures)('keeps the $name edge case on the intended fallback path', async (fixture) => {
-    const output = await buildRunFromRows(fixture.bankRows, fixture.qboRows);
+    const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
 
     fixture.expectedPresent.forEach(({ category, count }) => {
       expect(countExceptionsByCategory(output, category)).toBe(count);
@@ -159,7 +159,7 @@ describe('runReconciliation', () => {
   });
 
   it.each(exceptionPrecedenceFixtures)('applies precedence so that $name keeps only the winning categories', async (fixture) => {
-    const output = await buildRunFromRows(fixture.bankRows, fixture.qboRows);
+    const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
 
     fixture.expectedPresent.forEach(({ category, count }) => {
       expect(countExceptionsByCategory(output, category)).toBe(count);
@@ -172,7 +172,7 @@ describe('runReconciliation', () => {
 
   it('triggers the full exception taxonomy from a single combined workbook pair', async () => {
     const combinedRows = buildAllExceptionsCombinedRows();
-    const output = await buildRunFromRows(combinedRows.bankRows, combinedRows.qboRows);
+    const output = await buildRunFromRows(combinedRows.bankRows, combinedRows.glRows);
 
     allExceptionCategories.forEach((category) => {
       expect(countExceptionsByCategory(output, category)).toBeGreaterThan(0);
@@ -182,11 +182,11 @@ describe('runReconciliation', () => {
   it('keeps stale outstanding precedence over missing fallback in a mixed residual run', async () => {
     const output = await buildRunFromRows(
       staleOutstandingMixedResidualBankFixture,
-      staleOutstandingMixedResidualQboFixture,
+      staleOutstandingMixedResidualGlFixture,
     );
 
     expect(output.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
-    expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(2);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(2);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
@@ -209,7 +209,7 @@ describe('runReconciliation', () => {
     expect(output.probableMatches.some((item) => item.exceptionCategory === 'AmbiguousMatchRequiringReview')).toBe(false);
   });
 
-  it('prefers the closest grouped batch when overlapping grouped candidates compete for the same qbo transactions', async () => {
+  it('prefers the closest grouped batch when overlapping grouped candidates compete for the same gl transactions', async () => {
     const output = await buildRunFromRows(
       [
         ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
@@ -229,11 +229,11 @@ describe('runReconciliation', () => {
     expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual')).toBe(true);
     expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 2)).toBe(true);
     expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 3)).toBe(false);
-    expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(1);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(0);
   });
 
-  it('excludes QBO beginning balance rows and creates workbook tabs', async () => {
+  it('excludes GL beginning balance rows and creates workbook tabs', async () => {
     const output = await buildRun();
 
     expect(output.normalizedTransactions.some((item) => item.exclusionReason?.includes('Beginning balance'))).toBe(true);
@@ -257,7 +257,7 @@ describe('runReconciliation', () => {
     );
     expect(
       output.exceptions.some(
-        (item) => item.category === 'DuplicateInBank' || item.category === 'DuplicateInQBO',
+        (item) => item.category === 'DuplicateInBank' || item.category === 'DuplicateInGL',
       ),
     ).toBe(true);
     expect(output.summary.exactMatches).toBeGreaterThanOrEqual(1);
@@ -282,7 +282,7 @@ describe('runReconciliation', () => {
     expect((workbook.model.media ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('includes the detailed bank and QBO breakout rows on the Summary sheet', async () => {
+  it('includes the detailed bank and GL breakout rows on the Summary sheet', async () => {
     const output = await buildRun();
     const workbook = new ExcelJS.Workbook();
     const workbookPayload = Buffer.from(output.outputWorkbook.binary);
@@ -328,7 +328,7 @@ describe('runReconciliation', () => {
   });
 
   it('maps non-standard bank debit and credit headers without inflating invalid data issues', async () => {
-    const output = await buildRunFromRows(nonStandardHeaderBankRows, nonStandardHeaderQboRows);
+    const output = await buildRunFromRows(nonStandardHeaderBankRows, nonStandardHeaderGlRows);
 
     expect(output.summary.exactMatches).toBeGreaterThanOrEqual(2);
     expect(output.summary.dataQualityIssues).toBe(0);
@@ -336,7 +336,7 @@ describe('runReconciliation', () => {
   });
 
   it('classifies timing differences when timing-compatible items fall outside primary tolerance but inside the timing window', async () => {
-    const output = await buildRunFromRows(timingDifferenceBankRows, timingDifferenceQboRows);
+    const output = await buildRunFromRows(timingDifferenceBankRows, timingDifferenceGlRows);
 
     const timingItems = output.exceptions.filter((item) => item.category === 'TimingDifference');
 
@@ -346,12 +346,12 @@ describe('runReconciliation', () => {
     expect(output.matchResults.some((item) => item.disposition === 'DateVariance')).toBe(true);
     expect(output.summary.timingDifferences).toBe(1);
     expect(output.summary.dateVariances).toBe(0);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('classifies one-to-many residual expense groupings as likely split/combine issues', async () => {
-    const output = await buildRunFromRows(splitCombineBankRows, splitCombineQboRows);
+    const output = await buildRunFromRows(splitCombineBankRows, splitCombineGlRows);
 
     const groupedItems = output.exceptions.filter((item) => item.category === 'LikelySplitCombineIssue');
 
@@ -362,12 +362,12 @@ describe('runReconciliation', () => {
     expect(output.groupedMatchResults).toHaveLength(1);
     expect(output.groupedMatchResults[0]?.category).toBe('LikelySplitCombineIssue');
     expect(output.summary.countsByCategory.LikelySplitCombineIssue).toBe(3);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('classifies grouped receipt batches as deposit grouping issues', async () => {
-    const output = await buildRunFromRows(depositGroupingBankRows, depositGroupingQboRows);
+    const output = await buildRunFromRows(depositGroupingBankRows, depositGroupingGlRows);
 
     const groupedItems = output.exceptions.filter((item) => item.category === 'DepositGroupingIssue');
 
@@ -378,28 +378,28 @@ describe('runReconciliation', () => {
     expect(output.groupedMatchResults).toHaveLength(1);
     expect(output.groupedMatchResults[0]?.category).toBe('DepositGroupingIssue');
     expect(output.summary.countsByCategory.DepositGroupingIssue).toBe(3);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
   it('does not classify grouped near-miss totals as split/combine issues', async () => {
-    const output = await buildRunFromRows(splitCombineNearMissBankFixture, splitCombineNearMissQboFixture);
+    const output = await buildRunFromRows(splitCombineNearMissBankFixture, splitCombineNearMissGlFixture);
 
     expect(output.exceptions.some((item) => item.category === 'LikelySplitCombineIssue')).toBe(false);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(true);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(true);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(2);
   });
 
   it('does not classify grouped deposits when the grouped side exceeds the supported residual limit', async () => {
-    const output = await buildRunFromRows(depositGroupingOversizedBankFixture, depositGroupingOversizedQboFixture);
+    const output = await buildRunFromRows(depositGroupingOversizedBankFixture, depositGroupingOversizedGlFixture);
 
     expect(output.exceptions.some((item) => item.category === 'DepositGroupingIssue')).toBe(false);
-    expect(output.exceptions.filter((item) => item.category === 'MissingFromQBO')).toHaveLength(1);
+    expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(4);
   });
 
   it('lets account-level grouped overrides classify larger grouped residual sets', async () => {
-    const output = await buildRunFromRows(depositGroupingOversizedBankFixture, depositGroupingOversizedQboFixture, {
+    const output = await buildRunFromRows(depositGroupingOversizedBankFixture, depositGroupingOversizedGlFixture, {
       config: {
         ...defaultReconciliationConfig,
         matching: {
@@ -411,7 +411,7 @@ describe('runReconciliation', () => {
     });
 
     expect(output.exceptions.filter((item) => item.category === 'DepositGroupingIssue')).toHaveLength(5);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
@@ -435,7 +435,7 @@ describe('runReconciliation', () => {
   });
 
   it('classifies likely amount mismatch pairs with linked counterpart references', async () => {
-    const output = await buildRunFromRows(amountMismatchBankRows, amountMismatchQboRows);
+    const output = await buildRunFromRows(amountMismatchBankRows, amountMismatchGlRows);
 
     const mismatch = output.exceptions.find((item) => item.category === 'AmountMismatch');
     expect(mismatch).toBeDefined();
@@ -444,7 +444,7 @@ describe('runReconciliation', () => {
   });
 
   it('surfaces check or reference number variance as review exceptions instead of clean matches', async () => {
-    const output = await buildRunFromRows(referenceMismatchBankRows, referenceMismatchQboRows);
+    const output = await buildRunFromRows(referenceMismatchBankRows, referenceMismatchGlRows);
 
     expect(
       output.exceptions.some(
@@ -455,7 +455,7 @@ describe('runReconciliation', () => {
   });
 
   it('marks near-equal competing candidates as ambiguous review items', async () => {
-    const output = await buildRunFromRows(ambiguousBankRows, ambiguousQboRows);
+    const output = await buildRunFromRows(ambiguousBankRows, ambiguousGlRows);
 
     expect(output.exceptions.some((item) => item.category === 'AmbiguousMatchRequiringReview')).toBe(true);
     expect(output.probableMatches.some((item) => item.disposition === 'AmbiguousReview')).toBe(true);
@@ -474,13 +474,13 @@ describe('runReconciliation', () => {
     );
 
     const invalidItems = output.exceptions.filter((item) => item.category === 'InvalidOrMissingData');
-    const missingItems = output.exceptions.filter((item) => item.category === 'MissingFromQBO');
+    const missingItems = output.exceptions.filter((item) => item.category === 'MissingFromGL');
 
     expect(invalidItems.length).toBeGreaterThanOrEqual(1);
     expect(missingItems).toHaveLength(0);
   });
 
-  it('surfaces invalid QBO rows as data-quality exceptions', async () => {
+  it('surfaces invalid GL rows as data-quality exceptions', async () => {
     const output = await buildRunFromRows(
       [
         ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
@@ -488,18 +488,18 @@ describe('runReconciliation', () => {
       ],
       [
         ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-        ['', 'Expense', '', 'Vendor', 'Missing qbo date', '-250.00'],
+        ['', 'Expense', '', 'Vendor', 'Missing gl date', '-250.00'],
       ],
     );
 
     expect(
       output.exceptions.some(
-        (item) => item.category === 'InvalidOrMissingData' && item.source === 'qbo',
+        (item) => item.category === 'InvalidOrMissingData' && item.source === 'gl',
       ),
     ).toBe(true);
   });
 
-  it('classifies stale outstanding checks for aged unmatched QBO check disbursements', async () => {
+  it('classifies stale outstanding checks for aged unmatched GL check disbursements', async () => {
     const output = await buildRunFromRows(
       [
         ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
@@ -515,7 +515,7 @@ describe('runReconciliation', () => {
     const staleCheck = output.exceptions.find((item) => item.category === 'StaleOutstandingCheck');
 
     expect(staleCheck).toBeDefined();
-    expect(staleCheck?.source).toBe('qbo');
+    expect(staleCheck?.source).toBe('gl');
     expect(staleCheck?.ruleTrace?.ruleId).toBe('stale-outstanding-check');
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
     expect(output.summary.countsByCategory.StaleOutstandingCheck).toBe(1);
@@ -526,13 +526,13 @@ describe('runReconciliation', () => {
       ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
       ['2025-02-15', 'STATEMENT ANCHOR DEPOSIT', '', '', '900.00', '900.00'],
     ] as Array<Array<string | number>>;
-    const qboRows = [
+    const glRows = [
       ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
       ['2025-01-10', 'Check', '1201', 'Vendor', 'Older but not default-stale check', '-900.00'],
     ] as Array<Array<string | number>>;
 
-    const defaultOutput = await buildRunFromRows(bankRows, qboRows);
-    const overrideOutput = await buildRunFromRows(bankRows, qboRows, {
+    const defaultOutput = await buildRunFromRows(bankRows, glRows);
+    const overrideOutput = await buildRunFromRows(bankRows, glRows, {
       config: {
         ...defaultReconciliationConfig,
         matching: {
@@ -567,11 +567,11 @@ describe('runReconciliation', () => {
     expect(
       miscodingItems.every(
         (item) =>
-          item.ruleTrace?.counterpart?.spreadsheetFileName === 'qbo-edge.xlsx' ||
+          item.ruleTrace?.counterpart?.spreadsheetFileName === 'gl-edge.xlsx' ||
           item.ruleTrace?.counterpart?.spreadsheetFileName === 'bank-edge.xlsx',
       ),
     ).toBe(true);
-    expect(output.exceptions.some((item) => item.category === 'MissingFromQBO')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
     expect(output.summary.countsByCategory.LikelyMiscoding).toBe(2);
   });
@@ -603,7 +603,7 @@ describe('runReconciliation', () => {
     ).toBe(true);
     expect(
       annualCoverageObservations.some(
-        (item) => item.message.includes('qbo-edge.xlsx') && item.message.includes('Jan'),
+        (item) => item.message.includes('gl-edge.xlsx') && item.message.includes('Jan'),
       ),
     ).toBe(true);
   });

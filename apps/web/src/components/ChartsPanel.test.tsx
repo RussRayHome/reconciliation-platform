@@ -23,21 +23,21 @@ vi.mock('recharts', () => ({
 const createSummary = (charts: SummaryMetrics['charts']): SummaryMetrics => ({
   totalRecordsReviewed: 12,
   bankRecords: 6,
-  qboRecords: 6,
+  glRecords: 6,
   exactMatches: 4,
   probableMatches: 1,
   unmatchedItems: 2,
   duplicates: 1,
   bankDuplicates: 1,
-  qboDuplicates: 0,
+  glDuplicates: 0,
   dateVariances: 1,
   timingDifferences: 0,
   dataQualityIssues: 0,
   amountMismatches: 0,
   missingFromBank: 1,
-  missingFromQBO: 1,
+  missingFromGL: 1,
   unmatchedBankNetAmount: 125.5,
-  unmatchedQboNetAmount: 88,
+  unmatchedGlNetAmount: 88,
   cleanMatchedAmount: 600,
   unresolvedExposure: 213.5,
   countsByCategory: {},
@@ -57,7 +57,7 @@ describe('ChartsPanel', () => {
           {
             id: 'countByCategory',
             title: 'Counts',
-            data: [{ label: 'Missing from QBO', value: 2 }],
+            data: [{ label: 'Missing from GL', value: 2 }],
           },
           {
             id: 'exposureByCategory',
@@ -70,7 +70,7 @@ describe('ChartsPanel', () => {
 
     expect(screen.getByText('Counts by Category')).toBeInTheDocument();
     expect(screen.getByText('Dollar Exposure by Category')).toBeInTheDocument();
-    expect(screen.getByText('Missing from QBO')).toBeInTheDocument();
+    expect(screen.getByText('Missing from GL')).toBeInTheDocument();
     expect(screen.getByText('Timing Difference')).toBeInTheDocument();
     expect(screen.getByText('$126')).toBeInTheDocument();
   });
@@ -82,6 +82,6 @@ describe('ChartsPanel', () => {
     expect(screen.getByText('Dollar Exposure by Category')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Count' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Exposure' })).toBeInTheDocument();
-    expect(screen.queryByText('Missing from QBO')).toBeNull();
+    expect(screen.queryByText('Missing from GL')).toBeNull();
   });
 });

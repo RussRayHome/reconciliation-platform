@@ -43,7 +43,7 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
 const buildException = (overrides: Partial<ExceptionItem>): ExceptionItem => ({
   id: overrides.id ?? randomUUID(),
   runId: overrides.runId ?? 'summary-run',
-  category: overrides.category ?? 'MissingFromQBO',
+  category: overrides.category ?? 'MissingFromGL',
   severity: overrides.severity ?? 'Medium',
   source: overrides.source ?? 'bank',
   spreadsheetFileName: overrides.spreadsheetFileName ?? 'summary.xlsx',
@@ -68,7 +68,7 @@ const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => 
   reason: overrides.reason,
   score: overrides.score ?? 0.82,
   bankTransactionId: overrides.bankTransactionId,
-  qboTransactionId: overrides.qboTransactionId,
+  glTransactionId: overrides.glTransactionId,
   dateDifferenceDays: overrides.dateDifferenceDays ?? 7,
   amountDifference: overrides.amountDifference ?? 0,
   evidence: overrides.evidence ?? ['Amounts agree within configured tolerance.'],
@@ -82,45 +82,45 @@ describe('buildSummaryMetrics', () => {
     const transactions: NormalizedTransaction[] = [
       buildTransaction({ id: 'bank-valid', source: 'bank', amount: 10 }),
       buildTransaction({ id: 'bank-dq', source: 'bank', amount: 0, dataQualityIssues: ['Zero amount transaction requires review.'] }),
-      buildTransaction({ id: 'qbo-valid', source: 'qbo', amount: 10 }),
-      buildTransaction({ id: 'qbo-dq', source: 'qbo', amount: 0, dataQualityIssues: ['Amount is missing or malformed.'] }),
+      buildTransaction({ id: 'gl-valid', source: 'gl', amount: 10 }),
+      buildTransaction({ id: 'gl-dq', source: 'gl', amount: 0, dataQualityIssues: ['Amount is missing or malformed.'] }),
     ];
     const matchResults: MatchResult[] = [];
     const exceptions: ExceptionItem[] = [
       buildException({ category: 'InvalidOrMissingData', source: 'bank', amount: 0 }),
-      buildException({ category: 'InvalidOrMissingData', source: 'qbo', amount: 0, lineNumber: 2 }),
-      buildException({ category: 'MissingFromQBO', source: 'bank', amount: 10, lineNumber: 3 }),
-      buildException({ category: 'MissingFromBank', source: 'qbo', amount: 10, lineNumber: 4 }),
+      buildException({ category: 'InvalidOrMissingData', source: 'gl', amount: 0, lineNumber: 2 }),
+      buildException({ category: 'MissingFromGL', source: 'bank', amount: 10, lineNumber: 3 }),
+      buildException({ category: 'MissingFromBank', source: 'gl', amount: 10, lineNumber: 4 }),
     ];
 
     const summary = buildSummaryMetrics(transactions, matchResults, exceptions);
 
     expect(summary.bankRecords).toBe(2);
-    expect(summary.qboRecords).toBe(2);
+    expect(summary.glRecords).toBe(2);
     expect(summary.dataQualityIssues).toBe(2);
     expect(summary.unmatchedItems).toBe(4);
-    expect(summary.missingFromQBO).toBe(1);
+    expect(summary.missingFromGL).toBe(1);
     expect(summary.missingFromBank).toBe(1);
   });
 
   it('derives date variance and timing difference counts from final classified exceptions', () => {
     const transactions: NormalizedTransaction[] = [
       buildTransaction({ id: 'bank-1', source: 'bank', amount: -500, lineNumber: 5 }),
-      buildTransaction({ id: 'qbo-1', source: 'qbo', amount: -500, lineNumber: 8 }),
+      buildTransaction({ id: 'gl-1', source: 'gl', amount: -500, lineNumber: 8 }),
       buildTransaction({ id: 'bank-2', source: 'bank', amount: -300, lineNumber: 10 }),
-      buildTransaction({ id: 'qbo-2', source: 'qbo', amount: -300, lineNumber: 12 }),
+      buildTransaction({ id: 'gl-2', source: 'gl', amount: -300, lineNumber: 12 }),
     ];
     const matchResults: MatchResult[] = [
       buildMatchResult({
         bankTransactionId: 'bank-1',
-        qboTransactionId: 'qbo-1',
+        glTransactionId: 'gl-1',
         disposition: 'DateVariance',
         exceptionCategory: 'DateVariance',
       }),
       buildMatchResult({
         id: 'timing-result',
         bankTransactionId: 'bank-2',
-        qboTransactionId: 'qbo-2',
+        glTransactionId: 'gl-2',
         disposition: 'TimingDifference',
         confidence: 'TimingDifference',
         exceptionCategory: 'TimingDifference',
@@ -133,15 +133,15 @@ describe('buildSummaryMetrics', () => {
         source: 'bank',
         amount: -500,
         lineNumber: 5,
-        relatedTransactionIds: ['bank-1', 'qbo-1'],
+        relatedTransactionIds: ['bank-1', 'gl-1'],
       }),
       buildException({
-        id: 'miscoding-qbo',
+        id: 'miscoding-gl',
         category: 'LikelyMiscoding',
-        source: 'qbo',
+        source: 'gl',
         amount: -500,
         lineNumber: 8,
-        relatedTransactionIds: ['bank-1', 'qbo-1'],
+        relatedTransactionIds: ['bank-1', 'gl-1'],
       }),
       buildException({
         id: 'timing-bank',
@@ -149,15 +149,15 @@ describe('buildSummaryMetrics', () => {
         source: 'bank',
         amount: -300,
         lineNumber: 10,
-        relatedTransactionIds: ['bank-2', 'qbo-2'],
+        relatedTransactionIds: ['bank-2', 'gl-2'],
       }),
       buildException({
-        id: 'timing-qbo',
+        id: 'timing-gl',
         category: 'TimingDifference',
-        source: 'qbo',
+        source: 'gl',
         amount: -300,
         lineNumber: 12,
-        relatedTransactionIds: ['bank-2', 'qbo-2'],
+        relatedTransactionIds: ['bank-2', 'gl-2'],
       }),
     ];
 
@@ -171,7 +171,7 @@ describe('buildSummaryMetrics', () => {
   it('includes all present exception categories in summary chart data', () => {
     const transactions: NormalizedTransaction[] = [
       buildTransaction({ id: 'bank-1', source: 'bank', amount: -250, lineNumber: 3 }),
-      buildTransaction({ id: 'qbo-1', source: 'qbo', amount: 410, lineNumber: 7 }),
+      buildTransaction({ id: 'gl-1', source: 'gl', amount: 410, lineNumber: 7 }),
     ];
     const exceptions: ExceptionItem[] = [
       buildException({
@@ -182,7 +182,7 @@ describe('buildSummaryMetrics', () => {
       }),
       buildException({
         category: 'DepositGroupingIssue',
-        source: 'qbo',
+        source: 'gl',
         amount: 410,
         lineNumber: 7,
       }),

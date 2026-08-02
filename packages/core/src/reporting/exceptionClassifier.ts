@@ -35,7 +35,7 @@ export interface ExceptionClassifierInput {
   normalizedTransactions: NormalizedTransaction[];
   matchResults: MatchResult[];
   unmatchedBankTransactionIds: Set<string>;
-  unmatchedQboTransactionIds: Set<string>;
+  unmatchedGlTransactionIds: Set<string>;
   duplicateTransactionIds: Set<string>;
   groupedMatchResults?: GroupedMatchResult[];
   reporting: ReportingConfig;
@@ -69,7 +69,7 @@ export const classifyExceptions = ({
   normalizedTransactions,
   matchResults,
   unmatchedBankTransactionIds,
-  unmatchedQboTransactionIds,
+  unmatchedGlTransactionIds,
   duplicateTransactionIds,
   groupedMatchResults,
   reporting,
@@ -143,7 +143,7 @@ export const classifyExceptions = ({
         createException({
           runId,
           transaction,
-          category: transaction.source === 'bank' ? 'DuplicateInBank' : 'DuplicateInQBO',
+          category: transaction.source === 'bank' ? 'DuplicateInBank' : 'DuplicateInGL',
           reporting,
           matchConfidence: 'Probable',
           ruleTrace: buildExceptionRuleTrace(
@@ -173,15 +173,15 @@ export const classifyExceptions = ({
       )
       .map((result) => result.bankTransactionId as string),
   );
-  const advisoryProtectedQboIds = new Set(
+  const advisoryProtectedGlIds = new Set(
     matchResults
       .filter(
         (result) =>
-          result.qboTransactionId &&
+          result.glTransactionId &&
           result.exceptionCategory &&
           advisoryReviewCategoriesExcludedFromResidualStages.has(result.exceptionCategory),
       )
-      .map((result) => result.qboTransactionId as string),
+      .map((result) => result.glTransactionId as string),
   );
 
   const remainingUnmatchedBank = new Set(
@@ -189,9 +189,9 @@ export const classifyExceptions = ({
       (transactionId) => !advisoryProtectedBankIds.has(transactionId),
     ),
   );
-  const remainingUnmatchedQbo = new Set(
-    [...unmatchedQboTransactionIds].filter(
-      (transactionId) => !advisoryProtectedQboIds.has(transactionId),
+  const remainingUnmatchedGl = new Set(
+    [...unmatchedGlTransactionIds].filter(
+      (transactionId) => !advisoryProtectedGlIds.has(transactionId),
     ),
   );
   const engineReservedGroups = (groupedMatchResults ?? []).filter(
@@ -205,7 +205,7 @@ export const classifyExceptions = ({
     matchResults,
     transactionById,
     remainingUnmatchedBank,
-    remainingUnmatchedQbo,
+    remainingUnmatchedGl,
     normalizedTransactions,
     upsertTransactionException,
     engineReservedGroups,

@@ -18,7 +18,7 @@ const sourceDisplayName = (source: string): string => {
     return 'Bank';
   }
 
-  if (source === 'qbo') {
+  if (source === 'gl') {
     return 'GL';
   }
 
@@ -134,7 +134,7 @@ const buildNarrativeSummary = (
   const periodText = trimmedPeriod ? ` during ${trimmedPeriod}` : '';
   const hasNoCategorizedExceptions = [
     summary.missingFromBank,
-    summary.missingFromQBO,
+    summary.missingFromGL,
     summary.amountMismatches,
     summary.dateVariances,
     summary.timingDifferences,
@@ -150,7 +150,7 @@ const buildNarrativeSummary = (
     statusSentence = `The reconciliation${accountText}${periodText} generally reconciles, with a meaningful share of remaining exceptions driven by timing-related differences.`;
   }
 
-  const volumeSentence = `${summary.bankRecords} bank transactions and ${summary.qboRecords} GL transactions were reviewed, producing ${summary.exactMatches} exact matches and ${summary.probableMatches} probable matches.`;
+  const volumeSentence = `${summary.bankRecords} bank transactions and ${summary.glRecords} GL transactions were reviewed, producing ${summary.exactMatches} exact matches and ${summary.probableMatches} probable matches.`;
 
   const categorySummary = errorCategories
     .filter((category) => (summary.countsByCategory[category] ?? 0) > 0)
@@ -299,14 +299,14 @@ export const exportWorkbook = async ({
     { label: 'Period', value: periodLabel ?? 'Not provided' },
     { label: 'Total records reviewed', value: summary.totalRecordsReviewed, numFmt: '#,##0' },
     { label: 'Total bank transactions reviewed', value: summary.bankRecords, numFmt: '#,##0' },
-    { label: 'Total GL transactions reviewed', value: summary.qboRecords, numFmt: '#,##0' },
+    { label: 'Total GL transactions reviewed', value: summary.glRecords, numFmt: '#,##0' },
     { label: 'Total exact matches', value: summary.exactMatches, numFmt: '#,##0' },
     { label: 'Total probable matches', value: summary.probableMatches, numFmt: '#,##0' },
-    { label: 'Total items missing in GL', value: summary.missingFromQBO, numFmt: '#,##0' },
+    { label: 'Total items missing in GL', value: summary.missingFromGL, numFmt: '#,##0' },
     { label: 'Total items missing in bank', value: summary.missingFromBank, numFmt: '#,##0' },
     { label: 'Total amount mismatches', value: summary.amountMismatches, numFmt: '#,##0' },
     { label: 'Total duplicates in bank', value: summary.bankDuplicates, numFmt: '#,##0' },
-    { label: 'Total duplicates in GL', value: summary.qboDuplicates, numFmt: '#,##0' },
+    { label: 'Total duplicates in GL', value: summary.glDuplicates, numFmt: '#,##0' },
     { label: 'Total date variances', value: summary.dateVariances, numFmt: '#,##0' },
     { label: 'Total timing differences', value: summary.timingDifferences, numFmt: '#,##0' },
     { label: 'Total data-quality issues', value: summary.dataQualityIssues, numFmt: '#,##0' },
@@ -317,7 +317,7 @@ export const exportWorkbook = async ({
     },
     {
       label: 'Net amount of items missing in bank',
-      value: summary.unmatchedQboNetAmount,
+      value: summary.unmatchedGlNetAmount,
       numFmt: '$#,##0.00;[Red]-$#,##0.00',
     },
     {
@@ -354,9 +354,9 @@ export const exportWorkbook = async ({
   assumptionsSheet.addRows([
     ['Bank Header Row', config.bank.headerRow],
     ['Bank Transaction Start Row', config.bank.transactionStartRow],
-    ['GL Header Row', config.qbo.headerRow],
-    ['GL Transaction Start Row', config.qbo.transactionStartRow],
-    ['Exclude GL Beginning Balance', String(config.qbo.excludeBeginningBalance)],
+    ['GL Header Row', config.gl.headerRow],
+    ['GL Transaction Start Row', config.gl.transactionStartRow],
+    ['Exclude GL Beginning Balance', String(config.gl.excludeBeginningBalance)],
     ['Date Tolerance Days', config.matching.dateToleranceDays],
     ['Timing Difference Window', config.matching.timingDifferenceDays],
     ['Probable Similarity Threshold', config.matching.probableTextSimilarityThreshold],
@@ -418,7 +418,7 @@ export const exportWorkbook = async ({
       item.confidence,
       item.ruleName,
       item.bankTransactionId ?? '',
-      item.qboTransactionId ?? '',
+      item.glTransactionId ?? '',
       item.dateDifferenceDays ?? '',
       item.amountDifference,
       item.evidence.join(' | '),
@@ -469,8 +469,8 @@ export const exportWorkbook = async ({
       ]);
     });
 
-  const qboSheet = workbook.addWorksheet('GL Normalized');
-  addHeaderRow(qboSheet, [
+  const glSheet = workbook.addWorksheet('GL Normalized');
+  addHeaderRow(glSheet, [
     'Line Number',
     'Transaction Date',
     'Posting Date',
@@ -484,9 +484,9 @@ export const exportWorkbook = async ({
     'Exclusion Reason',
   ]);
   normalizedTransactions
-    .filter((transaction) => transaction.source === 'qbo')
+    .filter((transaction) => transaction.source === 'gl')
     .forEach((item) => {
-      qboSheet.addRow([
+      glSheet.addRow([
         item.lineNumber,
         item.transactionDate ?? '',
         item.postingDate ?? '',

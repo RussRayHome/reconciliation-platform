@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSampleBankWorkbook, createSampleQboWorkbook } from '@recon/test-fixtures';
+import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
 
 import request from 'supertest';
 
@@ -762,9 +762,9 @@ describe('developer endpoints', () => {
   it('returns runtime diagnostics and recent developer activity', async () => {
     const createApp = await importCreateApp();
     const app = createApp();
-    const [bankBuffer, qboBuffer] = await Promise.all([
+    const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
-      createSampleQboWorkbook(),
+      createSampleGlWorkbook(),
     ]);
 
     await request(app)
@@ -773,8 +773,8 @@ describe('developer endpoints', () => {
         filename: 'bank.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       .expect(201);
@@ -785,8 +785,8 @@ describe('developer endpoints', () => {
         filename: 'bank.txt',
         contentType: 'text/plain',
       })
-      .attach('qboFile', qboBuffer, {
-        filename: 'qbo.xlsx',
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
         contentType: 'application/octet-stream',
       })
       .expect(400);

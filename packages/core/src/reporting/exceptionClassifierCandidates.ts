@@ -27,15 +27,15 @@ export const buildMiscodingThresholds = (matching: MatchingConfig): MiscodingThr
 
 const buildGroupedCandidateCategory = (
   bankTransactions: Array<NormalizedTransaction & { amount: number }>,
-  qboTransactions: Array<NormalizedTransaction & { amount: number }>,
+  glTransactions: Array<NormalizedTransaction & { amount: number }>,
 ): GroupedResidualCandidate['category'] => {
   const bankTotal = sumTransactionAmounts(bankTransactions);
-  const qboTotal = sumTransactionAmounts(qboTransactions);
-  const allKinds = [...bankTransactions, ...qboTransactions].map((transaction) =>
+  const glTotal = sumTransactionAmounts(glTransactions);
+  const allKinds = [...bankTransactions, ...glTransactions].map((transaction) =>
     inferTransactionKind(transaction),
   );
 
-  if (bankTotal > 0 && qboTotal > 0 && allKinds.every((kind) => isDepositLikeKind(kind))) {
+  if (bankTotal > 0 && glTotal > 0 && allKinds.every((kind) => isDepositLikeKind(kind))) {
     return 'DepositGroupingIssue';
   }
 
@@ -48,54 +48,54 @@ const describeTransactionGroup = (
   transactions
     .map(
       (transaction) =>
-        `${transaction.source === 'qbo' ? 'GL' : transaction.source.toUpperCase()} line ${transaction.lineNumber} (${transaction.amount.toFixed(2)})`,
+        `${transaction.source === 'gl' ? 'GL' : transaction.source.toUpperCase()} line ${transaction.lineNumber} (${transaction.amount.toFixed(2)})`,
     )
     .join(', ');
 
 const buildGroupedResidualCandidate = (
   bankTransactions: Array<NormalizedTransaction & { amount: number }>,
-  qboTransactions: Array<NormalizedTransaction & { amount: number }>,
+  glTransactions: Array<NormalizedTransaction & { amount: number }>,
   matching: MatchingConfig,
 ): GroupedResidualCandidate | undefined => {
-  if (!bankTransactions.length || !qboTransactions.length) {
+  if (!bankTransactions.length || !glTransactions.length) {
     return undefined;
   }
 
-  if (bankTransactions.length === 1 && qboTransactions.length === 1) {
+  if (bankTransactions.length === 1 && glTransactions.length === 1) {
     return undefined;
   }
 
   const bankTotal = sumTransactionAmounts(bankTransactions);
-  const qboTotal = sumTransactionAmounts(qboTransactions);
+  const glTotal = sumTransactionAmounts(glTransactions);
 
-  if (!currencyEquals(bankTotal, qboTotal, matching.amountTolerance)) {
+  if (!currencyEquals(bankTotal, glTotal, matching.amountTolerance)) {
     return undefined;
   }
 
-  if (Math.sign(bankTotal) !== Math.sign(qboTotal)) {
+  if (Math.sign(bankTotal) !== Math.sign(glTotal)) {
     return undefined;
   }
 
-  if (!areGroupedTransactionsCompatible(bankTransactions, qboTransactions)) {
+  if (!areGroupedTransactionsCompatible(bankTransactions, glTransactions)) {
     return undefined;
   }
 
-  const dateDifference = calculateGroupedDateDifference(bankTransactions, qboTransactions);
+  const dateDifference = calculateGroupedDateDifference(bankTransactions, glTransactions);
   if (dateDifference === null || dateDifference > matching.timingDifferenceDays) {
     return undefined;
   }
 
   const textSimilarity = tokenSimilarity(
     mergeComparisonTokens(bankTransactions),
-    mergeComparisonTokens(qboTransactions),
+    mergeComparisonTokens(glTransactions),
   );
   const referenceSimilarity = tokenSimilarity(
     mergeReferenceTokens(bankTransactions),
-    mergeReferenceTokens(qboTransactions),
+    mergeReferenceTokens(glTransactions),
   );
-  const category = buildGroupedCandidateCategory(bankTransactions, qboTransactions);
+  const category = buildGroupedCandidateCategory(bankTransactions, glTransactions);
   const bankKinds = formatKinds(bankTransactions);
-  const qboKinds = formatKinds(qboTransactions);
+  const glKinds = formatKinds(glTransactions);
 
   return {
     category,
@@ -113,22 +113,22 @@ const buildGroupedResidualCandidate = (
         : 'Residual unmatched transactions form a one-to-many or many-to-one relationship that the one-to-one matcher cannot settle cleanly.',
     evidence: [
       'Residual unmatched transactions form a balanced grouped amount across sources.',
-      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); GL total is ${qboTotal.toFixed(2)} across ${qboTransactions.length} line(s).`,
+      `Bank total is ${bankTotal.toFixed(2)} across ${bankTransactions.length} line(s); GL total is ${glTotal.toFixed(2)} across ${glTransactions.length} line(s).`,
       `Maximum cross-source date difference is ${dateDifference} day(s).`,
-      `Observed transaction kinds are bank=${bankKinds} and gl=${qboKinds}.`,
+      `Observed transaction kinds are bank=${bankKinds} and gl=${glKinds}.`,
       `Narrative similarity score is ${textSimilarity.toFixed(2)} and reference similarity score is ${referenceSimilarity.toFixed(2)}.`,
       `Bank members: ${describeTransactionGroup(bankTransactions)}.`,
-      `GL members: ${describeTransactionGroup(qboTransactions)}.`,
+      `GL members: ${describeTransactionGroup(glTransactions)}.`,
     ],
     bankTransactions,
-    qboTransactions,
-    relatedTransactionIds: [...bankTransactions, ...qboTransactions].map(
+    glTransactions,
+    relatedTransactionIds: [...bankTransactions, ...glTransactions].map(
       (transaction) => transaction.id,
     ),
     score:
       100 -
       dateDifference * 2 -
-      (bankTransactions.length + qboTransactions.length) +
+      (bankTransactions.length + glTransactions.length) +
       textSimilarity * 10 +
       referenceSimilarity * 5,
   };
@@ -179,7 +179,7 @@ const collectGroupedCounterpartPool = (
 
 export const findGroupedResidualCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): GroupedResidualCandidate[] => {
   const candidates: GroupedResidualCandidate[] = [];
@@ -187,13 +187,13 @@ export const findGroupedResidualCandidates = (
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
       transaction.amount !== null,
   );
-  const qboResiduals = qboTransactions.filter(
+  const glResiduals = glTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
       transaction.amount !== null,
   );
 
   for (const bankTransaction of bankResiduals) {
-    const counterpartPool = collectGroupedCounterpartPool(bankTransaction, qboResiduals, matching);
+    const counterpartPool = collectGroupedCounterpartPool(bankTransaction, glResiduals, matching);
     const combinations = generateTransactionCombinations(
       counterpartPool,
       2,
@@ -209,8 +209,8 @@ export const findGroupedResidualCandidates = (
     }
   }
 
-  for (const qboTransaction of qboResiduals) {
-    const counterpartPool = collectGroupedCounterpartPool(qboTransaction, bankResiduals, matching);
+  for (const glTransaction of glResiduals) {
+    const counterpartPool = collectGroupedCounterpartPool(glTransaction, bankResiduals, matching);
     const combinations = generateTransactionCombinations(
       counterpartPool,
       2,
@@ -218,7 +218,7 @@ export const findGroupedResidualCandidates = (
     );
 
     for (const combination of combinations) {
-      const candidate = buildGroupedResidualCandidate(combination, [qboTransaction], matching);
+      const candidate = buildGroupedResidualCandidate(combination, [glTransaction], matching);
 
       if (candidate) {
         candidates.push(candidate);
@@ -232,20 +232,20 @@ export const findGroupedResidualCandidates = (
 
 export const buildTimingDifferenceCandidate = (
   bankTransaction: NormalizedTransaction & { amount: number },
-  qboTransaction: NormalizedTransaction & { amount: number },
+  glTransaction: NormalizedTransaction & { amount: number },
   matching: MatchingConfig,
 ): TimingDifferenceCandidate | undefined => {
-  if (!currencyEquals(bankTransaction.amount, qboTransaction.amount, matching.amountTolerance)) {
+  if (!currencyEquals(bankTransaction.amount, glTransaction.amount, matching.amountTolerance)) {
     return undefined;
   }
 
-  if (Math.sign(bankTransaction.amount) !== Math.sign(qboTransaction.amount)) {
+  if (Math.sign(bankTransaction.amount) !== Math.sign(glTransaction.amount)) {
     return undefined;
   }
 
   const dateDifference = dateDifferenceDays(
     bankTransaction.transactionDate ?? bankTransaction.postingDate,
-    qboTransaction.transactionDate ?? qboTransaction.postingDate,
+    glTransaction.transactionDate ?? glTransaction.postingDate,
   );
 
   if (
@@ -256,22 +256,22 @@ export const buildTimingDifferenceCandidate = (
     return undefined;
   }
 
-  if (!areTimingKindsCompatible(bankTransaction, qboTransaction)) {
+  if (!areTimingKindsCompatible(bankTransaction, glTransaction)) {
     return undefined;
   }
 
   const textSimilarity = tokenSimilarity(
     bankTransaction.normalizedComparisonTokens,
-    qboTransaction.normalizedComparisonTokens,
+    glTransaction.normalizedComparisonTokens,
   );
   const referenceSimilarity = tokenSimilarity(
     bankTransaction.normalizedReferenceTokens,
-    qboTransaction.normalizedReferenceTokens,
+    glTransaction.normalizedReferenceTokens,
   );
 
   return {
     bankTransaction,
-    qboTransaction,
+    glTransaction,
     dateDifference,
     textSimilarity,
     referenceSimilarity,
@@ -289,24 +289,24 @@ const hasDistinctiveAmount = (
 
 export const findResidualTimingDifferenceCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): TimingDifferenceCandidate[] => {
   const candidates: TimingDifferenceCandidate[] = [];
   const bankAmountFrequency = buildAmountFrequency(bankTransactions);
-  const qboAmountFrequency = buildAmountFrequency(qboTransactions);
+  const glAmountFrequency = buildAmountFrequency(glTransactions);
 
   for (const bankTransaction of bankTransactions) {
     if (!hasDistinctiveAmount(bankTransaction, bankAmountFrequency, matching)) {
       continue;
     }
 
-    for (const qboTransaction of qboTransactions) {
-      if (!hasDistinctiveAmount(qboTransaction, qboAmountFrequency, matching)) {
+    for (const glTransaction of glTransactions) {
+      if (!hasDistinctiveAmount(glTransaction, glAmountFrequency, matching)) {
         continue;
       }
 
-      const candidate = buildTimingDifferenceCandidate(bankTransaction, qboTransaction, matching);
+      const candidate = buildTimingDifferenceCandidate(bankTransaction, glTransaction, matching);
 
       if (!candidate) {
         continue;
@@ -322,17 +322,17 @@ export const findResidualTimingDifferenceCandidates = (
 
 export const buildLikelyMiscodingCandidate = (
   bankTransaction: NormalizedTransaction & { amount: number },
-  qboTransaction: NormalizedTransaction & { amount: number },
+  glTransaction: NormalizedTransaction & { amount: number },
   matching: MatchingConfig,
   thresholds: MiscodingThresholds,
 ): MiscodingCandidate | undefined => {
-  if (!currencyEquals(bankTransaction.amount, qboTransaction.amount, matching.amountTolerance)) {
+  if (!currencyEquals(bankTransaction.amount, glTransaction.amount, matching.amountTolerance)) {
     return undefined;
   }
 
   const dateDifference = dateDifferenceDays(
     bankTransaction.transactionDate ?? bankTransaction.postingDate,
-    qboTransaction.transactionDate ?? qboTransaction.postingDate,
+    glTransaction.transactionDate ?? glTransaction.postingDate,
   );
 
   if (dateDifference === null || dateDifference > matching.dateToleranceDays) {
@@ -341,24 +341,24 @@ export const buildLikelyMiscodingCandidate = (
 
   const textSimilarity = tokenSimilarity(
     bankTransaction.normalizedComparisonTokens,
-    qboTransaction.normalizedComparisonTokens,
+    glTransaction.normalizedComparisonTokens,
   );
   const referenceSimilarity = tokenSimilarity(
     bankTransaction.normalizedReferenceTokens,
-    qboTransaction.normalizedReferenceTokens,
+    glTransaction.normalizedReferenceTokens,
   );
   const hasReferenceContext =
     Boolean(
       bankTransaction.checkNumber ||
       bankTransaction.referenceNumber ||
-      qboTransaction.checkNumber ||
-      qboTransaction.referenceNumber,
+      glTransaction.checkNumber ||
+      glTransaction.referenceNumber,
     ) ||
     bankTransaction.normalizedReferenceTokens.length > 0 ||
-    qboTransaction.normalizedReferenceTokens.length > 0;
+    glTransaction.normalizedReferenceTokens.length > 0;
   const hasNarrativeContext =
     bankTransaction.normalizedComparisonTokens.length > 0 &&
-    qboTransaction.normalizedComparisonTokens.length > 0;
+    glTransaction.normalizedComparisonTokens.length > 0;
   const conflictingNarrative =
     hasNarrativeContext && textSimilarity <= thresholds.textSimilarityMax;
   const conflictingReference =
@@ -370,7 +370,7 @@ export const buildLikelyMiscodingCandidate = (
 
   return {
     bankTransaction,
-    qboTransaction,
+    glTransaction,
     dateDifference,
     textSimilarity,
     referenceSimilarity,
@@ -380,12 +380,12 @@ export const buildLikelyMiscodingCandidate = (
 
 export const findLikelyMiscodingCandidates = (
   bankTransactions: NormalizedTransaction[],
-  qboTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
   matching: MatchingConfig,
 ): MiscodingCandidate[] => {
   const candidates: MiscodingCandidate[] = [];
   const bankAmountFrequency = buildAmountFrequency(bankTransactions);
-  const qboAmountFrequency = buildAmountFrequency(qboTransactions);
+  const glAmountFrequency = buildAmountFrequency(glTransactions);
   const thresholds = buildMiscodingThresholds(matching);
 
   for (const bankTransaction of bankTransactions) {
@@ -393,14 +393,14 @@ export const findLikelyMiscodingCandidates = (
       continue;
     }
 
-    for (const qboTransaction of qboTransactions) {
-      if (!hasDistinctiveAmount(qboTransaction, qboAmountFrequency, matching)) {
+    for (const glTransaction of glTransactions) {
+      if (!hasDistinctiveAmount(glTransaction, glAmountFrequency, matching)) {
         continue;
       }
 
       const candidate = buildLikelyMiscodingCandidate(
         bankTransaction,
-        qboTransaction,
+        glTransaction,
         matching,
         thresholds,
       );

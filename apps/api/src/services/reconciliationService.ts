@@ -41,9 +41,9 @@ export interface ExecuteReconciliationInput {
   correlationId: string;
   runId?: string;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
-  sourceFileIds?: Partial<Record<'bank' | 'qbo', string>>;
+  sourceFileIds?: Partial<Record<'bank' | 'gl', string>>;
   bankFile: UploadedFile;
-  qboFile: UploadedFile;
+  glFile: UploadedFile;
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
@@ -63,7 +63,7 @@ export const executeReconciliation = async ({
   lifecycleStore,
   sourceFileIds,
   bankFile,
-  qboFile,
+  glFile,
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
@@ -75,9 +75,9 @@ export const executeReconciliation = async ({
   log.info({
     action: 'service.reconciliation.start',
     bankFile: bankFile.originalname,
-    qboFile: qboFile.originalname,
+    glFile: glFile.originalname,
     bankSizeBytes: bankFile.size,
-    qboSizeBytes: qboFile.size,
+    glSizeBytes: glFile.size,
   });
 
   // Times and logs a lifecycleStore persistence call at debug level, so a stalled
@@ -99,7 +99,7 @@ export const executeReconciliation = async ({
     dateToleranceDays: config.matching.dateToleranceDays,
     timingDifferenceDays: config.matching.timingDifferenceDays,
     bankHeaderRow: config.bank.headerRow,
-    qboHeaderRow: config.qbo.headerRow,
+    glHeaderRow: config.gl.headerRow,
   });
 
   const runId = providedRunId ?? randomUUID();
@@ -110,9 +110,9 @@ export const executeReconciliation = async ({
   log.debug({ action: 'service.parse.start' });
 
   let bankParsed: Awaited<ReturnType<typeof parseWorkbook>>;
-  let qboParsed: Awaited<ReturnType<typeof parseWorkbook>>;
+  let glParsed: Awaited<ReturnType<typeof parseWorkbook>>;
   try {
-    [bankParsed, qboParsed] = await Promise.all([
+    [bankParsed, glParsed] = await Promise.all([
       parseWorkbook({
         source: 'bank',
         sourceFileId: sourceFileIds?.bank,
@@ -123,13 +123,13 @@ export const executeReconciliation = async ({
         config: config.bank,
       }),
       parseWorkbook({
-        source: 'qbo',
-        sourceFileId: sourceFileIds?.qbo,
-        fileName: qboFile.originalname,
-        mimeType: qboFile.mimetype,
-        sizeBytes: qboFile.size,
-        buffer: qboFile.buffer,
-        config: config.qbo,
+        source: 'gl',
+        sourceFileId: sourceFileIds?.gl,
+        fileName: glFile.originalname,
+        mimeType: glFile.mimetype,
+        sizeBytes: glFile.size,
+        buffer: glFile.buffer,
+        config: config.gl,
       }),
     ]);
   } catch (parseError) {
@@ -147,13 +147,13 @@ export const executeReconciliation = async ({
     action: 'service.parse.completed',
     durationMs: Date.now() - parseStart,
     bankRawRows: bankParsed.rawRows.length,
-    qboRawRows: qboParsed.rawRows.length,
+    glRawRows: glParsed.rawRows.length,
     bankWorksheet: bankParsed.sourceFile.worksheetName,
-    qboWorksheet: qboParsed.sourceFile.worksheetName,
+    glWorksheet: glParsed.sourceFile.worksheetName,
   });
 
-  const sourceFiles = [bankParsed.sourceFile, qboParsed.sourceFile] as const;
-  const rawRows = [...bankParsed.rawRows, ...qboParsed.rawRows];
+  const sourceFiles = [bankParsed.sourceFile, glParsed.sourceFile] as const;
+  const rawRows = [...bankParsed.rawRows, ...glParsed.rawRows];
 
   if (lifecycleStore) {
     await runPersistStep('service.persist.parsedRows.completed', () =>
@@ -168,8 +168,8 @@ export const executeReconciliation = async ({
       rows: bankParsed.rawRows.slice(0, 5).map((r) => ({ line: r.lineNumber, raw: r.rawValues })),
     });
     log.debug({
-      action: 'service.parse.qbo.sample',
-      rows: qboParsed.rawRows.slice(0, 5).map((r) => ({ line: r.lineNumber, raw: r.rawValues })),
+      action: 'service.parse.gl.sample',
+      rows: glParsed.rawRows.slice(0, 5).map((r) => ({ line: r.lineNumber, raw: r.rawValues })),
     });
   }
 
@@ -177,7 +177,7 @@ export const executeReconciliation = async ({
   const reconStart = Date.now();
   log.debug({
     action: 'service.reconciliation.pipeline.start',
-    totalRawRows: bankParsed.rawRows.length + qboParsed.rawRows.length,
+    totalRawRows: bankParsed.rawRows.length + glParsed.rawRows.length,
   });
 
   let auditEvents: AuditEvent[] = [
@@ -261,7 +261,7 @@ export const executeReconciliation = async ({
       groupedMatchResultCount: matching.groupedMatchResults.length,
       probableMatchCount: matching.probableMatches.length,
       unmatchedBankCount: matching.unmatchedBankTransactionIds.size,
-      unmatchedQboCount: matching.unmatchedQboTransactionIds.size,
+      unmatchedGlCount: matching.unmatchedGlTransactionIds.size,
       duplicateCount: matching.duplicateTransactionIds.size,
     });
     if (process.env.DEBUG_RECONCILIATION === 'true') {
@@ -300,7 +300,7 @@ export const executeReconciliation = async ({
       normalizedTransactions,
       matchResults: matching.matchResults,
       unmatchedBankTransactionIds: matching.unmatchedBankTransactionIds,
-      unmatchedQboTransactionIds: matching.unmatchedQboTransactionIds,
+      unmatchedGlTransactionIds: matching.unmatchedGlTransactionIds,
       duplicateTransactionIds: matching.duplicateTransactionIds,
       groupedMatchResults: matching.groupedMatchResults,
       reporting: config.reporting,
@@ -410,7 +410,7 @@ export const executeReconciliation = async ({
     timingDifferences: summary.timingDifferences,
     dataQualityIssues: summary.dataQualityIssues,
     missingFromBank: summary.missingFromBank,
-    missingFromQBO: summary.missingFromQBO,
+    missingFromGL: summary.missingFromGL,
     duplicates: summary.duplicates,
   });
 

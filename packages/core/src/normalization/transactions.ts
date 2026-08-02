@@ -74,7 +74,7 @@ const computeSignedAmount = (
   source: SourceSystem,
   config: ReconciliationConfig,
 ): { amount: number | null; debit: number | null; credit: number | null } => {
-  const sourceConfig = source === 'bank' ? config.bank : config.qbo;
+  const sourceConfig = source === 'bank' ? config.bank : config.gl;
   const parsedAmount = parseNumber(row.amountRaw);
   const debit = parseNumber(row.debitRaw);
   const credit = parseNumber(row.creditRaw);
@@ -142,7 +142,7 @@ export const normalizeTransactions = (
       dataQualityIssues.push('Transaction date is missing or malformed.');
     }
 
-    const sourceConfig = row.source === 'bank' ? config.bank : config.qbo;
+    const sourceConfig = row.source === 'bank' ? config.bank : config.gl;
     if (amount === 0 && !sourceConfig.allowZeroAmount) {
       dataQualityIssues.push('Zero amount transaction requires review.');
     }

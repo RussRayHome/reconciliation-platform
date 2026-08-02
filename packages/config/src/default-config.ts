@@ -34,10 +34,10 @@ const buildAliases = (overrides: Partial<ColumnAliasMap> = {}): ColumnAliasMap =
 
 const defaultSeverityByCategory: Record<ErrorCategory, SeverityLevel> = {
   MissingFromBank: 'High',
-  MissingFromQBO: 'High',
+  MissingFromGL: 'High',
   AmountMismatch: 'High',
   DuplicateInBank: 'High',
-  DuplicateInQBO: 'High',
+  DuplicateInGL: 'High',
   LikelySplitCombineIssue: 'High',
   DepositGroupingIssue: 'High',
   LikelyMiscoding: 'High',
@@ -66,18 +66,18 @@ const defaultSeverityByCategory: Record<ErrorCategory, SeverityLevel> = {
 };
 
 const createSourceConfig = (
-  source: 'bank' | 'qbo',
+  source: 'bank' | 'gl',
   overrides: Partial<SourceReconciliationConfig> = {},
 ): SourceReconciliationConfig => ({
   headerRow: 1,
   transactionStartRow: 2,
   excludedRows: [],
-  excludeBeginningBalance: source === 'qbo',
+  excludeBeginningBalance: source === 'gl',
   beginningBalancePatterns: ['BEGINNING BALANCE', 'OPENING BALANCE'],
   amountSignConvention: 'signedAmount',
   allowZeroAmount: false,
   columnAliases: buildAliases(
-    source === 'qbo'
+    source === 'gl'
       ? {
           description: ['memo', 'description', 'bank memo', 'detail'],
           payeeName: ['name', 'payee', 'payee/name'],
@@ -101,7 +101,7 @@ export const defaultReconciliationConfig: ReconciliationConfig = {
   bank: createSourceConfig('bank', {
     amountSignConvention: 'debitCreditColumns',
   }),
-  qbo: createSourceConfig('qbo'),
+  gl: createSourceConfig('gl'),
   textNormalization: {
     uppercase: true,
     stripPunctuation: true,
@@ -182,7 +182,7 @@ export const resolveReconciliationConfig = (
 
   return {
     bank: mergeSourceConfig(defaultReconciliationConfig.bank, match.bank),
-    qbo: mergeSourceConfig(defaultReconciliationConfig.qbo, match.qbo),
+    gl: mergeSourceConfig(defaultReconciliationConfig.gl, match.gl),
     textNormalization: defaultReconciliationConfig.textNormalization,
     matching: {
       ...defaultReconciliationConfig.matching,

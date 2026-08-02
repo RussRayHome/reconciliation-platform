@@ -1,6 +1,6 @@
 /** The two transaction sources the reconciliation engine compares. */
-export const sourceSystems = ['bank', 'qbo'] as const;
-/** Union of the two transaction source identifiers: `'bank'` or `'qbo'`. */
+export const sourceSystems = ['bank', 'gl'] as const;
+/** Union of the two transaction source identifiers: `'bank'` or `'gl'`. */
 export type SourceSystem = (typeof sourceSystems)[number];
 
 /** Lifecycle status of a reconciliation run stored in the database. */
@@ -43,7 +43,7 @@ export const matchDispositions = [
   'TimingDifference',
   'AmountMismatch',
   'MissingFromBank',
-  'MissingFromQBO',
+  'MissingFromGL',
   'DuplicateTransaction',
   'InvalidData',
   'AmbiguousReview',
@@ -62,10 +62,10 @@ export type SeverityLevel = (typeof severityLevels)[number];
  */
 export const errorCategories = [
   'MissingFromBank',
-  'MissingFromQBO',
+  'MissingFromGL',
   'AmountMismatch',
   'DuplicateInBank',
-  'DuplicateInQBO',
+  'DuplicateInGL',
   'LikelySplitCombineIssue',
   'DepositGroupingIssue',
   'LikelyMiscoding',
