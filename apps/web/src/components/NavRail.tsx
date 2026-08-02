@@ -1,14 +1,14 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+
+import { NavLink } from 'react-router-dom';
 
 import type { ExceptionItem } from '@recon/domain';
 
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
+import { RemoveAccountDialog } from './RemoveAccountDialog';
+import { routePaths } from '../routes/routePaths';
+import { BANK_TEMPLATE_URL, GL_TEMPLATE_URL } from '../lib/templates';
+import { useNavSectionCollapse } from '../hooks/useNavSectionCollapse';
 import {
   loadSavedViews,
   matchesFacets,
@@ -18,22 +18,25 @@ import {
   type SavedTriageView,
 } from '../lib/exceptionTriage';
 
-/** Flattened workspace destinations surfaced by the navigation rail. */
-export type RailDestination =
-  'setup' | 'summary' | 'probable-matches' | 'exceptions' | 'close' | 'developer';
-
 const RAIL_COLLAPSED_STORAGE_PREFIX = 'reconciliation-platform:nav-rail-collapsed';
 
 const railItems: ReadonlyArray<{
-  id: RailDestination;
+  to: string;
   label: string;
   icon: SemanticIconName;
 }> = [
-  { id: 'setup', label: 'Setup', icon: 'setup' },
-  { id: 'summary', label: 'Summary', icon: 'reports' },
-  { id: 'probable-matches', label: 'Probable matches', icon: 'match' },
-  { id: 'exceptions', label: 'Exceptions', icon: 'exceptions' },
-  { id: 'close', label: 'Close & export', icon: 'operations' },
+  { to: routePaths.importFiles, label: 'Import Files', icon: 'setup' },
+  { to: routePaths.reconSummary, label: 'Recon summary', icon: 'reports' },
+  { to: routePaths.probableMatches, label: 'Probable matches', icon: 'match' },
+  { to: routePaths.exceptions, label: 'Exceptions', icon: 'exceptions' },
+];
+
+const accountItems: ReadonlyArray<{ to: string; label: string; icon: SemanticIconName }> = [
+  { to: routePaths.accountProfile, label: 'Profile', icon: 'profile' },
+  { to: routePaths.accountSecurity, label: 'Security', icon: 'security' },
+  { to: routePaths.accountBilling, label: 'Billing', icon: 'billing' },
+  { to: routePaths.accountNotification, label: 'Notification', icon: 'notification' },
+  { to: routePaths.accountPreferences, label: 'Preferences', icon: 'preferences' },
 ];
 
 const loadRailCollapsed = (username: string): boolean => {
@@ -57,13 +60,26 @@ const persistRailCollapsed = (username: string, collapsed: boolean): void => {
   }
 };
 
+const computeInitials = (label: string): string => {
+  const parts = label.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return '?';
+  }
+
+  if (parts.length === 1) {
+    return (parts[0] ?? '').slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
+};
+
 /**
- * Sticky left navigation rail: flattened workspace destinations with roving-tabindex
- * keyboard support, permission-gated system links, and saved triage views.
+ * Sticky left navigation rail: flattened workspace destinations plus collapsible Mapping,
+ * Account, and Documentation sections, all as real routes, with permission-gated system
+ * links, saved triage views, and a persistent identity/sign-out footer.
  */
 export function NavRail({
-  activeDestination,
-  onSelectDestination,
   unreviewedExceptionCount,
   exceptions,
   onApplySavedView,
@@ -71,11 +87,12 @@ export function NavRail({
   showDeveloperDashboardLink,
   canAccessDocumentation,
   username,
+  profileLabel,
+  roleLabel,
+  onSignOut,
   isMobileOpen,
   onMobileClose,
 }: Readonly<{
-  activeDestination: RailDestination;
-  onSelectDestination: (destination: RailDestination) => void;
   unreviewedExceptionCount: number | null;
   exceptions: ExceptionItem[];
   onApplySavedView: (view: SavedTriageView) => void;
@@ -83,10 +100,14 @@ export function NavRail({
   showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
   username: string;
+  profileLabel: string;
+  roleLabel: string;
+  onSignOut: () => void;
   isMobileOpen: boolean;
   onMobileClose: () => void;
 }>) {
   const [isCollapsed, setIsCollapsed] = useState(() => loadRailCollapsed(username));
+  const [isRemoveAccountOpen, setIsRemoveAccountOpen] = useState(false);
   const savedViewCounts = useSavedViewCounts(exceptions);
 
   const toggleCollapsed = (): void => {
@@ -114,7 +135,7 @@ export function NavRail({
           onClick={onMobileClose}
         />
       ) : null}
-      <nav className={railClassName} aria-label="Workspace navigation">
+      <nav className={railClassName} aria-label="Primary">
         <button
           type="button"
           className="nav-rail__toggle"
@@ -129,13 +150,102 @@ export function NavRail({
         </button>
 
         <NavRailDestinations
-          activeDestination={activeDestination}
           unreviewedExceptionCount={unreviewedExceptionCount}
           isCollapsed={isCollapsed}
-          onSelect={(destination) => {
-            onSelectDestination(destination);
-            onMobileClose();
-          }}
+          onNavigate={onMobileClose}
+        />
+
+        <CollapsibleNavSection sectionId="mapping" label="Mapping" username={username}>
+          <NavItemLink
+            to={routePaths.mappingFields}
+            label="Mapping fields"
+            icon="architecture"
+            isCollapsed={isCollapsed}
+            indented
+            onNavigate={onMobileClose}
+          />
+          <NavItemLink
+            to={routePaths.mappingUpload}
+            label="Upload files"
+            icon="upload"
+            isCollapsed={isCollapsed}
+            indented
+            onNavigate={onMobileClose}
+          />
+          {!isCollapsed ? (
+            <p className="nav-rail__subgroup-label">
+              <span className="nav-rail__item-icon" aria-hidden="true">
+                <SemanticIcon name="records" />
+              </span>
+              Download templates
+            </p>
+          ) : null}
+          <div className="nav-rail__indent">
+            <a
+              className="nav-rail__item"
+              href={BANK_TEMPLATE_URL}
+              download
+              title={isCollapsed ? 'Bank template' : undefined}
+            >
+              <span className="nav-rail__item-label">Bank template</span>
+              <span className="nav-rail__pill">CSV</span>
+            </a>
+            <a
+              className="nav-rail__item"
+              href={GL_TEMPLATE_URL}
+              download
+              title={isCollapsed ? 'GL template' : undefined}
+            >
+              <span className="nav-rail__item-label">GL template</span>
+              <span className="nav-rail__pill">CSV</span>
+            </a>
+          </div>
+        </CollapsibleNavSection>
+
+        <div className="nav-rail__group">
+          <NavItemLink
+            to={routePaths.export}
+            label="Export"
+            icon="operations"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
+        </div>
+
+        <CollapsibleNavSection sectionId="account" label="Account" username={username}>
+          {accountItems.map((item) => (
+            <NavItemLink
+              key={item.to}
+              to={item.to}
+              label={item.label}
+              icon={item.icon}
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+          ))}
+          <button
+            type="button"
+            className="nav-rail__item"
+            title={isCollapsed ? 'Remove account' : undefined}
+            onClick={() => {
+              setIsRemoveAccountOpen(true);
+              onMobileClose();
+            }}
+          >
+            <span className="nav-rail__item-icon" aria-hidden="true">
+              <SemanticIcon name="remove" />
+            </span>
+            <span className="nav-rail__item-label">Remove account</span>
+          </button>
+        </CollapsibleNavSection>
+
+        <NavRailSystemLinks
+          docsHref={docsHref}
+          showDeveloperDashboardLink={showDeveloperDashboardLink}
+          canAccessDocumentation={canAccessDocumentation}
+          isCollapsed={isCollapsed}
+          username={username}
+          onNavigate={onMobileClose}
         />
 
         {!isCollapsed && savedViewCounts.length > 0 ? (
@@ -158,19 +268,108 @@ export function NavRail({
           </div>
         ) : null}
 
-        <NavRailSystemLinks
-          docsHref={docsHref}
-          showDeveloperDashboardLink={showDeveloperDashboardLink}
-          canAccessDocumentation={canAccessDocumentation}
-          isCollapsed={isCollapsed}
-          activeDestination={activeDestination}
-          onSelectDestination={(destination) => {
-            onSelectDestination(destination);
-            onMobileClose();
-          }}
-        />
+        <div className="nav-rail__footer">
+          <span className="nav-rail__footer-avatar" aria-hidden="true">
+            {computeInitials(profileLabel)}
+          </span>
+          <div className="nav-rail__footer-who">
+            <span className="nav-rail__footer-name">{profileLabel}</span>
+            <span className="nav-rail__footer-role">{roleLabel}</span>
+          </div>
+          <button type="button" className="nav-rail__footer-logout" onClick={onSignOut}>
+            Log out
+          </button>
+        </div>
       </nav>
+
+      <RemoveAccountDialog
+        username={username}
+        isOpen={isRemoveAccountOpen}
+        onClose={() => setIsRemoveAccountOpen(false)}
+      />
     </>
+  );
+}
+
+/** Shared route-link rendering for a single rail item (used for flat items and section children). */
+function NavItemLink({
+  to,
+  label,
+  icon,
+  isCollapsed,
+  indented,
+  badge,
+  onNavigate,
+}: Readonly<{
+  to: string;
+  label: string;
+  icon: SemanticIconName;
+  isCollapsed: boolean;
+  indented?: boolean;
+  badge?: number | null;
+  onNavigate: () => void;
+}>) {
+  const link = (
+    <NavLink
+      to={to}
+      end={to === routePaths.importFiles}
+      className={({ isActive }) =>
+        isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'
+      }
+      title={isCollapsed ? label : undefined}
+      onClick={onNavigate}
+    >
+      <span className="nav-rail__item-icon" aria-hidden="true">
+        <SemanticIcon name={icon} />
+      </span>
+      <span className="nav-rail__item-label">{label}</span>
+      {badge !== null && badge !== undefined && badge > 0 ? (
+        <span className="nav-rail__badge" aria-label={`${badge} open exceptions`}>
+          {badge}
+        </span>
+      ) : null}
+    </NavLink>
+  );
+
+  return indented ? <div className="nav-rail__indent">{link}</div> : link;
+}
+
+/** Collapsible nav-rail group: `<button aria-expanded>` header + children, state persisted per section/user. */
+function CollapsibleNavSection({
+  sectionId,
+  label,
+  username,
+  children,
+}: Readonly<{
+  sectionId: string;
+  label: string;
+  username: string;
+  children: ReactNode;
+}>) {
+  const { isOpen, toggle } = useNavSectionCollapse(sectionId, username);
+
+  return (
+    <div className="nav-rail__section nav-rail__collapsible">
+      <button
+        type="button"
+        className="nav-rail__section-header"
+        aria-expanded={isOpen}
+        onClick={toggle}
+      >
+        <span className="nav-rail__section-title">{label}</span>
+        <span
+          className={
+            isOpen
+              ? 'nav-rail__section-chevron'
+              : 'nav-rail__section-chevron nav-rail__section-chevron--closed'
+          }
+          aria-hidden="true"
+        >
+          ⌄
+        </span>
+      </button>
+      {isOpen ? <div className="nav-rail__section-children">{children}</div> : null}
+    </div>
   );
 }
 
@@ -208,106 +407,29 @@ function useSavedViewCounts(
   );
 }
 
-/** Vertical roving-tabindex tab list over the flattened workspace destinations. */
+/** Flattened workspace destinations, rendered as real routes via `NavLink`. */
 function NavRailDestinations({
-  activeDestination,
   unreviewedExceptionCount,
   isCollapsed,
-  onSelect,
+  onNavigate,
 }: Readonly<{
-  activeDestination: RailDestination;
   unreviewedExceptionCount: number | null;
   isCollapsed: boolean;
-  onSelect: (destination: RailDestination) => void;
+  onNavigate: () => void;
 }>) {
-  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const activeIndex = railItems.findIndex((item) => item.id === activeDestination);
-  const rovingIndex = activeIndex === -1 ? 0 : activeIndex;
-
-  const focusAndSelectItem = (index: number): void => {
-    const boundedIndex = (index + railItems.length) % railItems.length;
-    const nextItem = railItems[boundedIndex];
-
-    if (!nextItem) {
-      return;
-    }
-
-    onSelect(nextItem.id);
-    itemRefs.current[boundedIndex]?.focus();
-  };
-
-  const handleItemKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void => {
-    switch (event.key) {
-      case 'ArrowDown':
-      case 'ArrowRight':
-        event.preventDefault();
-        focusAndSelectItem(index + 1);
-        break;
-      case 'ArrowUp':
-      case 'ArrowLeft':
-        event.preventDefault();
-        focusAndSelectItem(index - 1);
-        break;
-      case 'Home':
-        event.preventDefault();
-        focusAndSelectItem(0);
-        break;
-      case 'End':
-        event.preventDefault();
-        focusAndSelectItem(railItems.length - 1);
-        break;
-      default:
-        break;
-    }
-  };
-
   return (
-    <div
-      className="nav-rail__group"
-      role="tablist"
-      aria-label="Workspace sections"
-      aria-orientation="vertical"
-    >
-      {railItems.map((item, index) => {
-        const isActive = item.id === activeDestination;
-        const showBadge =
-          item.id === 'exceptions' &&
-          unreviewedExceptionCount !== null &&
-          unreviewedExceptionCount > 0;
-
-        return (
-          <button
-            key={item.id}
-            ref={(element) => {
-              itemRefs.current[index] = element;
-            }}
-            type="button"
-            role="tab"
-            id={`tab-${item.id}`}
-            className={isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'}
-            aria-selected={isActive}
-            aria-current={isActive ? 'page' : undefined}
-            aria-controls={`tab-panel-${item.id}`}
-            tabIndex={rovingIndex === index ? 0 : -1}
-            title={isCollapsed ? item.label : undefined}
-            onClick={() => onSelect(item.id)}
-            onKeyDown={(event) => handleItemKeyDown(event, index)}
-          >
-            <span className="nav-rail__item-icon" aria-hidden="true">
-              <SemanticIcon name={item.icon} />
-            </span>
-            <span className="nav-rail__item-label">{item.label}</span>
-            {showBadge ? (
-              <span
-                className="nav-rail__badge"
-                aria-label={`${unreviewedExceptionCount} unreviewed`}
-              >
-                {unreviewedExceptionCount}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
+    <div className="nav-rail__group" aria-label="Workspace sections">
+      {railItems.map((item) => (
+        <NavItemLink
+          key={item.to}
+          to={item.to}
+          label={item.label}
+          icon={item.icon}
+          isCollapsed={isCollapsed}
+          onNavigate={onNavigate}
+          badge={item.to === routePaths.exceptions ? unreviewedExceptionCount : undefined}
+        />
+      ))}
     </div>
   );
 }
@@ -318,15 +440,15 @@ function NavRailSystemLinks({
   showDeveloperDashboardLink,
   canAccessDocumentation,
   isCollapsed,
-  activeDestination,
-  onSelectDestination,
+  username,
+  onNavigate,
 }: Readonly<{
   docsHref: string;
   showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
   isCollapsed: boolean;
-  activeDestination: RailDestination;
-  onSelectDestination: (destination: RailDestination) => void;
+  username: string;
+  onNavigate: () => void;
 }>) {
   if (!canAccessDocumentation && !showDeveloperDashboardLink) {
     return null;
@@ -336,34 +458,45 @@ function NavRailSystemLinks({
     <div className="nav-rail__section nav-rail__section--system" aria-label="System">
       <p className="nav-rail__section-title">System</p>
       {showDeveloperDashboardLink ? (
-        <button
-          type="button"
-          className={
-            activeDestination === 'developer'
-              ? 'nav-rail__item nav-rail__item--active'
-              : 'nav-rail__item'
+        <NavLink
+          to={routePaths.developer}
+          className={({ isActive }) =>
+            isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'
           }
-          aria-current={activeDestination === 'developer' ? 'page' : undefined}
           title={isCollapsed ? 'Developer Dashboard' : undefined}
-          onClick={() => onSelectDestination('developer')}
+          onClick={onNavigate}
         >
           <span className="nav-rail__item-icon" aria-hidden="true">
             <SemanticIcon name="operations" />
           </span>
           <span className="nav-rail__item-label">Developer Dashboard</span>
-        </button>
+        </NavLink>
       ) : null}
       {canAccessDocumentation ? (
-        <a
-          className="nav-rail__item nav-rail__item--link"
-          href={docsHref}
-          title={isCollapsed ? 'Documentation' : undefined}
-        >
-          <span className="nav-rail__item-icon" aria-hidden="true">
-            <SemanticIcon name="help" />
-          </span>
-          <span className="nav-rail__item-label">Documentation</span>
-        </a>
+        <CollapsibleNavSection sectionId="documentation" label="Documentation" username={username}>
+          <div className="nav-rail__indent">
+            {/* Real, working documentation link (full-page nav to the separate Docs shell) --
+                kept as-is under its new label rather than routed to the coming-soon placeholder,
+                so this doesn't regress existing functionality. */}
+            <a
+              className="nav-rail__item nav-rail__item--link"
+              href={docsHref}
+              title={isCollapsed ? 'User Guide' : undefined}
+            >
+              <span className="nav-rail__item-icon" aria-hidden="true">
+                <SemanticIcon name="reference" />
+              </span>
+              <span className="nav-rail__item-label">User Guide</span>
+            </a>
+            <NavItemLink
+              to={routePaths.documentationRulebook}
+              label="Rulebook"
+              icon="rules"
+              isCollapsed={isCollapsed}
+              onNavigate={onNavigate}
+            />
+          </div>
+        </CollapsibleNavSection>
       ) : null}
     </div>
   );

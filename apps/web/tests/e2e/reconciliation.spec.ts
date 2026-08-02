@@ -41,7 +41,7 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   await expect(page.getByText('Total reviewed')).toBeVisible();
 
   // The Review segmented control swaps between Summary, Probable matches, and Exceptions.
-  await page.locator('#tab-probable-matches').click();
-  await page.locator('#tab-exceptions').click();
+  await page.getByRole('link', { name: 'Probable matches' }).click();
+  await page.getByRole('link', { name: 'Exceptions' }).click();
   await expect(page.getByPlaceholder('Search file, message, or tokens')).toBeVisible();
 });
