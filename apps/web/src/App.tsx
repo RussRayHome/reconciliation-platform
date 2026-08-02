@@ -5,16 +5,28 @@ import {
   type ChangeEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
 } from 'react';
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { SectionCard } from '@recon/ui';
 import type { ReviewerDecision } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
 import { DeveloperDashboard } from './components/DeveloperDashboard';
+import { ComingSoonPage } from './components/ComingSoonPage';
+import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
 import { SourceDropZone } from './components/SourceDropZone';
 import {
@@ -25,7 +37,7 @@ import {
   RulesCatalogSection,
 } from './components/AppWorkspacePanels';
 import { RunBar } from './components/RunBar';
-import { NavRail, type RailDestination } from './components/NavRail';
+import { NavRail } from './components/NavRail';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import { getLatestReconciliationRunRequest, loginRequest } from './lib/api';
 import {
@@ -33,8 +45,9 @@ import {
   rulesCatalogLastRefresh,
   varianceMetricCatalog,
   type AppTab,
-  type ReportView,
 } from './lib/appCatalog';
+import { readEnvString, resolveEnvironmentPaths } from './lib/environmentPath';
+import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
 import { useReconciliationRun } from './hooks/useReconciliationRun';
 import { useReviewerDecisions } from './hooks/useReviewerDecisions';
@@ -74,7 +87,7 @@ const RUN_STORAGE_SCHEMA_VERSION = 2;
 const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
 const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
 const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-updated-at';
-const invalidLoginMessage = "That username and password don't match. Check both and try again.";
+const invalidLoginMessage = 'Invalid username or password. Try again.';
 
 const usersByUsername: Record<string, AppUser> = {
   rray2: { username: 'rray2', role: 'developer' },
@@ -316,32 +329,6 @@ const formatElapsedLabel = (elapsedMs: number): string => {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
-const appTabs = new Set<AppTab>(['setup', 'review', 'close']);
-const reportViews = new Set<ReportView>(['summary', 'probable-matches', 'exceptions']);
-
-const readWorkspaceSearchParams = (): URLSearchParams => {
-  try {
-    return new URLSearchParams(globalThis.location.search);
-  } catch {
-    return new URLSearchParams();
-  }
-};
-
-const parseInitialTab = (params: URLSearchParams, fallbackTab: AppTab): AppTab => {
-  const value = params.get('tab');
-
-  return value !== null && appTabs.has(value as AppTab) ? (value as AppTab) : fallbackTab;
-};
-
-const parseInitialView = (params: URLSearchParams): ReportView => {
-  const value = params.get('view');
-
-  return value !== null && reportViews.has(value as ReportView) ? (value as ReportView) : 'summary';
-};
-
-const parseInitialRulesPanel = (params: URLSearchParams): boolean =>
-  params.get('panel') === 'rules';
-
 type RunStatusTone = 'idle' | 'running' | 'complete' | 'error';
 
 const runStatusLabelsByTone: Record<RunStatusTone, string> = {
@@ -411,42 +398,9 @@ const useSuggestedPeriodLabel = (
   }, [isCustomPeriodLabel, suggestedPeriodLabel, setPeriodLabel]);
 };
 
-const readEnvString = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
-
 function App() {
   const env = import.meta.env as Record<string, unknown>;
-  let pathname = globalThis.location.pathname;
-  const configuredEnvironmentPathSegment = (readEnvString(env.VITE_ENVIRONMENT_PATH_SEGMENT) ?? '')
-    .trim()
-    .replace(/^\/+|\/+$/g, '');
-
-  if (pathname === '/' && configuredEnvironmentPathSegment.toLowerCase() === 'dev') {
-    const developmentAppPath = `/${configuredEnvironmentPathSegment}`;
-
-    globalThis.history.replaceState(globalThis.history.state, '', developmentAppPath);
-    pathname = developmentAppPath;
-  }
-
-  const nestedRouteEnvironmentPathSegment =
-    /^\/([A-Za-z0-9_-]+)\/(?:docs(?:\/|$)|developer-dashboard\.html$)/.exec(pathname)?.[1] ?? '';
-  const rootRouteEnvironmentPathSegment = /^\/([A-Za-z0-9_-]+)\/?$/.exec(pathname)?.[1] ?? '';
-  const routeEnvironmentPathSegment =
-    nestedRouteEnvironmentPathSegment ||
-    (rootRouteEnvironmentPathSegment.toLowerCase() === 'docs'
-      ? ''
-      : rootRouteEnvironmentPathSegment);
-  const activeEnvironmentPathSegment =
-    routeEnvironmentPathSegment || configuredEnvironmentPathSegment;
-  const docsHref = activeEnvironmentPathSegment ? `/${activeEnvironmentPathSegment}/docs` : '/docs';
-  const developerDashboardHref = activeEnvironmentPathSegment
-    ? `/${activeEnvironmentPathSegment}/developer-dashboard.html`
-    : '/developer-dashboard.html';
-  const appHref = activeEnvironmentPathSegment ? `/${activeEnvironmentPathSegment}` : '/';
-  const isDocsRoute =
-    pathname === '/docs' ||
-    pathname.startsWith('/docs/') ||
-    /^\/[A-Za-z0-9_-]+\/docs(?:\/|$)/.test(pathname);
+  const { docsHref, developerDashboardHref, appHref, isDocsRoute } = resolveEnvironmentPaths(env);
 
   const [authenticatedUserSession, setAuthenticatedUserSession] =
     useState<AuthenticatedUserSession | null>(() => loadAuthenticatedUserSession());
@@ -466,11 +420,30 @@ function App() {
 
   if (!activeUser || !rolePermissions) {
     return (
-      <LoginShell
-        onAuthenticated={(session) => {
-          setAuthenticatedUserSession(session);
-        }}
-      />
+      <BrowserRouter basename={appHref}>
+        <Routes>
+          <Route
+            path={routePaths.login}
+            element={
+              <LoginShell
+                onAuthenticated={(session) => {
+                  // Reset the URL to the app root so a fresh authenticated load doesn't
+                  // linger on /login (or one of its sub-screens) after signing in.
+                  globalThis.history.replaceState(globalThis.history.state, '', appHref);
+                  setAuthenticatedUserSession(session);
+                }}
+              />
+            }
+          />
+          <Route
+            path={routePaths.forgotPassword}
+            element={<PlaceholderScreen title="Forgot Password" />}
+          />
+          <Route path={routePaths.signup} element={<PlaceholderScreen title="New Account" />} />
+          <Route path={routePaths.support} element={<PlaceholderScreen title="Contact Support" />} />
+          <Route path="*" element={<Navigate to={routePaths.login} replace />} />
+        </Routes>
+      </BrowserRouter>
     );
   }
 
@@ -479,14 +452,16 @@ function App() {
     .filter((value) => value.length > 0)
     .join(' ');
 
+  const handleSignOut = (): void => {
+    setAuthenticatedUserSession(null);
+  };
+
   const controls = (
     <UserRoleControls
       activeUser={activeUser}
       rolePermissions={rolePermissions}
       displayName={displayName.length > 0 ? displayName : undefined}
-      onSignOut={() => {
-        setAuthenticatedUserSession(null);
-      }}
+      onSignOut={handleSignOut}
     />
   );
 
@@ -529,15 +504,19 @@ function App() {
   }
 
   return (
-    <ReconciliationApp
-      docsHref={docsHref}
-      rolePermissions={rolePermissions}
-      roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
-      controls={controls}
-      showDeveloperDashboardLink={showDeveloperDashboardLink}
-      username={activeUser.username}
-      profileLabel={displayName.length > 0 ? displayName : activeUser.username}
-    />
+    <BrowserRouter basename={appHref}>
+      <ReconciliationApp
+        docsHref={docsHref}
+        rolePermissions={rolePermissions}
+        roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
+        controls={controls}
+        showDeveloperDashboardLink={showDeveloperDashboardLink}
+        username={activeUser.username}
+        profileLabel={displayName.length > 0 ? displayName : activeUser.username}
+        roleLabel={roleDisplayLabels[activeUser.role]}
+        onSignOut={handleSignOut}
+      />
+    </BrowserRouter>
   );
 }
 
@@ -549,6 +528,8 @@ function ReconciliationApp({
   showDeveloperDashboardLink,
   username,
   profileLabel,
+  roleLabel,
+  onSignOut,
 }: Readonly<{
   docsHref: string;
   rolePermissions: RolePermissions;
@@ -557,6 +538,8 @@ function ReconciliationApp({
   showDeveloperDashboardLink: boolean;
   username: string;
   profileLabel: string;
+  roleLabel: string;
+  onSignOut: () => void;
 }>) {
   const currentYear = new Date().getFullYear();
   const previousSevenYears = Array.from({ length: 7 }, (_, index) =>
@@ -573,16 +556,9 @@ function ReconciliationApp({
   const [isCustomPeriodLabel, setIsCustomPeriodLabel] = useState(false);
   const [hasDownloadedWorkbook, setHasDownloadedWorkbook] = useState(false);
   const [hasExportedJson, setHasExportedJson] = useState(false);
-  const initialWorkspaceParams = readWorkspaceSearchParams();
-  const [activeTab, setActiveTab] = useState<AppTab>(() =>
-    parseInitialTab(initialWorkspaceParams, roleDefaultTab),
-  );
-  const [activeView, setActiveView] = useState<ReportView>(() =>
-    parseInitialView(initialWorkspaceParams),
-  );
-  const [isRulesPanelOpen, setIsRulesPanelOpen] = useState<boolean>(() =>
-    parseInitialRulesPanel(initialWorkspaceParams),
-  );
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [isRulesPanelOpen, setIsRulesPanelOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [pendingSavedViewId, setPendingSavedViewId] = useState<string | null>(null);
   const [persistedRun, setPersistedRun] = useState<RunData | undefined>(() => loadPersistedRun());
@@ -630,34 +606,12 @@ function ReconciliationApp({
     if (run) {
       setPersistedRun(run);
       persistRun(run);
-      setActiveTab('review');
-      setActiveView('summary');
       setLatestBackendReportError(null);
       setIsHydratingLatestBackendReport(false);
+      void navigate(routePaths.reconSummary);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- navigate identity is stable per React Router.
   }, [run]);
-
-  useEffect(() => {
-    const params = readWorkspaceSearchParams();
-    params.set('tab', activeTab);
-    params.set('view', activeView);
-
-    if (isRulesPanelOpen) {
-      params.set('panel', 'rules');
-    } else {
-      params.delete('panel');
-    }
-
-    const query = params.toString();
-    const querySuffix = query ? `?${query}` : '';
-    const nextUrl = `${globalThis.location.pathname}${querySuffix}`;
-
-    try {
-      globalThis.history.replaceState(globalThis.history.state, '', nextUrl);
-    } catch {
-      // Ignore history failures so navigation state still updates in-memory.
-    }
-  }, [activeTab, activeView, isRulesPanelOpen]);
 
   const hydrateLatestBackendReport = (): void => {
     if (hasAttemptedBackendReportHydration || run || persistedRun) {
@@ -683,33 +637,85 @@ function ReconciliationApp({
       });
   };
 
-  const handleSelectTab = (nextTab: AppTab): void => {
-    if (!rolePermissions.canAccessApplication) {
-      return;
-    }
+  const reviewAndExportRoutes = useMemo(
+    () =>
+      new Set<string>([
+        routePaths.reconSummary,
+        routePaths.probableMatches,
+        routePaths.exceptions,
+        routePaths.export,
+      ]),
+    [],
+  );
 
-    setActiveTab(nextTab);
-
-    if (nextTab === 'review' || nextTab === 'close') {
+  useEffect(() => {
+    if (reviewAndExportRoutes.has(location.pathname)) {
       hydrateLatestBackendReport();
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrateLatestBackendReport is internally idempotent; only pathname should retrigger this.
+  }, [location.pathname, reviewAndExportRoutes]);
 
-  const activeDestination: RailDestination = activeTab === 'review' ? activeView : activeTab;
-
-  const handleSelectDestination = (destination: RailDestination): void => {
-    if (destination === 'setup' || destination === 'close' || destination === 'developer') {
-      handleSelectTab(destination);
+  /**
+   * Old bookmarks/shared links encoded destination as `?tab=...&view=...` on the root path
+   * rather than a distinct pathname. Translate them to real routes once on landing.
+   */
+  useEffect(() => {
+    if (location.pathname !== routePaths.importFiles) {
       return;
     }
 
-    setActiveView(destination);
-    handleSelectTab('review');
+    const params = new URLSearchParams(location.search);
+    const legacyTab = params.get('tab');
+    const legacyView = params.get('view');
+
+    if (legacyTab === 'review') {
+      const target =
+        legacyView === 'probable-matches'
+          ? routePaths.probableMatches
+          : legacyView === 'exceptions'
+            ? routePaths.exceptions
+            : routePaths.reconSummary;
+      void navigate(target, { replace: true });
+      return;
+    }
+
+    if (legacyTab === 'close') {
+      void navigate(routePaths.export, { replace: true });
+      return;
+    }
+
+    if (legacyTab === 'developer' && showDeveloperDashboardLink) {
+      void navigate(routePaths.developer, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate, showDeveloperDashboardLink]);
+
+  /**
+   * Role-based default landing tab (analysts land on Review) — applies only to the very first
+   * app load, not to later visits to "/", so clicking "Import Files" always actually lands there
+   * even for roles whose default landing tab is Review.
+   */
+  const hasAppliedInitialRoleLanding = useRef(false);
+
+  useEffect(() => {
+    if (hasAppliedInitialRoleLanding.current) {
+      return;
+    }
+
+    hasAppliedInitialRoleLanding.current = true;
+
+    if (location.pathname === routePaths.importFiles && !location.search && roleDefaultTab === 'review') {
+      void navigate(routePaths.reconSummary, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally runs once on mount only; see hasAppliedInitialRoleLanding.
+  }, []);
+
+  const goToImportFiles = (): void => {
+    void navigate(routePaths.importFiles);
   };
 
   const handleApplySavedView = (view: SavedTriageView): void => {
     setPendingSavedViewId(view.id);
-    handleSelectDestination('exceptions');
+    void navigate(routePaths.exceptions);
   };
 
   const openRulesPanel = (): void => {
@@ -920,12 +926,30 @@ function ReconciliationApp({
     });
   };
 
+  const reviewSectionSharedProps = {
+    run: reportRun,
+    isHydrating: isHydratingLatestBackendReport,
+    loadError: latestBackendReportError,
+    onGoToSetup: goToImportFiles,
+    decisionByTargetId: reviewerDecisions.decisionByTargetId,
+    pendingTargetId: reviewerDecisions.pendingTargetId,
+    decisionError: reviewerDecisions.error,
+    lastChange: reviewerDecisions.lastChange,
+    onDecide: reviewerDecisions.decide,
+    onClearDecision: reviewerDecisions.clearDecision,
+    onUndoLastDecision: reviewerDecisions.undoLastDecision,
+    pendingSavedViewId,
+    onPendingSavedViewApplied: () => setPendingSavedViewId(null),
+    onOpenExceptions: () => navigate(routePaths.exceptions),
+    starredIds,
+    onToggleStar: toggleStar,
+    density,
+  };
+
   return (
     <div className="app-shell app-shell--workspace" data-density={density}>
       <div className="hero-backdrop" />
       <NavRail
-        activeDestination={activeDestination}
-        onSelectDestination={handleSelectDestination}
         unreviewedExceptionCount={unreviewedExceptionCount}
         exceptions={reportRun?.exceptions ?? []}
         onApplySavedView={handleApplySavedView}
@@ -933,6 +957,9 @@ function ReconciliationApp({
         showDeveloperDashboardLink={showDeveloperDashboardLink}
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
         username={username}
+        profileLabel={profileLabel}
+        roleLabel={roleLabel}
+        onSignOut={onSignOut}
         isMobileOpen={isMobileNavOpen}
         onMobileClose={() => setIsMobileNavOpen(false)}
       />
@@ -950,7 +977,7 @@ function ReconciliationApp({
           runId={reportRun?.id ?? null}
           elapsedLabel={elapsedLabel}
           isComplete={Boolean(reportRun)}
-          onOpenReview={() => handleSelectDestination('summary')}
+          onOpenReview={() => navigate(routePaths.reconSummary)}
           onOpenRules={openRulesPanel}
           rulesUsedCount={rulesUsedCount}
           reviewProgressLabel={reviewProgressLabel}
@@ -978,79 +1005,150 @@ function ReconciliationApp({
           />
         ) : (
           <section className="tabbed-workspace" aria-label="Reconciliation workspace">
-            {activeTab === 'setup' ? (
-              <SourceUploadSection
-                annualYear={annualYear}
-                bankFile={bankFile}
-                qboFile={qboFile}
-                canSubmit={canSubmit}
-                currentYear={currentYear}
-                handleSubmit={handleSubmit}
-                isCustomPeriodLabel={isCustomPeriodLabel}
-                isLabelMissing={isLabelMissing}
-                monthlyMonth={monthlyMonth}
-                periodLabel={periodLabel}
-                previousSevenYears={previousSevenYears}
-                reconciliation={reconciliation}
-                reconciliationFrequency={reconciliationFrequency}
-                setAccountIdentifier={setAccountIdentifier}
-                setAnnualYear={setAnnualYear}
-                setBankFile={setBankFile}
-                setIsCustomPeriodLabel={setIsCustomPeriodLabel}
-                setMonthlyMonth={setMonthlyMonth}
-                setPeriodLabel={setPeriodLabel}
-                setQboFile={setQboFile}
-                setReconciliationFrequency={setReconciliationFrequency}
-                suggestedPeriodLabel={suggestedPeriodLabel}
-                accountIdentifier={accountIdentifier}
+            <Routes>
+              <Route
+                path={routePaths.importFiles}
+                element={
+                  <SourceUploadSection
+                    annualYear={annualYear}
+                    bankFile={bankFile}
+                    qboFile={qboFile}
+                    canSubmit={canSubmit}
+                    currentYear={currentYear}
+                    handleSubmit={handleSubmit}
+                    isCustomPeriodLabel={isCustomPeriodLabel}
+                    isLabelMissing={isLabelMissing}
+                    monthlyMonth={monthlyMonth}
+                    periodLabel={periodLabel}
+                    previousSevenYears={previousSevenYears}
+                    reconciliation={reconciliation}
+                    reconciliationFrequency={reconciliationFrequency}
+                    setAccountIdentifier={setAccountIdentifier}
+                    setAnnualYear={setAnnualYear}
+                    setBankFile={setBankFile}
+                    setIsCustomPeriodLabel={setIsCustomPeriodLabel}
+                    setMonthlyMonth={setMonthlyMonth}
+                    setPeriodLabel={setPeriodLabel}
+                    setQboFile={setQboFile}
+                    setReconciliationFrequency={setReconciliationFrequency}
+                    suggestedPeriodLabel={suggestedPeriodLabel}
+                    accountIdentifier={accountIdentifier}
+                  />
+                }
               />
-            ) : null}
 
-            {activeTab === 'review' ? (
-              <ReviewSection
-                run={reportRun}
-                activeView={activeView}
-                isHydrating={isHydratingLatestBackendReport}
-                loadError={latestBackendReportError}
-                onGoToSetup={() => handleSelectTab('setup')}
-                decisionByTargetId={reviewerDecisions.decisionByTargetId}
-                pendingTargetId={reviewerDecisions.pendingTargetId}
-                decisionError={reviewerDecisions.error}
-                lastChange={reviewerDecisions.lastChange}
-                onDecide={reviewerDecisions.decide}
-                onClearDecision={reviewerDecisions.clearDecision}
-                onUndoLastDecision={reviewerDecisions.undoLastDecision}
-                pendingSavedViewId={pendingSavedViewId}
-                onPendingSavedViewApplied={() => setPendingSavedViewId(null)}
-                onOpenExceptions={() => handleSelectDestination('exceptions')}
-                starredIds={starredIds}
-                onToggleStar={toggleStar}
-                density={density}
+              <Route
+                path={routePaths.reconSummary}
+                element={<ReviewSection activeView="summary" {...reviewSectionSharedProps} />}
               />
-            ) : null}
-
-            {activeTab === 'close' ? (
-              <CloseExportSection
-                run={reportRun}
-                isHydrating={isHydratingLatestBackendReport}
-                loadError={latestBackendReportError}
-                onDownloadWorkbook={() => setHasDownloadedWorkbook(true)}
-                onGoToSetup={() => handleSelectTab('setup')}
-                onExportJson={() => {
-                  if (!reportRun) {
-                    return;
-                  }
-
-                  setHasExportedJson(true);
-                  downloadJson(
-                    `${reportRun.id}.json`,
-                    mergeReviewerDecisions(reportRun, reviewerDecisions.decisions),
-                  );
-                }}
+              <Route
+                path={routePaths.probableMatches}
+                element={
+                  <ReviewSection activeView="probable-matches" {...reviewSectionSharedProps} />
+                }
               />
-            ) : null}
+              <Route
+                path={routePaths.exceptions}
+                element={<ReviewSection activeView="exceptions" {...reviewSectionSharedProps} />}
+              />
 
-            {activeTab === 'developer' ? <DeveloperDashboard /> : null}
+              <Route
+                path={routePaths.export}
+                element={
+                  <CloseExportSection
+                    run={reportRun}
+                    isHydrating={isHydratingLatestBackendReport}
+                    loadError={latestBackendReportError}
+                    onDownloadWorkbook={() => setHasDownloadedWorkbook(true)}
+                    onGoToSetup={goToImportFiles}
+                    onExportJson={() => {
+                      if (!reportRun) {
+                        return;
+                      }
+
+                      setHasExportedJson(true);
+                      downloadJson(
+                        `${reportRun.id}.json`,
+                        mergeReviewerDecisions(reportRun, reviewerDecisions.decisions),
+                      );
+                    }}
+                  />
+                }
+              />
+
+              {showDeveloperDashboardLink ? (
+                <Route path={routePaths.developer} element={<DeveloperDashboard />} />
+              ) : null}
+
+              <Route
+                path={routePaths.mappingFields}
+                element={
+                  <ComingSoonPage
+                    title="Mapping fields"
+                    description="Column mapping between source files and canonical fields is coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.mappingUpload}
+                element={
+                  <ComingSoonPage
+                    title="Upload files"
+                    description="Uploading files for a mapping profile preview is coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.accountProfile}
+                element={
+                  <ComingSoonPage title="Profile" description="Profile settings are coming soon." />
+                }
+              />
+              <Route
+                path={routePaths.accountSecurity}
+                element={
+                  <ComingSoonPage
+                    title="Security"
+                    description="Security settings are coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.accountBilling}
+                element={
+                  <ComingSoonPage title="Billing" description="Billing details are coming soon." />
+                }
+              />
+              <Route
+                path={routePaths.accountNotification}
+                element={
+                  <ComingSoonPage
+                    title="Notification"
+                    description="Notification preferences are coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.accountPreferences}
+                element={
+                  <ComingSoonPage
+                    title="Preferences"
+                    description="Workspace preferences are coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.documentationRulebook}
+                element={
+                  <ComingSoonPage
+                    title="Rulebook"
+                    description="A browsable rulebook for matching and exception rules is coming soon."
+                  />
+                }
+              />
+
+              <Route path="*" element={<Navigate to={routePaths.importFiles} replace />} />
+            </Routes>
           </section>
         )}
 
@@ -1062,20 +1160,6 @@ function ReconciliationApp({
         </footer>
       </main>
     </div>
-  );
-}
-
-function TabPanel({
-  tabId,
-  children,
-}: Readonly<{
-  tabId: AppTab;
-  children: ReactNode;
-}>) {
-  return (
-    <section id={`tab-panel-${tabId}`} role="tabpanel" aria-labelledby={`tab-${tabId}`}>
-      {children}
-    </section>
   );
 }
 
@@ -1132,98 +1216,96 @@ function SourceUploadSection({
   const reconciliationLabelHintId = 'reconciliation-label-hint';
 
   return (
-    <TabPanel tabId="setup">
-      <SectionCard
-        title="Source Upload"
-        description="XLSX uploads only. The engine preserves original file names, line numbers, excluded rows, and normalized audit fields."
+    <SectionCard
+      title="Source Upload"
+      description="XLSX uploads only. The engine preserves original file names, line numbers, excluded rows, and normalized audit fields."
+    >
+      <form
+        id="source-upload-form"
+        className="upload-form"
+        aria-busy={reconciliation.isPending}
+        onSubmit={handleSubmit}
       >
-        <form
-          id="source-upload-form"
-          className="upload-form"
-          aria-busy={reconciliation.isPending}
-          onSubmit={handleSubmit}
-        >
-          <SourceDropZone
-            bankFile={bankFile}
-            qboFile={qboFile}
-            setBankFile={setBankFile}
-            setQboFile={setQboFile}
-          />
+        <SourceDropZone
+          bankFile={bankFile}
+          qboFile={qboFile}
+          setBankFile={setBankFile}
+          setQboFile={setQboFile}
+        />
 
-          <HelpedTextField
-            fieldId="account-identifier"
-            helpText="Optional account code shown in outputs and exports to identify which account this run belongs to."
-            inputId="account-identifier-input"
-            label="Account identifier"
-            onChange={(event) => setAccountIdentifier(event.target.value)}
-            placeholder="OPERATING-001"
-            value={accountIdentifier}
-          />
+        <HelpedTextField
+          fieldId="account-identifier"
+          helpText="Optional account code shown in outputs and exports to identify which account this run belongs to."
+          inputId="account-identifier-input"
+          label="Account identifier"
+          onChange={(event) => setAccountIdentifier(event.target.value)}
+          placeholder="OPERATING-001"
+          value={accountIdentifier}
+        />
 
-          <HelpedFrequencyField
-            onChange={(event) =>
-              setReconciliationFrequency(event.target.value as ReconciliationFrequency)
-            }
-            value={reconciliationFrequency}
-          />
+        <HelpedFrequencyField
+          onChange={(event) =>
+            setReconciliationFrequency(event.target.value as ReconciliationFrequency)
+          }
+          value={reconciliationFrequency}
+        />
 
-          <ReconciliationPeriodField
-            annualYear={annualYear}
-            currentYear={currentYear}
-            monthlyMonth={monthlyMonth}
-            previousSevenYears={previousSevenYears}
-            reconciliationFrequency={reconciliationFrequency}
-            setAnnualYear={setAnnualYear}
-            setMonthlyMonth={setMonthlyMonth}
-          />
+        <ReconciliationPeriodField
+          annualYear={annualYear}
+          currentYear={currentYear}
+          monthlyMonth={monthlyMonth}
+          previousSevenYears={previousSevenYears}
+          reconciliationFrequency={reconciliationFrequency}
+          setAnnualYear={setAnnualYear}
+          setMonthlyMonth={setMonthlyMonth}
+        />
 
-          <HelpedLabelField
-            hintId={reconciliationLabelHintId}
-            isInvalid={isLabelMissing}
-            labelErrorId={reconciliationLabelErrorId}
-            onChange={(event) => {
-              setIsCustomPeriodLabel(true);
-              setPeriodLabel(event.target.value);
-            }}
-            periodLabel={periodLabel}
-            suggestedPeriodLabel={suggestedPeriodLabel}
-            canResetToSuggested={isCustomPeriodLabel}
-            onResetToSuggested={() => {
-              setIsCustomPeriodLabel(false);
-              setPeriodLabel(suggestedPeriodLabel);
-            }}
-          />
+        <HelpedLabelField
+          hintId={reconciliationLabelHintId}
+          isInvalid={isLabelMissing}
+          labelErrorId={reconciliationLabelErrorId}
+          onChange={(event) => {
+            setIsCustomPeriodLabel(true);
+            setPeriodLabel(event.target.value);
+          }}
+          periodLabel={periodLabel}
+          suggestedPeriodLabel={suggestedPeriodLabel}
+          canResetToSuggested={isCustomPeriodLabel}
+          onResetToSuggested={() => {
+            setIsCustomPeriodLabel(false);
+            setPeriodLabel(suggestedPeriodLabel);
+          }}
+        />
 
-          <p className="trust-note">
-            Use only authorized XLSX exports and follow your organization&apos;s financial data
-            handling policy.
+        <p className="trust-note">
+          Use only authorized XLSX exports and follow your organization&apos;s financial data
+          handling policy.
+        </p>
+
+        <div className="upload-actions">
+          <button type="submit" disabled={!canSubmit}>
+            {reconciliation.isPending ? 'Running reconciliation...' : 'Run reconciliation'}
+          </button>
+        </div>
+
+        {reconciliation.isPending ? (
+          <p className="status-banner" role="status" aria-live="polite">
+            Reconciliation is running. Parsing, matching, and report generation are in progress.
           </p>
+        ) : null}
 
-          <div className="upload-actions">
-            <button type="submit" disabled={!canSubmit}>
-              {reconciliation.isPending ? 'Running reconciliation...' : 'Run reconciliation'}
-            </button>
-          </div>
-
-          {reconciliation.isPending ? (
-            <p className="status-banner" role="status" aria-live="polite">
-              Reconciliation is running. Parsing, matching, and report generation are in progress.
-            </p>
-          ) : null}
-
-          {isLabelMissing ? (
-            <p id={reconciliationLabelErrorId} className="error-banner" role="alert">
-              Reconciliation label is required before running.
-            </p>
-          ) : null}
-          {reconciliation.error ? (
-            <p className="error-banner" role="alert">
-              {reconciliation.error.message}
-            </p>
-          ) : null}
-        </form>
-      </SectionCard>
-    </TabPanel>
+        {isLabelMissing ? (
+          <p id={reconciliationLabelErrorId} className="error-banner" role="alert">
+            Reconciliation label is required before running.
+          </p>
+        ) : null}
+        {reconciliation.error ? (
+          <p className="error-banner" role="alert">
+            {reconciliation.error.message}
+          </p>
+        ) : null}
+      </form>
+    </SectionCard>
   );
 }
 
@@ -1269,67 +1351,83 @@ function LoginShell({
   };
 
   return (
-    <div className="app-shell">
-      <div className="hero-backdrop" />
-      <main className="app-layout login-layout">
-        <section className="login-card" aria-label="Login page">
-          <div className="login-brand">
+    <div className="login-page">
+      <div className="login-wrap">
+        <div className="login-brand">
+          <span className="login-brand__logo">
             <img
-              className="login-brand__logo"
               src={kinneyHighlander}
-              alt="Small Scottish man in a kilt illustration"
+              alt="Kinney Software Solutions logo"
+              className="login-brand__logo-image"
             />
+          </span>
+          <div>
             <p className="login-brand__company">Kinney Software Solutions LLC</p>
+            <p className="login-brand__product">Reconciliation Platform</p>
+          </div>
+        </div>
+
+        <form className="login-card" aria-label="Login page" onSubmit={handleSubmit}>
+          <h1>Log in</h1>
+
+          <div className="login-field">
+            <label htmlFor="login-username">Username</label>
+            <input
+              id="login-username"
+              name="username"
+              autoComplete="username"
+              placeholder="your.name"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+            />
           </div>
 
-          <h1>Financial Reconciliation Platform</h1>
-          <p className="login-lede">
-            Audit-ready monthly workflow: upload source workbooks, preserve row-level traceability,
-            run evidence-based matching, and export accountant-friendly workpapers with repeatable
-            rules.
-          </p>
-
-          <h2 className="login-heading">Login</h2>
-
-          <form className="login-form" onSubmit={handleSubmit}>
-            <div className="field-group">
-              <label htmlFor="login-username">Username</label>
-              <input
-                id="login-username"
-                name="username"
-                autoComplete="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                required
-              />
-              {loginError ? (
-                <p className="login-error" role="alert">
-                  {invalidLoginMessage}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="field-group">
+          <div className="login-field">
+            <div className="login-field__label-row">
               <label htmlFor="login-password">Password</label>
-              <input
-                id="login-password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
+              <Link to={routePaths.forgotPassword}>Forgot password?</Link>
             </div>
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </div>
 
-            <div className="login-actions">
-              <button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Submitting...' : 'Submit'}
-              </button>
-            </div>
-          </form>
-        </section>
-      </main>
+          <button type="submit" className="login-btn-primary" disabled={isSubmitting}>
+            {isSubmitting ? 'Logging in...' : 'Log in'}
+          </button>
+
+          {loginError ? (
+            <p className="login-error" role="alert">
+              <span className="login-error__mark" aria-hidden="true">
+                !
+              </span>
+              {loginError}
+            </p>
+          ) : null}
+
+          <div className="login-divider">
+            <span className="login-divider__line" />
+            <span className="login-divider__text">New here?</span>
+            <span className="login-divider__line" />
+          </div>
+
+          <Link to={routePaths.signup} className="login-btn-secondary">
+            Create an account
+          </Link>
+        </form>
+
+        <p className="login-help">
+          Need help signing in? <Link to={routePaths.support}>Contact support</Link>
+        </p>
+      </div>
     </div>
   );
 }

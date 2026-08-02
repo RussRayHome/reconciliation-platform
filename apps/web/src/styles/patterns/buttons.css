@@ -128,4 +128,15 @@
     opacity: 0.6;
     box-shadow: none;
   }
+
+  .destructive-button {
+    background: var(--negative-soft);
+    color: var(--negative);
+    border: 1px solid var(--negative-soft-border);
+  }
+
+  .destructive-button:hover:not(:disabled) {
+    background: var(--negative);
+    color: var(--on-accent);
+  }
 }

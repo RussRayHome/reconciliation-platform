@@ -105,6 +105,13 @@ export class EphemeralStack extends cdk.Stack {
 
     // API task definition — DB_HOST/DB_PORT/DB_NAME are plaintext env vars; DB_USERNAME/DB_PASSWORD
     // come from Secrets Manager. Update packages/config to assemble API_DATABASE_URL from these.
+    //
+    // TODO(migrations): this stack has no equivalent of compose.yaml's `migrate` service. It used
+    // to rely on RUN_DB_MIGRATIONS_ON_BOOT so the API task self-migrated on boot; that path was
+    // removed when the repo moved to Liquibase (packages/persistence/liquibase). Until this stack
+    // gets its own one-off ECS task (or a CDK custom resource) running the Liquibase image against
+    // `db` before apiService starts, this database will NOT be migrated automatically on deploy —
+    // run the Liquibase image manually against `db.dbInstanceEndpointAddress` first.
     const apiTask = new ecs.FargateTaskDefinition(this, 'ApiTask', {
       executionRole: persistent.executionRole,
       taskRole: persistent.taskRole,
@@ -126,7 +133,6 @@ export class EphemeralStack extends cdk.Stack {
         PG_STATEMENT_TIMEOUT_MS: '60000',
         LOG_LEVEL: 'info',
         MAX_UPLOAD_MB: '10',
-        RUN_DB_MIGRATIONS_ON_BOOT: 'true',
         RECONCILIATION_RUN_STORE_PATH: '/var/lib/reconciliation/latest-reconciliation-run.json',
       },
       secrets: {

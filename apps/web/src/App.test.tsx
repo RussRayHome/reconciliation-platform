@@ -350,13 +350,13 @@ describe('App', () => {
   it('renders the login page when no authenticated user is stored', () => {
     renderApp();
 
-    expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
     expect(screen.getByLabelText('Username')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument();
   });
 
-  it('shows a red login error below username when credentials are invalid', async () => {
+  it('shows the invalid-credentials error banner without revealing which field failed', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ message: 'The user or password does not match.' }), {
         status: 401,
@@ -372,22 +372,13 @@ describe('App', () => {
       target: { value: 'wrong-password' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(
-        "That username and password don't match. Check both and try again.",
+        'Invalid username or password. Try again.',
       );
     });
-
-    const usernameFieldGroup = screen.getByLabelText('Username').closest('.field-group');
-    if (!(usernameFieldGroup instanceof HTMLElement)) {
-      throw new TypeError('Username field group was not found.');
-    }
-
-    expect(within(usernameFieldGroup).getByRole('alert')).toHaveTextContent(
-      "That username and password don't match. Check both and try again.",
-    );
   });
 
   it('lands on the application page after successful login', async () => {
@@ -411,11 +402,76 @@ describe('App', () => {
       target: { value: 'rray' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: /Setup/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
     });
+  });
+
+  it('resets the URL to the app root after a successful login', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ username: 'rray', firstName: 'Ryan', lastName: 'Ray' }), {
+        status: 200,
+      }),
+    );
+
+    globalThis.history.pushState({}, '', '/login');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'rray' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'rray' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+    });
+    expect(globalThis.location.pathname).toBe('/');
+  });
+
+  it('navigates from login to Forgot Password and back via the placeholder screen', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('link', { name: 'Forgot password?' }));
+
+    expect(screen.getByRole('heading', { name: 'Forgot Password' })).toBeInTheDocument();
+    expect(screen.getByText('Placeholder')).toBeInTheDocument();
+    expect(screen.getByText("This page hasn't been designed yet.")).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/forgot-password');
+
+    await user.click(screen.getByRole('link', { name: '← Back to log in' }));
+
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/login');
+  });
+
+  it('navigates from login to the New Account placeholder via Create an account', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('link', { name: 'Create an account' }));
+
+    expect(screen.getByRole('heading', { name: 'New Account' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/signup');
+  });
+
+  it('navigates from login to the Contact Support placeholder via the footer link', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('link', { name: 'Contact support' }));
+
+    expect(screen.getByRole('heading', { name: 'Contact Support' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/support');
+  });
+
+  it('redirects a direct visit to an unknown path to /login when unauthenticated', () => {
+    globalThis.history.pushState({}, '', '/some/unknown/path');
+    renderApp();
+
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+    expect(globalThis.location.pathname).toBe('/login');
   });
 
   it('uses environment-prefixed docs links and an in-shell dashboard destination on an environment root route', () => {
@@ -424,11 +480,8 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute(
-      'href',
-      '/dev/docs',
-    );
-    expect(screen.getByRole('button', { name: 'Developer Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/dev/docs');
+    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toBeInTheDocument();
   });
 
   it('redirects root to /dev when the development environment path segment is configured', () => {
@@ -463,41 +516,41 @@ describe('App', () => {
     expect(screen.getByLabelText('Selected document preview')).toBeInTheDocument();
   });
 
-  it('renders the rail destinations and defaults to Setup', () => {
+  it('renders the rail destinations as routes and defaults to Import Files', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    expect(screen.getByRole('tab', { name: /Setup/i })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: /Summary/i })).toHaveAttribute('aria-selected', 'false');
-    expect(screen.getByRole('tab', { name: /Exceptions/i })).toHaveAttribute(
-      'aria-selected',
-      'false',
+    expect(screen.getByRole('link', { name: /Import Files/i })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
-    expect(screen.getByRole('tab', { name: /Close/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('link', { name: /Recon summary/i })).not.toHaveAttribute(
+      'aria-current',
+    );
+    expect(screen.getByRole('link', { name: /Exceptions/i })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: /Export/i })).not.toHaveAttribute('aria-current');
     expect(screen.getByText('Source Upload')).toBeInTheDocument();
   });
 
-  it('supports arrow-key navigation across the rail destinations', async () => {
+  it('navigates between rail destinations via real routes and updates the active link', async () => {
     const user = userEvent.setup();
 
     setAuthenticatedUser('rray');
 
     renderApp();
 
-    const setupTab = screen.getByRole('tab', { name: /Setup/i });
-    setupTab.focus();
+    await user.click(screen.getByRole('link', { name: /Recon summary/i }));
 
-    await user.keyboard('{ArrowDown}');
+    expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(globalThis.location.pathname).toBe('/recon-summary');
 
-    const summaryTab = screen.getByRole('tab', { name: /Summary/i });
-    expect(summaryTab).toHaveFocus();
-    expect(summaryTab).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('link', { name: /Export/i }));
 
-    await user.keyboard('{End}');
-
-    const closeTab = screen.getByRole('tab', { name: /Close/i });
-    expect(closeTab).toHaveFocus();
-    expect(closeTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('link', { name: /Export/i })).toHaveAttribute('aria-current', 'page');
+    expect(globalThis.location.pathname).toBe('/export');
   });
 
   it('swaps Review panels via the rail and exports from Close', async () => {
@@ -523,21 +576,22 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Review' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Summary/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     expect(
       screen.getByRole('heading', { name: 'Exception Category Breakdown' }),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Likely Split/Combine Issue').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Deposit Grouping Issue').length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('tab', { name: /Exceptions/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Exceptions/i }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/GL qbo.xlsx \/ 4 \| GL qbo.xlsx \/ 5/i).length).toBeGreaterThan(
-      0,
-    );
+    expect(screen.getAllByText(/GL qbo.xlsx \/ 4 \| GL qbo.xlsx \/ 5/i).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('tab', { name: /Close/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Export/i }));
 
     expect(screen.getByText('run-1.xlsx')).toBeInTheDocument();
     expect(screen.getByText(/Summary \| Probable Matches \| Exceptions/i)).toBeInTheDocument();
@@ -552,7 +606,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
 
     return waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -570,9 +624,7 @@ describe('App', () => {
 
     renderApp();
 
-    expect(
-      globalThis.localStorage.getItem('reconciliation-platform:latest-report-run'),
-    ).toBeNull();
+    expect(globalThis.localStorage.getItem('reconciliation-platform:latest-report-run')).toBeNull();
   });
 
   it('hydrates the Review tab from the backend latest-run endpoint when storage is empty', async () => {
@@ -581,7 +633,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
 
     await waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -598,7 +650,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading review output');
 
@@ -615,7 +667,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Backend unavailable.');
@@ -647,9 +699,9 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Summary/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Recon summary/i }));
 
-    expect(screen.getByRole('tab', { name: /Summary/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Recon summary/i })).toBeInTheDocument();
     expect(screen.getByText('Loading review output')).toBeInTheDocument();
   });
 
@@ -945,11 +997,39 @@ describe('App', () => {
     expect(screen.getAllByText('qbo.xlsx').length).toBeGreaterThan(0);
   });
 
-  it('lands financial analysts on the Review tab', () => {
+  it('lands financial analysts on the Review tab', async () => {
     setAuthenticatedUser('bray');
     renderApp();
 
-    expect(screen.getByRole('tab', { name: /Summary/i })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    });
+  });
+
+  it('lets financial analysts still reach Import Files by clicking it, despite their default landing tab', async () => {
+    const user = userEvent.setup();
+    setAuthenticatedUser('bray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Recon summary/i })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    });
+
+    await user.click(screen.getByRole('link', { name: /Import Files/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Import Files/i })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    });
+    expect(screen.getByText('Source Upload')).toBeInTheDocument();
   });
 
   it('leads the Summary panel with the reconciliation verdict', async () => {
@@ -1016,8 +1096,8 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('tab', { name: /Setup/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
+    expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
     expect(screen.queryByRole('link', { name: 'Developer Dashboard' })).toBeNull();
   });
 
@@ -1045,9 +1125,9 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('tab', { name: /Setup/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
-    expect(screen.getByRole('button', { name: 'Developer Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
+    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
@@ -1055,5 +1135,81 @@ describe('App', () => {
       name: /Timing variance window/i,
     });
     expect(slider).not.toBeDisabled();
+  });
+
+  it('renders the identity footer and signs out from it', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(within(nav).getByText('rray')).toBeInTheDocument();
+    expect(within(nav).getByText('SuperUser')).toBeInTheDocument();
+
+    fireEvent.click(within(nav).getByRole('button', { name: 'Log out' }));
+
+    expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+  });
+
+  it('exposes Bank and GL template downloads under Mapping', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    expect(screen.getByRole('link', { name: /Bank template/i })).toHaveAttribute(
+      'href',
+      '/templates/bank-template.csv',
+    );
+    expect(screen.getByRole('link', { name: /GL template/i })).toHaveAttribute(
+      'href',
+      '/templates/gl-template.csv',
+    );
+  });
+
+  it('collapses and expands the Account section, persisting the choice', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    const accountHeader = screen.getByRole('button', { name: 'Account' });
+    expect(accountHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
+
+    fireEvent.click(accountHeader);
+
+    expect(accountHeader).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull();
+    expect(
+      globalThis.localStorage.getItem('reconciliation-platform:nav.section.account:rray'),
+    ).toBe('false');
+  });
+
+  it('routes placeholder destinations to the shared coming-soon page', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Profile' }));
+
+    expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(screen.getByText('This screen is coming soon.')).toBeInTheDocument();
+  });
+
+  it('opens the Remove account confirmation dialog and requires typing the username to confirm', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove account' }));
+
+    const dialogHeading = screen.getByRole('heading', { name: 'Remove account' });
+    const dialog = dialogHeading.closest('.remove-account-modal');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new TypeError('Remove account dialog was not found.');
+    }
+
+    const confirmButton = within(dialog).getByRole('button', { name: 'Remove account' });
+    expect(confirmButton).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText(/Type rray to confirm/i), {
+      target: { value: 'rray' },
+    });
+
+    expect(confirmButton).not.toBeDisabled();
   });
 });

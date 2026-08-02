@@ -99,3 +99,50 @@ export type ErrorCategory = (typeof errorCategories)[number];
 export const chartIdentifiers = ['countByCategory', 'exposureByCategory'] as const;
 /** Union of the two chart series identifiers included in every reconciliation summary. */
 export type ChartIdentifier = (typeof chartIdentifiers)[number];
+
+/** Lifecycle status of a mapping profile or one of its versions. */
+export const mappingProfileStatuses = ['ACTIVE', 'DEPRECATED'] as const;
+/** Union of valid mapping profile / version lifecycle statuses. */
+export type MappingProfileStatus = (typeof mappingProfileStatuses)[number];
+
+/** Lifecycle status of an uploaded source file's staged (pre-canonical) transactions. */
+export const stagedTransactionStatuses = [
+  'PENDING_VALIDATION',
+  'VALID',
+  'INVALID',
+  'PROMOTED',
+] as const;
+/** Union of valid staged-transaction lifecycle statuses. */
+export type StagedTransactionStatus = (typeof stagedTransactionStatuses)[number];
+
+/** Scope a validation rule operates over. */
+export const validationRuleScopes = [
+  'FILE',
+  'SCHEMA',
+  'ROW',
+  'CROSS_ROW',
+  'PERIOD',
+  'ACCOUNTING',
+] as const;
+/** Union of valid validation rule scopes. */
+export type ValidationRuleScope = (typeof validationRuleScopes)[number];
+
+/** Severity of a validation rule and the results it produces. */
+export const validationSeverities = ['FATAL', 'WARNING', 'INFO'] as const;
+/** Union of valid validation severities. */
+export type ValidationSeverity = (typeof validationSeverities)[number];
+
+/** Approval status of an uploaded import awaiting review before canonical promotion. */
+export const importApprovalStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'OVERRIDDEN'] as const;
+/** Union of valid import approval statuses. */
+export type ImportApprovalStatus = (typeof importApprovalStatuses)[number];
+
+/** Approval status surfaced on a source file before/while it moves through the approval workflow. */
+export const sourceFileApprovalStatuses = [
+  'NOT_SUBMITTED',
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+] as const;
+/** Union of valid source-file approval statuses. */
+export type SourceFileApprovalStatus = (typeof sourceFileApprovalStatuses)[number];

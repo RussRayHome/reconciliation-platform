@@ -92,23 +92,21 @@ services:
   migrate:
     image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate
     build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+      context: packages/persistence/liquibase
+      dockerfile: Dockerfile
       args:
-        BUILDKIT_INLINE_CACHE: "1"
+        LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.31}
       cache_from:
         - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-migrate:latest
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api:latest
-        - ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api-dev:latest
     depends_on:
-      redis:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     environment:
-      <<: *api-environment
-      RUN_DB_MIGRATIONS_ON_BOOT: "true"
-    command: ["node", "apps/api/dist/migrate.cjs"]
+      DATABASE_URL: ${API_DATABASE_URL:-postgresql://recon_app:change-local-password@postgres:5432/reconciliation_platform}
+    # Default command is "update" (see Dockerfile CMD). For the one-time cutover on an
+    # already-migrated environment, override with:
+    #   command: ["changelog-sync", "--to-tag=v1-v9-baseline"]
+    # then redeploy this service with the default "update" command afterward.
     restart: "no"
     mem_limit: ${MIGRATE_MEM_LIMIT:-768m}
     mem_reservation: ${MIGRATE_MEM_RESERVATION:-256m}
@@ -138,7 +136,6 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *api-environment
-      RUN_DB_MIGRATIONS_ON_BOOT: ${RUN_DB_MIGRATIONS_ON_BOOT:-false}
     expose:
       - "4000"
     volumes:

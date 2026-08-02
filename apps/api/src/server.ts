@@ -4,7 +4,6 @@ import {
   createPostgresPool,
   isPostgresPersistenceEnabled,
   loadPostgresPersistenceConfigFromEnv,
-  runPostgresMigrations,
 } from '@recon/persistence';
 import type { Server as HttpServer } from 'node:http';
 import type { Pool } from 'pg';
@@ -22,19 +21,6 @@ const repoRoot = process.cwd();
 const persistedRunPath =
   process.env.RECONCILIATION_RUN_STORE_PATH ??
   path.join(repoRoot, 'test-results', 'latest-reconciliation-run.json');
-
-const shouldRunMigrationsOnBoot = (): boolean => {
-  const configured = process.env.RUN_DB_MIGRATIONS_ON_BOOT;
-  if (configured === 'true') {
-    return true;
-  }
-
-  if (configured === 'false') {
-    return false;
-  }
-
-  return process.env.NODE_ENV !== 'production';
-};
 
 const parseBooleanFlag = (value: string | undefined): boolean | null => {
   if (value === undefined) {
@@ -81,6 +67,10 @@ const closeHttpServer = async (server: HttpServer): Promise<void> =>
  * Logging is written to stdout in every environment and optionally mirrored to
  * a newline-delimited JSON file when `LOG_FILE` is configured.
  */
+// No `await` in the body since migrations moved to Liquibase (see packages/persistence/liquibase),
+// but `async` stays: callers rely on a thrown "DATABASE_URL is required" turning into a promise
+// rejection, not a synchronous throw.
+// eslint-disable-next-line @typescript-eslint/require-await
 export const createServerRuntime = async (): Promise<ServerRuntime> => {
   const isProduction = process.env.NODE_ENV === 'production';
   const logFile = process.env.LOG_FILE;
@@ -134,17 +124,6 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
 
     const pool = createPostgresPool(postgresConfig);
     postgresPool = pool;
-    if (shouldRunMigrationsOnBoot()) {
-      await runPostgresMigrations(pool);
-    } else {
-      logger.info(
-        {
-          action: 'persistence.postgres.migrations.skipped',
-          reason: 'RUN_DB_MIGRATIONS_ON_BOOT=false',
-        },
-        'Skipping PostgreSQL migrations during API startup',
-      );
-    }
 
     lifecycleStore = new PostgresReconciliationLifecycleStore(pool);
     readModelStore = new PostgresReconciliationReadModelStore(pool);

@@ -1,0 +1,14 @@
+--liquibase formatted sql
+
+--changeset recon:0007-rename_payee_alias_to_reconciliation_payee_alias
+ALTER TABLE payee_alias RENAME TO reconciliation_payee_alias;
+ALTER INDEX payee_alias_account_idx RENAME TO reconciliation_payee_alias_account_idx;
+ALTER INDEX payee_alias_canonical_payee_idx RENAME TO reconciliation_payee_alias_canonical_payee_idx;
+ALTER INDEX payee_alias_tokens_idx RENAME TO reconciliation_payee_alias_tokens_idx;
+ALTER INDEX payee_alias_active_idx RENAME TO reconciliation_payee_alias_active_idx;
+
+--rollback ALTER INDEX reconciliation_payee_alias_active_idx RENAME TO payee_alias_active_idx;
+--rollback ALTER INDEX reconciliation_payee_alias_tokens_idx RENAME TO payee_alias_tokens_idx;
+--rollback ALTER INDEX reconciliation_payee_alias_canonical_payee_idx RENAME TO payee_alias_canonical_payee_idx;
+--rollback ALTER INDEX reconciliation_payee_alias_account_idx RENAME TO payee_alias_account_idx;
+--rollback ALTER TABLE reconciliation_payee_alias RENAME TO payee_alias;

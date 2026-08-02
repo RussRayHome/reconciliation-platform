@@ -76,7 +76,7 @@ async function runReconciliation(
 
 // Opens the Exceptions triage view (Review stage) after a completed run.
 async function openExceptions(page: Page): Promise<void> {
-  await page.locator('#tab-exceptions').click();
+  await page.getByRole('link', { name: 'Exceptions' }).click();
   await expect(page.locator('#exception-search-input')).toBeVisible();
 }
 
@@ -311,7 +311,7 @@ test.describe('stage navigation', () => {
   test('Rules catalog is reachable from the run bar before a run', async ({ page }) => {
     await openSetup(page);
     await page.locator('.run-bar__overflow-trigger').click();
-    await page.getByRole('button', { name: 'Rules' }).click();
+    await page.getByRole('button', { name: 'Rules', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Rules Catalog' })).toBeVisible();
   });
 
@@ -323,7 +323,10 @@ test.describe('stage navigation', () => {
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('link', { name: 'Recon summary' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   test('Review opens on the Summary view by default after a run', async ({ page }) => {
@@ -333,7 +336,10 @@ test.describe('stage navigation', () => {
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
     await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
-    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('link', { name: 'Recon summary' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   test('Probable matches view is reachable from the navigation rail', async ({ page }) => {
@@ -342,17 +348,20 @@ test.describe('stage navigation', () => {
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#tab-probable-matches').click();
-    await expect(page.locator('#tab-probable-matches')).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('link', { name: 'Probable matches' }).click();
+    await expect(page.getByRole('link', { name: 'Probable matches' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
-  test('Close & export stage exposes the export artifacts', async ({ page }) => {
+  test('Export stage exposes the export artifacts', async ({ page }) => {
     const [bankBuffer, qboBuffer] = await Promise.all([
       createSampleBankWorkbook(),
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#tab-close').click();
+    await page.getByRole('link', { name: 'Export' }).click();
     await expect(page.getByRole('link', { name: 'Download workbook' })).toBeVisible();
   });
 });
@@ -366,14 +375,14 @@ test.describe('export artifacts', () => {
       createSampleQboWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, qboBuffer);
-    await page.locator('#tab-close').click();
+    await page.getByRole('link', { name: 'Export' }).click();
   });
 
-  test('Download workbook link is present in Close & export', async ({ page }) => {
+  test('Download workbook link is present in Export', async ({ page }) => {
     await expect(page.getByRole('link', { name: 'Download workbook' })).toBeVisible();
   });
 
-  test('Export JSON button is present in Close & export', async ({ page }) => {
+  test('Export JSON button is present in Export', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Export JSON' })).toBeVisible();
   });
 
@@ -407,7 +416,7 @@ test.describe('session persistence', () => {
 
     // Review uses reportRun = run ?? persistedRun, so it renders the persisted data.
 
-    await page.locator('#tab-exceptions').click();
+    await page.getByRole('link', { name: 'Exceptions' }).click();
     await expect(page.locator('#exception-search-input')).toBeVisible({ timeout: 15_000 });
   });
 });
@@ -440,7 +449,7 @@ test.describe('edge cases', () => {
       createWorkbookFromRows(missingFromQboBankRows),
       createWorkbookFromRows(missingFromQboQboRows),
     ]);
-    await page.locator('#tab-setup').click();
+    await page.getByRole('link', { name: 'Import Files' }).click();
     await setWorkbookFiles(page, bank2, qbo2);
     await page.getByLabel('Reconciliation label').fill('Second Run April');
     await page.getByRole('button', { name: 'Run reconciliation' }).click();
@@ -449,15 +458,17 @@ test.describe('edge cases', () => {
     await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
   });
 
-  test('keyboard arrow keys navigate between the rail destinations', async ({ page }) => {
+  test('rail destinations are reachable by keyboard tab order and Enter activates them', async ({
+    page,
+  }) => {
     await openSetup(page);
-    await page.locator('#tab-setup').focus();
-    await page.keyboard.press('ArrowDown');
-    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
-    await page.keyboard.press('ArrowDown');
-    await expect(page.locator('#tab-probable-matches')).toHaveAttribute('aria-selected', 'true');
-    await page.keyboard.press('ArrowUp');
-    await expect(page.locator('#tab-summary')).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('link', { name: 'Import Files' }).focus();
+    await page.getByRole('link', { name: 'Recon summary' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('link', { name: 'Recon summary' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   test('account identifier is optional — run succeeds without it', async ({ page }) => {

@@ -110,22 +110,23 @@ for (const width of widths) {
         ],
       });
 
-      await page.goto('/?panel=rules');
-      await expect(page.getByRole('tab', { name: 'Setup' })).toBeVisible();
+      await page.locator('.run-bar__overflow-trigger').click();
+      await page.getByRole('button', { name: 'Rules', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Rules Catalog' })).toBeVisible();
       await expect(page).toHaveScreenshot(`rules-panel-${width}.png`, screenshotOptions);
 
       await runReconciliation(page);
       await expect(page.getByText('Total reviewed')).toBeVisible();
       await expect(page).toHaveScreenshot(`review-summary-${width}.png`, screenshotOptions);
 
-      await page.locator('#tab-probable-matches').click();
+      await page.getByRole('link', { name: 'Probable matches' }).click();
       await expect(page).toHaveScreenshot(`probable-matches-${width}.png`, screenshotOptions);
 
-      await page.locator('#tab-exceptions').click();
+      await page.getByRole('link', { name: 'Exceptions' }).click();
       await expect(page.getByPlaceholder('Search file, message, or tokens')).toBeVisible();
       await expect(page).toHaveScreenshot(`exceptions-triage-${width}.png`, screenshotOptions);
 
-      await page.getByRole('tab', { name: 'Close' }).click();
+      await page.getByRole('link', { name: 'Export', exact: true }).click();
       // Artifact filenames embed the run id; mask them so baselines stay deterministic.
       await expect(page).toHaveScreenshot(`close-${width}.png`, {
         ...screenshotOptions,
@@ -152,7 +153,10 @@ for (const width of widths) {
     test(`developer access denied @${width}`, async ({ page }) => {
       await loginAs(page, 'rray2', 'P@ssw0rd');
       await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot(`developer-access-denied-${width}.png`, screenshotOptions);
+      await expect(page).toHaveScreenshot(
+        `developer-access-denied-${width}.png`,
+        screenshotOptions,
+      );
     });
 
     test(`analyst workspace @${width}`, async ({ page }) => {

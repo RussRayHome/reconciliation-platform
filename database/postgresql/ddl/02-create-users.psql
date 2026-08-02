@@ -1,3 +1,0 @@
--- Reuse the existing dev/stage PostgreSQL user provisioning script.
-\set ON_ERROR_STOP on
-\ir ../../../scripts/db/dev-stage/create-users.psql
