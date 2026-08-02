@@ -13,6 +13,7 @@
     "predev": "npm run sync:dashboard-tokens"
   },
   "dependencies": {
+    "@recon/config": "0.1.0",
     "@recon/domain": "0.1.0",
     "@recon/ui": "0.1.0",
     "@tanstack/react-query": "^5.101.1",

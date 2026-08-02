@@ -20,6 +20,10 @@ import '@xyflow/react/dist/style.css';
 
 import type { CanonicalField, MappingProfilePair } from '@recon/domain';
 
+import type { MappingSourceColumn } from '../lib/csvHeader';
+
+export type { MappingSourceColumn } from '../lib/csvHeader';
+
 /**
  * Canvas geometry constants — every value here was a defect found in design review, not a
  * stylistic choice. The DOM header strip above the React Flow viewport uses the same track
@@ -29,8 +33,6 @@ export const NODE_W = 180;
 export const COL_GAP = 110;
 export const ROW_Y = 78;
 export const CONTENT_W = NODE_W * 3 + COL_GAP * 2;
-
-export type MappingSourceColumn = { id: string; sample: string };
 
 const glNodeId = (name: string): string => `gl:${name}`;
 const bankNodeId = (name: string): string => `bk:${name}`;
@@ -191,11 +193,46 @@ export function CreateMappingCanvas({
       .filter(([col]) => bankColumnIds.has(col))
       .map(([col, db]) => edgeForSide('bank', bankNodeId(col), db));
     return [...glEdges, ...bankEdges];
-    // Only re-seed from the initial mapping when the underlying column lists change identity.
+    // Only used as the seed for the very first render; later changes are handled by the two
+    // side-scoped effects below so re-uploading one side never touches the other side's edges.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glCols, bankCols]);
+  }, []);
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
+
+  // Re-uploading GL replaces only GL-side edges (their source ids reference the old file's
+  // columns, which no longer exist); Bank-side edges — including any manual adjustments — are
+  // left untouched, and vice versa. Skipped on the very first render, which `initialEdges` above
+  // already seeded.
+  const isFirstGlRender = useRef(true);
+  useEffect(() => {
+    if (isFirstGlRender.current) {
+      isFirstGlRender.current = false;
+      return;
+    }
+    const glColumnIds = new Set(glCols.map((c) => c.id));
+    const suggested = Object.entries(initialGlMapping ?? {})
+      .filter(([col]) => glColumnIds.has(col))
+      .map(([col, db]) => edgeForSide('gl', glNodeId(col), db));
+    setEdges((current) => [...current.filter((edge) => edge.targetHandle !== 'gl'), ...suggested]);
+    // Reacting to glCols identity changing (a new upload) is the point; initialGlMapping is read
+    // fresh from the closure and intentionally excluded so edge-only updates don't re-trigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [glCols, setEdges]);
+
+  const isFirstBankRender = useRef(true);
+  useEffect(() => {
+    if (isFirstBankRender.current) {
+      isFirstBankRender.current = false;
+      return;
+    }
+    const bankColumnIds = new Set(bankCols.map((c) => c.id));
+    const suggested = Object.entries(initialBankMapping ?? {})
+      .filter(([col]) => bankColumnIds.has(col))
+      .map(([col, db]) => edgeForSide('bank', bankNodeId(col), db));
+    setEdges((current) => [...current.filter((edge) => edge.targetHandle !== 'bank'), ...suggested]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankCols, setEdges]);
 
   const glMappedSources = useMemo(
     () => new Set(edges.filter((e) => e.targetHandle === 'gl').map((e) => e.source)),

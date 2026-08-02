@@ -9,7 +9,7 @@ import type {
   SourceReconciliationConfig,
 } from '@recon/domain';
 
-const baseAliases: Record<BusinessField, string[]> = {
+export const baseAliases: Record<BusinessField, string[]> = {
   transactionDate: ['date', 'transaction date', 'trans date', 'posted date', 'posting date', 'effective date'],
   postingDate: ['posting date', 'post date', 'bank posted date', 'posted', 'posting'],
   transactionType: ['type', 'transaction type', 'entry type'],

@@ -1,10 +1,13 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
-import type { CanonicalField, MappingProfilePair } from '@recon/domain';
+import { baseAliases } from '@recon/config';
+import type { BusinessField, CanonicalField, MappingProfilePair } from '@recon/domain';
 
-import { CreateMappingCanvas, type MappingSourceColumn } from './CreateMappingCanvas';
+import { readHeaderOnly, type MappingSourceColumn } from '../lib/csvHeader';
+import { suggestMapping } from '../lib/mappingSuggest';
+import { CreateMappingCanvas } from './CreateMappingCanvas';
 
 /**
  * TEMPORARY fixture standing in for `GET /api/mapping/canonical-fields` (added in the
@@ -29,29 +32,24 @@ const CANONICAL_FIELDS_FIXTURE: CanonicalField[] = [
   { id: 'runningBalance', type: 'numeric', required: false, note: 'Balance after the entry' },
 ];
 
-const GL_SAMPLE_FIXTURE: MappingSourceColumn[] = [
-  { id: 'JE Date', sample: '2026-07-14' },
-  { id: 'Account Code', sample: '1010-000' },
-  { id: 'Memo', sample: 'Payroll funding — July' },
-  { id: 'Debit Amount', sample: '1,250.00' },
-  { id: 'Doc Number', sample: 'JE-2026-0714-08' },
-];
-
-const BANK_SAMPLE_FIXTURE: MappingSourceColumn[] = [
-  { id: 'Post Date', sample: '07/14/2026' },
-  { id: 'Description', sample: 'ACH CREDIT — NORTHWIND PAYROLL' },
-  { id: 'Debit', sample: '1,250.00' },
-  { id: 'Balance', sample: '84,102.66' },
-  { id: 'Reference', sample: 'CHK-889201' },
-];
-
+const CANONICAL_FIELD_IDS: BusinessField[] = CANONICAL_FIELDS_FIXTURE.map((field) => field.id);
 const REQUIRED_FIELD_IDS = CANONICAL_FIELDS_FIXTURE.filter((field) => field.required).map((field) => field.id);
+
+type UploadSide = 'gl' | 'bank';
 
 /** First real step of the reconciliation workflow: map GL and Bank columns onto the canonical schema. */
 export function CreateMappingScreen() {
   const navigate = useNavigate();
-  const [glCols] = useState<MappingSourceColumn[]>(GL_SAMPLE_FIXTURE);
-  const [bankCols] = useState<MappingSourceColumn[]>(BANK_SAMPLE_FIXTURE);
+
+  const [glCols, setGlCols] = useState<MappingSourceColumn[]>([]);
+  const [bankCols, setBankCols] = useState<MappingSourceColumn[]>([]);
+  const [glFileName, setGlFileName] = useState<string | null>(null);
+  const [bankFileName, setBankFileName] = useState<string | null>(null);
+  const [glError, setGlError] = useState<string | null>(null);
+  const [bankError, setBankError] = useState<string | null>(null);
+  const [glAutoSuggest, setGlAutoSuggest] = useState<Record<string, string>>();
+  const [bankAutoSuggest, setBankAutoSuggest] = useState<Record<string, string>>();
+
   const [mapping, setMapping] = useState<{ gl: MappingProfilePair[]; bank: MappingProfilePair[] }>({
     gl: [],
     bank: [],
@@ -60,6 +58,44 @@ export function CreateMappingScreen() {
   const handleCanvasChange = useCallback(
     (next: { gl: MappingProfilePair[]; bank: MappingProfilePair[] }) => {
       setMapping(next);
+    },
+    [],
+  );
+
+  const handleFileChange = useCallback(
+    (side: UploadSide) => async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      // Reset the input so choosing the same file name again still fires a change event.
+      event.target.value = '';
+      if (!file) return;
+
+      try {
+        const columns = await readHeaderOnly(file);
+        const suggested = suggestMapping(
+          columns.map((column) => column.id),
+          baseAliases,
+          CANONICAL_FIELD_IDS,
+        );
+
+        if (side === 'gl') {
+          setGlError(null);
+          setGlFileName(file.name);
+          setGlCols(columns);
+          setGlAutoSuggest(suggested);
+        } else {
+          setBankError(null);
+          setBankFileName(file.name);
+          setBankCols(columns);
+          setBankAutoSuggest(suggested);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not read that file.';
+        if (side === 'gl') {
+          setGlError(message);
+        } else {
+          setBankError(message);
+        }
+      }
     },
     [],
   );
@@ -114,10 +150,26 @@ export function CreateMappingScreen() {
             <span className="mapping-tag mapping-tag--gl">CSV</span>
           </div>
           <div className="mapping-upload__picker-row">
-            <span className="mapping-picker">Choose GL file</span>
-            <span className="mapping-upload__fname">gl_july_2026.csv (sample)</span>
+            <label className="mapping-picker">
+              Choose GL file
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  void handleFileChange('gl')(event);
+                }}
+                style={{ display: 'none' }}
+              />
+            </label>
+            <span className="mapping-upload__fname">{glFileName ?? 'No file chosen'}</span>
           </div>
-          <span className="mapping-upload__meta">{glCols.length} columns detected · header row only</span>
+          {glError ? (
+            <span className="mapping-upload__error">{glError}</span>
+          ) : (
+            <span className="mapping-upload__meta">
+              {glCols.length > 0 ? `${glCols.length} columns detected · header row only` : 'Header row only is read'}
+            </span>
+          )}
         </div>
         <div className="mapping-upload mapping-upload--bank">
           <div className="mapping-upload__head">
@@ -125,10 +177,26 @@ export function CreateMappingScreen() {
             <span className="mapping-tag mapping-tag--bank">CSV</span>
           </div>
           <div className="mapping-upload__picker-row">
-            <span className="mapping-picker">Choose bank file</span>
-            <span className="mapping-upload__fname">chase_stmt_2026-07.csv (sample)</span>
+            <label className="mapping-picker">
+              Choose bank file
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  void handleFileChange('bank')(event);
+                }}
+                style={{ display: 'none' }}
+              />
+            </label>
+            <span className="mapping-upload__fname">{bankFileName ?? 'No file chosen'}</span>
           </div>
-          <span className="mapping-upload__meta">{bankCols.length} columns detected · header row only</span>
+          {bankError ? (
+            <span className="mapping-upload__error">{bankError}</span>
+          ) : (
+            <span className="mapping-upload__meta">
+              {bankCols.length > 0 ? `${bankCols.length} columns detected · header row only` : 'Header row only is read'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -187,7 +255,7 @@ export function CreateMappingScreen() {
           <div className="mapping-canvas-head__cols">
             <div className="mapping-canvas-head__col">
               <span className="mapping-canvas-head__title">GL file columns</span>
-              <span className="mapping-canvas-head__sub">gl_july_2026.csv</span>
+              <span className="mapping-canvas-head__sub">{glFileName ?? 'No file selected'}</span>
             </div>
             <div className="mapping-canvas-head__mid">maps to →</div>
             <div className="mapping-canvas-head__col mapping-canvas-head__col--center">
@@ -197,7 +265,7 @@ export function CreateMappingScreen() {
             <div className="mapping-canvas-head__mid">← maps to</div>
             <div className="mapping-canvas-head__col mapping-canvas-head__col--end">
               <span className="mapping-canvas-head__title">Bank file columns</span>
-              <span className="mapping-canvas-head__sub">chase_stmt_2026-07.csv</span>
+              <span className="mapping-canvas-head__sub">{bankFileName ?? 'No file selected'}</span>
             </div>
           </div>
         </div>
@@ -206,6 +274,8 @@ export function CreateMappingScreen() {
             glCols={glCols}
             bankCols={bankCols}
             canonicalFields={CANONICAL_FIELDS_FIXTURE}
+            initialGlMapping={glAutoSuggest}
+            initialBankMapping={bankAutoSuggest}
             onChange={handleCanvasChange}
           />
         </div>
