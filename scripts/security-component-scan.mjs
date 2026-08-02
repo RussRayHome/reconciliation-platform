@@ -644,6 +644,90 @@ const parseNpmAuditScore = (output) => {
   });
 };
 
+// npm audit's metadata counts each vulnerable PACKAGE once, at its reported severity — a package
+// can be flagged purely because it depends on another flagged package (`via` holding a plain
+// package-name string with no advisory of its own), so this walks each package's `via` chain
+// (following one level of same-report package-name pointers) to find every CVE/GHSA identifier
+// that could justify excluding it, then subtracts one count per allowlisted package from the
+// severity totals — preserving npm's exact per-package counting for everything not allowlisted.
+const collectPackageAdvisoryIds = (packageValue, vulnerabilitiesByPackage) => {
+  const ids = new Set();
+  const viaItems = Array.isArray(packageValue?.via) ? packageValue.via : [];
+
+  for (const viaItem of viaItems) {
+    if (typeof viaItem === 'string') {
+      const cveId = normalizeCveId(viaItem);
+      if (cveId) {
+        ids.add(cveId);
+        continue;
+      }
+      const ghsaId = normalizeGhsaId(viaItem);
+      if (ghsaId) {
+        ids.add(ghsaId);
+        continue;
+      }
+      // Otherwise this is a same-report package-name pointer (dependency-chain cause).
+      const referenced = vulnerabilitiesByPackage[viaItem];
+      if (referenced && referenced !== packageValue) {
+        for (const id of collectPackageAdvisoryIds(referenced, vulnerabilitiesByPackage)) {
+          ids.add(id);
+        }
+      }
+      continue;
+    }
+
+    if (!viaItem || typeof viaItem !== 'object') continue;
+    const cveId =
+      normalizeCveId(viaItem.id) ??
+      normalizeCveId(viaItem.url) ??
+      normalizeCveId(viaItem.name) ??
+      normalizeCveId(viaItem.title) ??
+      normalizeCveId(viaItem.source);
+    if (cveId) {
+      ids.add(cveId);
+      continue;
+    }
+    const ghsaId =
+      normalizeGhsaId(viaItem.id) ??
+      normalizeGhsaId(viaItem.url) ??
+      normalizeGhsaId(viaItem.name) ??
+      normalizeGhsaId(viaItem.title) ??
+      normalizeGhsaId(viaItem.source);
+    if (ghsaId) ids.add(ghsaId);
+  }
+
+  return ids;
+};
+
+const computeNpmAuditAllowlistExclusion = (output, allowlist) => {
+  const exclusion = createZeroScore();
+  if (!allowlist || allowlist.size === 0) {
+    return exclusion;
+  }
+
+  const payload = parseJsonFromOutput(output);
+  const vulnerabilitiesByPackage = payload?.vulnerabilities;
+  if (!vulnerabilitiesByPackage || typeof vulnerabilitiesByPackage !== 'object') {
+    return exclusion;
+  }
+
+  for (const packageValue of Object.values(vulnerabilitiesByPackage)) {
+    if (!packageValue || typeof packageValue !== 'object') continue;
+    const advisoryIds = collectPackageAdvisoryIds(packageValue, vulnerabilitiesByPackage);
+    const isAllowlisted = [...advisoryIds].some((id) => allowlist.has(id.toUpperCase()));
+    if (!isAllowlisted) continue;
+
+    const severity = normalizeSeverityLabel(packageValue.severity).toUpperCase();
+    if (severity === 'CRITICAL') exclusion.critical++;
+    else if (severity === 'HIGH') exclusion.high++;
+    else if (severity === 'MEDIUM' || severity === 'MODERATE') exclusion.moderate++;
+    else if (severity === 'LOW') exclusion.low++;
+    else exclusion.info++;
+  }
+
+  return exclusion;
+};
+
 const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, component, scanner) => {
   if (typeof viaItem === 'string') {
     const id = normalizeCveId(viaItem);
@@ -663,12 +747,9 @@ const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, compone
     }
 
     const resolvedCveId = await resolveCveIdFromGhsa(ghsaId);
-    if (!resolvedCveId) {
-      return null;
-    }
 
     return {
-      id: resolvedCveId,
+      id: resolvedCveId ?? ghsaId,
       description: `Vulnerability reported for ${packageName} (${ghsaId}).`,
       severity: packageSeverity,
       component,
@@ -710,12 +791,9 @@ const buildNpmCveFinding = async (viaItem, packageName, packageSeverity, compone
   }
 
   const resolvedCveId = await resolveCveIdFromGhsa(ghsaId);
-  if (!resolvedCveId) {
-    return null;
-  }
 
   return {
-    id: resolvedCveId,
+    id: resolvedCveId ?? ghsaId,
     description:
       clipText(via.title || via.name || via.url, 180) ||
       `Vulnerability reported for ${packageName} (${ghsaId}).`,
@@ -863,7 +941,19 @@ const scanNpmWorkspaceComponent = async (component, workspace, repoRoot) => {
   result.cveFindings = await parseNpmAuditCveFindings(output, component, result.scanner);
 
   if (score) {
-    Object.assign(result, score);
+    const activeCveAllowlist = readActiveCveAllowlist(repoRoot);
+    const exclusion = computeNpmAuditAllowlistExclusion(output, activeCveAllowlist);
+    if (activeCveAllowlist.size > 0) {
+      result.cveFindings = result.cveFindings.filter(
+        (f) => !activeCveAllowlist.has((f.id ?? '').toUpperCase()),
+      );
+    }
+    score.critical = Math.max(0, score.critical - exclusion.critical);
+    score.high = Math.max(0, score.high - exclusion.high);
+    score.moderate = Math.max(0, score.moderate - exclusion.moderate);
+    score.low = Math.max(0, score.low - exclusion.low);
+    score.info = Math.max(0, score.info - exclusion.info);
+    Object.assign(result, withTotal(score));
     if (!response.ok && score.total === 0 && auditNetworkErrorRegex.test(output)) {
       result.status = 'skipped';
       result.note = 'npm audit endpoint is not reachable from this runtime.';
@@ -1489,7 +1579,8 @@ const main = async () => {
   // Database and Container Component HIGH CVEs are treated as warnings: both use Debian bookworm
   // base packages where HIGH CVEs are expected and not actionable without a base image update.
   // Only CRITICAL is blocking for these components (matching db-preflight behavior).
-  // API and Web Server HIGH CVEs (from npm audit) remain blocking.
+  // API and Web Server HIGH CVEs (from npm audit) remain blocking unless individually
+  // allowlisted in scripts/ops/db-cve-allowlist.txt (see computeNpmAuditAllowlistExclusion).
   const appComponentHighCount = components
     .filter((c) => c.component !== 'Database' && c.component !== 'Container Component')
     .reduce((sum, c) => sum + c.high, 0);
