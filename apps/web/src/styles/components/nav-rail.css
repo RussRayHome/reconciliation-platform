@@ -41,9 +41,9 @@
 
   .nav-rail__brand-logo {
     flex: 0 0 auto;
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-pill);
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
     object-fit: cover;
     border: 1px solid var(--line-strong);
   }
@@ -93,6 +93,11 @@
   .nav-rail__group {
     display: grid;
     gap: 0.25rem;
+  }
+
+  .nav-rail__group--divided {
+    border-top: 1px solid var(--line);
+    padding-top: 0.75rem;
   }
 
   .nav-rail__item {
@@ -244,6 +249,11 @@
   .nav-rail__collapsible {
     border-top: 1px solid var(--line);
     padding-top: 0.75rem;
+  }
+
+  .nav-rail__collapsible--unbordered {
+    border-top: none;
+    padding-top: 0;
   }
 
   .nav-rail__section-header {

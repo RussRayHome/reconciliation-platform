@@ -21,17 +21,6 @@ import {
 
 const RAIL_COLLAPSED_STORAGE_PREFIX = 'reconciliation-platform:nav-rail-collapsed';
 
-const railItems: ReadonlyArray<{
-  to: string;
-  label: string;
-  icon: SemanticIconName;
-}> = [
-  { to: routePaths.importFiles, label: 'Import Files', icon: 'setup' },
-  { to: routePaths.reconSummary, label: 'Recon summary', icon: 'reports' },
-  { to: routePaths.probableMatches, label: 'Probable matches', icon: 'match' },
-  { to: routePaths.exceptions, label: 'Exceptions', icon: 'exceptions' },
-];
-
 const accountItems: ReadonlyArray<{ to: string; label: string; icon: SemanticIconName }> = [
   { to: routePaths.accountProfile, label: 'Profile', icon: 'profile' },
   { to: routePaths.accountSecurity, label: 'Security', icon: 'security' },
@@ -76,9 +65,9 @@ const computeInitials = (label: string): string => {
 };
 
 /**
- * Sticky left navigation rail: flattened workspace destinations plus collapsible Mapping,
- * Account, and Documentation sections, all as real routes, with permission-gated system
- * links, saved triage views, and a persistent identity/sign-out footer.
+ * Sticky left navigation rail: Account up top, the Import/Mapping/Approvals/Reconciliation/
+ * Exceptions workflow, Reports, and a permission-gated System section, all as real routes, plus
+ * saved triage views and a persistent identity/sign-out footer.
  */
 export function NavRail({
   unreviewedExceptionCount,
@@ -87,6 +76,7 @@ export function NavRail({
   docsHref,
   showDeveloperDashboardLink,
   canAccessDocumentation,
+  canAccessRunBook,
   username,
   profileLabel,
   roleLabel,
@@ -100,6 +90,7 @@ export function NavRail({
   docsHref: string;
   showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
+  canAccessRunBook: boolean;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -143,7 +134,7 @@ export function NavRail({
             alt="Reconciliation Platform logo"
             className="nav-rail__brand-logo"
           />
-          <span className="nav-rail__brand-name">Reconciliation Platform</span>
+          <span className="nav-rail__brand-name">Recon Platform</span>
         </div>
 
         <button
@@ -158,69 +149,6 @@ export function NavRail({
           </span>
           <span className="nav-rail__item-label">Collapse</span>
         </button>
-
-        <NavRailDestinations
-          unreviewedExceptionCount={unreviewedExceptionCount}
-          isCollapsed={isCollapsed}
-          onNavigate={onMobileClose}
-        />
-
-        <CollapsibleNavSection sectionId="mapping" label="Mapping" username={username}>
-          <NavItemLink
-            to={routePaths.mappingFields}
-            label="Mapping fields"
-            icon="architecture"
-            isCollapsed={isCollapsed}
-            indented
-            onNavigate={onMobileClose}
-          />
-          <NavItemLink
-            to={routePaths.mappingUpload}
-            label="Upload files"
-            icon="upload"
-            isCollapsed={isCollapsed}
-            indented
-            onNavigate={onMobileClose}
-          />
-          {!isCollapsed ? (
-            <p className="nav-rail__subgroup-label">
-              <span className="nav-rail__item-icon" aria-hidden="true">
-                <SemanticIcon name="records" />
-              </span>
-              Download templates
-            </p>
-          ) : null}
-          <div className="nav-rail__indent">
-            <a
-              className="nav-rail__item"
-              href={BANK_TEMPLATE_URL}
-              download
-              title={isCollapsed ? 'Bank template' : undefined}
-            >
-              <span className="nav-rail__item-label">Bank template</span>
-              <span className="nav-rail__pill">CSV</span>
-            </a>
-            <a
-              className="nav-rail__item"
-              href={GL_TEMPLATE_URL}
-              download
-              title={isCollapsed ? 'GL template' : undefined}
-            >
-              <span className="nav-rail__item-label">GL template</span>
-              <span className="nav-rail__pill">CSV</span>
-            </a>
-          </div>
-        </CollapsibleNavSection>
-
-        <div className="nav-rail__group">
-          <NavItemLink
-            to={routePaths.export}
-            label="Export"
-            icon="operations"
-            isCollapsed={isCollapsed}
-            onNavigate={onMobileClose}
-          />
-        </div>
 
         <CollapsibleNavSection sectionId="account" label="Account" username={username}>
           {accountItems.map((item) => (
@@ -249,10 +177,133 @@ export function NavRail({
           </button>
         </CollapsibleNavSection>
 
+        <div className="nav-rail__group nav-rail__group--divided" aria-label="Workspace sections">
+          <NavItemLink
+            to={routePaths.importFiles}
+            label="Import Files"
+            icon="setup"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
+
+          <CollapsibleNavSection
+            sectionId="mapping"
+            label="Mapping"
+            username={username}
+            bordered={false}
+          >
+            <NavItemLink
+              to={routePaths.mappingProfiles}
+              label="Mapping Profiles"
+              icon="architecture"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+            <NavItemLink
+              to={routePaths.mappingCreate}
+              label="Create Mapping"
+              icon="setup"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+            {!isCollapsed ? (
+              <p className="nav-rail__subgroup-label">
+                <span className="nav-rail__item-icon" aria-hidden="true">
+                  <SemanticIcon name="records" />
+                </span>
+                Download templates
+              </p>
+            ) : null}
+            <div className="nav-rail__indent">
+              <a
+                className="nav-rail__item"
+                href={BANK_TEMPLATE_URL}
+                download
+                title={isCollapsed ? 'Bank template' : undefined}
+              >
+                <span className="nav-rail__item-label">Bank template</span>
+                <span className="nav-rail__pill">CSV</span>
+              </a>
+              <a
+                className="nav-rail__item"
+                href={GL_TEMPLATE_URL}
+                download
+                title={isCollapsed ? 'GL template' : undefined}
+              >
+                <span className="nav-rail__item-label">GL template</span>
+                <span className="nav-rail__pill">CSV</span>
+              </a>
+            </div>
+            <NavItemLink
+              to={routePaths.mappingHistory}
+              label="Mapping History"
+              icon="clock"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+          </CollapsibleNavSection>
+
+          <CollapsibleNavSection
+            sectionId="approvals"
+            label="Approvals"
+            username={username}
+            bordered={false}
+          >
+            <NavItemLink
+              to={routePaths.approvalsPending}
+              label="Pending Imports"
+              icon="review"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+            <NavItemLink
+              to={routePaths.approvalsApproved}
+              label="Approved Imports"
+              icon="quality"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+            <NavItemLink
+              to={routePaths.approvalsRejected}
+              label="Rejected Imports"
+              icon="missing"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+          </CollapsibleNavSection>
+
+          <NavItemLink
+            to={routePaths.reconSummary}
+            label="Reconciliation"
+            icon="reports"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
+          <NavItemLink
+            to={routePaths.exceptions}
+            label="Exceptions"
+            icon="exceptions"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+            badge={unreviewedExceptionCount}
+          />
+        </div>
+
+        <div className="nav-rail__group nav-rail__group--divided">
+          <NavItemLink
+            to={routePaths.export}
+            label="Reports"
+            icon="operations"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
+        </div>
+
         <NavRailSystemLinks
           docsHref={docsHref}
           showDeveloperDashboardLink={showDeveloperDashboardLink}
           canAccessDocumentation={canAccessDocumentation}
+          canAccessRunBook={canAccessRunBook}
           isCollapsed={isCollapsed}
           username={username}
           onNavigate={onMobileClose}
@@ -349,17 +400,25 @@ function CollapsibleNavSection({
   sectionId,
   label,
   username,
+  bordered = true,
   children,
 }: Readonly<{
   sectionId: string;
   label: string;
   username: string;
+  bordered?: boolean;
   children: ReactNode;
 }>) {
   const { isOpen, toggle } = useNavSectionCollapse(sectionId, username);
 
   return (
-    <div className="nav-rail__section nav-rail__collapsible">
+    <div
+      className={
+        bordered
+          ? 'nav-rail__section nav-rail__collapsible'
+          : 'nav-rail__section nav-rail__collapsible nav-rail__collapsible--unbordered'
+      }
+    >
       <button
         type="button"
         className="nav-rail__section-header"
@@ -417,38 +476,12 @@ function useSavedViewCounts(
   );
 }
 
-/** Flattened workspace destinations, rendered as real routes via `NavLink`. */
-function NavRailDestinations({
-  unreviewedExceptionCount,
-  isCollapsed,
-  onNavigate,
-}: Readonly<{
-  unreviewedExceptionCount: number | null;
-  isCollapsed: boolean;
-  onNavigate: () => void;
-}>) {
-  return (
-    <div className="nav-rail__group" aria-label="Workspace sections">
-      {railItems.map((item) => (
-        <NavItemLink
-          key={item.to}
-          to={item.to}
-          label={item.label}
-          icon={item.icon}
-          isCollapsed={isCollapsed}
-          onNavigate={onNavigate}
-          badge={item.to === routePaths.exceptions ? unreviewedExceptionCount : undefined}
-        />
-      ))}
-    </div>
-  );
-}
-
 /** Permission-gated system links; unpermitted items are never rendered. */
 function NavRailSystemLinks({
   docsHref,
   showDeveloperDashboardLink,
   canAccessDocumentation,
+  canAccessRunBook,
   isCollapsed,
   username,
   onNavigate,
@@ -456,6 +489,7 @@ function NavRailSystemLinks({
   docsHref: string;
   showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
+  canAccessRunBook: boolean;
   isCollapsed: boolean;
   username: string;
   onNavigate: () => void;
@@ -498,13 +532,15 @@ function NavRailSystemLinks({
               </span>
               <span className="nav-rail__item-label">User Guide</span>
             </a>
-            <NavItemLink
-              to={routePaths.documentationRulebook}
-              label="Rulebook"
-              icon="rules"
-              isCollapsed={isCollapsed}
-              onNavigate={onNavigate}
-            />
+            {canAccessRunBook ? (
+              <NavItemLink
+                to={routePaths.documentationRunBook}
+                label="Run Book"
+                icon="rules"
+                isCollapsed={isCollapsed}
+                onNavigate={onNavigate}
+              />
+            ) : null}
           </div>
         </CollapsibleNavSection>
       ) : null}

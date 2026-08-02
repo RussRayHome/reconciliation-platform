@@ -52,7 +52,20 @@
     margin-top: 0.5rem;
   }
 
-  .coming-soon-note {
-    color: var(--text-tertiary);
+  .coming-soon-page {
+    display: grid;
+    justify-items: center;
+    gap: 16px;
+    max-width: 420px;
+    margin: 3rem auto;
+    text-align: center;
+  }
+
+  .coming-soon-page .placeholder-back-link {
+    border: none;
+    background: none;
+    padding: 0;
+    font-family: inherit;
+    cursor: pointer;
   }
 }

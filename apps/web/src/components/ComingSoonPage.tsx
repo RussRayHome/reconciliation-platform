@@ -1,4 +1,4 @@
-import { SectionCard } from '@recon/ui';
+import { useNavigate } from 'react-router-dom';
 
 /** Shared placeholder for menu destinations that don't have a built screen yet. */
 export function ComingSoonPage({
@@ -8,9 +8,18 @@ export function ComingSoonPage({
   title: string;
   description: string;
 }>) {
+  const navigate = useNavigate();
+
   return (
-    <SectionCard title={title} description={description}>
-      <p className="coming-soon-note">This screen is coming soon.</p>
-    </SectionCard>
+    <div className="coming-soon-page">
+      <div className="placeholder-card">
+        <p className="placeholder-card__eyebrow">Placeholder</p>
+        <h1>{title}</h1>
+        <p className="placeholder-card__body">{description}</p>
+      </div>
+      <button type="button" className="placeholder-back-link" onClick={() => navigate(-1)}>
+        ← Back
+      </button>
+    </div>
   );
 }
