@@ -74,7 +74,7 @@ ensure_playwright_browsers() {
 current_hash="$(compute_source_hash)"
 needs_build=0
 
-if [ ! -f "apps/api/dist/index.cjs" ] || [ ! -f "apps/api/dist/migrate.cjs" ]; then
+if [ ! -f "apps/api/dist/index.cjs" ]; then
   needs_build=1
 elif [ ! -f "$SOURCE_HASH_FILE" ]; then
   needs_build=1

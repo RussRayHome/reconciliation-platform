@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0009b-tag_v1_v9_baseline
+      author: recon
+      changes:
+        - tagDatabase:
+            tag: v1-v9-baseline

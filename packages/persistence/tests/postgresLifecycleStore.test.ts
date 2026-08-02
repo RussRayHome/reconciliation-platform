@@ -15,7 +15,6 @@ import {
   PostgresReconciliationReadModelStore,
   computeSha256Hex,
   createPostgresPool,
-  runPostgresMigrations,
 } from '../src';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -23,6 +22,7 @@ import { GenericContainer } from 'testcontainers';
 import type { Pool } from 'pg';
 import type { StartedTestContainer } from 'testcontainers';
 import { randomUUID } from 'node:crypto';
+import { runLiquibase } from './testHelpers/liquibase';
 
 let container: StartedTestContainer;
 let pool: Pool;
@@ -268,10 +268,10 @@ describe('PostgresReconciliationLifecycleStore', () => {
         })
         .withExposedPorts(5432)
         .start();
+      runLiquibase(container.getId(), 'recon_test', 'update');
       pool = createPostgresPool({
         connectionString: `postgresql://recon:recon@${container.getHost()}:${container.getMappedPort(5432)}/recon_test`,
       });
-      await runPostgresMigrations(pool);
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       console.warn(`PostgreSQL integration setup failed: ${startupError.message}`);

@@ -1,11 +1,16 @@
 import type {
   ChartIdentifier,
   ErrorCategory,
+  ImportApprovalStatus,
+  MappingProfileStatus,
   MatchConfidence,
   MatchDisposition,
   ReconciliationRunStatus,
   SeverityLevel,
   SourceSystem,
+  StagedTransactionStatus,
+  ValidationRuleScope,
+  ValidationSeverity,
 } from './enums';
 
 /** Canonical field names the engine recognises in uploaded spreadsheets. */
@@ -525,4 +530,110 @@ export interface ReconciliationOutput {
   reviewerDecisions: ReviewerDecision[];
   outputWorkbook: OutputWorkbook;
   auditEvents: AuditEvent[];
+}
+
+/** An organization that owns imports, mapping profiles, and accounts. Stored in `reconciliation_organization`. */
+export interface Organization {
+  id: string;
+  name: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string;
+}
+
+/** A named, reusable source-column-to-canonical-field mapping. Stored in `reconciliation_mapping_profile`. */
+export interface MappingProfile {
+  id: string;
+  organizationId: string;
+  name: string;
+  sourceType: SourceSystem;
+  status: MappingProfileStatus;
+  createdAt: string;
+}
+
+/**
+ * An immutable, numbered version of a mapping profile's column mapping and transformation
+ * rules. Stored in `reconciliation_mapping_profile_version`; a new row is inserted for every
+ * edit rather than mutating an existing version, so imports already processed with a given
+ * version remain reproducible.
+ */
+export interface MappingProfileVersion {
+  id: string;
+  profileId: string;
+  versionNumber: number;
+  columnMapping: Record<string, string>;
+  transformationRules: unknown[];
+  status: MappingProfileStatus;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** A parsed, mapped transaction awaiting validation and approval before canonical promotion. Stored in `reconciliation_staged_transaction`. */
+export interface StagedTransaction {
+  id: string;
+  rawRowId: string;
+  sourceFileId: string;
+  mappingProfileVersionId: string;
+  status: StagedTransactionStatus;
+  normalizedFields: Record<string, string | number | boolean | null>;
+  validationSummary: Record<string, unknown>;
+  controlTotalAmount?: string;
+  createdAt: string;
+}
+
+/** A versioned, reproducible validation rule definition. Stored in `reconciliation_validation_rule_version`. */
+export interface ValidationRuleVersion {
+  id: string;
+  ruleCode: string;
+  versionNumber: number;
+  scope: ValidationRuleScope;
+  severity: ValidationSeverity;
+  description: string;
+  status: MappingProfileStatus;
+  createdAt: string;
+}
+
+/** The outcome of evaluating one validation rule version against a staged transaction or whole file. Stored in `reconciliation_validation_result`. */
+export interface ValidationResult {
+  id: string;
+  stagedTransactionId?: string;
+  sourceFileId?: string;
+  ruleVersionId: string;
+  severity: ValidationSeverity;
+  passed: boolean;
+  message: string;
+  createdAt: string;
+}
+
+/** The approve/reject gate an uploaded file must pass before its staged transactions are promoted to canonical. Stored in `reconciliation_import_approval`. */
+export interface ImportApproval {
+  id: string;
+  sourceFileId: string;
+  status: ImportApprovalStatus;
+  uploadedBy: string;
+  approvedBy?: string;
+  rationale?: string;
+  requestedAt: string;
+  decidedAt?: string;
+}
+
+/** An append-only audit trail entry for one status transition of an `ImportApproval`. Stored in `reconciliation_approval_history`. */
+export interface ApprovalHistoryEntry {
+  id: string;
+  approvalId: string;
+  fromStatus?: ImportApprovalStatus;
+  toStatus: ImportApprovalStatus;
+  actor: string;
+  note?: string;
+  createdAt: string;
+}
+
+/** A versioned bank/GL upload template. Stored in `reconciliation_template_definition`. */
+export interface TemplateDefinition {
+  id: string;
+  templateType: SourceSystem;
+  version: number;
+  headers: string[];
+  instructions?: string;
+  status: MappingProfileStatus;
+  createdAt: string;
 }

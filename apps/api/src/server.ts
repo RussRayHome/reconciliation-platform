@@ -4,7 +4,6 @@ import {
   createPostgresPool,
   isPostgresPersistenceEnabled,
   loadPostgresPersistenceConfigFromEnv,
-  runPostgresMigrations,
 } from '@recon/persistence';
 import type { Server as HttpServer } from 'node:http';
 import type { Pool } from 'pg';
@@ -22,19 +21,6 @@ const repoRoot = process.cwd();
 const persistedRunPath =
   process.env.RECONCILIATION_RUN_STORE_PATH ??
   path.join(repoRoot, 'test-results', 'latest-reconciliation-run.json');
-
-const shouldRunMigrationsOnBoot = (): boolean => {
-  const configured = process.env.RUN_DB_MIGRATIONS_ON_BOOT;
-  if (configured === 'true') {
-    return true;
-  }
-
-  if (configured === 'false') {
-    return false;
-  }
-
-  return process.env.NODE_ENV !== 'production';
-};
 
 const parseBooleanFlag = (value: string | undefined): boolean | null => {
   if (value === undefined) {
@@ -134,17 +120,6 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
 
     const pool = createPostgresPool(postgresConfig);
     postgresPool = pool;
-    if (shouldRunMigrationsOnBoot()) {
-      await runPostgresMigrations(pool);
-    } else {
-      logger.info(
-        {
-          action: 'persistence.postgres.migrations.skipped',
-          reason: 'RUN_DB_MIGRATIONS_ON_BOOT=false',
-        },
-        'Skipping PostgreSQL migrations during API startup',
-      );
-    }
 
     lifecycleStore = new PostgresReconciliationLifecycleStore(pool);
     readModelStore = new PostgresReconciliationReadModelStore(pool);

@@ -11,7 +11,8 @@
 #   bash scripts/pre-flight/run-migrations.sh
 #
 # Prerequisites: the postgres container must already be running (npm run docker:deploy first).
-# Migrations are also applied automatically on API boot when RUN_DB_MIGRATIONS_ON_BOOT=true.
+# Migrations run via Liquibase (packages/persistence/liquibase) inside the "migrate" service;
+# the api service already waits for "migrate" to complete before starting (see compose.yaml).
 # Use this script for manual migration runs or to verify migration state without restarting the API.
 set -euo pipefail
 

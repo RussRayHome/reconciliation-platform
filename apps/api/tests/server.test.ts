@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createAppMock = vi.fn(() => ({ listen: vi.fn() })); // sync on purpose: no async needed in mock factory
 const createPostgresPoolMock = vi.fn(() => ({ end: vi.fn() }));
-const runPostgresMigrationsMock = vi.fn(() => Promise.resolve(undefined));
 const loadPostgresPersistenceConfigFromEnvMock = vi.fn();
 const isPostgresPersistenceEnabledMock = vi.fn();
 const markServerStartedMock = vi.fn();
@@ -36,7 +35,6 @@ vi.mock('@recon/persistence', () => ({
     return instance;
   }),
   createPostgresPool: createPostgresPoolMock,
-  runPostgresMigrations: runPostgresMigrationsMock,
   loadPostgresPersistenceConfigFromEnv: loadPostgresPersistenceConfigFromEnvMock,
   isPostgresPersistenceEnabled: isPostgresPersistenceEnabledMock,
 }));
@@ -63,7 +61,6 @@ describe('server runtime', () => {
     vi.resetModules();
     createAppMock.mockClear();
     createPostgresPoolMock.mockClear();
-    runPostgresMigrationsMock.mockClear();
     loadPostgresPersistenceConfigFromEnvMock.mockReset();
     isPostgresPersistenceEnabledMock.mockReset();
     markServerStartedMock.mockClear();
@@ -87,8 +84,7 @@ describe('server runtime', () => {
     );
   });
 
-  it('initializes migrations and both PostgreSQL stores when persistence is enabled', async () => {
-    process.env.RUN_DB_MIGRATIONS_ON_BOOT = 'true';
+  it('initializes both PostgreSQL stores when persistence is enabled', async () => {
     isPostgresPersistenceEnabledMock.mockReturnValue(true);
     loadPostgresPersistenceConfigFromEnvMock.mockReturnValue({
       connectionString: 'postgresql://recon:recon@localhost:5432/reconciliation_platform',
@@ -101,7 +97,6 @@ describe('server runtime', () => {
     const runtime = await createServerRuntime();
 
     expect(createPostgresPoolMock).toHaveBeenCalledTimes(1);
-    expect(runPostgresMigrationsMock).toHaveBeenCalledTimes(1);
     expect(lifecycleStoreInstances).toHaveLength(1);
     expect(readModelStoreInstances).toHaveLength(1);
     expect(createAppMock).toHaveBeenCalledTimes(1);
@@ -110,24 +105,5 @@ describe('server runtime', () => {
     expect(firstCall[2]).toBe(readModelStoreInstances[0]);
     expect(runtime.lifecycleStore).toBe(lifecycleStoreInstances[0]);
     expect(runtime.readModelStore).toBe(readModelStoreInstances[0]);
-  });
-
-  it('skips startup migrations in production when the container migration flow is active', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.RUN_DB_MIGRATIONS_ON_BOOT = 'false';
-    isPostgresPersistenceEnabledMock.mockReturnValue(true);
-    loadPostgresPersistenceConfigFromEnvMock.mockReturnValue({
-      connectionString: 'postgresql://recon:recon@localhost:5432/reconciliation_platform',
-      max: 5,
-      idleTimeoutMillis: 1000,
-      statementTimeoutMillis: 2000,
-    });
-
-    const { createServerRuntime } = await import('../src/server');
-    await createServerRuntime();
-
-    expect(createPostgresPoolMock).toHaveBeenCalledTimes(1);
-    expect(runPostgresMigrationsMock).not.toHaveBeenCalled();
-    expect(createAppMock).toHaveBeenCalledTimes(1);
   });
 });

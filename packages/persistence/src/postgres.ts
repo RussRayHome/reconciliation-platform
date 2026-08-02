@@ -1,7 +1,5 @@
 import { Pool, type PoolConfig } from 'pg';
 
-import { postgresMigrations } from './schema';
-
 /** Connection pool settings loaded from environment variables. */
 export type PostgresPersistenceConfig = {
   connectionString: string;
@@ -48,45 +46,4 @@ export const createPostgresPool = (config: PostgresPersistenceConfig): Pool => {
   };
 
   return new Pool(poolConfig);
-};
-
-/**
- * Applies all pending schema migrations in a single transaction.
- * Creates `schema_migrations` if it does not exist, then runs each migration in
- * `postgresMigrations` that has not been recorded there yet.
- * Safe to call on every process start — already-applied migrations are skipped.
- */
-export const runPostgresMigrations = async (pool: Pool): Promise<void> => {
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-    await client.query(
-      'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())',
-    );
-
-    const appliedVersionsResult = await client.query<{ version: number }>(
-      'SELECT version FROM schema_migrations ORDER BY version ASC',
-    );
-    const appliedVersions = new Set(appliedVersionsResult.rows.map((row) => row.version));
-
-    for (const migration of postgresMigrations) {
-      if (appliedVersions.has(migration.version)) {
-        continue;
-      }
-
-      await client.query(migration.sql);
-      await client.query(
-        'INSERT INTO schema_migrations (version, name) VALUES ($1, $2)',
-        [migration.version, migration.name],
-      );
-    }
-
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
 };

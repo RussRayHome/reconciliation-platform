@@ -1,9 +1,13 @@
 import type {
+  ApprovalHistoryEntry,
   ErrorCategory,
   ExceptionItem,
   ExceptionRuleTrace,
   GroupedMatchMember,
   GroupedMatchResult,
+  ImportApproval,
+  ImportApprovalStatus,
+  MappingProfileVersion,
   MatchResult,
   OutputWorkbookManifest,
   PayeeAlias,
@@ -789,4 +793,214 @@ export const loadPayeeAliases = async (
   );
 
   return result.rows.map(mapPayeeAlias);
+};
+
+/** Input fields accepted when creating a new, immutable mapping profile version. */
+export interface CreateMappingProfileVersionInput {
+  id: string;
+  profileId: string;
+  versionNumber: number;
+  columnMapping: Record<string, string>;
+  transformationRules: unknown[];
+  createdBy: string;
+}
+
+type MappingProfileVersionRow = {
+  id: string;
+  profile_id: string;
+  version_number: number;
+  column_mapping: Record<string, string>;
+  transformation_rules: unknown[];
+  status: 'ACTIVE' | 'DEPRECATED';
+  created_by: string;
+  created_at: string;
+};
+
+const mapMappingProfileVersion = (row: MappingProfileVersionRow): MappingProfileVersion => ({
+  id: row.id,
+  profileId: row.profile_id,
+  versionNumber: row.version_number,
+  columnMapping: row.column_mapping,
+  transformationRules: row.transformation_rules,
+  status: row.status,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+});
+
+/**
+ * Inserts a new mapping profile version. Versions are append-only by convention — there is no
+ * `updatePayeeAlias`-style update function here — and the `UNIQUE (profile_id, version_number)`
+ * constraint on `reconciliation_mapping_profile_version` rejects any attempt to reuse a version
+ * number, which is what actually enforces immutability once a version has been referenced by an
+ * import.
+ */
+export const createMappingProfileVersion = async (
+  pool: Pool,
+  input: CreateMappingProfileVersionInput,
+): Promise<MappingProfileVersion> => {
+  const result = await pool.query<MappingProfileVersionRow>(
+    `INSERT INTO reconciliation_mapping_profile_version
+       (id, profile_id, version_number, column_mapping, transformation_rules, created_by)
+     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+     RETURNING id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at`,
+    [
+      input.id,
+      input.profileId,
+      input.versionNumber,
+      JSON.stringify(input.columnMapping),
+      JSON.stringify(input.transformationRules),
+      input.createdBy,
+    ],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error('createMappingProfileVersion: INSERT returned no row');
+  }
+  return mapMappingProfileVersion(row);
+};
+
+/** Input fields accepted when requesting approval for an uploaded source file. */
+export interface CreateImportApprovalInput {
+  id: string;
+  sourceFileId: string;
+  uploadedBy: string;
+}
+
+/** Input to `recordApprovalDecision` — approves, rejects, or overrides a pending import. */
+export interface RecordApprovalDecisionInput {
+  approvalId: string;
+  toStatus: Extract<ImportApprovalStatus, 'APPROVED' | 'REJECTED' | 'OVERRIDDEN'>;
+  actor: string;
+  rationale?: string;
+}
+
+type ImportApprovalRow = {
+  id: string;
+  source_file_id: string;
+  status: ImportApprovalStatus;
+  uploaded_by: string;
+  approved_by: string | null;
+  rationale: string | null;
+  requested_at: string;
+  decided_at: string | null;
+};
+
+const mapImportApproval = (row: ImportApprovalRow): ImportApproval => ({
+  id: row.id,
+  sourceFileId: row.source_file_id,
+  status: row.status,
+  uploadedBy: row.uploaded_by,
+  approvedBy: row.approved_by ?? undefined,
+  rationale: row.rationale ?? undefined,
+  requestedAt: row.requested_at,
+  decidedAt: row.decided_at ?? undefined,
+});
+
+/**
+ * Opens the approval gate for an uploaded source file. `reconciliation_source_file.approval_status`
+ * should be moved to `'PENDING'` by the caller in the same transaction (see
+ * `PostgresReconciliationLifecycleStore` for the transactional job-lifecycle pattern this mirrors);
+ * this function only owns the `reconciliation_import_approval` row itself.
+ */
+export const createImportApproval = async (
+  pool: Pool,
+  input: CreateImportApprovalInput,
+): Promise<ImportApproval> => {
+  const result = await pool.query<ImportApprovalRow>(
+    `INSERT INTO reconciliation_import_approval (id, source_file_id, uploaded_by)
+     VALUES ($1, $2, $3)
+     RETURNING id, source_file_id, status, uploaded_by, approved_by, rationale, requested_at, decided_at`,
+    [input.id, input.sourceFileId, input.uploadedBy],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error('createImportApproval: INSERT returned no row');
+  }
+  return mapImportApproval(row);
+};
+
+/**
+ * Records an approve/reject/override decision and appends the transition to
+ * `reconciliation_approval_history` — the append-only audit trail the target work plan requires
+ * (mirrors `insertAuditEvent` in `reconciliationLifecycleStore.ts`, scoped to approvals instead of
+ * job state). Both writes happen in one transaction so the audit trail can never diverge from the
+ * approval's current status.
+ */
+export const recordApprovalDecision = async (
+  pool: Pool,
+  input: RecordApprovalDecisionInput,
+): Promise<ImportApproval> => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const current = await client.query<ImportApprovalRow>(
+      'SELECT status FROM reconciliation_import_approval WHERE id = $1 FOR UPDATE',
+      [input.approvalId],
+    );
+    const currentRow = current.rows[0];
+    if (!currentRow) {
+      throw new Error(`reconciliation_import_approval not found: ${input.approvalId}`);
+    }
+
+    const updated = await client.query<ImportApprovalRow>(
+      `UPDATE reconciliation_import_approval
+          SET status = $2, approved_by = $3, rationale = $4, decided_at = NOW()
+        WHERE id = $1
+    RETURNING id, source_file_id, status, uploaded_by, approved_by, rationale, requested_at, decided_at`,
+      [input.approvalId, input.toStatus, input.actor, input.rationale ?? null],
+    );
+
+    await client.query(
+      `INSERT INTO reconciliation_approval_history (id, approval_id, from_status, to_status, actor, note)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)`,
+      [input.approvalId, currentRow.status, input.toStatus, input.actor, input.rationale ?? null],
+    );
+
+    await client.query('COMMIT');
+
+    const row = updated.rows[0];
+    if (!row) {
+      throw new Error('recordApprovalDecision: UPDATE returned no row');
+    }
+    return mapImportApproval(row);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/** Loads the full append-only approval history for one import approval, oldest first. */
+export const loadApprovalHistory = async (
+  pool: Pool,
+  approvalId: string,
+): Promise<ApprovalHistoryEntry[]> => {
+  const result = await pool.query<{
+    id: string;
+    approval_id: string;
+    from_status: ImportApprovalStatus | null;
+    to_status: ImportApprovalStatus;
+    actor: string;
+    note: string | null;
+    created_at: string;
+  }>(
+    `SELECT id, approval_id, from_status, to_status, actor, note, created_at
+       FROM reconciliation_approval_history
+      WHERE approval_id = $1
+      ORDER BY created_at ASC`,
+    [approvalId],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    approvalId: row.approval_id,
+    fromStatus: row.from_status ?? undefined,
+    toStatus: row.to_status,
+    actor: row.actor,
+    note: row.note ?? undefined,
+    createdAt: row.created_at,
+  }));
 };
