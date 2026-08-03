@@ -1,4 +1,5 @@
 import type {
+  BusinessField,
   ChartIdentifier,
   ErrorCategory,
   ImportApprovalStatus,
@@ -9,27 +10,10 @@ import type {
   SeverityLevel,
   SourceSystem,
   StagedTransactionStatus,
+  TransformKind,
   ValidationRuleScope,
   ValidationSeverity,
 } from './enums';
-
-/** Canonical field names the engine recognises in uploaded spreadsheets. */
-export type BusinessField =
-  | 'transactionDate'
-  | 'postingDate'
-  | 'transactionType'
-  | 'checkNumber'
-  | 'serialNumber'
-  | 'referenceNumber'
-  | 'description'
-  | 'merchantName'
-  | 'payeeName'
-  | 'amount'
-  | 'splitAmount'
-  | 'debit'
-  | 'credit'
-  | 'runningBalance'
-  | 'accountIdentifier';
 
 /** Metadata registered for a single uploaded spreadsheet (bank or GL). */
 export interface SourceFile {
@@ -575,17 +559,6 @@ export interface CanonicalField {
   note: string;
 }
 
-/** A per-column data transform applied between the raw source value and the canonical field. */
-export type TransformKind =
-  | 'none'
-  | 'trim'
-  | 'dateReformat'
-  | 'parseNumber'
-  | 'negate'
-  | 'deriveDirection'
-  | 'uppercase'
-  | 'accountLookup';
-
 /** A single mapped source column, keyed to the canonical field it feeds. */
 export interface MappingProfilePair {
   col: string;
@@ -598,6 +571,15 @@ export interface MappingProfileSavePayload {
   name: string;
   gl: MappingProfilePair[];
   bank: MappingProfilePair[];
+  createdBy: string;
+}
+
+/** Response returned after saving a mapping profile: the (possibly newly-created) profile row and new version on each side. */
+export interface MappingProfileSaveResult {
+  glProfile: MappingProfile;
+  glVersion: MappingProfileVersion;
+  bankProfile: MappingProfile;
+  bankVersion: MappingProfileVersion;
 }
 
 /** A parsed, mapped transaction awaiting validation and approval before canonical promotion. Stored in `reconciliation_staged_transaction`. */

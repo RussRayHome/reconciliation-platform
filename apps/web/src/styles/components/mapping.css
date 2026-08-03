@@ -57,6 +57,29 @@
     gap: 10px;
   }
 
+  .mapping-page__name-field {
+    display: grid;
+    gap: 3px;
+  }
+
+  .mapping-page__name-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .mapping-page__name-input {
+    min-width: 220px;
+    padding: 0.45rem 0.7rem;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    font-size: 13px;
+  }
+
   .mapping-uploads {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

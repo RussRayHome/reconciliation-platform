@@ -3,6 +3,27 @@ export const sourceSystems = ['bank', 'gl'] as const;
 /** Union of the two transaction source identifiers: `'bank'` or `'gl'`. */
 export type SourceSystem = (typeof sourceSystems)[number];
 
+/** Canonical field names the engine recognises in uploaded spreadsheets. */
+export const businessFields = [
+  'transactionDate',
+  'postingDate',
+  'transactionType',
+  'checkNumber',
+  'serialNumber',
+  'referenceNumber',
+  'description',
+  'merchantName',
+  'payeeName',
+  'amount',
+  'splitAmount',
+  'debit',
+  'credit',
+  'runningBalance',
+  'accountIdentifier',
+] as const;
+/** Union of all canonical business field identifiers. */
+export type BusinessField = (typeof businessFields)[number];
+
 /** Lifecycle status of a reconciliation run stored in the database. */
 export const runStatuses = ['Pending', 'Running', 'Completed', 'Failed'] as const;
 /** Union of valid reconciliation run lifecycle statuses. */
@@ -104,6 +125,20 @@ export type ChartIdentifier = (typeof chartIdentifiers)[number];
 export const mappingProfileStatuses = ['ACTIVE', 'DEPRECATED'] as const;
 /** Union of valid mapping profile / version lifecycle statuses. */
 export type MappingProfileStatus = (typeof mappingProfileStatuses)[number];
+
+/** A per-column data transform applied between a mapped source value and its canonical field. */
+export const transformKinds = [
+  'none',
+  'trim',
+  'dateReformat',
+  'parseNumber',
+  'negate',
+  'deriveDirection',
+  'uppercase',
+  'accountLookup',
+] as const;
+/** Union of all supported mapping-column transform kinds. */
+export type TransformKind = (typeof transformKinds)[number];
 
 /** Lifecycle status of an uploaded source file's staged (pre-canonical) transactions. */
 export const stagedTransactionStatuses = [

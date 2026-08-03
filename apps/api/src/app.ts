@@ -9,8 +9,13 @@ import type {
 } from '@recon/domain';
 import {
   computeSha256Hex,
+  createMappingProfile,
+  createMappingProfileVersion,
   createPayeeAlias,
   deactivatePayeeAlias,
+  findMappingProfile,
+  findOrCreateDefaultOrganization,
+  listMappingProfileVersions,
   loadPayeeAliases,
   updatePayeeAlias,
   type CreatePayeeAliasInput,
@@ -23,6 +28,7 @@ import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
+import { CANONICAL_FIELDS } from './services/canonicalFields';
 import { createDeveloperStatusService } from './services/developerStatusService';
 import { createDeveloperRuntimeService } from './services/developerRuntimeService';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
@@ -44,6 +50,7 @@ import {
   reviewerDecisionBodySchema,
   reviewerDecisionDeleteParamsSchema,
   reviewerDecisionDeleteQuerySchema,
+  saveMappingProfileBodySchema,
   updateAliasBodySchema,
 } from './validation';
 
@@ -1727,6 +1734,65 @@ export const createApp = (
         return;
       }
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/mapping/canonical-fields', (_request, response) => {
+    response.json(CANONICAL_FIELDS);
+  });
+
+  app.post('/api/mapping/profiles', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const bodyResult = saveMappingProfileBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+
+      const { name, gl, bank, createdBy } = bodyResult.data;
+      const organizationId = await findOrCreateDefaultOrganization(pool!);
+
+      const saveSide = async (pairs: typeof gl, sourceType: 'gl' | 'bank') => {
+        let profile = await findMappingProfile(pool!, organizationId, name, sourceType);
+        if (!profile) {
+          profile = await createMappingProfile(pool!, {
+            id: randomUUID(),
+            organizationId,
+            name,
+            sourceType,
+          });
+        }
+
+        const existingVersions = await listMappingProfileVersions(pool!, profile.id);
+        const nextVersionNumber = (existingVersions[0]?.versionNumber ?? 0) + 1;
+        const columnMapping = Object.fromEntries(pairs.map((pair) => [pair.col, pair.db]));
+        const transformationRules = pairs
+          .filter((pair) => pair.transform && pair.transform !== 'none')
+          .map((pair) => ({ col: pair.col, db: pair.db, transform: pair.transform }));
+
+        const version = await createMappingProfileVersion(pool!, {
+          id: randomUUID(),
+          profileId: profile.id,
+          versionNumber: nextVersionNumber,
+          columnMapping,
+          transformationRules,
+          createdBy,
+        });
+
+        return { profile, version };
+      };
+
+      const [glResult, bankResult] = await Promise.all([saveSide(gl, 'gl'), saveSide(bank, 'bank')]);
+
+      response.status(201).json({
+        glProfile: glResult.profile,
+        glVersion: glResult.version,
+        bankProfile: bankResult.profile,
+        bankVersion: bankResult.version,
+      });
     } catch (error) {
       next(error);
     }

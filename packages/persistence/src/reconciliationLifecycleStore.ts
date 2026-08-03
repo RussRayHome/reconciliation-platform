@@ -239,19 +239,23 @@ const transitionJobState = async (
  *
  * Resolves the target row by the natural key `(job_id, source_system)` rather than trusting the
  * caller's generated id. The source-file insert upserts on that same natural key, so if a row
- * already existed it keeps its *original* id and the caller's freshly generated one is discarded --
+ * already existed it keeps its *original* id and the caller's freshly generated one is discarded —
  * keying the content insert off the caller's id would then violate the foreign key. The job state
  * machine currently rejects a second `createJob` for the same job (FILE_REGISTERED is terminal for
  * that transition), so this is defence in depth rather than a path exercised today.
  *
  * Files registered without a buffer are skipped; `reconciliation_source_file_recovery` reports them
  * as MISSING rather than silently implying a recoverable copy exists.
+ *
+ * @returns how many of the registered files carried bytes to preserve.
  */
 const persistSourceFileContent = async (
   client: PoolClient,
   jobId: string,
   sourceFiles: PersistedSourceFileRegistration[],
-): Promise<void> => {
+): Promise<number> => {
+  let preservedCount = 0;
+
   for (const sourceFile of sourceFiles) {
     if (sourceFile.content === undefined) {
       continue;
@@ -282,7 +286,11 @@ const persistSourceFileContent = async (
         sourceFile.mimeType,
       ],
     );
+
+    preservedCount += 1;
   }
+
+  return preservedCount;
 };
 
 const upsertSourceFileDetails = async (
@@ -458,12 +466,16 @@ export class PostgresReconciliationLifecycleStore {
       );
       await client.query(insertSourceFiles.text, insertSourceFiles.values);
 
-      await persistSourceFileContent(client, input.jobId, input.sourceFiles);
+      const contentPreservedCount = await persistSourceFileContent(
+        client,
+        input.jobId,
+        input.sourceFiles,
+      );
 
       await transitionJobState(client, input.jobId, 'FILE_REGISTERED', {
         sourceFileCount: input.sourceFiles.length,
         inputFingerprint: input.inputFingerprint ?? null,
-        contentPreservedCount: input.sourceFiles.filter((file) => file.content !== undefined).length,
+        contentPreservedCount,
       });
     });
   }

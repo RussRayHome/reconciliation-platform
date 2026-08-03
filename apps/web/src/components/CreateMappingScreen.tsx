@@ -3,44 +3,56 @@ import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'rea
 import { useNavigate } from 'react-router-dom';
 
 import { baseAliases } from '@recon/config';
-import type { BusinessField, CanonicalField, MappingProfilePair, TransformKind } from '@recon/domain';
+import type { CanonicalField, MappingProfilePair, TransformKind } from '@recon/domain';
 
+import { getCanonicalFieldsRequest, saveMappingProfileRequest } from '../lib/api';
 import { readHeaderOnly, type MappingSourceColumn } from '../lib/csvHeader';
 import { suggestMapping } from '../lib/mappingSuggest';
 import { applyTransform, defaultTransformForType, TRANSFORM_KINDS, TRANSFORM_LABELS, validateSampleValue } from '../lib/mappingTransforms';
+import { routePaths } from '../routes/routePaths';
 import { CreateMappingCanvas } from './CreateMappingCanvas';
 
-/**
- * TEMPORARY fixture standing in for `GET /api/mapping/canonical-fields` (added in the
- * Persistence phase). Field set mirrors `BusinessField` so profiles built here already target
- * the reconciliation engine's real canonical vocabulary — not a separate, disconnected schema.
- */
-const CANONICAL_FIELDS_FIXTURE: CanonicalField[] = [
-  { id: 'transactionDate', type: 'date', required: true, note: 'Posting or transaction date' },
-  { id: 'description', type: 'text', required: true, note: 'Narrative or memo' },
-  { id: 'amount', type: 'numeric', required: true, note: 'Signed transaction amount' },
-  { id: 'accountIdentifier', type: 'text', required: true, note: 'Account key on both sides' },
-  { id: 'postingDate', type: 'date', required: false, note: 'Bank posting date, if distinct' },
-  { id: 'transactionType', type: 'text', required: false, note: 'Instrument or channel' },
-  { id: 'checkNumber', type: 'text', required: false, note: 'Check number, if applicable' },
-  { id: 'serialNumber', type: 'text', required: false, note: 'Serial number, if applicable' },
-  { id: 'referenceNumber', type: 'text', required: false, note: 'Document or bank reference' },
-  { id: 'merchantName', type: 'text', required: false, note: 'Merchant name, if available' },
-  { id: 'payeeName', type: 'text', required: false, note: 'Payee name, if available' },
-  { id: 'splitAmount', type: 'numeric', required: false, note: 'Line-level split amount' },
-  { id: 'debit', type: 'numeric', required: false, note: 'Debit column, if split from credit' },
-  { id: 'credit', type: 'numeric', required: false, note: 'Credit column, if split from debit' },
-  { id: 'runningBalance', type: 'numeric', required: false, note: 'Balance after the entry' },
-];
-
-const CANONICAL_FIELD_IDS: BusinessField[] = CANONICAL_FIELDS_FIXTURE.map((field) => field.id);
-const REQUIRED_FIELD_IDS = CANONICAL_FIELDS_FIXTURE.filter((field) => field.required).map((field) => field.id);
-
 type UploadSide = 'gl' | 'bank';
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+/** Mirrors App.tsx's session storage key — no shared auth module exists yet to import it from. */
+const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
+
+function getCurrentUsername(): string | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(AUTHENTICATED_USER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { username?: unknown };
+    return typeof parsed.username === 'string' ? parsed.username : null;
+  } catch {
+    return null;
+  }
+}
 
 /** First real step of the reconciliation workflow: map GL and Bank columns onto the canonical schema. */
 export function CreateMappingScreen() {
   const navigate = useNavigate();
+
+  const [canonicalFields, setCanonicalFields] = useState<CanonicalField[]>([]);
+  const [canonicalFieldsError, setCanonicalFieldsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCanonicalFieldsRequest()
+      .then((fields) => {
+        if (!cancelled) setCanonicalFields(fields);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setCanonicalFieldsError(
+            error instanceof Error ? error.message : 'Could not load the canonical schema.',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [glCols, setGlCols] = useState<MappingSourceColumn[]>([]);
   const [bankCols, setBankCols] = useState<MappingSourceColumn[]>([]);
@@ -65,9 +77,14 @@ export function CreateMappingScreen() {
     [],
   );
 
+  const canonicalFieldIds = useMemo(() => canonicalFields.map((field) => field.id), [canonicalFields]);
+  const requiredFieldIds = useMemo(
+    () => canonicalFields.filter((field) => field.required).map((field) => field.id),
+    [canonicalFields],
+  );
   const fieldTypeById = useMemo(
-    () => Object.fromEntries(CANONICAL_FIELDS_FIXTURE.map((field) => [field.id, field.type])),
-    [],
+    () => Object.fromEntries(canonicalFields.map((field) => [field.id, field.type])),
+    [canonicalFields],
   );
 
   // Newly-connected pairs get a type-appropriate default transform; existing selections
@@ -115,7 +132,7 @@ export function CreateMappingScreen() {
         const suggested = suggestMapping(
           columns.map((column) => column.id),
           baseAliases,
-          CANONICAL_FIELD_IDS,
+          canonicalFieldIds,
         );
 
         if (side === 'gl') {
@@ -138,7 +155,7 @@ export function CreateMappingScreen() {
         }
       }
     },
-    [],
+    [canonicalFieldIds],
   );
 
   const handleGlTransformChange = useCallback((column: string, kind: TransformKind) => {
@@ -157,19 +174,94 @@ export function CreateMappingScreen() {
     [mapping.bank],
   );
 
-  const glRequiredDone = REQUIRED_FIELD_IDS.filter((id) => glByField[id]).length;
-  const bankRequiredDone = REQUIRED_FIELD_IDS.filter((id) => bankByField[id]).length;
-  const missingFields = REQUIRED_FIELD_IDS.filter((id) => !glByField[id] || !bankByField[id]);
-  const readyToSave = missingFields.length === 0;
+  const glRequiredDone = requiredFieldIds.filter((id) => glByField[id]).length;
+  const bankRequiredDone = requiredFieldIds.filter((id) => bankByField[id]).length;
+  const missingFields = requiredFieldIds.filter((id) => !glByField[id] || !bankByField[id]);
+  // canonicalFields.length guards against the brief window before the schema has loaded, where
+  // requiredFieldIds is empty and missingFields.length === 0 would otherwise look "ready".
+  const readyToSave = canonicalFields.length > 0 && missingFields.length === 0;
 
-  const visibleRows = CANONICAL_FIELDS_FIXTURE.filter(
+  const visibleRows = canonicalFields.filter(
     (field) => glByField[field.id] || bankByField[field.id] || field.required,
   );
+
+  const [profileName, setProfileName] = useState('');
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const glPairsWithTransform = useMemo(
+    () =>
+      mapping.gl.map((pair) => ({
+        ...pair,
+        transform: glTransforms[pair.col] ?? defaultTransformForType(fieldTypeById[pair.db] ?? 'text'),
+      })),
+    [mapping.gl, glTransforms, fieldTypeById],
+  );
+  const bankPairsWithTransform = useMemo(
+    () =>
+      mapping.bank.map((pair) => ({
+        ...pair,
+        transform: bankTransforms[pair.col] ?? defaultTransformForType(fieldTypeById[pair.db] ?? 'text'),
+      })),
+    [mapping.bank, bankTransforms, fieldTypeById],
+  );
+
+  const hasUnsavedWork = glCols.length > 0 || bankCols.length > 0 || mapping.gl.length > 0 || mapping.bank.length > 0;
+
+  // Warns on tab close/refresh/typed-URL navigation. In-app navigation can't be blocked the same
+  // way without a data router (this app uses plain BrowserRouter, where useBlocker is a no-op) —
+  // the back link below covers that case with an explicit confirm instead.
+  useEffect(() => {
+    if (!hasUnsavedWork || saveState === 'saved') return undefined;
+    const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    globalThis.addEventListener('beforeunload', handleBeforeUnload);
+    return () => globalThis.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedWork, saveState]);
+
+  const handleBack = useCallback(() => {
+    if (hasUnsavedWork && saveState !== 'saved') {
+      const confirmed = globalThis.confirm(
+        'You have unsaved mapping work. Leave this page and discard it?',
+      );
+      if (!confirmed) return;
+    }
+    void navigate(-1);
+  }, [hasUnsavedWork, saveState, navigate]);
+
+  const handleSave = useCallback(async () => {
+    const username = getCurrentUsername();
+    if (!username) {
+      setSaveState('error');
+      setSaveError('Could not determine the signed-in user — please log in again.');
+      return;
+    }
+
+    setSaveState('saving');
+    setSaveError(null);
+
+    try {
+      await saveMappingProfileRequest({
+        name: profileName.trim(),
+        gl: glPairsWithTransform,
+        bank: bankPairsWithTransform,
+        createdBy: username,
+      });
+      setSaveState('saved');
+      void navigate(routePaths.mappingProfiles);
+    } catch (error) {
+      setSaveState('error');
+      setSaveError(error instanceof Error ? error.message : 'Could not save the mapping profile.');
+    }
+  }, [profileName, glPairsWithTransform, bankPairsWithTransform, navigate]);
+
+  const canSave = readyToSave && profileName.trim().length > 0 && saveState !== 'saving';
 
   return (
     <div className="mapping-page">
       <div className="mapping-page__top">
-        <button type="button" className="mapping-back-link" onClick={() => navigate(-1)}>
+        <button type="button" className="mapping-back-link" onClick={handleBack}>
           ← Mapping
         </button>
         <div className="mapping-page__top-row">
@@ -181,14 +273,33 @@ export function CreateMappingScreen() {
             </span>
           </div>
           <div className="mapping-page__actions">
-            <button type="button" className="secondary-button" onClick={() => navigate(-1)}>
+            <label className="mapping-page__name-field">
+              <span className="mapping-page__name-label">Profile name</span>
+              <input
+                type="text"
+                className="mapping-page__name-input"
+                value={profileName}
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="e.g. Monthly Bank + GL"
+              />
+            </label>
+            <button type="button" className="secondary-button" onClick={handleBack}>
               Cancel
             </button>
-            <button type="button" className="accent-button" disabled={!readyToSave}>
-              Save mapping profile
+            <button
+              type="button"
+              className="accent-button"
+              disabled={!canSave}
+              onClick={() => {
+                void handleSave();
+              }}
+            >
+              {saveState === 'saving' ? 'Saving…' : 'Save mapping profile'}
             </button>
           </div>
         </div>
+        {canonicalFieldsError ? <span className="mapping-upload__error">{canonicalFieldsError}</span> : null}
+        {saveState === 'error' && saveError ? <span className="mapping-upload__error">{saveError}</span> : null}
       </div>
 
       <div className="mapping-uploads">
@@ -252,23 +363,29 @@ export function CreateMappingScreen() {
         <span className="mapping-coverage__label">Required coverage</span>
         <span className="mapping-bar">
           <i
-            className={glRequiredDone === REQUIRED_FIELD_IDS.length ? 'mapping-bar__fill mapping-bar__fill--gl-ok' : 'mapping-bar__fill'}
-            style={{ width: `${Math.round((glRequiredDone / REQUIRED_FIELD_IDS.length) * 100)}%` }}
+            className={
+              requiredFieldIds.length > 0 && glRequiredDone === requiredFieldIds.length
+                ? 'mapping-bar__fill mapping-bar__fill--gl-ok'
+                : 'mapping-bar__fill'
+            }
+            style={{ width: `${Math.round((glRequiredDone / Math.max(1, requiredFieldIds.length)) * 100)}%` }}
           />
         </span>
         <span className="mapping-coverage__count">
-          GL {glRequiredDone}/{REQUIRED_FIELD_IDS.length}
+          GL {glRequiredDone}/{requiredFieldIds.length}
         </span>
         <span className="mapping-bar">
           <i
             className={
-              bankRequiredDone === REQUIRED_FIELD_IDS.length ? 'mapping-bar__fill mapping-bar__fill--bank-ok' : 'mapping-bar__fill'
+              requiredFieldIds.length > 0 && bankRequiredDone === requiredFieldIds.length
+                ? 'mapping-bar__fill mapping-bar__fill--bank-ok'
+                : 'mapping-bar__fill'
             }
-            style={{ width: `${Math.round((bankRequiredDone / REQUIRED_FIELD_IDS.length) * 100)}%` }}
+            style={{ width: `${Math.round((bankRequiredDone / Math.max(1, requiredFieldIds.length)) * 100)}%` }}
           />
         </span>
         <span className="mapping-coverage__count">
-          Bank {bankRequiredDone}/{REQUIRED_FIELD_IDS.length}
+          Bank {bankRequiredDone}/{requiredFieldIds.length}
         </span>
         <span className="mapping-coverage__spacer" />
         <span className="mapping-coverage__hint">
@@ -321,7 +438,7 @@ export function CreateMappingScreen() {
           <CreateMappingCanvas
             glCols={glCols}
             bankCols={bankCols}
-            canonicalFields={CANONICAL_FIELDS_FIXTURE}
+            canonicalFields={canonicalFields}
             initialGlMapping={glAutoSuggest}
             initialBankMapping={bankAutoSuggest}
             onChange={handleCanvasChange}

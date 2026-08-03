@@ -344,7 +344,6 @@ describe('PostgresReconciliationLifecycleStore', () => {
     // A byte sequence that is not valid UTF-8 and contains NUL, so a round trip proves the column is
     // genuinely binary rather than silently coerced through a text encoding.
     const bankBytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0xfe, 0x00, 0x41]);
-    const bankSha256 = createHash('sha256').update(bankBytes).digest('hex');
     const jobId = randomUUID();
     const startedAt = new Date().toISOString();
 
@@ -361,7 +360,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
           fileName: 'bank.xlsx',
           mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           sizeBytes: bankBytes.byteLength,
-          sha256: bankSha256,
+          sha256: createHash('sha256').update(bankBytes).digest('hex'),
           uploadedAt: startedAt,
           content: bankBytes,
         },

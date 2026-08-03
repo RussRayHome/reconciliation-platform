@@ -3,8 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   PostgresReconciliationReadModelStore,
+  createMappingProfile,
+  createMappingProfileVersion,
   createPayeeAlias,
   deactivatePayeeAlias,
+  findMappingProfile,
+  findOrCreateDefaultOrganization,
+  listMappingProfileVersions,
   loadPayeeAliases,
   updatePayeeAlias,
 } from './readModelStore';
@@ -17,6 +22,26 @@ const makePool = (...responses: QueryResult[]): Pool => {
     mock.mockResolvedValueOnce(r);
   }
   return { query: mock } as unknown as Pool;
+};
+
+const MAPPING_PROFILE_ROW = {
+  id: 'profile-1',
+  organization_id: 'org-1',
+  name: 'Monthly Bank + GL',
+  source_type: 'gl' as const,
+  status: 'ACTIVE' as const,
+  created_at: '2026-08-01T00:00:00.000Z',
+};
+
+const MAPPING_PROFILE_VERSION_ROW = {
+  id: 'version-1',
+  profile_id: 'profile-1',
+  version_number: 1,
+  column_mapping: { 'Account Code': 'accountIdentifier' },
+  transformation_rules: [],
+  status: 'ACTIVE' as const,
+  created_by: 'rray',
+  created_at: '2026-08-01T00:00:00.000Z',
 };
 
 const PAYEE_ROW = {
@@ -822,5 +847,122 @@ describe('loadPayeeAliases', () => {
   it('returns empty array when no active aliases', async () => {
     const pool = makePool({ rows: [] });
     expect(await loadPayeeAliases(pool)).toEqual([]);
+  });
+});
+
+describe('findOrCreateDefaultOrganization', () => {
+  it('returns the existing default organization id without inserting', async () => {
+    const pool = makePool({ rows: [{ id: 'org-1' }] });
+    const id = await findOrCreateDefaultOrganization(pool);
+    expect(id).toBe('org-1');
+    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  it('creates the default organization on first use', async () => {
+    const pool = makePool({ rows: [] }, { rows: [{ id: 'org-2' }] });
+    const id = await findOrCreateDefaultOrganization(pool);
+    expect(id).toBe('org-2');
+    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+  });
+
+  it('re-selects after losing an insert race to a concurrent request', async () => {
+    const pool = makePool({ rows: [] }, { rows: [] }, { rows: [{ id: 'org-3' }] });
+    const id = await findOrCreateDefaultOrganization(pool);
+    expect(id).toBe('org-3');
+    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3);
+  });
+
+  it('throws if the organization still cannot be resolved after a lost race', async () => {
+    const pool = makePool({ rows: [] }, { rows: [] }, { rows: [] });
+    await expect(findOrCreateDefaultOrganization(pool)).rejects.toThrow(
+      'findOrCreateDefaultOrganization: could not resolve the default organization',
+    );
+  });
+});
+
+describe('findMappingProfile', () => {
+  it('maps an existing profile row', async () => {
+    const pool = makePool({ rows: [MAPPING_PROFILE_ROW] });
+    const profile = await findMappingProfile(pool, 'org-1', 'Monthly Bank + GL', 'gl');
+    expect(profile).toMatchObject({ id: 'profile-1', sourceType: 'gl', name: 'Monthly Bank + GL' });
+  });
+
+  it('returns null when no profile exists for that name and side', async () => {
+    const pool = makePool({ rows: [] });
+    const profile = await findMappingProfile(pool, 'org-1', 'Nonexistent', 'bank');
+    expect(profile).toBeNull();
+  });
+});
+
+describe('createMappingProfile', () => {
+  it('creates and maps a new profile', async () => {
+    const pool = makePool({ rows: [MAPPING_PROFILE_ROW] });
+    const profile = await createMappingProfile(pool, {
+      id: 'profile-1',
+      organizationId: 'org-1',
+      name: 'Monthly Bank + GL',
+      sourceType: 'gl',
+    });
+    expect(profile.id).toBe('profile-1');
+    expect(profile.status).toBe('ACTIVE');
+  });
+
+  it('throws when INSERT returns no row', async () => {
+    const pool = makePool({ rows: [] });
+    await expect(
+      createMappingProfile(pool, {
+        id: 'profile-1',
+        organizationId: 'org-1',
+        name: 'Monthly Bank + GL',
+        sourceType: 'gl',
+      }),
+    ).rejects.toThrow('createMappingProfile: INSERT returned no row');
+  });
+});
+
+describe('listMappingProfileVersions', () => {
+  it('maps every version row', async () => {
+    const pool = makePool({
+      rows: [MAPPING_PROFILE_VERSION_ROW, { ...MAPPING_PROFILE_VERSION_ROW, id: 'version-2', version_number: 2 }],
+    });
+    const versions = await listMappingProfileVersions(pool, 'profile-1');
+    expect(versions).toHaveLength(2);
+    expect(versions[0]?.versionNumber).toBe(1);
+    expect(versions[1]?.versionNumber).toBe(2);
+  });
+
+  it('returns an empty array for a profile with no versions yet', async () => {
+    const pool = makePool({ rows: [] });
+    expect(await listMappingProfileVersions(pool, 'profile-1')).toEqual([]);
+  });
+});
+
+describe('createMappingProfileVersion', () => {
+  it('creates and maps a new version', async () => {
+    const pool = makePool({ rows: [MAPPING_PROFILE_VERSION_ROW] });
+    const version = await createMappingProfileVersion(pool, {
+      id: 'version-1',
+      profileId: 'profile-1',
+      versionNumber: 1,
+      columnMapping: { 'Account Code': 'accountIdentifier' },
+      transformationRules: [],
+      createdBy: 'rray',
+    });
+    expect(version.id).toBe('version-1');
+    expect(version.columnMapping).toEqual({ 'Account Code': 'accountIdentifier' });
+  });
+
+  it('throws when INSERT returns no row', async () => {
+    const pool = makePool({ rows: [] });
+    await expect(
+      createMappingProfileVersion(pool, {
+        id: 'version-1',
+        profileId: 'profile-1',
+        versionNumber: 1,
+        columnMapping: {},
+        transformationRules: [],
+        createdBy: 'rray',
+      }),
+    ).rejects.toThrow('createMappingProfileVersion: INSERT returned no row');
   });
 });

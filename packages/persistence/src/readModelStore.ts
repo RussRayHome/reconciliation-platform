@@ -7,6 +7,7 @@ import type {
   GroupedMatchResult,
   ImportApproval,
   ImportApprovalStatus,
+  MappingProfile,
   MappingProfileVersion,
   MatchResult,
   OutputWorkbookManifest,
@@ -857,6 +858,122 @@ export const createMappingProfileVersion = async (
     throw new Error('createMappingProfileVersion: INSERT returned no row');
   }
   return mapMappingProfileVersion(row);
+};
+
+/** All immutable versions of a mapping profile, newest first — used to compute the next version number. */
+export const listMappingProfileVersions = async (
+  pool: Pool,
+  profileId: string,
+): Promise<MappingProfileVersion[]> => {
+  const result = await pool.query<MappingProfileVersionRow>(
+    `SELECT id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at
+     FROM reconciliation_mapping_profile_version
+     WHERE profile_id = $1
+     ORDER BY version_number DESC`,
+    [profileId],
+  );
+  return result.rows.map(mapMappingProfileVersion);
+};
+
+type MappingProfileRow = {
+  id: string;
+  organization_id: string;
+  name: string;
+  source_type: SourceSystem;
+  status: 'ACTIVE' | 'DEPRECATED';
+  created_at: string;
+};
+
+const mapMappingProfile = (row: MappingProfileRow): MappingProfile => ({
+  id: row.id,
+  organizationId: row.organization_id,
+  name: row.name,
+  sourceType: row.source_type,
+  status: row.status,
+  createdAt: row.created_at,
+});
+
+/** The mapping profile row for one side (`source_type`) of a named profile, or `null` if it hasn't been saved yet. */
+export const findMappingProfile = async (
+  pool: Pool,
+  organizationId: string,
+  name: string,
+  sourceType: SourceSystem,
+): Promise<MappingProfile | null> => {
+  const result = await pool.query<MappingProfileRow>(
+    `SELECT id, organization_id, name, source_type, status, created_at
+     FROM reconciliation_mapping_profile
+     WHERE organization_id = $1 AND name = $2 AND source_type = $3`,
+    [organizationId, name, sourceType],
+  );
+  const row = result.rows[0];
+  return row ? mapMappingProfile(row) : null;
+};
+
+/** Input fields accepted when creating a new mapping profile (one row per side — see `findMappingProfile`). */
+export interface CreateMappingProfileInput {
+  id: string;
+  organizationId: string;
+  name: string;
+  sourceType: SourceSystem;
+}
+
+export const createMappingProfile = async (
+  pool: Pool,
+  input: CreateMappingProfileInput,
+): Promise<MappingProfile> => {
+  const result = await pool.query<MappingProfileRow>(
+    `INSERT INTO reconciliation_mapping_profile (id, organization_id, name, source_type)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, organization_id, name, source_type, status, created_at`,
+    [input.id, input.organizationId, input.name, input.sourceType],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error('createMappingProfile: INSERT returned no row');
+  }
+  return mapMappingProfile(row);
+};
+
+/**
+ * Resolves the id of the single default organization, creating it on first use. The schema
+ * models multi-tenancy (`reconciliation_organization` / `organization_id` foreign keys) but
+ * nothing in the app resolves a "current organization" yet — this keeps mapping profiles working
+ * out of the box without a manual seed step, while staying forward-compatible with a real
+ * per-session organization lookup later.
+ */
+export const findOrCreateDefaultOrganization = async (pool: Pool): Promise<string> => {
+  const DEFAULT_ORGANIZATION_NAME = 'Default Organization';
+
+  const existing = await pool.query<{ id: string }>(
+    'SELECT id FROM reconciliation_organization WHERE name = $1',
+    [DEFAULT_ORGANIZATION_NAME],
+  );
+  if (existing.rows[0]) {
+    return existing.rows[0].id;
+  }
+
+  const inserted = await pool.query<{ id: string }>(
+    `INSERT INTO reconciliation_organization (id, name)
+     VALUES (gen_random_uuid(), $1)
+     ON CONFLICT (name) DO NOTHING
+     RETURNING id`,
+    [DEFAULT_ORGANIZATION_NAME],
+  );
+  if (inserted.rows[0]) {
+    return inserted.rows[0].id;
+  }
+
+  // Lost a race with a concurrent request that inserted the same row first; re-select.
+  const afterConflict = await pool.query<{ id: string }>(
+    'SELECT id FROM reconciliation_organization WHERE name = $1',
+    [DEFAULT_ORGANIZATION_NAME],
+  );
+  const row = afterConflict.rows[0];
+  if (!row) {
+    throw new Error('findOrCreateDefaultOrganization: could not resolve the default organization');
+  }
+  return row.id;
 };
 
 /** Input fields accepted when requesting approval for an uploaded source file. */

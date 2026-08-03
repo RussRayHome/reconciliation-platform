@@ -299,6 +299,17 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     ).rejects.toThrow(/duplicate key value violates unique constraint/);
   });
 
+  // Every id is a fresh uuid that matches no existing row, so the insert is rejected by whichever
+  // constraint fires first: the pairing CHECK when ingestion_mode contradicts the profile version,
+  // otherwise the source-file foreign key.
+  const insertStagedTransaction = (ingestionMode: 'DIRECT' | 'MAPPED') =>
+    pool.query(
+      `INSERT INTO reconciliation_staged_transaction
+         (id, raw_row_id, source_file_id, mapping_profile_version_id, ingestion_mode, normalized_fields_json)
+       VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), $1, '{}'::jsonb)`,
+      [ingestionMode],
+    );
+
   it('rejects a staged transaction that references a nonexistent source file (FK ownership)', async () => {
     if (startupError) throw startupError;
 
@@ -306,13 +317,9 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     // mapping_profile_version_id: leaving it at the 'DIRECT' default alongside a non-NULL profile
     // version would trip the pairing CHECK first and this test would stop exercising the FK it is
     // named for.
-    await expect(
-      pool.query(
-        `INSERT INTO reconciliation_staged_transaction
-           (id, raw_row_id, source_file_id, mapping_profile_version_id, ingestion_mode, normalized_fields_json)
-         VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'MAPPED', '{}'::jsonb)`,
-      ),
-    ).rejects.toThrow(/violates foreign key constraint/);
+    await expect(insertStagedTransaction('MAPPED')).rejects.toThrow(
+      /violates foreign key constraint/,
+    );
   });
 
   it('rejects a direct-import staged transaction that names a mapping profile version', async () => {
@@ -320,13 +327,9 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
 
     // The inverse of the pairing invariant from changeset 0020: a DIRECT import did not go through
     // a mapping profile, so claiming one would misrepresent how the row was normalized.
-    await expect(
-      pool.query(
-        `INSERT INTO reconciliation_staged_transaction
-           (id, raw_row_id, source_file_id, mapping_profile_version_id, ingestion_mode, normalized_fields_json)
-         VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'DIRECT', '{}'::jsonb)`,
-      ),
-    ).rejects.toThrow(/reconciliation_staged_transaction_mapping_pairing_check/);
+    await expect(insertStagedTransaction('DIRECT')).rejects.toThrow(
+      /reconciliation_staged_transaction_mapping_pairing_check/,
+    );
   });
 
   it('still rejects a duplicate (job_id, source_system) source file after the approval-pipeline extension (regression)', async () => {

@@ -1,5 +1,8 @@
 import type {
+  CanonicalField,
   ErrorCategory,
+  MappingProfileSavePayload,
+  MappingProfileSaveResult,
   ReconciliationRunReport,
   ReviewerDecision,
   ReviewerDecisionOutcome,
@@ -182,6 +185,27 @@ export const loginRequest = async ({
 /** Returns the workbook download URL for the given run ID. */
 export const downloadWorkbookUrl = (runId: string): string =>
   `/api/reconciliation/${runId}/export/workbook`;
+
+/** Fetches the canonical transaction schema the Create Mapping canvas targets. */
+export const getCanonicalFieldsRequest = async (): Promise<CanonicalField[]> => {
+  const response = await fetch('/api/mapping/canonical-fields');
+  return parseResponse<CanonicalField[]>(response);
+};
+
+/** Saves (or adds a new version to) a paired GL + Bank mapping profile. */
+export const saveMappingProfileRequest = async (
+  payload: MappingProfileSavePayload,
+): Promise<MappingProfileSaveResult> => {
+  const response = await fetch('/api/mapping/profiles', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return parseResponse<MappingProfileSaveResult>(response);
+};
 
 /** Input payload for recording a reviewer decision on a run target. */
 export interface ReviewerDecisionInput {
