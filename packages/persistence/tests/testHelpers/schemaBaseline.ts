@@ -175,6 +175,21 @@ export const generateSchemaBaseline = async (pool: Pool): Promise<string> => {
       `SELECT indexes_are('public', ${quote(table)}, ${sqlArray((indexesByTable.get(table) ?? []).map((row) => row.index_name))}, ${quote(`${table} has exactly the expected indexes`)});`,
     );
 
+    // ADR-0001 step 7: "tenant-scoped" is defined structurally here, not by a maintained list --
+    // any table that carries an organization_id column must have row-level security enabled, full
+    // stop. That makes this assertion self-updating: a future changeset that adds organization_id
+    // to a new table without also enabling RLS on it fails this baseline diff immediately, rather
+    // than shipping a silently unprotected tenant table.
+    if (tableColumns.some((column) => column.column_name === 'organization_id')) {
+      assertions.push(
+        `SELECT is(
+  (SELECT relrowsecurity FROM pg_class WHERE relname = ${quote(table)} AND relnamespace = 'public'::regnamespace),
+  true,
+  ${quote(`${table} has row-level security enabled`)}
+);`,
+      );
+    }
+
     for (const column of tableColumns) {
       assertions.push(
         `SELECT col_type_is('public', ${quote(table)}, ${quote(column.column_name)}, ${quote(column.column_type)}, ${quote(`${table}.${column.column_name} is ${column.column_type}`)});`,

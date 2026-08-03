@@ -10,6 +10,12 @@
 > to organization, no policies — a blocker for onboarding a second customer, not merely a
 > due-diligence weakness. Until the prerequisite work below lands, every customer's reconciliation
 > data would sit co-mingled in one database with nothing separating it.
+>
+> **Update 2026-08-03:** all 8 action items below are landed and leak-tested. One gap remains
+> before this is actually enforced in a live deployment: the API's `DATABASE_URL` still connects
+> as `recon_app` (superuser, unconditionally bypasses RLS) rather than `recon_app_runtime` (see
+> action item 4) — that credential/deployment switch is intentionally not a schema migration and
+> is the one remaining step to close this out end to end.
 
 ## Context
 
@@ -223,11 +229,18 @@ Ordered. Steps 1–3 are the prerequisite data model; no policy can be written b
        `reconciliationLifecycleStore.ts` doubles as the tenant-ownership check: once the GUC is
        set from the caller-claimed org, that lookup returns nothing (and the caller gets a clean
        "not found") if the row actually belongs to a different tenant.
-7. [ ] **Make a policy-less table fail the build.** Extend `tests/testHelpers/schemaBaseline.ts` to
-       assert RLS is enabled on every tenant-scoped table, so the schema-drift test catches a new
-       table that forgot its policy.
-8. [ ] **Add the leak tests.** Connect as tenant A, `SELECT *` with no `WHERE`, assert zero
-       tenant-B rows; and a cross-tenant `UPDATE`/`DELETE` affecting zero rows.
+7. [x] **Make a policy-less table fail the build.** Landed 2026-08-03:
+       `tests/testHelpers/schemaBaseline.ts` now asserts `pg_class.relrowsecurity = true` for
+       every table that carries an `organization_id` column -- structural, not a maintained list,
+       so a future changeset that adds `organization_id` to a new table without enabling RLS on
+       it fails the committed schema-baseline diff immediately.
+8. [x] **Add the leak tests.** Landed 2026-08-03: `tests/rlsTenantIsolation.test.ts` connects as
+       `recon_app_runtime` through the real `runInTenantScope` (not the superuser admin pool every
+       other test uses, which bypasses RLS unconditionally) and proves a connection scoped to one
+       tenant: sees only its own rows on an unfiltered `SELECT`, affects zero rows on a
+       cross-tenant `UPDATE`/`DELETE`, is rejected outright (`WITH CHECK`) on an `INSERT` claiming
+       a different tenant, and gets the same isolation on a descendant table
+       (`reconciliation_payee_alias`), not just the aggregate root.
 
 ## Notes
 
