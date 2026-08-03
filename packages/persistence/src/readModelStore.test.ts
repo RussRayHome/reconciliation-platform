@@ -704,6 +704,7 @@ describe('createPayeeAlias', () => {
   it('creates with all explicit fields', async () => {
     const pool = makePool({ rows: [PAYEE_ROW] });
     const alias = await createPayeeAlias(pool, {
+      organizationId: 'org-1',
       accountIdentifier: 'ACCT-001',
       bankPattern: 'GOOGLE',
       canonicalPayeeName: 'Google LLC',
@@ -719,22 +720,25 @@ describe('createPayeeAlias', () => {
   it('uses defaults when optional fields are omitted', async () => {
     const pool = makePool({ rows: [PAYEE_ROW] });
     await createPayeeAlias(pool, {
+      organizationId: 'org-1',
       bankPattern: 'GOOGLE',
       canonicalPayeeName: 'Google LLC',
       normalizedTokens: ['google'],
     });
     const call = (pool.query as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[];
     const params = call[1] as unknown[];
-    // $1 = accountIdentifier (null), $5 = direction, $6 = confidence
-    expect(params[0]).toBeNull();
-    expect(params[4]).toBe('bank_to_gl');
-    expect(params[5]).toBe(1);
+    // $1 = organizationId, $2 = accountIdentifier (null), $6 = direction, $7 = confidence
+    expect(params[0]).toBe('org-1');
+    expect(params[1]).toBeNull();
+    expect(params[5]).toBe('bank_to_gl');
+    expect(params[6]).toBe(1);
   });
 
   it('throws when INSERT returns no row', async () => {
     const pool = makePool({ rows: [] });
     await expect(
       createPayeeAlias(pool, {
+        organizationId: 'org-1',
         bankPattern: 'GOOGLE',
         canonicalPayeeName: 'Google LLC',
         normalizedTokens: [],
@@ -745,6 +749,7 @@ describe('createPayeeAlias', () => {
   it('maps a payee alias with null account_identifier', async () => {
     const pool = makePool({ rows: [{ ...PAYEE_ROW, account_identifier: null }] });
     const alias = await createPayeeAlias(pool, {
+      organizationId: 'org-1',
       bankPattern: 'GOOGLE',
       canonicalPayeeName: 'Google LLC',
       normalizedTokens: [],
@@ -755,6 +760,7 @@ describe('createPayeeAlias', () => {
   it('uses empty array when normalized_tokens is null', async () => {
     const pool = makePool({ rows: [{ ...PAYEE_ROW, normalized_tokens: null }] });
     const alias = await createPayeeAlias(pool, {
+      organizationId: 'org-1',
       bankPattern: 'GOOGLE',
       canonicalPayeeName: 'Google LLC',
       normalizedTokens: [],

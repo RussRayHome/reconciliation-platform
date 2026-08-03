@@ -666,6 +666,9 @@ const mapPayeeAlias = (row: PayeeAliasRow): PayeeAlias => ({
 
 /** Input fields accepted when creating a new payee alias. */
 export interface CreatePayeeAliasInput {
+  /** ADR-0001: payee aliases have no job/profile to derive tenancy from, so the caller (the API
+   * route, from the authenticated principal) must supply it directly. */
+  organizationId: string;
   accountIdentifier?: string;
   bankPattern: string;
   canonicalPayeeName: string;
@@ -693,10 +696,11 @@ export const createPayeeAlias = async (
 ): Promise<PayeeAlias> => {
   const result = await pool.query<PayeeAliasRow>(
     `INSERT INTO reconciliation_payee_alias
-       (account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (organization_id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
     [
+      input.organizationId,
       input.accountIdentifier ?? null,
       input.bankPattern,
       input.canonicalPayeeName,
@@ -839,10 +843,15 @@ export const createMappingProfileVersion = async (
   pool: Pool,
   input: CreateMappingProfileVersionInput,
 ): Promise<MappingProfileVersion> => {
+  // organization_id is derived from the parent profile via subquery rather than added to
+  // CreateMappingProfileVersionInput -- every version already belongs to exactly one profile, so
+  // there is no independent value a caller could legitimately supply here.
   const result = await pool.query<MappingProfileVersionRow>(
     `INSERT INTO reconciliation_mapping_profile_version
-       (id, profile_id, version_number, column_mapping, transformation_rules, created_by)
-     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+       (id, profile_id, organization_id, version_number, column_mapping, transformation_rules, created_by)
+     SELECT $1, $2, mp.organization_id, $3, $4::jsonb, $5::jsonb, $6
+       FROM reconciliation_mapping_profile mp
+      WHERE mp.id = $2
      RETURNING id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at`,
     [
       input.id,
@@ -1023,9 +1032,13 @@ export const createImportApproval = async (
   pool: Pool,
   input: CreateImportApprovalInput,
 ): Promise<ImportApproval> => {
+  // organization_id derives from the source file being approved, same reasoning as
+  // createMappingProfileVersion above.
   const result = await pool.query<ImportApprovalRow>(
-    `INSERT INTO reconciliation_import_approval (id, source_file_id, uploaded_by)
-     VALUES ($1, $2, $3)
+    `INSERT INTO reconciliation_import_approval (id, source_file_id, organization_id, uploaded_by)
+     SELECT $1, $2, sf.organization_id, $3
+       FROM reconciliation_source_file sf
+      WHERE sf.id = $2
      RETURNING id, source_file_id, status, uploaded_by, approved_by, rationale, requested_at, decided_at`,
     [input.id, input.sourceFileId, input.uploadedBy],
   );
@@ -1070,8 +1083,10 @@ export const recordApprovalDecision = async (
     );
 
     await client.query(
-      `INSERT INTO reconciliation_approval_history (id, approval_id, from_status, to_status, actor, note)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)`,
+      `INSERT INTO reconciliation_approval_history (id, approval_id, organization_id, from_status, to_status, actor, note)
+       SELECT gen_random_uuid(), $1, ia.organization_id, $2, $3, $4, $5
+         FROM reconciliation_import_approval ia
+        WHERE ia.id = $1`,
       [input.approvalId, currentRow.status, input.toStatus, input.actor, input.rationale ?? null],
     );
 

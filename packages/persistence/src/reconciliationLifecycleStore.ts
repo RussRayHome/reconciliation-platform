@@ -52,6 +52,9 @@ export interface CreateReconciliationJobInput {
   correlationId: string;
   startedAt: string;
   rulepackVersion: string;
+  /** ADR-0001: the tenant this job belongs to. Every descendant row denormalizes this value,
+   * resolved from the job row rather than re-passed by each caller -- see getJobOrganizationId. */
+  organizationId: string;
   accountIdentifier?: string;
   periodLabel?: string;
   reconciliationFrequency?: ReconciliationFrequency;
@@ -194,9 +197,26 @@ const getCurrentState = async (
   return row.current_state;
 };
 
+/** ADR-0001: resolves the tenant a job belongs to from the job row itself, so descendant writes
+ * denormalize organization_id without every caller re-threading it through method signatures. */
+const getJobOrganizationId = async (client: PoolClient, jobId: string): Promise<string> => {
+  const result = await client.query<{ organization_id: string }>(
+    'SELECT organization_id FROM reconciliation_job WHERE id = $1',
+    [jobId],
+  );
+  const organizationId = result.rows[0]?.organization_id;
+
+  if (!organizationId) {
+    throw new Error(`reconciliation_job not found (or missing organization_id): ${jobId}`);
+  }
+
+  return organizationId;
+};
+
 const insertAuditEvent = async (
   client: PoolClient,
   jobId: string,
+  organizationId: string,
   eventType: string,
   details: Record<string, unknown>,
   fromState?: ReconciliationJobState,
@@ -204,15 +224,16 @@ const insertAuditEvent = async (
 ): Promise<void> => {
   await client.query(
     `INSERT INTO reconciliation_audit_event
-      (job_id, event_type, from_state, to_state, details_json)
-     VALUES ($1, $2, $3, $4, $5::jsonb)`,
-    [jobId, eventType, fromState ?? null, toState ?? null, JSON.stringify(details)],
+      (job_id, organization_id, event_type, from_state, to_state, details_json)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [jobId, organizationId, eventType, fromState ?? null, toState ?? null, JSON.stringify(details)],
   );
 };
 
 const transitionJobState = async (
   client: PoolClient,
   jobId: string,
+  organizationId: string,
   nextState: ReconciliationJobState,
   details: Record<string, unknown>,
 ): Promise<void> => {
@@ -228,7 +249,15 @@ const transitionJobState = async (
       WHERE id = $1`,
     [jobId, nextState],
   );
-  await insertAuditEvent(client, jobId, 'job.state.transitioned', details, currentState, nextState);
+  await insertAuditEvent(
+    client,
+    jobId,
+    organizationId,
+    'job.state.transitioned',
+    details,
+    currentState,
+    nextState,
+  );
 };
 
 /**
@@ -252,6 +281,7 @@ const transitionJobState = async (
 const persistSourceFileContent = async (
   client: PoolClient,
   jobId: string,
+  organizationId: string,
   sourceFiles: PersistedSourceFileRegistration[],
 ): Promise<number> => {
   let preservedCount = 0;
@@ -263,8 +293,8 @@ const persistSourceFileContent = async (
 
     await client.query(
       `INSERT INTO reconciliation_source_file_content
-         (source_file_id, content, byte_size, sha256, original_file_name, original_mime_type)
-       SELECT id, $3::bytea, $4, $5, $6, $7
+         (source_file_id, organization_id, content, byte_size, sha256, original_file_name, original_mime_type)
+       SELECT id, $3, $4::bytea, $5, $6, $7, $8
          FROM reconciliation_source_file
         WHERE job_id = $1 AND source_system = $2
        ON CONFLICT (source_file_id) DO UPDATE
@@ -277,6 +307,7 @@ const persistSourceFileContent = async (
       [
         jobId,
         sourceFile.sourceSystem,
+        organizationId,
         sourceFile.content,
         // Taken from the buffer itself rather than the caller-supplied sizeBytes so the value can
         // never disagree with what is stored; the table's octet_length CHECK would reject it anyway.
@@ -414,12 +445,13 @@ export class PostgresReconciliationLifecycleStore {
     await withTransaction(this.pool, async (client) => {
       await client.query(
         `INSERT INTO reconciliation_job
-          (id, correlation_id, account_identifier, period_label, reconciliation_frequency, current_state, input_fingerprint, rulepack_version, started_at)
-         VALUES ($1, $2, $3, $4, $5, 'CREATED', $6, $7, $8)
+          (id, correlation_id, organization_id, account_identifier, period_label, reconciliation_frequency, current_state, input_fingerprint, rulepack_version, started_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'CREATED', $7, $8, $9)
          ON CONFLICT (id) DO NOTHING`,
         [
           input.jobId,
           input.correlationId,
+          input.organizationId,
           input.accountIdentifier ?? null,
           input.periodLabel ?? null,
           input.reconciliationFrequency ?? null,
@@ -434,6 +466,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             sourceFile.id,
             input.jobId,
+            input.organizationId,
             sourceFile.sourceSystem,
             sourceFile.sourceFormat,
             sourceFile.fileName,
@@ -451,6 +484,7 @@ export class PostgresReconciliationLifecycleStore {
         [
           'id',
           'job_id',
+          'organization_id',
           'source_system',
           'source_format',
           'file_name',
@@ -469,10 +503,11 @@ export class PostgresReconciliationLifecycleStore {
       const contentPreservedCount = await persistSourceFileContent(
         client,
         input.jobId,
+        input.organizationId,
         input.sourceFiles,
       );
 
-      await transitionJobState(client, input.jobId, 'FILE_REGISTERED', {
+      await transitionJobState(client, input.jobId, input.organizationId, 'FILE_REGISTERED', {
         sourceFileCount: input.sourceFiles.length,
         inputFingerprint: input.inputFingerprint ?? null,
         contentPreservedCount,
@@ -492,7 +527,10 @@ export class PostgresReconciliationLifecycleStore {
 
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, jobId);
-      await transitionJobState(client, jobId, 'IMPORTING', { rawRowCount: rawRows.length });
+      const organizationId = await getJobOrganizationId(client, jobId);
+      await transitionJobState(client, jobId, organizationId, 'IMPORTING', {
+        rawRowCount: rawRows.length,
+      });
       await upsertSourceFileDetails(client, sourceFiles);
 
       for (const sourceFile of sourceFiles) {
@@ -508,11 +546,12 @@ export class PostgresReconciliationLifecycleStore {
           const batchId = randomUUID();
           await client.query(
             `INSERT INTO reconciliation_import_batch
-              (id, job_id, source_file_id, batch_number, state, row_start_number, row_end_number, row_count, started_at, completed_at)
-             VALUES ($1, $2, $3, $4, 'IMPORTED', $5, $6, $7, NOW(), NOW())`,
+              (id, job_id, organization_id, source_file_id, batch_number, state, row_start_number, row_end_number, row_count, started_at, completed_at)
+             VALUES ($1, $2, $3, $4, $5, 'IMPORTED', $6, $7, $8, NOW(), NOW())`,
             [
               batchId,
               jobId,
+              organizationId,
               sourceFile.id,
               batchIndex + 1,
               batchRows[0]?.lineNumber ?? 0,
@@ -526,6 +565,7 @@ export class PostgresReconciliationLifecycleStore {
               [
                 row.id,
                 jobId,
+                organizationId,
                 row.sourceFileId,
                 batchId,
                 row.source,
@@ -557,6 +597,7 @@ export class PostgresReconciliationLifecycleStore {
               [
                 'id',
                 'job_id',
+                'organization_id',
                 'source_file_id',
                 'import_batch_id',
                 'source_system',
@@ -587,7 +628,9 @@ export class PostgresReconciliationLifecycleStore {
         }
       }
 
-      await transitionJobState(client, jobId, 'IMPORTED', { rawRowCount: rawRows.length });
+      await transitionJobState(client, jobId, organizationId, 'IMPORTED', {
+        rawRowCount: rawRows.length,
+      });
     });
   }
 
@@ -602,7 +645,8 @@ export class PostgresReconciliationLifecycleStore {
 
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, jobId);
-      await transitionJobState(client, jobId, 'NORMALIZING', {
+      const organizationId = await getJobOrganizationId(client, jobId);
+      await transitionJobState(client, jobId, organizationId, 'NORMALIZING', {
         normalizedRowCount: normalizedTransactions.length,
       });
 
@@ -612,6 +656,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               transaction.id,
               jobId,
+              organizationId,
               transaction.rawRowId,
               transaction.sourceFileId,
               transaction.source,
@@ -650,6 +695,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             'id',
             'job_id',
+            'organization_id',
             'raw_row_id',
             'source_file_id',
             'source_system',
@@ -686,7 +732,7 @@ export class PostgresReconciliationLifecycleStore {
         await client.query(insert.text, insert.values);
       }
 
-      await transitionJobState(client, jobId, 'NORMALIZED', {
+      await transitionJobState(client, jobId, organizationId, 'NORMALIZED', {
         normalizedRowCount: normalizedTransactions.length,
       });
     });
@@ -700,7 +746,8 @@ export class PostgresReconciliationLifecycleStore {
 
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, input.jobId);
-      await transitionJobState(client, input.jobId, 'MATCHING', {
+      const organizationId = await getJobOrganizationId(client, input.jobId);
+      await transitionJobState(client, input.jobId, organizationId, 'MATCHING', {
         pairwiseMatchCount: input.matchResults.length,
         probableMatchCount: input.probableMatches.length,
         groupedMatchCount: input.groupedMatchResults.length,
@@ -712,6 +759,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               result.id,
               input.jobId,
+              organizationId,
               result.disposition,
               result.confidence,
               result.category ?? null,
@@ -734,6 +782,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             'id',
             'job_id',
+            'organization_id',
             'disposition',
             'confidence',
             'category',
@@ -768,6 +817,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               result.id,
               input.jobId,
+              organizationId,
               bucket,
               result.bankTransactionId ?? null,
               result.glTransactionId ?? null,
@@ -790,6 +840,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             'id',
             'job_id',
+            'organization_id',
             'result_bucket',
             'bank_transaction_id',
             'gl_transaction_id',
@@ -821,6 +872,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               ruleResult.id,
               input.jobId,
+              organizationId,
               ruleResult.targetKind,
               ruleResult.targetId,
               ruleResult.ruleId,
@@ -839,6 +891,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             'id',
             'job_id',
+            'organization_id',
             'target_kind',
             'target_id',
             'rule_id',
@@ -855,7 +908,7 @@ export class PostgresReconciliationLifecycleStore {
         await client.query(insertRules.text, insertRules.values);
       }
 
-      await transitionJobState(client, input.jobId, 'MATCHED', {
+      await transitionJobState(client, input.jobId, organizationId, 'MATCHED', {
         pairwiseMatchCount: input.matchResults.length,
         probableMatchCount: input.probableMatches.length,
         groupedMatchCount: input.groupedMatchResults.length,
@@ -871,7 +924,8 @@ export class PostgresReconciliationLifecycleStore {
 
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, input.jobId);
-      await transitionJobState(client, input.jobId, 'EXCEPTIONS_IDENTIFIED', {
+      const organizationId = await getJobOrganizationId(client, input.jobId);
+      await transitionJobState(client, input.jobId, organizationId, 'EXCEPTIONS_IDENTIFIED', {
         exceptionCount: input.exceptions.length,
       });
 
@@ -881,6 +935,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               exception.id,
               input.jobId,
+              organizationId,
               exception.relatedTransactionIds[0] ?? null,
               exception.category,
               exception.severity,
@@ -906,6 +961,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             'id',
             'job_id',
+            'organization_id',
             'canonical_row_id',
             'category',
             'severity',
@@ -935,6 +991,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               observation.id,
               input.jobId,
+              organizationId,
               observation.category,
               observation.title,
               observation.message,
@@ -948,6 +1005,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             'id',
             'job_id',
+            'organization_id',
             'category',
             'title',
             'message',
@@ -967,6 +1025,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               ruleResult.id,
               input.jobId,
+              organizationId,
               ruleResult.targetKind,
               ruleResult.targetId,
               ruleResult.ruleId,
@@ -984,6 +1043,7 @@ export class PostgresReconciliationLifecycleStore {
           [
             'id',
             'job_id',
+            'organization_id',
             'target_kind',
             'target_id',
             'rule_id',
@@ -1003,6 +1063,7 @@ export class PostgresReconciliationLifecycleStore {
       await client.query(
         `INSERT INTO reconciliation_job_summary (
             job_id,
+            organization_id,
             total_records_reviewed,
             bank_records,
             gl_records,
@@ -1029,7 +1090,7 @@ export class PostgresReconciliationLifecycleStore {
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19,
-            $20, $21::jsonb, $22::jsonb, $23::jsonb, NOW()
+            $20, $21, $22::jsonb, $23::jsonb, $24::jsonb, NOW()
           )
           ON CONFLICT (job_id) DO UPDATE SET
             total_records_reviewed = EXCLUDED.total_records_reviewed,
@@ -1057,6 +1118,7 @@ export class PostgresReconciliationLifecycleStore {
             updated_at = NOW()`,
         [
           input.jobId,
+          organizationId,
           input.summary.totalRecordsReviewed,
           input.summary.bankRecords,
           input.summary.glRecords,
@@ -1082,7 +1144,7 @@ export class PostgresReconciliationLifecycleStore {
         ],
       );
 
-      await transitionJobState(client, input.jobId, 'REVIEW_READY', {
+      await transitionJobState(client, input.jobId, organizationId, 'REVIEW_READY', {
         exceptionCount: input.exceptions.length,
         observationCount: input.reviewerObservations.length,
       });
@@ -1095,11 +1157,12 @@ export class PostgresReconciliationLifecycleStore {
   async persistExportAndFinalize(input: PersistExportArtifactsInput): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, input.jobId);
+      const organizationId = await getJobOrganizationId(client, input.jobId);
 
       await client.query(
         `INSERT INTO reconciliation_export
-          (id, job_id, export_type, state, file_name, checksum_sha256, byte_size, tab_names_json, generated_at)
-         VALUES ($1, $2, 'workbook', 'READY', $3, $4, $5, $6::jsonb, $7)
+          (id, job_id, organization_id, export_type, state, file_name, checksum_sha256, byte_size, tab_names_json, generated_at)
+         VALUES ($1, $2, $3, 'workbook', 'READY', $4, $5, $6, $7::jsonb, $8)
          ON CONFLICT (job_id, export_type) DO UPDATE SET
            state = EXCLUDED.state,
            file_name = EXCLUDED.file_name,
@@ -1110,6 +1173,7 @@ export class PostgresReconciliationLifecycleStore {
         [
           randomUUID(),
           input.jobId,
+          organizationId,
           input.outputWorkbook.fileName,
           computeSha256Hex(input.outputWorkbook.binary),
           input.outputWorkbook.binary.byteLength,
@@ -1119,14 +1183,20 @@ export class PostgresReconciliationLifecycleStore {
       );
 
       for (const auditEvent of input.auditEvents) {
-        await insertAuditEvent(client, input.jobId, auditEvent.action, auditEvent.details);
+        await insertAuditEvent(
+          client,
+          input.jobId,
+          organizationId,
+          auditEvent.action,
+          auditEvent.details,
+        );
       }
 
       await client.query(
         'UPDATE reconciliation_job SET completed_at = $2, updated_at = NOW() WHERE id = $1',
         [input.jobId, input.completedAt],
       );
-      await transitionJobState(client, input.jobId, 'FINALIZED', {
+      await transitionJobState(client, input.jobId, organizationId, 'FINALIZED', {
         exportFileName: input.outputWorkbook.fileName,
         exportByteSize: input.outputWorkbook.binary.byteLength,
       });
@@ -1139,10 +1209,11 @@ export class PostgresReconciliationLifecycleStore {
   async persistReviewerDecision(decision: ReviewerDecision): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, decision.runId);
+      const organizationId = await getJobOrganizationId(client, decision.runId);
       await client.query(
         `INSERT INTO reconciliation_review_decision
-          (id, job_id, target_type, target_id, outcome, final_category, notes, reviewer_id, reviewer_name, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          (id, job_id, organization_id, target_type, target_id, outcome, final_category, notes, reviewer_id, reviewer_name, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (job_id, target_type, target_id) DO UPDATE SET
            outcome = EXCLUDED.outcome,
            final_category = EXCLUDED.final_category,
@@ -1154,6 +1225,7 @@ export class PostgresReconciliationLifecycleStore {
         [
           decision.id,
           decision.runId,
+          organizationId,
           decision.targetType,
           decision.targetId,
           decision.outcome,
@@ -1166,7 +1238,7 @@ export class PostgresReconciliationLifecycleStore {
         ],
       );
 
-      await insertAuditEvent(client, decision.runId, 'review.decision.persisted', {
+      await insertAuditEvent(client, decision.runId, organizationId, 'review.decision.persisted', {
         targetType: decision.targetType,
         targetId: decision.targetId,
         outcome: decision.outcome,
@@ -1185,13 +1257,14 @@ export class PostgresReconciliationLifecycleStore {
   ): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, runId);
+      const organizationId = await getJobOrganizationId(client, runId);
       await client.query(
         `DELETE FROM reconciliation_review_decision
          WHERE job_id = $1 AND target_type = $2 AND target_id = $3`,
         [runId, targetType, targetId],
       );
 
-      await insertAuditEvent(client, runId, 'review.decision.cleared', {
+      await insertAuditEvent(client, runId, organizationId, 'review.decision.cleared', {
         targetType,
         targetId,
       });
@@ -1206,6 +1279,7 @@ export class PostgresReconciliationLifecycleStore {
 
     await withTransaction(this.pool, async (client) => {
       await lockJob(client, input.jobId);
+      const organizationId = await getJobOrganizationId(client, input.jobId);
       const currentState = await getCurrentState(client, input.jobId);
       assertValidJobTransition(currentState, nextState);
 
@@ -1224,6 +1298,7 @@ export class PostgresReconciliationLifecycleStore {
       await insertAuditEvent(
         client,
         input.jobId,
+        organizationId,
         'job.failed',
         { errorCode: input.errorCode ?? null, errorMessage: input.errorMessage },
         currentState,

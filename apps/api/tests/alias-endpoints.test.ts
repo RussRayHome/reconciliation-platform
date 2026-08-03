@@ -50,13 +50,14 @@ const createFakeAliasPool = (seed: AliasRow[] = []) => {
 
     if (text.includes('INSERT INTO reconciliation_payee_alias')) {
       const [
+        ,
         accountIdentifier,
         bankPattern,
         canonicalPayeeName,
         normalizedTokens,
         sourceDirection,
         matchConfidence,
-      ] = params as [string | null, string, string, string[], string, number];
+      ] = params as [string, string | null, string, string, string[], string, number];
       const created: AliasRow = {
         id: `alias-${nextId++}`,
         account_identifier: accountIdentifier,

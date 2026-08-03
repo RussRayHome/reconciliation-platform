@@ -431,6 +431,7 @@ const parseReconciliationRequestInput = (
 const registerLifecycleJob = async (
   lifecycleStore: PostgresReconciliationLifecycleStore | undefined,
   correlationId: string,
+  organizationId: string,
   input: ReconciliationRequestInput,
   files: ReconciliationUploadFiles,
 ): Promise<LifecycleRegistrationContext> => {
@@ -449,6 +450,7 @@ const registerLifecycleJob = async (
   await lifecycleStore.createJob({
     jobId: runId,
     correlationId,
+    organizationId,
     startedAt,
     rulepackVersion: '2026-04-06',
     accountIdentifier: input.accountIdentifier,
@@ -496,6 +498,7 @@ const runReconciliationWorkflow = async (input: {
   body: Record<string, unknown>;
   files: ReconciliationUploadFiles;
   requestId: unknown;
+  organizationId: string;
   requestLog: pino.Logger;
   repository: InMemoryRunRepository;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
@@ -507,6 +510,7 @@ const runReconciliationWorkflow = async (input: {
   const lifecycleContext = await registerLifecycleJob(
     input.lifecycleStore,
     correlationId,
+    input.organizationId,
     {
       accountIdentifier,
       periodLabel,
@@ -1114,6 +1118,7 @@ export const createApp = (
           body: payload.body,
           files: fromQueuedReconciliationFiles(payload.files),
           requestId: payload.requestId,
+          organizationId: payload.organizationId,
           requestLog: httpLogger,
           repository,
           lifecycleStore,
@@ -1550,10 +1555,13 @@ export const createApp = (
         }
 
         const body = (request.body ?? {}) as Record<string, unknown>;
+        // requireApplicationAccess (mounted ahead of this route) guarantees request.auth here.
+        const organizationId = request.auth!.organizationId;
         if (reconciliationQueue.enabled) {
           const queuedResponse: ReconciliationJobEnqueueResponse =
             await reconciliationQueue.enqueue({
               requestId: resolveCorrelationId(request.id),
+              organizationId,
               body,
               files: toQueuedReconciliationFiles(files),
             });
@@ -1566,6 +1574,7 @@ export const createApp = (
           body,
           files,
           requestId: request.id,
+          organizationId,
           requestLog: request.log,
           repository,
           lifecycleStore,
@@ -1847,7 +1856,12 @@ export const createApp = (
         return;
       }
 
-      const input: CreatePayeeAliasInput = bodyResult.data;
+      // organizationId comes from the authenticated principal, never the request body -- a
+      // client-supplied tenant would let one customer write rows into another's data.
+      const input: CreatePayeeAliasInput = {
+        ...bodyResult.data,
+        organizationId: request.auth!.organizationId,
+      };
       const alias = await createPayeeAlias(pool!, input);
       response.status(201).json(alias);
     } catch (error) {

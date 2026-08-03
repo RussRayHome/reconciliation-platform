@@ -47,6 +47,7 @@ import { createReconciliationQueue } from '../src/services/reconciliationQueue';
 
 const samplePayload = {
   requestId: 'req-1',
+  organizationId: 'org-1',
   body: { accountIdentifier: 'OPERATING-001' },
   files: {
     bankFile: {

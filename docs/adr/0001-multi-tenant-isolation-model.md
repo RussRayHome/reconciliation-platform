@@ -181,16 +181,23 @@ Ordered. Steps 1–3 are the prerequisite data model; no policy can be written b
 1. [x] **Server-side authentication.** Landed 2026-08-03 (ADR-0002): JWT-based auth,
        deny-by-default middleware, role authorization. Every request that reaches a route handler
        now carries `request.auth.{username,role,organizationId}` — the GUC has something to read.
-       Still open: nothing sets `app.current_organization_id` yet (step 6 below) and the tenancy
-       data model itself (step 3) hasn't landed, so the GUC has an authenticated principal to read
-       but no tenant-scoped tables to filter with it.
+       Still open: nothing sets `app.current_organization_id` yet (step 6 below).
 2. [x] **Link principals to tenants.** Decided 2026-08-03: single org per user — a `NOT NULL` FK
        `reconciliation_user.organization_id` column, not a membership table. No consultant/support
        use case needing multi-org access today.
-3. [ ] **Tenant the data model.** Add `organization_id NOT NULL` to `reconciliation_job`, the
-       aggregate root. Make `reconciliation_source_file.organization_id` `NOT NULL` and backfill.
-       Choose denormalize-down vs. join-to-job for the ~24 descendant tables (see Prerequisite
-       work). Decide the backfill value for existing rows.
+3. [x] **Tenant the data model.** Landed 2026-08-03 (changeset `0028`): `organization_id NOT NULL`
+       on `reconciliation_job` (the aggregate root), backfilled to the same default organization
+       `reconciliation_user`/`reconciliation_mapping_profile` already use.
+       `reconciliation_source_file.organization_id` is now `NOT NULL`. Denormalize-down (not
+       join-to-job) chosen, matching the ADR's own recommendation, onto all ~20 descendant tables
+       (direct `job_id` FK, or chained through `reconciliation_source_file` /
+       `reconciliation_mapping_profile` / `reconciliation_import_approval`). Excluded on purpose:
+       `reconciliation_template_definition` and `reconciliation_validation_rule_version` are global
+       catalogs with no account/job association in their schema, not per-customer data. The
+       persistence layer (`reconciliationLifecycleStore.ts`, `readModelStore.ts`) and the API layer
+       (`app.ts`, `reconciliationQueue.ts`) were updated in the same pass to populate the column on
+       every write — `organization_id` is a schema constraint AND actually gets set correctly by
+       every code path, not just addable-in-theory.
 4. [ ] **Least-privilege roles** — backlog task #1. Policies are written against roles, so this
        lands before them. Grant `BYPASSRLS` to the Liquibase/migration role.
 5. [ ] **Enable RLS and write policies** on every tenant-scoped table.

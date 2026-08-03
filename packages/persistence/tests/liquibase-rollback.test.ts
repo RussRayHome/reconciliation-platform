@@ -74,20 +74,25 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('changeset 0027 is a verify-only no-op, so its rollback leaves the schema unchanged', () => {
-      // 0027 (the most recent changeset as of this test) only checks that pgaudit is actually
-      // installed when shared_preload_libraries says it should be -- it makes no schema change,
-      // so unlike every other changeset here, "rollback changes nothing" IS the correct
-      // assertion, not a sign the rollback SQL didn't run. When a future changeset lands on top
-      // of 0027 (most of which DO change schema), swap this back to asserting the rolled-back
-      // schema differs from the migrated one, describing whatever that changeset actually did --
-      // this block is intentionally pinned to "whatever is currently the most recent changeset".
-      expect(rolledBackSchema).toEqual(migratedSchema);
+    it('reverses changeset 0028 by dropping organization_id from reconciliation_job', () => {
+      // 0028 (the most recent changeset as of this test) added organization_id NOT NULL to
+      // reconciliation_job (the aggregate root) and denormalized it onto every descendant table;
+      // its rollback drops all of that back off. Asserting on the aggregate root's own column
+      // is enough to prove the rollback SQL ran, without re-asserting all ~21 tables it touches.
+      // When a future changeset lands on top of 0028, update this test to describe that
+      // changeset instead -- it is intentionally pinned to "whatever is currently the most
+      // recent changeset", not to 0028 forever.
+      expect(migratedSchema).toContain(
+        "col_type_is('public', 'reconciliation_job', 'organization_id', 'uuid'",
+      );
+      expect(rolledBackSchema).not.toContain(
+        "col_type_is('public', 'reconciliation_job', 'organization_id', 'uuid'",
+      );
+      expect(rolledBackSchema).not.toEqual(migratedSchema);
     });
-
   });
 
-  describe('rolling back two changesets (0027 verify-only, then 0026 schema-changing)', () => {
+  describe('rolling back three changesets (0028 schema-changing, 0027 verify-only, then 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -99,7 +104,10 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=2');
+      // 0026 is now three changesets back from HEAD (0028), not two -- 0027 (verify-only) and
+      // 0028 (adds organization_id elsewhere, doesn't touch reconciliation_user) both sit on top
+      // of it without reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=3');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 
@@ -111,8 +119,7 @@ describe('Liquibase rollback', () => {
 
     it('reverses changeset 0026 by dropping the auth/tenancy columns from reconciliation_user', () => {
       // 0026 added password_hash/role/organization_id and dropped password; its rollback puts
-      // password back and drops the three new columns. Two changesets deep because 0027 (the
-      // one directly on top of it) is a verify-only no-op with nothing to reverse.
+      // password back and drops the three new columns.
       expect(migratedSchema).toContain(
         "col_type_is('public', 'reconciliation_user', 'password_hash', 'text'",
       );

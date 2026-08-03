@@ -25,6 +25,10 @@ import type { TestDatabase } from './testHelpers/database';
 let database: TestDatabase | undefined;
 let pool: Pool;
 let startupError: Error | null = null;
+// Migrations 0026/0028 both seed a 'Default Organization' row (matched by name, not a hardcoded
+// id) so every migrated test database already has one -- resolved once in beforeAll rather than
+// re-queried per test.
+let defaultOrganizationId: string;
 
 const buildSourceFile = (id: string, source: 'bank' | 'gl'): SourceFile => ({
   id,
@@ -131,6 +135,7 @@ const createRegisteredJob = async (
     correlationId: overrides.correlationId ?? 'corr-helper',
     startedAt,
     rulepackVersion: overrides.rulepackVersion ?? '2026-04-06',
+    organizationId: overrides.organizationId ?? defaultOrganizationId,
     accountIdentifier: overrides.accountIdentifier,
     periodLabel: overrides.periodLabel,
     reconciliationFrequency: overrides.reconciliationFrequency,
@@ -173,6 +178,7 @@ type CreateJobOverrides = {
   periodLabel: string;
   reconciliationFrequency: 'Monthly' | 'Annual';
   inputFingerprint: string;
+  organizationId: string;
 };
 
 const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore) => {
@@ -260,6 +266,14 @@ describe('PostgresReconciliationLifecycleStore', () => {
     try {
       database = await createDatabaseFromTemplate('recon_lifecycle');
       pool = database.pool;
+      const organizationResult = await pool.query<{ id: string }>(
+        "SELECT id FROM reconciliation_organization WHERE name = 'Default Organization'",
+      );
+      const organizationId = organizationResult.rows[0]?.id;
+      if (!organizationId) {
+        throw new Error("Expected migrations to seed a 'Default Organization' row.");
+      }
+      defaultOrganizationId = organizationId;
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       console.warn(`PostgreSQL integration setup failed: ${startupError.message}`);
@@ -337,6 +351,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       correlationId: 'corr-content',
       startedAt,
       rulepackVersion: '2026-04-06',
+      organizationId: defaultOrganizationId,
       sourceFiles: [
         {
           id: randomUUID(),
@@ -410,6 +425,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       correlationId: 'corr-failure',
       startedAt,
       rulepackVersion: '2026-04-06',
+      organizationId: defaultOrganizationId,
       sourceFiles: [
         {
           id: randomUUID(),
@@ -471,6 +487,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       correlationId: 'corr-1',
       startedAt,
       rulepackVersion: '2026-04-06',
+      organizationId: defaultOrganizationId,
       accountIdentifier: 'OPERATING-001',
       periodLabel: 'January 2025',
       reconciliationFrequency: 'Monthly',
@@ -759,6 +776,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       correlationId: 'corr-rollback',
       startedAt,
       rulepackVersion: '2026-04-06',
+      organizationId: defaultOrganizationId,
       sourceFiles: [
         {
           id: bankSourceFileId,

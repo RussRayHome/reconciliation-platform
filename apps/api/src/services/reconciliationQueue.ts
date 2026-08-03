@@ -10,6 +10,7 @@ export type QueuedReconciliationFilePayload = {
 
 export type QueuedReconciliationJobPayload = {
   requestId: string;
+  organizationId: string;
   body: Record<string, unknown>;
   files: {
     bankFile: QueuedReconciliationFilePayload;

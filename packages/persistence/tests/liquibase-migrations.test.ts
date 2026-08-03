@@ -261,14 +261,23 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
 
   // Every id is a fresh uuid that matches no existing row, so the insert is rejected by whichever
   // constraint fires first: the pairing CHECK when ingestion_mode contradicts the profile version,
-  // otherwise the source-file foreign key.
-  const insertStagedTransaction = (ingestionMode: 'DIRECT' | 'MAPPED') =>
-    pool.query(
-      `INSERT INTO reconciliation_staged_transaction
-         (id, raw_row_id, source_file_id, mapping_profile_version_id, ingestion_mode, normalized_fields_json)
-       VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), $1, '{}'::jsonb)`,
-      [ingestionMode],
+  // otherwise the source-file foreign key. organization_id is a real row (not a random uuid) so
+  // *its* FK never has a chance to be the one that fires instead of the constraint under test.
+  const insertStagedTransaction = async (ingestionMode: 'DIRECT' | 'MAPPED') => {
+    await pool.query(
+      "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Staged Txn Co') ON CONFLICT DO NOTHING",
     );
+    const org = await pool.query<{ id: string }>(
+      "SELECT id FROM reconciliation_organization WHERE name = 'Staged Txn Co'",
+    );
+
+    return pool.query(
+      `INSERT INTO reconciliation_staged_transaction
+         (id, organization_id, raw_row_id, source_file_id, mapping_profile_version_id, ingestion_mode, normalized_fields_json)
+       VALUES (gen_random_uuid(), $2, gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), $1, '{}'::jsonb)`,
+      [ingestionMode, org.rows[0]!.id],
+    );
+  };
 
   it('rejects a staged transaction that references a nonexistent source file (FK ownership)', async () => {
     if (startupError) throw startupError;
@@ -295,19 +304,26 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
   it('still rejects a duplicate (job_id, source_system) source file after the approval-pipeline extension (regression)', async () => {
     if (startupError) throw startupError;
 
+    await pool.query(
+      "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Dup Source File Co') ON CONFLICT DO NOTHING",
+    );
+    const org = await pool.query<{ id: string }>(
+      "SELECT id FROM reconciliation_organization WHERE name = 'Dup Source File Co'",
+    );
+
     const jobId = crypto.randomUUID();
     await pool.query(
-      `INSERT INTO reconciliation_job (id, correlation_id, current_state, rulepack_version, started_at)
-       VALUES ($1, 'corr-1', 'CREATED', 'v1', NOW())`,
-      [jobId],
+      `INSERT INTO reconciliation_job (id, correlation_id, organization_id, current_state, rulepack_version, started_at)
+       VALUES ($1, 'corr-1', $2, 'CREATED', 'v1', NOW())`,
+      [jobId, org.rows[0]!.id],
     );
 
     const insertSourceFile = () =>
       pool.query(
         `INSERT INTO reconciliation_source_file
-           (id, job_id, source_system, source_format, file_name, mime_type, size_bytes, sha256, uploaded_at)
-         VALUES (gen_random_uuid(), $1, 'bank', 'csv', 'a.csv', 'text/csv', 10, 'hash', NOW())`,
-        [jobId],
+           (id, job_id, organization_id, source_system, source_format, file_name, mime_type, size_bytes, sha256, uploaded_at)
+         VALUES (gen_random_uuid(), $1, $2, 'bank', 'csv', 'a.csv', 'text/csv', 10, 'hash', NOW())`,
+        [jobId, org.rows[0]!.id],
       );
 
     await insertSourceFile();
@@ -334,16 +350,16 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
 
     const jobId = crypto.randomUUID();
     await pool.query(
-      `INSERT INTO reconciliation_job (id, correlation_id, current_state, rulepack_version, started_at)
-       VALUES ($1, 'corr-2', 'CREATED', 'v1', NOW())`,
-      [jobId],
+      `INSERT INTO reconciliation_job (id, correlation_id, organization_id, current_state, rulepack_version, started_at)
+       VALUES ($1, 'corr-2', $2, 'CREATED', 'v1', NOW())`,
+      [jobId, bobOrg.rows[0]!.id],
     );
     const sourceFile = await pool.query<{ id: string }>(
       `INSERT INTO reconciliation_source_file
-         (id, job_id, source_system, source_format, file_name, mime_type, size_bytes, sha256, uploaded_at)
-       VALUES (gen_random_uuid(), $1, 'bank', 'csv', 'b.csv', 'text/csv', 10, 'hash2', NOW())
+         (id, job_id, organization_id, source_system, source_format, file_name, mime_type, size_bytes, sha256, uploaded_at)
+       VALUES (gen_random_uuid(), $1, $2, 'bank', 'csv', 'b.csv', 'text/csv', 10, 'hash2', NOW())
        RETURNING id`,
-      [jobId],
+      [jobId, bobOrg.rows[0]!.id],
     );
     const sourceFileId = sourceFile.rows[0]!.id;
 
