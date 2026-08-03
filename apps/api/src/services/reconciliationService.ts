@@ -40,6 +40,9 @@ interface UploadedFile {
 export interface ExecuteReconciliationInput {
   correlationId: string;
   runId?: string;
+  /** ADR-0001 step 6: threaded to every lifecycleStore call so each write transaction can set
+   * the RLS tenant GUC. Required whenever `lifecycleStore` is provided. */
+  organizationId: string;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   sourceFileIds?: Partial<Record<'bank' | 'gl', string>>;
   bankFile: UploadedFile;
@@ -60,6 +63,7 @@ export interface ExecuteReconciliationInput {
 export const executeReconciliation = async ({
   correlationId,
   runId: providedRunId,
+  organizationId,
   lifecycleStore,
   sourceFileIds,
   bankFile,
@@ -157,7 +161,7 @@ export const executeReconciliation = async ({
 
   if (lifecycleStore) {
     await runPersistStep('service.persist.parsedRows.completed', () =>
-      lifecycleStore.persistParsedRows(runId, [...sourceFiles], rawRows),
+      lifecycleStore.persistParsedRows(organizationId, runId, [...sourceFiles], rawRows),
     );
   }
 
@@ -241,7 +245,7 @@ export const executeReconciliation = async ({
 
     if (lifecycleStore) {
       await runPersistStep('service.persist.normalizedRows.completed', () =>
-        lifecycleStore.persistNormalizedRows(runId, normalizedTransactions),
+        lifecycleStore.persistNormalizedRows(organizationId, runId, normalizedTransactions),
       );
     }
 
@@ -284,7 +288,7 @@ export const executeReconciliation = async ({
 
     if (lifecycleStore) {
       await runPersistStep('service.persist.matchingArtifacts.completed', () =>
-        lifecycleStore.persistMatchingArtifacts({
+        lifecycleStore.persistMatchingArtifacts(organizationId, {
           jobId: runId,
           matchResults: matching.matchResults,
           probableMatches: matching.probableMatches,
@@ -350,7 +354,7 @@ export const executeReconciliation = async ({
 
     if (lifecycleStore) {
       await runPersistStep('service.persist.reviewArtifacts.completed', () =>
-        lifecycleStore.persistReviewArtifacts({
+        lifecycleStore.persistReviewArtifacts(organizationId, {
           jobId: runId,
           exceptions: exceptionOutput.exceptions,
           reviewerObservations: exceptionOutput.reviewerObservations,
@@ -418,7 +422,7 @@ export const executeReconciliation = async ({
 
   if (lifecycleStore) {
     await runPersistStep('service.persist.exportAndFinalize.completed', () =>
-      lifecycleStore.persistExportAndFinalize({
+      lifecycleStore.persistExportAndFinalize(organizationId, {
         jobId: runId,
         outputWorkbook,
         completedAt: new Date().toISOString(),

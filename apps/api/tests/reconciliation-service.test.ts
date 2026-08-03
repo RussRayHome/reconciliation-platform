@@ -187,6 +187,7 @@ describe('executeReconciliation', () => {
     const run = await executeReconciliation({
       correlationId: 'corr-1',
       runId: 'provided-run-id',
+      organizationId: 'org-1',
       lifecycleStore: lifecycleStore as never,
       sourceFileIds: { bank: 'bank-source-id', gl: 'gl-source-id' },
       bankFile: makeUploadedFile('bank.xlsx'),
@@ -240,6 +241,7 @@ describe('executeReconciliation', () => {
     const executeReconciliation = await importService();
     const run = await executeReconciliation({
       correlationId: 'corr-2',
+      organizationId: 'org-1',
       bankFile: makeUploadedFile('bank-debug.xlsx'),
       glFile: makeUploadedFile('gl-debug.xlsx'),
     });
@@ -268,6 +270,7 @@ describe('executeReconciliation', () => {
     await expect(
       executeReconciliation({
         correlationId: 'corr-3',
+        organizationId: 'org-1',
         bankFile: makeUploadedFile('bank-bad.xlsx'),
         glFile: makeUploadedFile('gl-bad.xlsx'),
       }),
@@ -285,6 +288,7 @@ describe('executeReconciliation', () => {
     await expect(
       executeReconciliation({
         correlationId: 'corr-4',
+        organizationId: 'org-1',
         bankFile: makeUploadedFile('bank-fail.xlsx'),
         glFile: makeUploadedFile('gl-fail.xlsx'),
       }),

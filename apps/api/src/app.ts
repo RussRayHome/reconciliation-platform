@@ -15,7 +15,6 @@ import {
   createPayeeAlias,
   deactivatePayeeAlias,
   findMappingProfile,
-  findOrCreateDefaultOrganization,
   listMappingProfileVersions,
   loadPayeeAliases,
   updatePayeeAlias,
@@ -521,11 +520,14 @@ const runReconciliationWorkflow = async (input: {
 
   input.requestLog.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
 
-  const aliases = input.pool ? await loadPayeeAliases(input.pool, accountIdentifier) : [];
+  const aliases = input.pool
+    ? await loadPayeeAliases(input.pool, input.organizationId, accountIdentifier)
+    : [];
 
   const run = await executeReconciliation({
     correlationId,
     runId: lifecycleContext.runId,
+    organizationId: input.organizationId,
     lifecycleStore: input.lifecycleStore,
     sourceFileIds: {
       bank: lifecycleContext.bankSourceFileId,
@@ -582,13 +584,14 @@ const handleFailedReconciliationRun = async (input: {
   requestId: unknown;
   requestBody: Record<string, unknown>;
   started: number;
+  organizationId: string;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   persistenceJobId?: string;
   error: unknown;
 }): Promise<void> => {
   if (input.lifecycleStore && input.persistenceJobId) {
     await input.lifecycleStore
-      .markFailed({
+      .markFailed(input.organizationId, {
         jobId: input.persistenceJobId,
         failedAt: new Date().toISOString(),
         errorMessage:
@@ -1142,6 +1145,7 @@ export const createApp = (
           requestId: payload.requestId,
           requestBody: payload.body,
           started,
+          organizationId: payload.organizationId,
           lifecycleStore,
           persistenceJobId,
           error,
@@ -1251,56 +1255,62 @@ export const createApp = (
   const toRunReport = (run: ReconciliationRun | undefined): ReconciliationRunReport | undefined =>
     run ? sanitizeRun(run) : undefined;
 
-  const readModelHasRun = async (runId: string): Promise<boolean> => {
+  const readModelHasRun = async (organizationId: string, runId: string): Promise<boolean> => {
     if (!readModelStore) {
       return true;
     }
 
-    const run = await readModelStore.findRunReportById(runId);
+    const run = await readModelStore.findRunReportById(organizationId, runId);
     return Boolean(run);
   };
 
-  const loadLatestRunReport = async (): Promise<ReconciliationRunReport | undefined> => {
+  const loadLatestRunReport = async (
+    organizationId: string,
+  ): Promise<ReconciliationRunReport | undefined> => {
     return loadFromReadModelOrRepository(
-      readModelStore ? () => readModelStore.findLatestRunReport() : undefined,
+      readModelStore ? () => readModelStore.findLatestRunReport(organizationId) : undefined,
       () => toRunReport(repository.findLatest()),
     );
   };
 
-  const loadRunReport = async (runId: string): Promise<ReconciliationRunReport | undefined> => {
+  const loadRunReport = async (
+    organizationId: string,
+    runId: string,
+  ): Promise<ReconciliationRunReport | undefined> => {
     return loadFromReadModelOrRepository(
-      readModelStore ? () => readModelStore.findRunReportById(runId) : undefined,
+      readModelStore ? () => readModelStore.findRunReportById(organizationId, runId) : undefined,
       () => toRunReport(repository.findById(runId)),
     );
   };
 
-  const loadRunSummary = async (runId: string) => {
+  const loadRunSummary = async (organizationId: string, runId: string) => {
     return loadFromReadModelOrRepository(
-      readModelStore ? () => readModelStore.findRunSummaryById(runId) : undefined,
+      readModelStore ? () => readModelStore.findRunSummaryById(organizationId, runId) : undefined,
       () => repository.findById(runId)?.summary,
     );
   };
 
-  const loadRunExceptions = async (runId: string) => {
+  const loadRunExceptions = async (organizationId: string, runId: string) => {
     return loadFromReadModelOrRepository(
-      readModelStore ? () => readModelStore.listRunExceptions(runId) : undefined,
+      readModelStore ? () => readModelStore.listRunExceptions(organizationId, runId) : undefined,
       () => repository.findById(runId)?.exceptions,
     );
   };
 
   const loadRunExceptionPage = async (
+    organizationId: string,
     runId: string,
     limit: number,
     offset: number,
     filters: ExceptionPageFilters = {},
   ): Promise<PaginatedExceptionsResult | undefined> => {
     if (readModelStore) {
-      const runExists = await readModelHasRun(runId);
+      const runExists = await readModelHasRun(organizationId, runId);
       if (!runExists) {
         return undefined;
       }
 
-      return readModelStore.listRunExceptionsPage(runId, limit, offset, filters);
+      return readModelStore.listRunExceptionsPage(organizationId, runId, limit, offset, filters);
     }
 
     const exceptions = repository.findById(runId)?.exceptions;
@@ -1324,14 +1334,14 @@ export const createApp = (
     };
   };
 
-  const loadReviewerDecisions = async (runId: string) => {
+  const loadReviewerDecisions = async (organizationId: string, runId: string) => {
     if (readModelStore) {
-      const runExists = await readModelHasRun(runId);
+      const runExists = await readModelHasRun(organizationId, runId);
       if (!runExists) {
         return undefined;
       }
 
-      return readModelStore.listReviewerDecisions(runId);
+      return readModelStore.listReviewerDecisions(organizationId, runId);
     }
 
     return repository.listReviewerDecisions(runId);
@@ -1595,6 +1605,10 @@ export const createApp = (
           requestId: request.id,
           requestBody,
           started,
+          // requireApplicationAccess (mounted ahead of this route) guarantees request.auth here;
+          // this is a fresh read rather than the try block's `organizationId` local, which is out
+          // of scope in this catch block.
+          organizationId: request.auth!.organizationId,
           lifecycleStore,
           persistenceJobId,
           error,
@@ -1619,7 +1633,7 @@ export const createApp = (
 
       let responsePayload = queuedResult;
       if (queuedResult.status === 'completed' && queuedResult.runId && !queuedResult.run) {
-        const run = await loadRunReport(queuedResult.runId);
+        const run = await loadRunReport(request.auth!.organizationId, queuedResult.runId);
         if (run) {
           responsePayload = {
             ...queuedResult,
@@ -1634,9 +1648,9 @@ export const createApp = (
     }
   });
 
-  app.get('/api/reconciliation/latest', async (_request, response, next) => {
+  app.get('/api/reconciliation/latest', async (request, response, next) => {
     try {
-      const run = await loadLatestRunReport();
+      const run = await loadLatestRunReport(request.auth!.organizationId);
       if (!run) {
         response.status(404).json({ message: 'No completed reconciliation run found.' });
         return;
@@ -1650,7 +1664,7 @@ export const createApp = (
 
   app.get('/api/reconciliation/:id', async (request, response, next) => {
     try {
-      const run = await loadRunReport(request.params.id);
+      const run = await loadRunReport(request.auth!.organizationId, request.params.id);
       if (!run) {
         response.status(404).json({ message: 'Reconciliation run not found.' });
         return;
@@ -1664,7 +1678,7 @@ export const createApp = (
 
   app.get('/api/reconciliation/:id/summary', async (request, response, next) => {
     try {
-      const summary = await loadRunSummary(request.params.id);
+      const summary = await loadRunSummary(request.auth!.organizationId, request.params.id);
       if (!summary) {
         response.status(404).json({ message: 'Reconciliation run not found.' });
         return;
@@ -1694,10 +1708,13 @@ export const createApp = (
       if (limitRequested || offsetRequested || filterRequested) {
         const limit = parseLimit(request.query.limit, 50, 200);
         const offset = parseOffset(request.query.offset, 0);
-        const page = await loadRunExceptionPage(request.params.id, limit, offset, {
-          category,
-          severity,
-        });
+        const page = await loadRunExceptionPage(
+          request.auth!.organizationId,
+          request.params.id,
+          limit,
+          offset,
+          { category, severity },
+        );
 
         if (!page) {
           response.status(404).json({ message: 'Reconciliation run not found.' });
@@ -1708,7 +1725,7 @@ export const createApp = (
         return;
       }
 
-      const exceptions = await loadRunExceptions(request.params.id);
+      const exceptions = await loadRunExceptions(request.auth!.organizationId, request.params.id);
       if (!exceptions) {
         response.status(404).json({ message: 'Reconciliation run not found.' });
         return;
@@ -1722,7 +1739,7 @@ export const createApp = (
 
   app.get('/api/reconciliation/:id/reviewer-decisions', async (request, response, next) => {
     try {
-      const decisions = await loadReviewerDecisions(request.params.id);
+      const decisions = await loadReviewerDecisions(request.auth!.organizationId, request.params.id);
       if (!decisions) {
         response.status(404).json({ message: 'Reconciliation run not found.' });
         return;
@@ -1736,7 +1753,7 @@ export const createApp = (
 
   app.post('/api/reconciliation/:id/reviewer-decisions', async (request, response, next) => {
     try {
-      const run = await loadRunReport(request.params.id);
+      const run = await loadRunReport(request.auth!.organizationId, request.params.id);
       if (!run) {
         response.status(404).json({ message: 'Reconciliation run not found.' });
         return;
@@ -1780,7 +1797,7 @@ export const createApp = (
 
       const savedDecision = repository.saveReviewerDecision(run.id, decision);
       if (lifecycleStore) {
-        await lifecycleStore.persistReviewerDecision(savedDecision);
+        await lifecycleStore.persistReviewerDecision(request.auth!.organizationId, savedDecision);
       }
       response.status(201).json(savedDecision);
     } catch (error) {
@@ -1792,7 +1809,7 @@ export const createApp = (
     '/api/reconciliation/:id/reviewer-decisions/:targetId',
     async (request, response, next) => {
       try {
-        const run = await loadRunReport(request.params.id);
+        const run = await loadRunReport(request.auth!.organizationId, request.params.id);
         if (!run) {
           response.status(404).json({ message: 'Reconciliation run not found.' });
           return;
@@ -1818,7 +1835,12 @@ export const createApp = (
           repository.deleteReviewerDecision(run.id, targetType, targetId);
         }
         if (lifecycleStore) {
-          await lifecycleStore.deleteReviewerDecision(run.id, targetType, targetId);
+          await lifecycleStore.deleteReviewerDecision(
+            request.auth!.organizationId,
+            run.id,
+            targetType,
+            targetId,
+          );
         }
 
         response.status(204).end();
@@ -1840,7 +1862,7 @@ export const createApp = (
     if (!requirePool(response)) return;
     try {
       const { accountIdentifier } = aliasesQuerySchema.parse(request.query);
-      const aliases = await loadPayeeAliases(pool!, accountIdentifier);
+      const aliases = await loadPayeeAliases(pool!, request.auth!.organizationId, accountIdentifier);
       response.json(aliases);
     } catch (error) {
       next(error);
@@ -1878,7 +1900,12 @@ export const createApp = (
         return;
       }
 
-      const alias = await updatePayeeAlias(pool!, request.params.id, bodyResult.data);
+      const alias = await updatePayeeAlias(
+        pool!,
+        request.auth!.organizationId,
+        request.params.id,
+        bodyResult.data,
+      );
 
       if (!alias) {
         response.status(404).json({ message: 'Alias not found.' });
@@ -1894,7 +1921,11 @@ export const createApp = (
   app.delete('/api/aliases/:id', async (request, response, next) => {
     if (!requirePool(response)) return;
     try {
-      const deactivated = await deactivatePayeeAlias(pool!, request.params.id);
+      const deactivated = await deactivatePayeeAlias(
+        pool!,
+        request.auth!.organizationId,
+        request.params.id,
+      );
       if (!deactivated) {
         response.status(404).json({ message: 'Alias not found.' });
         return;
@@ -1919,7 +1950,11 @@ export const createApp = (
       }
 
       const { name, gl, bank, createdBy } = bodyResult.data;
-      const organizationId = await findOrCreateDefaultOrganization(pool!);
+      // ADR-0001: organizationId comes from the authenticated principal, not
+      // findOrCreateDefaultOrganization -- a shared default org would let every tenant's mapping
+      // profiles land in (and become visible in) the same organization once RLS is enforcing
+      // isolation everywhere else.
+      const organizationId = request.auth!.organizationId;
 
       const saveSide = async (pairs: typeof gl, sourceType: 'gl' | 'bank') => {
         let profile = await findMappingProfile(pool!, organizationId, name, sourceType);
@@ -1932,14 +1967,18 @@ export const createApp = (
           });
         }
 
-        const existingVersions = await listMappingProfileVersions(pool!, profile.id);
+        const existingVersions = await listMappingProfileVersions(
+          pool!,
+          organizationId,
+          profile.id,
+        );
         const nextVersionNumber = (existingVersions[0]?.versionNumber ?? 0) + 1;
         const columnMapping = Object.fromEntries(pairs.map((pair) => [pair.col, pair.db]));
         const transformationRules = pairs
           .filter((pair) => pair.transform && pair.transform !== 'none')
           .map((pair) => ({ col: pair.col, db: pair.db, transform: pair.transform }));
 
-        const version = await createMappingProfileVersion(pool!, {
+        const version = await createMappingProfileVersion(pool!, organizationId, {
           id: randomUUID(),
           profileId: profile.id,
           versionNumber: nextVersionNumber,

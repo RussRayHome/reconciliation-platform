@@ -21,7 +21,9 @@ import type {
   SummaryMetrics,
 } from '@recon/domain';
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
+
+import { runInTenantScope } from './postgres';
 
 type ReconciliationJobRow = {
   id: string;
@@ -357,9 +359,216 @@ const mapRunStatus = (row: ReconciliationJobRow): ReconciliationRunReport['statu
   return 'Running';
 };
 
+const fetchSummaryRow = async (
+  client: PoolClient,
+  runId: string,
+): Promise<SummaryMetrics | undefined> => {
+  const result = await client.query<SummaryRow>(
+    `SELECT total_records_reviewed, bank_records, gl_records, exact_matches, probable_matches,
+            unmatched_items, duplicates, bank_duplicates, gl_duplicates, date_variances,
+            timing_differences, data_quality_issues, amount_mismatches, missing_from_bank,
+            missing_from_gl, unmatched_bank_net_amount, unmatched_gl_net_amount,
+            clean_matched_amount, unresolved_exposure, counts_by_category_json,
+            amount_by_category_json, charts_json
+       FROM reconciliation_job_summary
+      WHERE job_id = $1`,
+    [runId],
+  );
+
+  const row = result.rows[0];
+  return row ? mapSummary(row) : undefined;
+};
+
+const fetchExceptions = async (client: PoolClient, runId: string): Promise<ExceptionItem[]> => {
+  const result = await client.query<ExceptionRow>(
+    `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
+            transaction_date, amount, error_message, rule_trace_json, prior_rule_traces_json,
+            recommended_next_actions, likely_matching_reference, reviewer_notes,
+            match_confidence, normalized_comparison_tokens, related_transaction_ids
+       FROM reconciliation_exception
+      WHERE job_id = $1
+      ORDER BY line_number ASC, id ASC`,
+    [runId],
+  );
+
+  return result.rows.map((row) => mapException(runId, row));
+};
+
+const fetchReviewerDecisions = async (
+  client: PoolClient,
+  runId: string,
+): Promise<ReviewerDecision[]> => {
+  const result = await client.query<ReviewerDecisionRow>(
+    `SELECT id, target_type, target_id, outcome, final_category, notes, reviewer_id, reviewer_name, created_at, updated_at
+       FROM reconciliation_review_decision
+      WHERE job_id = $1
+      ORDER BY created_at ASC, id ASC`,
+    [runId],
+  );
+
+  return result.rows.map((row) => mapReviewerDecision(runId, row));
+};
+
+const fetchSourceFiles = async (client: PoolClient, runId: string): Promise<SourceFile[]> => {
+  const result = await client.query<SourceFileRow>(
+    `SELECT id, source_system, file_name, mime_type, size_bytes, worksheet_name,
+            header_row, transaction_start_row, excluded_row_numbers, uploaded_at
+       FROM reconciliation_source_file
+      WHERE job_id = $1
+      ORDER BY uploaded_at ASC, id ASC`,
+    [runId],
+  );
+
+  return result.rows.map(mapSourceFile);
+};
+
+const fetchGroupedMatchResults = async (
+  client: PoolClient,
+  runId: string,
+): Promise<GroupedMatchResult[]> => {
+  const result = await client.query<GroupedMatchRow>(
+    `SELECT id, disposition, confidence, category, bank_transaction_ids, gl_transaction_ids,
+            bank_members_json, gl_members_json, total_amount, date_difference_days,
+            score, rule_id, rule_name, reason, evidence_json
+       FROM reconciliation_match_group
+      WHERE job_id = $1
+      ORDER BY created_at ASC, id ASC`,
+    [runId],
+  );
+
+  return result.rows.map(mapGroupedMatch);
+};
+
+const fetchProbableMatches = async (client: PoolClient, runId: string): Promise<MatchResult[]> => {
+  const result = await client.query<MatchResultRow>(
+    `SELECT id, bank_transaction_id, gl_transaction_id, disposition, confidence, rule_id,
+            rule_name, reason, score, amount_difference, date_difference_days,
+            evidence_json, likely_matching_reference, exception_category
+       FROM reconciliation_match_result
+      WHERE job_id = $1
+        AND result_bucket = 'PROBABLE'
+      ORDER BY created_at ASC, id ASC`,
+    [runId],
+  );
+
+  return result.rows.map(mapMatchResult);
+};
+
+const fetchReviewerObservations = async (
+  client: PoolClient,
+  runId: string,
+): Promise<ReviewerObservation[]> => {
+  const result = await client.query<ReviewerObservationRow>(
+    `SELECT id, category, title, message, severity, related_transaction_ids, created_at
+       FROM reconciliation_review_observation
+      WHERE job_id = $1
+      ORDER BY created_at ASC, id ASC`,
+    [runId],
+  );
+
+  return result.rows.map((row) => mapReviewerObservation(runId, row));
+};
+
+const fetchOutputWorkbook = async (
+  client: PoolClient,
+  runId: string,
+): Promise<OutputWorkbookManifest | undefined> => {
+  const result = await client.query<ExportRow>(
+    `SELECT file_name, generated_at, tab_names_json
+       FROM reconciliation_export
+      WHERE job_id = $1
+        AND export_type = 'workbook'
+      LIMIT 1`,
+    [runId],
+  );
+
+  return mapOutputWorkbook(result.rows[0]);
+};
+
+/** Loads the full report for `runId` using an already tenant-scoped client (GUC already set by
+ * the caller's `runInTenantScope`). Shared by `findRunReportById` and `findLatestRunReport` so
+ * the latter doesn't open a second, nested transaction to load the run it just found. */
+const loadFullReportWithClient = async (
+  client: PoolClient,
+  runId: string,
+): Promise<ReconciliationRunReport | undefined> => {
+  const jobResult = await client.query<ReconciliationJobRow>(
+    `SELECT id, correlation_id, account_identifier, period_label, reconciliation_frequency, current_state, started_at, completed_at
+       FROM reconciliation_job
+      WHERE id = $1`,
+    [runId],
+  );
+
+  const job = jobResult.rows[0];
+  if (!job) {
+    return undefined;
+  }
+
+  // Sequential, not Promise.all: these all run over the same tenant-scoped client, and a single
+  // pg Client/PoolClient can't have more than one query in flight at once -- issuing several
+  // concurrently on one connection is deprecated in node-postgres and becomes a hard error in
+  // pg@9. Promise.all was safe when these used this.pool.query() (the pool round-robins across
+  // distinct connections); on a shared client it's not.
+  const sourceFiles = await fetchSourceFiles(client, runId);
+  const groupedMatchResults = await fetchGroupedMatchResults(client, runId);
+  const probableMatches = await fetchProbableMatches(client, runId);
+  const exceptions = await fetchExceptions(client, runId);
+  const summary = await fetchSummaryRow(client, runId);
+  const reviewerObservations = await fetchReviewerObservations(client, runId);
+  const reviewerDecisions = await fetchReviewerDecisions(client, runId);
+  const outputWorkbook = await fetchOutputWorkbook(client, runId);
+
+  return {
+    id: job.id,
+    correlationId: job.correlation_id,
+    accountIdentifier: job.account_identifier ?? undefined,
+    periodLabel: job.period_label ?? undefined,
+    reconciliationFrequency: job.reconciliation_frequency ?? undefined,
+    status: mapRunStatus(job),
+    startedAt: job.started_at,
+    completedAt: job.completed_at ?? undefined,
+    sourceFiles,
+    groupedMatchResults,
+    probableMatches,
+    exceptions,
+    summary: summary ?? {
+      totalRecordsReviewed: 0,
+      bankRecords: 0,
+      glRecords: 0,
+      exactMatches: 0,
+      probableMatches: 0,
+      unmatchedItems: 0,
+      duplicates: 0,
+      bankDuplicates: 0,
+      glDuplicates: 0,
+      dateVariances: 0,
+      timingDifferences: 0,
+      dataQualityIssues: 0,
+      amountMismatches: 0,
+      missingFromBank: 0,
+      missingFromGL: 0,
+      unmatchedBankNetAmount: 0,
+      unmatchedGlNetAmount: 0,
+      cleanMatchedAmount: 0,
+      unresolvedExposure: 0,
+      countsByCategory: {},
+      amountByCategory: {},
+      charts: [],
+    },
+    reviewerObservations,
+    reviewerDecisions,
+    outputWorkbook,
+  };
+};
+
 /**
  * PostgreSQL-backed read-model store for reconciliation runs, exceptions, exports, and
  * reviewer decisions. Used by the API to serve report and dashboard queries.
+ *
+ * ADR-0001 step 6: every method takes `organizationId` and runs through `runInTenantScope`,
+ * which sets `app.current_organization_id` for the transaction before issuing any query -- RLS
+ * policies (changeset 0030) key off that GUC, so a runId belonging to a different tenant than
+ * `organizationId` resolves as "not found" rather than leaking another customer's data.
  */
 export class PostgresReconciliationReadModelStore {
   /**
@@ -370,138 +579,52 @@ export class PostgresReconciliationReadModelStore {
   /**
    * Returns the most recently completed reconciliation run report.
    */
-  async findLatestRunReport(): Promise<ReconciliationRunReport | undefined> {
-    const result = await this.pool.query<{ id: string }>(
-      `SELECT id
-         FROM reconciliation_job
-        WHERE completed_at IS NOT NULL
-        ORDER BY completed_at DESC, created_at DESC
-        LIMIT 1`,
-    );
+  async findLatestRunReport(organizationId: string): Promise<ReconciliationRunReport | undefined> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const result = await client.query<{ id: string }>(
+        `SELECT id
+           FROM reconciliation_job
+          WHERE completed_at IS NOT NULL
+          ORDER BY completed_at DESC, created_at DESC
+          LIMIT 1`,
+      );
 
-    const runId = result.rows[0]?.id;
-    if (!runId) {
-      return undefined;
-    }
+      const runId = result.rows[0]?.id;
+      if (!runId) {
+        return undefined;
+      }
 
-    return this.findRunReportById(runId);
+      return loadFullReportWithClient(client, runId);
+    });
   }
 
   /**
    * Loads a full reconciliation report, including files, matches, exceptions, and summary.
    */
-  async findRunReportById(runId: string): Promise<ReconciliationRunReport | undefined> {
-    const jobResult = await this.pool.query<ReconciliationJobRow>(
-      `SELECT id, correlation_id, account_identifier, period_label, reconciliation_frequency, current_state, started_at, completed_at
-         FROM reconciliation_job
-        WHERE id = $1`,
-      [runId],
+  async findRunReportById(
+    organizationId: string,
+    runId: string,
+  ): Promise<ReconciliationRunReport | undefined> {
+    return runInTenantScope(this.pool, organizationId, (client) =>
+      loadFullReportWithClient(client, runId),
     );
-
-    const job = jobResult.rows[0];
-    if (!job) {
-      return undefined;
-    }
-
-    const [
-      sourceFiles,
-      groupedMatchResults,
-      probableMatches,
-      exceptions,
-      summary,
-      reviewerObservations,
-      reviewerDecisions,
-      outputWorkbook,
-    ] = await Promise.all([
-      this.listSourceFiles(runId),
-      this.listGroupedMatchResults(runId),
-      this.listProbableMatches(runId),
-      this.listRunExceptions(runId),
-      this.findRunSummaryById(runId),
-      this.listReviewerObservations(runId),
-      this.listReviewerDecisions(runId),
-      this.findOutputWorkbook(runId),
-    ]);
-
-    return {
-      id: job.id,
-      correlationId: job.correlation_id,
-      accountIdentifier: job.account_identifier ?? undefined,
-      periodLabel: job.period_label ?? undefined,
-      reconciliationFrequency: job.reconciliation_frequency ?? undefined,
-      status: mapRunStatus(job),
-      startedAt: job.started_at,
-      completedAt: job.completed_at ?? undefined,
-      sourceFiles,
-      groupedMatchResults,
-      probableMatches,
-      exceptions,
-      summary: summary ?? {
-        totalRecordsReviewed: 0,
-        bankRecords: 0,
-        glRecords: 0,
-        exactMatches: 0,
-        probableMatches: 0,
-        unmatchedItems: 0,
-        duplicates: 0,
-        bankDuplicates: 0,
-        glDuplicates: 0,
-        dateVariances: 0,
-        timingDifferences: 0,
-        dataQualityIssues: 0,
-        amountMismatches: 0,
-        missingFromBank: 0,
-        missingFromGL: 0,
-        unmatchedBankNetAmount: 0,
-        unmatchedGlNetAmount: 0,
-        cleanMatchedAmount: 0,
-        unresolvedExposure: 0,
-        countsByCategory: {},
-        amountByCategory: {},
-        charts: [],
-      },
-      reviewerObservations,
-      reviewerDecisions,
-      outputWorkbook,
-    };
   }
 
   /**
    * Loads summary metrics for a specific reconciliation run.
    */
-  async findRunSummaryById(runId: string): Promise<SummaryMetrics | undefined> {
-    const result = await this.pool.query<SummaryRow>(
-      `SELECT total_records_reviewed, bank_records, gl_records, exact_matches, probable_matches,
-              unmatched_items, duplicates, bank_duplicates, gl_duplicates, date_variances,
-              timing_differences, data_quality_issues, amount_mismatches, missing_from_bank,
-              missing_from_gl, unmatched_bank_net_amount, unmatched_gl_net_amount,
-              clean_matched_amount, unresolved_exposure, counts_by_category_json,
-              amount_by_category_json, charts_json
-         FROM reconciliation_job_summary
-        WHERE job_id = $1`,
-      [runId],
-    );
-
-    const row = result.rows[0];
-    return row ? mapSummary(row) : undefined;
+  async findRunSummaryById(
+    organizationId: string,
+    runId: string,
+  ): Promise<SummaryMetrics | undefined> {
+    return runInTenantScope(this.pool, organizationId, (client) => fetchSummaryRow(client, runId));
   }
 
   /**
    * Lists all exceptions captured for the given run in deterministic line/id order.
    */
-  async listRunExceptions(runId: string): Promise<ExceptionItem[]> {
-    const result = await this.pool.query<ExceptionRow>(
-      `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
-              transaction_date, amount, error_message, rule_trace_json, prior_rule_traces_json,
-              recommended_next_actions, likely_matching_reference, reviewer_notes,
-              match_confidence, normalized_comparison_tokens, related_transaction_ids
-         FROM reconciliation_exception
-        WHERE job_id = $1
-        ORDER BY line_number ASC, id ASC`,
-      [runId],
-    );
-
-    return result.rows.map((row) => mapException(runId, row));
+  async listRunExceptions(organizationId: string, runId: string): Promise<ExceptionItem[]> {
+    return runInTenantScope(this.pool, organizationId, (client) => fetchExceptions(client, runId));
   }
 
   /**
@@ -509,28 +632,31 @@ export class PostgresReconciliationReadModelStore {
    * Optional category/severity filters narrow both the page and the total count.
    */
   async listRunExceptionsPage(
+    organizationId: string,
     runId: string,
     limit: number,
     offset: number,
     filters: ExceptionPageFilters = {},
   ): Promise<PaginatedExceptionsResult> {
-    const conditions = ['job_id = $1'];
-    const filterParams: unknown[] = [runId];
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const conditions = ['job_id = $1'];
+      const filterParams: unknown[] = [runId];
 
-    if (filters.category) {
-      filterParams.push(filters.category);
-      conditions.push(`category = $${filterParams.length}`);
-    }
+      if (filters.category) {
+        filterParams.push(filters.category);
+        conditions.push(`category = $${filterParams.length}`);
+      }
 
-    if (filters.severity) {
-      filterParams.push(filters.severity);
-      conditions.push(`severity = $${filterParams.length}`);
-    }
+      if (filters.severity) {
+        filterParams.push(filters.severity);
+        conditions.push(`severity = $${filterParams.length}`);
+      }
 
-    const whereClause = conditions.join(' AND ');
+      const whereClause = conditions.join(' AND ');
 
-    const [itemsResult, countResult] = await Promise.all([
-      this.pool.query<ExceptionRow>(
+      // Sequential, not Promise.all -- see loadFullReportWithClient's comment: one client can't
+      // have two queries in flight at once.
+      const itemsResult = await client.query<ExceptionRow>(
         `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
                 transaction_date, amount, error_message, rule_trace_json, prior_rule_traces_json,
                 recommended_next_actions, likely_matching_reference, reviewer_notes,
@@ -540,105 +666,32 @@ export class PostgresReconciliationReadModelStore {
           ORDER BY line_number ASC, id ASC
           LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
         [...filterParams, limit, offset],
-      ),
-      this.pool.query<{ count: string }>(
+      );
+      const countResult = await client.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM reconciliation_exception WHERE ${whereClause}`,
         filterParams,
-      ),
-    ]);
+      );
 
-    const total = Number(countResult.rows[0]?.count ?? '0');
-    const items = itemsResult.rows.map((row) => mapException(runId, row));
+      const total = Number(countResult.rows[0]?.count ?? '0');
+      const items = itemsResult.rows.map((row) => mapException(runId, row));
 
-    return {
-      items,
-      total,
-      limit,
-      offset,
-      hasMore: offset + items.length < total,
-    };
+      return {
+        items,
+        total,
+        limit,
+        offset,
+        hasMore: offset + items.length < total,
+      };
+    });
   }
 
   /**
    * Lists reviewer decisions for the given run ordered by creation time.
    */
-  async listReviewerDecisions(runId: string): Promise<ReviewerDecision[]> {
-    const result = await this.pool.query<ReviewerDecisionRow>(
-      `SELECT id, target_type, target_id, outcome, final_category, notes, reviewer_id, reviewer_name, created_at, updated_at
-         FROM reconciliation_review_decision
-        WHERE job_id = $1
-        ORDER BY created_at ASC, id ASC`,
-      [runId],
+  async listReviewerDecisions(organizationId: string, runId: string): Promise<ReviewerDecision[]> {
+    return runInTenantScope(this.pool, organizationId, (client) =>
+      fetchReviewerDecisions(client, runId),
     );
-
-    return result.rows.map((row) => mapReviewerDecision(runId, row));
-  }
-
-  private async listSourceFiles(runId: string): Promise<SourceFile[]> {
-    const result = await this.pool.query<SourceFileRow>(
-      `SELECT id, source_system, file_name, mime_type, size_bytes, worksheet_name,
-              header_row, transaction_start_row, excluded_row_numbers, uploaded_at
-         FROM reconciliation_source_file
-        WHERE job_id = $1
-        ORDER BY uploaded_at ASC, id ASC`,
-      [runId],
-    );
-
-    return result.rows.map(mapSourceFile);
-  }
-
-  private async listGroupedMatchResults(runId: string): Promise<GroupedMatchResult[]> {
-    const result = await this.pool.query<GroupedMatchRow>(
-      `SELECT id, disposition, confidence, category, bank_transaction_ids, gl_transaction_ids,
-              bank_members_json, gl_members_json, total_amount, date_difference_days,
-              score, rule_id, rule_name, reason, evidence_json
-         FROM reconciliation_match_group
-        WHERE job_id = $1
-        ORDER BY created_at ASC, id ASC`,
-      [runId],
-    );
-
-    return result.rows.map(mapGroupedMatch);
-  }
-
-  private async listProbableMatches(runId: string): Promise<MatchResult[]> {
-    const result = await this.pool.query<MatchResultRow>(
-      `SELECT id, bank_transaction_id, gl_transaction_id, disposition, confidence, rule_id,
-              rule_name, reason, score, amount_difference, date_difference_days,
-              evidence_json, likely_matching_reference, exception_category
-         FROM reconciliation_match_result
-        WHERE job_id = $1
-          AND result_bucket = 'PROBABLE'
-        ORDER BY created_at ASC, id ASC`,
-      [runId],
-    );
-
-    return result.rows.map(mapMatchResult);
-  }
-
-  private async listReviewerObservations(runId: string): Promise<ReviewerObservation[]> {
-    const result = await this.pool.query<ReviewerObservationRow>(
-      `SELECT id, category, title, message, severity, related_transaction_ids, created_at
-         FROM reconciliation_review_observation
-        WHERE job_id = $1
-        ORDER BY created_at ASC, id ASC`,
-      [runId],
-    );
-
-    return result.rows.map((row) => mapReviewerObservation(runId, row));
-  }
-
-  private async findOutputWorkbook(runId: string): Promise<OutputWorkbookManifest | undefined> {
-    const result = await this.pool.query<ExportRow>(
-      `SELECT file_name, generated_at, tab_names_json
-         FROM reconciliation_export
-        WHERE job_id = $1
-          AND export_type = 'workbook'
-        LIMIT 1`,
-      [runId],
-    );
-
-    return mapOutputWorkbook(result.rows[0]);
   }
 }
 
@@ -694,26 +747,28 @@ export const createPayeeAlias = async (
   pool: Pool,
   input: CreatePayeeAliasInput,
 ): Promise<PayeeAlias> => {
-  const result = await pool.query<PayeeAliasRow>(
-    `INSERT INTO reconciliation_payee_alias
-       (organization_id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
-    [
-      input.organizationId,
-      input.accountIdentifier ?? null,
-      input.bankPattern,
-      input.canonicalPayeeName,
-      input.normalizedTokens,
-      input.sourceDirection ?? 'bank_to_gl',
-      input.matchConfidence ?? 1,
-    ],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    throw new Error('createPayeeAlias: INSERT returned no row');
-  }
-  return mapPayeeAlias(row);
+  return runInTenantScope(pool, input.organizationId, async (client) => {
+    const result = await client.query<PayeeAliasRow>(
+      `INSERT INTO reconciliation_payee_alias
+         (organization_id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
+      [
+        input.organizationId,
+        input.accountIdentifier ?? null,
+        input.bankPattern,
+        input.canonicalPayeeName,
+        input.normalizedTokens,
+        input.sourceDirection ?? 'bank_to_gl',
+        input.matchConfidence ?? 1,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('createPayeeAlias: INSERT returned no row');
+    }
+    return mapPayeeAlias(row);
+  });
 };
 
 /**
@@ -722,6 +777,7 @@ export const createPayeeAlias = async (
  */
 export const updatePayeeAlias = async (
   pool: Pool,
+  organizationId: string,
   id: string,
   input: UpdatePayeeAliasInput,
 ): Promise<PayeeAlias | undefined> => {
@@ -757,26 +813,34 @@ export const updatePayeeAlias = async (
   setClauses.push(`updated_at = NOW()`);
   values.push(id);
 
-  const result = await pool.query<PayeeAliasRow>(
-    `UPDATE reconciliation_payee_alias
-        SET ${setClauses.join(', ')}
-      WHERE id = $${paramIndex}
-  RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
-    values,
-  );
-  return result.rows[0] ? mapPayeeAlias(result.rows[0]) : undefined;
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<PayeeAliasRow>(
+      `UPDATE reconciliation_payee_alias
+          SET ${setClauses.join(', ')}
+        WHERE id = $${paramIndex}
+    RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
+      values,
+    );
+    return result.rows[0] ? mapPayeeAlias(result.rows[0]) : undefined;
+  });
 };
 
 /**
  * Soft-deletes an alias by setting `is_active = false`. Returns `true` when the alias
  * was found and deactivated, `false` when no row matched.
  */
-export const deactivatePayeeAlias = async (pool: Pool, id: string): Promise<boolean> => {
-  const result = await pool.query(
-    `UPDATE reconciliation_payee_alias SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
-    [id],
-  );
-  return (result.rowCount ?? 0) > 0;
+export const deactivatePayeeAlias = async (
+  pool: Pool,
+  organizationId: string,
+  id: string,
+): Promise<boolean> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query(
+      `UPDATE reconciliation_payee_alias SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+      [id],
+    );
+    return (result.rowCount ?? 0) > 0;
+  });
 };
 
 /**
@@ -785,19 +849,22 @@ export const deactivatePayeeAlias = async (pool: Pool, id: string): Promise<bool
  */
 export const loadPayeeAliases = async (
   pool: Pool,
+  organizationId: string,
   accountIdentifier?: string,
 ): Promise<PayeeAlias[]> => {
-  const result = await pool.query<PayeeAliasRow>(
-    `SELECT id, account_identifier, bank_pattern, canonical_payee_name,
-            normalized_tokens, source_direction, match_confidence, is_active
-       FROM reconciliation_payee_alias
-      WHERE is_active = TRUE
-        AND (account_identifier IS NULL OR account_identifier = $1)
-      ORDER BY account_identifier NULLS LAST, canonical_payee_name ASC`,
-    [accountIdentifier ?? null],
-  );
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<PayeeAliasRow>(
+      `SELECT id, account_identifier, bank_pattern, canonical_payee_name,
+              normalized_tokens, source_direction, match_confidence, is_active
+         FROM reconciliation_payee_alias
+        WHERE is_active = TRUE
+          AND (account_identifier IS NULL OR account_identifier = $1)
+        ORDER BY account_identifier NULLS LAST, canonical_payee_name ASC`,
+      [accountIdentifier ?? null],
+    );
 
-  return result.rows.map(mapPayeeAlias);
+    return result.rows.map(mapPayeeAlias);
+  });
 };
 
 /** Input fields accepted when creating a new, immutable mapping profile version. */
@@ -841,47 +908,56 @@ const mapMappingProfileVersion = (row: MappingProfileVersionRow): MappingProfile
  */
 export const createMappingProfileVersion = async (
   pool: Pool,
+  organizationId: string,
   input: CreateMappingProfileVersionInput,
 ): Promise<MappingProfileVersion> => {
   // organization_id is derived from the parent profile via subquery rather than added to
   // CreateMappingProfileVersionInput -- every version already belongs to exactly one profile, so
-  // there is no independent value a caller could legitimately supply here.
-  const result = await pool.query<MappingProfileVersionRow>(
-    `INSERT INTO reconciliation_mapping_profile_version
-       (id, profile_id, organization_id, version_number, column_mapping, transformation_rules, created_by)
-     SELECT $1, $2, mp.organization_id, $3, $4::jsonb, $5::jsonb, $6
-       FROM reconciliation_mapping_profile mp
-      WHERE mp.id = $2
-     RETURNING id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at`,
-    [
-      input.id,
-      input.profileId,
-      input.versionNumber,
-      JSON.stringify(input.columnMapping),
-      JSON.stringify(input.transformationRules),
-      input.createdBy,
-    ],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    throw new Error('createMappingProfileVersion: INSERT returned no row');
-  }
-  return mapMappingProfileVersion(row);
+  // there is no independent value a caller could legitimately supply here. `organizationId` is
+  // taken as a separate parameter purely to set the RLS tenant GUC before this runs; if it
+  // doesn't match the profile's actual organization, RLS hides the profile row from the SELECT
+  // subquery and the INSERT affects zero rows.
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<MappingProfileVersionRow>(
+      `INSERT INTO reconciliation_mapping_profile_version
+         (id, profile_id, organization_id, version_number, column_mapping, transformation_rules, created_by)
+       SELECT $1, $2, mp.organization_id, $3, $4::jsonb, $5::jsonb, $6
+         FROM reconciliation_mapping_profile mp
+        WHERE mp.id = $2
+       RETURNING id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at`,
+      [
+        input.id,
+        input.profileId,
+        input.versionNumber,
+        JSON.stringify(input.columnMapping),
+        JSON.stringify(input.transformationRules),
+        input.createdBy,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('createMappingProfileVersion: INSERT returned no row');
+    }
+    return mapMappingProfileVersion(row);
+  });
 };
 
 /** All immutable versions of a mapping profile, newest first — used to compute the next version number. */
 export const listMappingProfileVersions = async (
   pool: Pool,
+  organizationId: string,
   profileId: string,
 ): Promise<MappingProfileVersion[]> => {
-  const result = await pool.query<MappingProfileVersionRow>(
-    `SELECT id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at
-     FROM reconciliation_mapping_profile_version
-     WHERE profile_id = $1
-     ORDER BY version_number DESC`,
-    [profileId],
-  );
-  return result.rows.map(mapMappingProfileVersion);
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<MappingProfileVersionRow>(
+      `SELECT id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at
+       FROM reconciliation_mapping_profile_version
+       WHERE profile_id = $1
+       ORDER BY version_number DESC`,
+      [profileId],
+    );
+    return result.rows.map(mapMappingProfileVersion);
+  });
 };
 
 type MappingProfileRow = {
@@ -909,14 +985,16 @@ export const findMappingProfile = async (
   name: string,
   sourceType: SourceSystem,
 ): Promise<MappingProfile | null> => {
-  const result = await pool.query<MappingProfileRow>(
-    `SELECT id, organization_id, name, source_type, status, created_at
-     FROM reconciliation_mapping_profile
-     WHERE organization_id = $1 AND name = $2 AND source_type = $3`,
-    [organizationId, name, sourceType],
-  );
-  const row = result.rows[0];
-  return row ? mapMappingProfile(row) : null;
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<MappingProfileRow>(
+      `SELECT id, organization_id, name, source_type, status, created_at
+       FROM reconciliation_mapping_profile
+       WHERE organization_id = $1 AND name = $2 AND source_type = $3`,
+      [organizationId, name, sourceType],
+    );
+    const row = result.rows[0];
+    return row ? mapMappingProfile(row) : null;
+  });
 };
 
 /** Input fields accepted when creating a new mapping profile (one row per side — see `findMappingProfile`). */
@@ -931,17 +1009,19 @@ export const createMappingProfile = async (
   pool: Pool,
   input: CreateMappingProfileInput,
 ): Promise<MappingProfile> => {
-  const result = await pool.query<MappingProfileRow>(
-    `INSERT INTO reconciliation_mapping_profile (id, organization_id, name, source_type)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, organization_id, name, source_type, status, created_at`,
-    [input.id, input.organizationId, input.name, input.sourceType],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    throw new Error('createMappingProfile: INSERT returned no row');
-  }
-  return mapMappingProfile(row);
+  return runInTenantScope(pool, input.organizationId, async (client) => {
+    const result = await client.query<MappingProfileRow>(
+      `INSERT INTO reconciliation_mapping_profile (id, organization_id, name, source_type)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, organization_id, name, source_type, status, created_at`,
+      [input.id, input.organizationId, input.name, input.sourceType],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('createMappingProfile: INSERT returned no row');
+    }
+    return mapMappingProfile(row);
+  });
 };
 
 /**
@@ -1030,23 +1110,26 @@ const mapImportApproval = (row: ImportApprovalRow): ImportApproval => ({
  */
 export const createImportApproval = async (
   pool: Pool,
+  organizationId: string,
   input: CreateImportApprovalInput,
 ): Promise<ImportApproval> => {
   // organization_id derives from the source file being approved, same reasoning as
-  // createMappingProfileVersion above.
-  const result = await pool.query<ImportApprovalRow>(
-    `INSERT INTO reconciliation_import_approval (id, source_file_id, organization_id, uploaded_by)
-     SELECT $1, $2, sf.organization_id, $3
-       FROM reconciliation_source_file sf
-      WHERE sf.id = $2
-     RETURNING id, source_file_id, status, uploaded_by, approved_by, rationale, requested_at, decided_at`,
-    [input.id, input.sourceFileId, input.uploadedBy],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    throw new Error('createImportApproval: INSERT returned no row');
-  }
-  return mapImportApproval(row);
+  // createMappingProfileVersion above -- organizationId here only sets the RLS tenant GUC.
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ImportApprovalRow>(
+      `INSERT INTO reconciliation_import_approval (id, source_file_id, organization_id, uploaded_by)
+       SELECT $1, $2, sf.organization_id, $3
+         FROM reconciliation_source_file sf
+        WHERE sf.id = $2
+       RETURNING id, source_file_id, status, uploaded_by, approved_by, rationale, requested_at, decided_at`,
+      [input.id, input.sourceFileId, input.uploadedBy],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('createImportApproval: INSERT returned no row');
+    }
+    return mapImportApproval(row);
+  });
 };
 
 /**
@@ -1058,13 +1141,10 @@ export const createImportApproval = async (
  */
 export const recordApprovalDecision = async (
   pool: Pool,
+  organizationId: string,
   input: RecordApprovalDecisionInput,
 ): Promise<ImportApproval> => {
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
+  return runInTenantScope(pool, organizationId, async (client) => {
     const current = await client.query<ImportApprovalRow>(
       'SELECT status FROM reconciliation_import_approval WHERE id = $1 FOR UPDATE',
       [input.approvalId],
@@ -1090,49 +1170,45 @@ export const recordApprovalDecision = async (
       [input.approvalId, currentRow.status, input.toStatus, input.actor, input.rationale ?? null],
     );
 
-    await client.query('COMMIT');
-
     const row = updated.rows[0];
     if (!row) {
       throw new Error('recordApprovalDecision: UPDATE returned no row');
     }
     return mapImportApproval(row);
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 };
 
 /** Loads the full append-only approval history for one import approval, oldest first. */
 export const loadApprovalHistory = async (
   pool: Pool,
+  organizationId: string,
   approvalId: string,
 ): Promise<ApprovalHistoryEntry[]> => {
-  const result = await pool.query<{
-    id: string;
-    approval_id: string;
-    from_status: ImportApprovalStatus | null;
-    to_status: ImportApprovalStatus;
-    actor: string;
-    note: string | null;
-    created_at: string;
-  }>(
-    `SELECT id, approval_id, from_status, to_status, actor, note, created_at
-       FROM reconciliation_approval_history
-      WHERE approval_id = $1
-      ORDER BY created_at ASC`,
-    [approvalId],
-  );
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<{
+      id: string;
+      approval_id: string;
+      from_status: ImportApprovalStatus | null;
+      to_status: ImportApprovalStatus;
+      actor: string;
+      note: string | null;
+      created_at: string;
+    }>(
+      `SELECT id, approval_id, from_status, to_status, actor, note, created_at
+         FROM reconciliation_approval_history
+        WHERE approval_id = $1
+        ORDER BY created_at ASC`,
+      [approvalId],
+    );
 
-  return result.rows.map((row) => ({
-    id: row.id,
-    approvalId: row.approval_id,
-    fromStatus: row.from_status ?? undefined,
-    toStatus: row.to_status,
-    actor: row.actor,
-    note: row.note ?? undefined,
-    createdAt: row.created_at,
-  }));
+    return result.rows.map((row) => ({
+      id: row.id,
+      approvalId: row.approval_id,
+      fromStatus: row.from_status ?? undefined,
+      toStatus: row.to_status,
+      actor: row.actor,
+      note: row.note ?? undefined,
+      createdAt: row.created_at,
+    }));
+  });
 };

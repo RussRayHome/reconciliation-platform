@@ -238,7 +238,7 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     );
     const profileId = profileResult.rows[0]!.id;
 
-    await createMappingProfileVersion(pool, {
+    await createMappingProfileVersion(pool, organizationId, {
       id: crypto.randomUUID(),
       profileId,
       versionNumber: 1,
@@ -248,7 +248,7 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     });
 
     await expect(
-      createMappingProfileVersion(pool, {
+      createMappingProfileVersion(pool, organizationId, {
         id: crypto.randomUUID(),
         profileId,
         versionNumber: 1,
@@ -363,14 +363,16 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     );
     const sourceFileId = sourceFile.rows[0]!.id;
 
-    const approval = await createImportApproval(pool, {
+    const bobOrganizationId = bobOrg.rows[0]!.id;
+
+    const approval = await createImportApproval(pool, bobOrganizationId, {
       id: crypto.randomUUID(),
       sourceFileId,
       uploadedBy: 'bob',
     });
     expect(approval.status).toBe('PENDING');
 
-    const decided = await recordApprovalDecision(pool, {
+    const decided = await recordApprovalDecision(pool, bobOrganizationId, {
       approvalId: approval.id,
       toStatus: 'APPROVED',
       actor: 'bob',
@@ -379,7 +381,7 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     expect(decided.status).toBe('APPROVED');
     expect(decided.approvedBy).toBe('bob');
 
-    const history = await loadApprovalHistory(pool, approval.id);
+    const history = await loadApprovalHistory(pool, bobOrganizationId, approval.id);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ fromStatus: 'PENDING', toStatus: 'APPROVED', actor: 'bob' });
   });

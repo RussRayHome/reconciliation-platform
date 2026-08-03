@@ -21,7 +21,27 @@ const makePool = (...responses: QueryResult[]): Pool => {
   for (const r of responses) {
     mock.mockResolvedValueOnce(r);
   }
-  return { query: mock } as unknown as Pool;
+
+  // Every store method now goes through runInTenantScope (packages/persistence/src/postgres.ts),
+  // which checks out a client and issues BEGIN / SET LOCAL app.current_organization_id / ... /
+  // COMMIT rather than calling pool.query directly. Transaction-control and the set_config GUC
+  // call are answered here without touching `mock` -- they must not consume a queued response or
+  // appear in mock.calls, since every existing assertion below indexes mock.calls by the real
+  // query's position.
+  const clientQuery = (text: string, params?: unknown[]) => {
+    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+    if (text.includes('set_config(')) {
+      return Promise.resolve({ rows: [{ set_config: params?.[1] }], rowCount: 1 });
+    }
+    return mock(text, params);
+  };
+
+  return {
+    query: mock,
+    connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
+  } as unknown as Pool;
 };
 
 const MAPPING_PROFILE_ROW = {
@@ -234,7 +254,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns undefined when no completed run exists', async () => {
       const pool = makePool({ rows: [] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      expect(await store.findLatestRunReport()).toBeUndefined();
+      expect(await store.findLatestRunReport('org-1')).toBeUndefined();
     });
 
     it('delegates to findRunReportById when a run is found', async () => {
@@ -251,7 +271,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         { rows: [EXPORT_ROW] },
       );
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findLatestRunReport();
+      const report = await store.findLatestRunReport('org-1');
       expect(report?.id).toBe('run-1');
     });
   });
@@ -260,13 +280,13 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns undefined when job not found', async () => {
       const pool = buildRunReportPool({ jobRow: null });
       const store = new PostgresReconciliationReadModelStore(pool);
-      expect(await store.findRunReportById('run-1')).toBeUndefined();
+      expect(await store.findRunReportById('org-1', 'run-1')).toBeUndefined();
     });
 
     it('maps all fields from a completed run', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report).toMatchObject({
         id: 'run-1',
@@ -283,7 +303,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps source files via mapSourceFile', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.sourceFiles).toHaveLength(1);
       expect(report?.sourceFiles[0]).toMatchObject({
@@ -301,7 +321,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps grouped match results via mapGroupedMatch', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.groupedMatchResults).toHaveLength(1);
       expect(report?.groupedMatchResults[0]).toMatchObject({
@@ -317,7 +337,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps probable matches via mapMatchResult', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.probableMatches).toHaveLength(1);
       expect(report?.probableMatches[0]).toMatchObject({
@@ -332,7 +352,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps exceptions via mapException', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.exceptions).toHaveLength(1);
       expect(report?.exceptions[0]).toMatchObject({
@@ -347,7 +367,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps reviewer observations', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.reviewerObservations).toHaveLength(1);
       expect(report?.reviewerObservations[0]).toMatchObject({
@@ -361,7 +381,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps reviewer decisions', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.reviewerDecisions).toHaveLength(1);
       expect(report?.reviewerDecisions[0]).toMatchObject({
@@ -376,7 +396,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps output workbook when present', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.outputWorkbook).toMatchObject({
         fileName: 'recon-output.xlsx',
@@ -387,14 +407,14 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns undefined outputWorkbook when no export row', async () => {
       const pool = buildRunReportPool({ exportRow: null });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
       expect(report?.outputWorkbook).toBeUndefined();
     });
 
     it('returns empty summary fallback when no summary row', async () => {
       const pool = buildRunReportPool({ summaryRow: null });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.summary.totalRecordsReviewed).toBe(0);
       expect(report?.summary.exactMatches).toBe(0);
@@ -404,7 +424,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('maps summary numeric fields from string columns', async () => {
       const pool = buildRunReportPool();
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
 
       expect(report?.summary).toMatchObject({
         totalRecordsReviewed: 10,
@@ -421,7 +441,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         jobRow: { current_state: 'FAILED', completed_at: undefined },
       });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
       expect(report?.status).toBe('Failed');
     });
 
@@ -430,7 +450,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         jobRow: { current_state: 'MATCHING', completed_at: undefined },
       });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
       expect(report?.status).toBe('Running');
     });
 
@@ -439,7 +459,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         jobRow: { current_state: 'FINALIZED', completed_at: '2026-06-01T01:00:00Z' },
       });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
       expect(report?.status).toBe('Completed');
     });
 
@@ -467,7 +487,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         { rows: [] },
       );
       const store2 = new PostgresReconciliationReadModelStore(pool2);
-      const report = await store2.findRunReportById('run-1');
+      const report = await store2.findRunReportById('org-1', 'run-1');
       const sf = report?.sourceFiles[0];
 
       expect(sf?.worksheetName).toBe('Unknown');
@@ -501,7 +521,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         { rows: [] },
       );
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
       const mr = report?.probableMatches[0];
 
       expect(mr?.bankTransactionId).toBeUndefined();
@@ -535,7 +555,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         { rows: [] },
       );
       const store = new PostgresReconciliationReadModelStore(pool);
-      const report = await store.findRunReportById('run-1');
+      const report = await store.findRunReportById('org-1', 'run-1');
       const gm = report?.groupedMatchResults[0];
 
       expect(gm?.category).toBeUndefined();
@@ -550,13 +570,13 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns undefined when no summary row', async () => {
       const pool = makePool({ rows: [] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      expect(await store.findRunSummaryById('run-1')).toBeUndefined();
+      expect(await store.findRunSummaryById('org-1', 'run-1')).toBeUndefined();
     });
 
     it('returns mapped summary metrics', async () => {
       const pool = makePool({ rows: [SUMMARY_ROW] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const summary = await store.findRunSummaryById('run-1');
+      const summary = await store.findRunSummaryById('org-1', 'run-1');
       expect(summary?.totalRecordsReviewed).toBe(10);
       expect(summary?.cleanMatchedAmount).toBe(1000);
     });
@@ -566,13 +586,13 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns empty array when no exceptions', async () => {
       const pool = makePool({ rows: [] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      expect(await store.listRunExceptions('run-1')).toEqual([]);
+      expect(await store.listRunExceptions('org-1', 'run-1')).toEqual([]);
     });
 
     it('maps exception rows including null optional fields', async () => {
       const pool = makePool({ rows: [EXCEPTION_ROW] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const items = await store.listRunExceptions('run-1');
+      const items = await store.listRunExceptions('org-1', 'run-1');
 
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
@@ -593,7 +613,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         rows: [{ ...EXCEPTION_ROW, transaction_date: null, amount: null }],
       });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const items = await store.listRunExceptions('run-1');
+      const items = await store.listRunExceptions('org-1', 'run-1');
       expect(items[0]?.transactionDate).toBeUndefined();
       expect(items[0]?.amount).toBeNull();
     });
@@ -610,7 +630,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         ],
       });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const items = await store.listRunExceptions('run-1');
+      const items = await store.listRunExceptions('org-1', 'run-1');
       expect(items[0]?.likelyMatchingReference).toBe('REF-999');
       expect(items[0]?.reviewerNotes).toBe('Checked by Alice');
       expect(items[0]?.matchConfidence).toBe('High');
@@ -621,7 +641,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns paginated result with hasMore true', async () => {
       const pool = makePool({ rows: [EXCEPTION_ROW], rowCount: 1 }, { rows: [{ count: '5' }] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const page = await store.listRunExceptionsPage('run-1', 1, 0);
+      const page = await store.listRunExceptionsPage('org-1', 'run-1', 1, 0);
 
       expect(page.items).toHaveLength(1);
       expect(page.total).toBe(5);
@@ -633,21 +653,21 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns hasMore false when all items fetched', async () => {
       const pool = makePool({ rows: [EXCEPTION_ROW], rowCount: 1 }, { rows: [{ count: '1' }] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const page = await store.listRunExceptionsPage('run-1', 10, 0);
+      const page = await store.listRunExceptionsPage('org-1', 'run-1', 10, 0);
       expect(page.hasMore).toBe(false);
     });
 
     it('handles null count gracefully', async () => {
       const pool = makePool({ rows: [] }, { rows: [{ count: null }] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const page = await store.listRunExceptionsPage('run-1', 10, 0);
+      const page = await store.listRunExceptionsPage('org-1', 'run-1', 10, 0);
       expect(page.total).toBe(0);
     });
 
     it('applies category and severity filters to the items and count queries', async () => {
       const pool = makePool({ rows: [EXCEPTION_ROW], rowCount: 1 }, { rows: [{ count: '1' }] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      await store.listRunExceptionsPage('run-1', 10, 0, {
+      await store.listRunExceptionsPage('org-1', 'run-1', 10, 0, {
         category: 'AmountMismatch',
         severity: 'High',
       });
@@ -674,7 +694,7 @@ describe('PostgresReconciliationReadModelStore', () => {
     it('returns empty array when no decisions', async () => {
       const pool = makePool({ rows: [] });
       const store = new PostgresReconciliationReadModelStore(pool);
-      expect(await store.listReviewerDecisions('run-1')).toEqual([]);
+      expect(await store.listReviewerDecisions('org-1', 'run-1')).toEqual([]);
     });
 
     it('maps decision rows with null optional fields', async () => {
@@ -690,7 +710,7 @@ describe('PostgresReconciliationReadModelStore', () => {
         ],
       });
       const store = new PostgresReconciliationReadModelStore(pool);
-      const decisions = await store.listReviewerDecisions('run-1');
+      const decisions = await store.listReviewerDecisions('org-1', 'run-1');
 
       expect(decisions[0]?.finalCategory).toBeUndefined();
       expect(decisions[0]?.notes).toBeUndefined();
@@ -772,14 +792,14 @@ describe('createPayeeAlias', () => {
 describe('updatePayeeAlias', () => {
   it('returns undefined immediately when no fields provided', async () => {
     const pool = makePool();
-    const result = await updatePayeeAlias(pool, 'alias-1', {});
+    const result = await updatePayeeAlias(pool, 'org-1', 'alias-1', {});
     expect(result).toBeUndefined();
     expect((pool.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
   });
 
   it('updates a single field (bankPattern)', async () => {
     const pool = makePool({ rows: [PAYEE_ROW] });
-    const result = await updatePayeeAlias(pool, 'alias-1', { bankPattern: 'GOOGLE*' });
+    const result = await updatePayeeAlias(pool, 'org-1', 'alias-1', { bankPattern: 'GOOGLE*' });
     expect(result?.id).toBe('alias-1');
     const sql = (pool.query as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
     expect(sql).toContain('bank_pattern = $1');
@@ -788,7 +808,7 @@ describe('updatePayeeAlias', () => {
 
   it('updates all writable fields', async () => {
     const pool = makePool({ rows: [PAYEE_ROW] });
-    const result = await updatePayeeAlias(pool, 'alias-1', {
+    const result = await updatePayeeAlias(pool, 'org-1', 'alias-1', {
       bankPattern: 'GOOGLE*',
       canonicalPayeeName: 'Google Inc',
       normalizedTokens: ['google', 'inc'],
@@ -806,7 +826,7 @@ describe('updatePayeeAlias', () => {
 
   it('returns undefined when no row matched the id', async () => {
     const pool = makePool({ rows: [] });
-    const result = await updatePayeeAlias(pool, 'missing-id', { bankPattern: 'X' });
+    const result = await updatePayeeAlias(pool, 'org-1', 'missing-id', { bankPattern: 'X' });
     expect(result).toBeUndefined();
   });
 });
@@ -814,45 +834,45 @@ describe('updatePayeeAlias', () => {
 describe('deactivatePayeeAlias', () => {
   it('returns true when a row was deactivated', async () => {
     const pool = makePool({ rows: [], rowCount: 1 });
-    expect(await deactivatePayeeAlias(pool, 'alias-1')).toBe(true);
+    expect(await deactivatePayeeAlias(pool, 'org-1', 'alias-1')).toBe(true);
   });
 
   it('returns false when no row matched', async () => {
     const pool = makePool({ rows: [], rowCount: 0 });
-    expect(await deactivatePayeeAlias(pool, 'missing')).toBe(false);
+    expect(await deactivatePayeeAlias(pool, 'org-1', 'missing')).toBe(false);
   });
 
   it('returns false when rowCount is null', async () => {
     const pool = makePool({ rows: [], rowCount: null });
-    expect(await deactivatePayeeAlias(pool, 'alias-1')).toBe(false);
+    expect(await deactivatePayeeAlias(pool, 'org-1', 'alias-1')).toBe(false);
   });
 });
 
 describe('loadPayeeAliases', () => {
   it('returns mapped aliases', async () => {
     const pool = makePool({ rows: [PAYEE_ROW] });
-    const aliases = await loadPayeeAliases(pool);
+    const aliases = await loadPayeeAliases(pool, 'org-1');
     expect(aliases).toHaveLength(1);
     expect(aliases[0]?.bankPattern).toBe('GOOGLE');
   });
 
   it('passes null when no accountIdentifier given', async () => {
     const pool = makePool({ rows: [] });
-    await loadPayeeAliases(pool);
+    await loadPayeeAliases(pool, 'org-1');
     const params = (pool.query as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as unknown[];
     expect(params[0]).toBeNull();
   });
 
   it('passes accountIdentifier when provided', async () => {
     const pool = makePool({ rows: [] });
-    await loadPayeeAliases(pool, 'ACCT-001');
+    await loadPayeeAliases(pool, 'org-1', 'ACCT-001');
     const params = (pool.query as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as unknown[];
     expect(params[0]).toBe('ACCT-001');
   });
 
   it('returns empty array when no active aliases', async () => {
     const pool = makePool({ rows: [] });
-    expect(await loadPayeeAliases(pool)).toEqual([]);
+    expect(await loadPayeeAliases(pool, 'org-1')).toEqual([]);
   });
 });
 
@@ -934,7 +954,7 @@ describe('listMappingProfileVersions', () => {
         { ...MAPPING_PROFILE_VERSION_ROW, id: 'version-2', version_number: 2 },
       ],
     });
-    const versions = await listMappingProfileVersions(pool, 'profile-1');
+    const versions = await listMappingProfileVersions(pool, 'org-1', 'profile-1');
     expect(versions).toHaveLength(2);
     expect(versions[0]?.versionNumber).toBe(1);
     expect(versions[1]?.versionNumber).toBe(2);
@@ -942,14 +962,14 @@ describe('listMappingProfileVersions', () => {
 
   it('returns an empty array for a profile with no versions yet', async () => {
     const pool = makePool({ rows: [] });
-    expect(await listMappingProfileVersions(pool, 'profile-1')).toEqual([]);
+    expect(await listMappingProfileVersions(pool, 'org-1', 'profile-1')).toEqual([]);
   });
 });
 
 describe('createMappingProfileVersion', () => {
   it('creates and maps a new version', async () => {
     const pool = makePool({ rows: [MAPPING_PROFILE_VERSION_ROW] });
-    const version = await createMappingProfileVersion(pool, {
+    const version = await createMappingProfileVersion(pool, 'org-1', {
       id: 'version-1',
       profileId: 'profile-1',
       versionNumber: 1,
@@ -964,7 +984,7 @@ describe('createMappingProfileVersion', () => {
   it('throws when INSERT returns no row', async () => {
     const pool = makePool({ rows: [] });
     await expect(
-      createMappingProfileVersion(pool, {
+      createMappingProfileVersion(pool, 'org-1', {
         id: 'version-1',
         profileId: 'profile-1',
         versionNumber: 1,

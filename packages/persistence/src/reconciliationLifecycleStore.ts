@@ -14,6 +14,7 @@ import type {
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 
+import { runInTenantScope } from './postgres';
 import {
   assertValidJobTransition,
   type ReconciliationJobState,
@@ -156,25 +157,6 @@ const hashJson = (value: unknown): string =>
 export const computeSha256Hex = (value: Uint8Array | Buffer | string): string =>
   createHash('sha256').update(value).digest('hex');
 
-const withTransaction = async <T>(
-  pool: Pool,
-  callback: (client: PoolClient) => Promise<T>,
-): Promise<T> => {
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-    const result = await callback(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-};
-
 const lockJob = async (client: PoolClient, jobId: string): Promise<void> => {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [jobId]);
 };
@@ -198,7 +180,13 @@ const getCurrentState = async (
 };
 
 /** ADR-0001: resolves the tenant a job belongs to from the job row itself, so descendant writes
- * denormalize organization_id without every caller re-threading it through method signatures. */
+ * denormalize organization_id without every caller re-threading it through method signatures.
+ * Doubles as the RLS tenant check once callers pass the caller-claimed organizationId to
+ * `runInTenantScope` before this runs: with RLS enabled, this SELECT is filtered to rows
+ * matching the GUC already set for the transaction, so a jobId that exists but belongs to a
+ * *different* organization than the caller claimed comes back empty here -- indistinguishable
+ * from a nonexistent job, which is exactly the fail-closed behavior a cross-tenant lookup should
+ * have. */
 const getJobOrganizationId = async (client: PoolClient, jobId: string): Promise<string> => {
   const result = await client.query<{ organization_id: string }>(
     'SELECT organization_id FROM reconciliation_job WHERE id = $1',
@@ -442,7 +430,7 @@ export class PostgresReconciliationLifecycleStore {
    * Persists a new reconciliation job and its registered source files.
    */
   async createJob(input: CreateReconciliationJobInput): Promise<void> {
-    await withTransaction(this.pool, async (client) => {
+    await runInTenantScope(this.pool, input.organizationId, async (client) => {
       await client.query(
         `INSERT INTO reconciliation_job
           (id, correlation_id, organization_id, account_identifier, period_label, reconciliation_frequency, current_state, input_fingerprint, rulepack_version, started_at)
@@ -519,16 +507,17 @@ export class PostgresReconciliationLifecycleStore {
    * Persists parsed raw spreadsheet rows and source-file import batch metadata.
    */
   async persistParsedRows(
+    organizationId: string,
     jobId: string,
     sourceFiles: SourceFile[],
     rawRows: RawTransactionRow[],
   ): Promise<void> {
     const rawRowBatchSize = this.options.rawRowBatchSize ?? DEFAULT_BATCH_SIZE;
 
-    await withTransaction(this.pool, async (client) => {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, jobId);
-      const organizationId = await getJobOrganizationId(client, jobId);
-      await transitionJobState(client, jobId, organizationId, 'IMPORTING', {
+      const verifiedOrganizationId = await getJobOrganizationId(client, jobId);
+      await transitionJobState(client, jobId, verifiedOrganizationId, 'IMPORTING', {
         rawRowCount: rawRows.length,
       });
       await upsertSourceFileDetails(client, sourceFiles);
@@ -551,7 +540,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               batchId,
               jobId,
-              organizationId,
+              verifiedOrganizationId,
               sourceFile.id,
               batchIndex + 1,
               batchRows[0]?.lineNumber ?? 0,
@@ -565,7 +554,7 @@ export class PostgresReconciliationLifecycleStore {
               [
                 row.id,
                 jobId,
-                organizationId,
+                verifiedOrganizationId,
                 row.sourceFileId,
                 batchId,
                 row.source,
@@ -628,7 +617,7 @@ export class PostgresReconciliationLifecycleStore {
         }
       }
 
-      await transitionJobState(client, jobId, organizationId, 'IMPORTED', {
+      await transitionJobState(client, jobId, verifiedOrganizationId, 'IMPORTED', {
         rawRowCount: rawRows.length,
       });
     });
@@ -638,15 +627,16 @@ export class PostgresReconciliationLifecycleStore {
    * Persists normalized canonical transactions derived from raw imported rows.
    */
   async persistNormalizedRows(
+    organizationId: string,
     jobId: string,
     normalizedTransactions: NormalizedTransaction[],
   ): Promise<void> {
     const canonicalRowBatchSize = this.options.canonicalRowBatchSize ?? DEFAULT_BATCH_SIZE;
 
-    await withTransaction(this.pool, async (client) => {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, jobId);
-      const organizationId = await getJobOrganizationId(client, jobId);
-      await transitionJobState(client, jobId, organizationId, 'NORMALIZING', {
+      const verifiedOrganizationId = await getJobOrganizationId(client, jobId);
+      await transitionJobState(client, jobId, verifiedOrganizationId, 'NORMALIZING', {
         normalizedRowCount: normalizedTransactions.length,
       });
 
@@ -656,7 +646,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               transaction.id,
               jobId,
-              organizationId,
+              verifiedOrganizationId,
               transaction.rawRowId,
               transaction.sourceFileId,
               transaction.source,
@@ -732,7 +722,7 @@ export class PostgresReconciliationLifecycleStore {
         await client.query(insert.text, insert.values);
       }
 
-      await transitionJobState(client, jobId, organizationId, 'NORMALIZED', {
+      await transitionJobState(client, jobId, verifiedOrganizationId, 'NORMALIZED', {
         normalizedRowCount: normalizedTransactions.length,
       });
     });
@@ -741,13 +731,16 @@ export class PostgresReconciliationLifecycleStore {
   /**
    * Persists grouped and pairwise match artifacts plus derived rule-evaluation records.
    */
-  async persistMatchingArtifacts(input: PersistMatchingArtifactsInput): Promise<void> {
+  async persistMatchingArtifacts(
+    organizationId: string,
+    input: PersistMatchingArtifactsInput,
+  ): Promise<void> {
     const resultBatchSize = this.options.resultBatchSize ?? DEFAULT_BATCH_SIZE;
 
-    await withTransaction(this.pool, async (client) => {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, input.jobId);
-      const organizationId = await getJobOrganizationId(client, input.jobId);
-      await transitionJobState(client, input.jobId, organizationId, 'MATCHING', {
+      const verifiedOrganizationId = await getJobOrganizationId(client, input.jobId);
+      await transitionJobState(client, input.jobId, verifiedOrganizationId, 'MATCHING', {
         pairwiseMatchCount: input.matchResults.length,
         probableMatchCount: input.probableMatches.length,
         groupedMatchCount: input.groupedMatchResults.length,
@@ -759,7 +752,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               result.id,
               input.jobId,
-              organizationId,
+              verifiedOrganizationId,
               result.disposition,
               result.confidence,
               result.category ?? null,
@@ -817,7 +810,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               result.id,
               input.jobId,
-              organizationId,
+              verifiedOrganizationId,
               bucket,
               result.bankTransactionId ?? null,
               result.glTransactionId ?? null,
@@ -872,7 +865,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               ruleResult.id,
               input.jobId,
-              organizationId,
+              verifiedOrganizationId,
               ruleResult.targetKind,
               ruleResult.targetId,
               ruleResult.ruleId,
@@ -908,7 +901,7 @@ export class PostgresReconciliationLifecycleStore {
         await client.query(insertRules.text, insertRules.values);
       }
 
-      await transitionJobState(client, input.jobId, organizationId, 'MATCHED', {
+      await transitionJobState(client, input.jobId, verifiedOrganizationId, 'MATCHED', {
         pairwiseMatchCount: input.matchResults.length,
         probableMatchCount: input.probableMatches.length,
         groupedMatchCount: input.groupedMatchResults.length,
@@ -919,13 +912,16 @@ export class PostgresReconciliationLifecycleStore {
   /**
    * Persists exception/review artifacts and upserts run summary metrics.
    */
-  async persistReviewArtifacts(input: PersistReviewArtifactsInput): Promise<void> {
+  async persistReviewArtifacts(
+    organizationId: string,
+    input: PersistReviewArtifactsInput,
+  ): Promise<void> {
     const resultBatchSize = this.options.resultBatchSize ?? DEFAULT_BATCH_SIZE;
 
-    await withTransaction(this.pool, async (client) => {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, input.jobId);
-      const organizationId = await getJobOrganizationId(client, input.jobId);
-      await transitionJobState(client, input.jobId, organizationId, 'EXCEPTIONS_IDENTIFIED', {
+      const verifiedOrganizationId = await getJobOrganizationId(client, input.jobId);
+      await transitionJobState(client, input.jobId, verifiedOrganizationId, 'EXCEPTIONS_IDENTIFIED', {
         exceptionCount: input.exceptions.length,
       });
 
@@ -935,7 +931,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               exception.id,
               input.jobId,
-              organizationId,
+              verifiedOrganizationId,
               exception.relatedTransactionIds[0] ?? null,
               exception.category,
               exception.severity,
@@ -991,7 +987,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               observation.id,
               input.jobId,
-              organizationId,
+              verifiedOrganizationId,
               observation.category,
               observation.title,
               observation.message,
@@ -1025,7 +1021,7 @@ export class PostgresReconciliationLifecycleStore {
             [
               ruleResult.id,
               input.jobId,
-              organizationId,
+              verifiedOrganizationId,
               ruleResult.targetKind,
               ruleResult.targetId,
               ruleResult.ruleId,
@@ -1118,7 +1114,7 @@ export class PostgresReconciliationLifecycleStore {
             updated_at = NOW()`,
         [
           input.jobId,
-          organizationId,
+          verifiedOrganizationId,
           input.summary.totalRecordsReviewed,
           input.summary.bankRecords,
           input.summary.glRecords,
@@ -1144,7 +1140,7 @@ export class PostgresReconciliationLifecycleStore {
         ],
       );
 
-      await transitionJobState(client, input.jobId, organizationId, 'REVIEW_READY', {
+      await transitionJobState(client, input.jobId, verifiedOrganizationId, 'REVIEW_READY', {
         exceptionCount: input.exceptions.length,
         observationCount: input.reviewerObservations.length,
       });
@@ -1154,10 +1150,13 @@ export class PostgresReconciliationLifecycleStore {
   /**
    * Persists export metadata, appends audit events, and finalizes the reconciliation job.
    */
-  async persistExportAndFinalize(input: PersistExportArtifactsInput): Promise<void> {
-    await withTransaction(this.pool, async (client) => {
+  async persistExportAndFinalize(
+    organizationId: string,
+    input: PersistExportArtifactsInput,
+  ): Promise<void> {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, input.jobId);
-      const organizationId = await getJobOrganizationId(client, input.jobId);
+      const verifiedOrganizationId = await getJobOrganizationId(client, input.jobId);
 
       await client.query(
         `INSERT INTO reconciliation_export
@@ -1173,7 +1172,7 @@ export class PostgresReconciliationLifecycleStore {
         [
           randomUUID(),
           input.jobId,
-          organizationId,
+          verifiedOrganizationId,
           input.outputWorkbook.fileName,
           computeSha256Hex(input.outputWorkbook.binary),
           input.outputWorkbook.binary.byteLength,
@@ -1186,7 +1185,7 @@ export class PostgresReconciliationLifecycleStore {
         await insertAuditEvent(
           client,
           input.jobId,
-          organizationId,
+          verifiedOrganizationId,
           auditEvent.action,
           auditEvent.details,
         );
@@ -1196,7 +1195,7 @@ export class PostgresReconciliationLifecycleStore {
         'UPDATE reconciliation_job SET completed_at = $2, updated_at = NOW() WHERE id = $1',
         [input.jobId, input.completedAt],
       );
-      await transitionJobState(client, input.jobId, organizationId, 'FINALIZED', {
+      await transitionJobState(client, input.jobId, verifiedOrganizationId, 'FINALIZED', {
         exportFileName: input.outputWorkbook.fileName,
         exportByteSize: input.outputWorkbook.binary.byteLength,
       });
@@ -1206,10 +1205,10 @@ export class PostgresReconciliationLifecycleStore {
   /**
    * Persists or updates a reviewer decision for a run target and records an audit event.
    */
-  async persistReviewerDecision(decision: ReviewerDecision): Promise<void> {
-    await withTransaction(this.pool, async (client) => {
+  async persistReviewerDecision(organizationId: string, decision: ReviewerDecision): Promise<void> {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, decision.runId);
-      const organizationId = await getJobOrganizationId(client, decision.runId);
+      const verifiedOrganizationId = await getJobOrganizationId(client, decision.runId);
       await client.query(
         `INSERT INTO reconciliation_review_decision
           (id, job_id, organization_id, target_type, target_id, outcome, final_category, notes, reviewer_id, reviewer_name, created_at, updated_at)
@@ -1225,7 +1224,7 @@ export class PostgresReconciliationLifecycleStore {
         [
           decision.id,
           decision.runId,
-          organizationId,
+          verifiedOrganizationId,
           decision.targetType,
           decision.targetId,
           decision.outcome,
@@ -1238,7 +1237,7 @@ export class PostgresReconciliationLifecycleStore {
         ],
       );
 
-      await insertAuditEvent(client, decision.runId, organizationId, 'review.decision.persisted', {
+      await insertAuditEvent(client, decision.runId, verifiedOrganizationId, 'review.decision.persisted', {
         targetType: decision.targetType,
         targetId: decision.targetId,
         outcome: decision.outcome,
@@ -1251,20 +1250,21 @@ export class PostgresReconciliationLifecycleStore {
    * Idempotent: a no-op when no matching decision exists.
    */
   async deleteReviewerDecision(
+    organizationId: string,
     runId: string,
     targetType: ReviewerDecision['targetType'],
     targetId: string,
   ): Promise<void> {
-    await withTransaction(this.pool, async (client) => {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, runId);
-      const organizationId = await getJobOrganizationId(client, runId);
+      const verifiedOrganizationId = await getJobOrganizationId(client, runId);
       await client.query(
         `DELETE FROM reconciliation_review_decision
          WHERE job_id = $1 AND target_type = $2 AND target_id = $3`,
         [runId, targetType, targetId],
       );
 
-      await insertAuditEvent(client, runId, organizationId, 'review.decision.cleared', {
+      await insertAuditEvent(client, runId, verifiedOrganizationId, 'review.decision.cleared', {
         targetType,
         targetId,
       });
@@ -1274,12 +1274,12 @@ export class PostgresReconciliationLifecycleStore {
   /**
    * Marks a reconciliation job as failed (or retry-pending) with failure diagnostics.
    */
-  async markFailed(input: MarkJobFailedInput): Promise<void> {
+  async markFailed(organizationId: string, input: MarkJobFailedInput): Promise<void> {
     const nextState = input.nextState ?? 'FAILED';
 
-    await withTransaction(this.pool, async (client) => {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
       await lockJob(client, input.jobId);
-      const organizationId = await getJobOrganizationId(client, input.jobId);
+      const verifiedOrganizationId = await getJobOrganizationId(client, input.jobId);
       const currentState = await getCurrentState(client, input.jobId);
       assertValidJobTransition(currentState, nextState);
 
@@ -1298,7 +1298,7 @@ export class PostgresReconciliationLifecycleStore {
       await insertAuditEvent(
         client,
         input.jobId,
-        organizationId,
+        verifiedOrganizationId,
         'job.failed',
         { errorCode: input.errorCode ?? null, errorMessage: input.errorMessage },
         currentState,

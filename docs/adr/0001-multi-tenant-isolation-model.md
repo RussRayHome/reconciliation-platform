@@ -207,9 +207,22 @@ Ordered. Steps 1–3 are the prerequisite data model; no policy can be written b
        deferred as a deployment/credential change rather than a schema migration: the API's own
        `DATABASE_URL` still connects as `recon_app`, not `recon_app_runtime` -- switching it needs
        a rotated password in `.env.docker.*`, not a Liquibase changeset.
-5. [ ] **Enable RLS and write policies** on every tenant-scoped table.
-6. [ ] **Set the tenant at pool checkout** in `packages/persistence/src/postgres.ts` — not per
-       query. A missed `SET LOCAL` on a pooled connection serves the previous request's tenant.
+5. [x] **Enable RLS and write policies.** Landed 2026-08-03 (changeset `0030`): `ENABLE ROW LEVEL
+       SECURITY` plus one `FOR ALL` tenant-isolation policy (`organization_id =
+       current_setting('app.current_organization_id', true)::uuid`) on all 23 tenant-scoped
+       tables. Excluded, matching this ADR's own scope: `reconciliation_organization` (the tenant
+       root itself -- no `organization_id` column to compare) and the two global catalogs,
+       `reconciliation_template_definition` / `reconciliation_validation_rule_version`.
+6. [x] **Set the tenant at pool checkout.** Landed 2026-08-03: `runInTenantScope` in
+       `packages/persistence/src/postgres.ts` checks out a client, runs `SELECT
+       set_config('app.current_organization_id', $1, true)` (SET LOCAL, scoped to that
+       transaction only) as the first statement, then the caller's queries, then commits. Every
+       method on both store classes and every payee-alias/mapping-profile/import-approval
+       function now takes `organizationId` and routes through it -- `pool.query` is no longer
+       called directly anywhere a tenant-scoped table is touched. `getJobOrganizationId` in
+       `reconciliationLifecycleStore.ts` doubles as the tenant-ownership check: once the GUC is
+       set from the caller-claimed org, that lookup returns nothing (and the caller gets a clean
+       "not found") if the row actually belongs to a different tenant.
 7. [ ] **Make a policy-less table fail the build.** Extend `tests/testHelpers/schemaBaseline.ts` to
        assert RLS is enabled on every tenant-scoped table, so the schema-drift test catches a new
        table that forgot its policy.

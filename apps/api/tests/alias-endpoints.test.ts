@@ -99,7 +99,25 @@ const createFakeAliasPool = (seed: AliasRow[] = []) => {
     throw new Error(`Unexpected alias query: ${text}`);
   };
 
-  return { query } as unknown as Pool;
+  // Every alias route now goes through runInTenantScope (packages/persistence/src/postgres.ts),
+  // which checks out a client and runs BEGIN / SET LOCAL app.current_organization_id / ... /
+  // COMMIT rather than calling pool.query directly -- so the fake has to answer pool.connect(),
+  // not just pool.query. Transaction control and the set_config GUC call are no-ops here since
+  // this fake has no real transactional state to protect.
+  const clientQuery = (text: string, params: unknown[] = []) => {
+    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+    if (text.includes('set_config(')) {
+      return Promise.resolve({ rows: [{ set_config: params[1] }], rowCount: 1 });
+    }
+    return query(text, params);
+  };
+
+  return {
+    query,
+    connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
+  } as unknown as Pool;
 };
 
 const appWithPool = (pool: Pool) =>

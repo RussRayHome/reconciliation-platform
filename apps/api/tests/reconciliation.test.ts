@@ -190,8 +190,27 @@ const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
     },
   };
 
+  // The read-model store now goes through runInTenantScope (packages/persistence/src/postgres.ts),
+  // which checks out a client and issues BEGIN / SET LOCAL app.current_organization_id / ... /
+  // COMMIT rather than calling pool.query directly -- so this fake needs pool.connect() too.
+  // Transaction control and the set_config GUC call are answered without touching `pool.query`,
+  // so they don't count against the query budget this test is asserting on.
+  const clientQuery = (text: string, params?: unknown[]) => {
+    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+      return Promise.resolve({ rows: [] });
+    }
+    if (text.includes('set_config(')) {
+      return Promise.resolve({ rows: [{ set_config: params?.[1] }] });
+    }
+    return pool.query(text, params);
+  };
+  const poolWithConnect = {
+    ...pool,
+    connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
+  };
+
   return {
-    pool,
+    pool: poolWithConnect,
     getQueryCount: (): number => queryCount,
     resetQueryCount: (): void => {
       queryCount = 0;

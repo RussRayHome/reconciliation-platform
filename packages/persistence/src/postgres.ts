@@ -1,4 +1,4 @@
-import { Pool, type PoolConfig } from 'pg';
+import { Pool, type PoolClient, type PoolConfig } from 'pg';
 
 /** Connection pool settings loaded from environment variables. */
 export type PostgresPersistenceConfig = {
@@ -46,4 +46,39 @@ export const createPostgresPool = (config: PostgresPersistenceConfig): Pool => {
   };
 
   return new Pool(poolConfig);
+};
+
+/**
+ * ADR-0001 step 6: checks out a client, sets `app.current_organization_id` for this transaction
+ * only (`set_config(..., true)` == SET LOCAL), runs `callback`, then commits/rolls back and
+ * releases. This is the only place that GUC should be set -- `pg.Pool` reuses connections, so
+ * setting it anywhere else (or per-query on a pooled connection outside a transaction) risks a
+ * later request inheriting the previous request's tenant. Every read or write that touches an
+ * RLS-protected table must go through this rather than `pool.query` directly.
+ *
+ * Uses `set_config` (a regular function call) rather than `SET LOCAL app.current_organization_id
+ * = $1` because `SET` does not accept bind parameters -- this is also what keeps the tenant id
+ * out of the SQL text.
+ */
+export const runInTenantScope = async <T>(
+  pool: Pool,
+  organizationId: string,
+  callback: (client: PoolClient) => Promise<T>,
+): Promise<T> => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organization_id', $1, true)", [
+      organizationId,
+    ]);
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };

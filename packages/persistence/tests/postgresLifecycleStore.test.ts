@@ -198,12 +198,12 @@ const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore)
     buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
     buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
   ];
-  await store.persistParsedRows(jobId, sourceFiles, rawRows);
+  await store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, rawRows);
 
   const canonicalRows = rawRows.map((row) =>
     buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
   );
-  await store.persistNormalizedRows(jobId, canonicalRows);
+  await store.persistNormalizedRows(defaultOrganizationId, jobId, canonicalRows);
 
   const probableMatch: MatchResult = {
     id: randomUUID(),
@@ -220,14 +220,14 @@ const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore)
     evidence: ['Reference mismatch'],
     exceptionCategory: 'ReferenceNumberMismatch',
   };
-  await store.persistMatchingArtifacts({
+  await store.persistMatchingArtifacts(defaultOrganizationId, {
     jobId,
     matchResults: [],
     probableMatches: [probableMatch],
     groupedMatchResults: [],
   });
 
-  await store.persistReviewArtifacts({
+  await store.persistReviewArtifacts(defaultOrganizationId, {
     jobId,
     exceptions: [],
     reviewerObservations: [],
@@ -441,7 +441,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       ],
     });
 
-    await store.markFailed({
+    await store.markFailed(defaultOrganizationId, {
       jobId,
       failedAt: new Date().toISOString(),
       errorCode: 'PARSE_ERROR',
@@ -526,12 +526,12 @@ describe('PostgresReconciliationLifecycleStore', () => {
       buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
       buildRawRow(randomUUID(), glSourceFileId, 'gl', 3),
     ];
-    await store.persistParsedRows(jobId, sourceFiles, rawRows);
+    await store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, rawRows);
 
     const canonicalRows = rawRows.map((row) =>
       buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
     );
-    await store.persistNormalizedRows(jobId, canonicalRows);
+    await store.persistNormalizedRows(defaultOrganizationId, jobId, canonicalRows);
 
     const exactMatch: MatchResult = {
       id: randomUUID(),
@@ -596,7 +596,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       evidence: ['Grouped evidence'],
     };
 
-    await store.persistMatchingArtifacts({
+    await store.persistMatchingArtifacts(defaultOrganizationId, {
       jobId,
       matchResults: [exactMatch],
       probableMatches: [probableMatch],
@@ -635,7 +635,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       relatedTransactionIds: [canonicalRows[1]?.id ?? ''],
     };
 
-    await store.persistReviewArtifacts({
+    await store.persistReviewArtifacts(defaultOrganizationId, {
       jobId,
       exceptions: [exception],
       reviewerObservations: [observation],
@@ -649,7 +649,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       tabNames: ['Summary', 'Exceptions'],
       binary: Uint8Array.from(workbookBinary),
     };
-    await store.persistExportAndFinalize({
+    await store.persistExportAndFinalize(defaultOrganizationId, {
       jobId,
       outputWorkbook,
       completedAt: new Date().toISOString(),
@@ -672,7 +672,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await store.persistReviewerDecision(decision);
+    await store.persistReviewerDecision(defaultOrganizationId, decision);
 
     const stateResult = await pool.query<{ current_state: string }>(
       'SELECT current_state FROM reconciliation_job WHERE id = $1',
@@ -735,9 +735,9 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(counts[9].rows[0]?.checksum_sha256).toBe(computeSha256Hex(workbookBinary));
 
     const readModelStore = new PostgresReconciliationReadModelStore(pool);
-    const latestRun = await readModelStore.findLatestRunReport();
-    const runReport = await readModelStore.findRunReportById(jobId);
-    const exceptionPage = await readModelStore.listRunExceptionsPage(jobId, 1, 0);
+    const latestRun = await readModelStore.findLatestRunReport(defaultOrganizationId);
+    const runReport = await readModelStore.findRunReportById(defaultOrganizationId, jobId);
+    const exceptionPage = await readModelStore.listRunExceptionsPage(defaultOrganizationId, jobId, 1, 0);
 
     expect(latestRun?.id).toBe(jobId);
     expect(runReport?.summary.totalRecordsReviewed).toBe(4);
@@ -750,15 +750,15 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(exceptionPage.hasMore).toBe(false);
 
     // Clearing the decision removes it and is idempotent.
-    await store.deleteReviewerDecision(jobId, decision.targetType, decision.targetId);
-    await store.deleteReviewerDecision(jobId, decision.targetType, decision.targetId);
+    await store.deleteReviewerDecision(defaultOrganizationId, jobId, decision.targetType, decision.targetId);
+    await store.deleteReviewerDecision(defaultOrganizationId, jobId, decision.targetType, decision.targetId);
 
     const afterDelete = await pool.query<{ count: number }>(
       'SELECT COUNT(*)::int AS count FROM reconciliation_review_decision WHERE job_id = $1',
       [jobId],
     );
     expect(afterDelete.rows[0]?.count).toBe(0);
-    expect((await readModelStore.findRunReportById(jobId))?.reviewerDecisions).toHaveLength(0);
+    expect((await readModelStore.findRunReportById(defaultOrganizationId, jobId))?.reviewerDecisions).toHaveLength(0);
   });
 
   it('rolls back raw-row persistence and leaves the job pre-import when duplicate line numbers violate uniqueness', async () => {
@@ -797,7 +797,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
     ];
 
-    await expect(store.persistParsedRows(jobId, sourceFiles, duplicateRows)).rejects.toThrow();
+    await expect(store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, duplicateRows)).rejects.toThrow();
 
     const stateResult = await pool.query<{ current_state: string }>(
       'SELECT current_state FROM reconciliation_job WHERE id = $1',
@@ -837,8 +837,8 @@ describe('PostgresReconciliationLifecycleStore', () => {
     ];
 
     const outcomes = await Promise.allSettled([
-      store.persistParsedRows(jobId, sourceFiles, firstAttemptRows),
-      store.persistParsedRows(jobId, sourceFiles, secondAttemptRows),
+      store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, firstAttemptRows),
+      store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, secondAttemptRows),
     ]);
 
     const fulfilledCount = outcomes.filter((outcome) => outcome.status === 'fulfilled').length;
@@ -886,7 +886,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     const createdAt = new Date().toISOString();
     const updatedAt = new Date(Date.now() + 1000).toISOString();
 
-    await store.persistReviewerDecision({
+    await store.persistReviewerDecision(defaultOrganizationId, {
       id: randomUUID(),
       runId: jobId,
       targetType: 'ProbableMatch',
@@ -898,7 +898,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       updatedAt: createdAt,
     });
 
-    await store.persistReviewerDecision({
+    await store.persistReviewerDecision(defaultOrganizationId, {
       id: randomUUID(),
       runId: jobId,
       targetType: 'ProbableMatch',
@@ -946,7 +946,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(auditRows.rows[0]?.count).toBe(2);
 
     const readModelStore = new PostgresReconciliationReadModelStore(pool);
-    const reviewerDecisions = await readModelStore.listReviewerDecisions(jobId);
+    const reviewerDecisions = await readModelStore.listReviewerDecisions(defaultOrganizationId, jobId);
 
     expect(reviewerDecisions).toHaveLength(1);
     expect(reviewerDecisions[0]?.targetId).toBe(probableMatchId);
@@ -965,7 +965,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       inputFingerprint: 'fingerprint-retry',
     });
 
-    await store.markFailed({
+    await store.markFailed(defaultOrganizationId, {
       jobId,
       failedAt: '2026-04-07T15:00:00.000Z',
       errorCode: 'PARSE_FAILURE',
@@ -1029,7 +1029,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     );
 
     await expect(
-      store.markFailed({
+      store.markFailed(defaultOrganizationId, {
         jobId,
         failedAt: '2026-04-07T16:00:00.000Z',
         errorCode: 'LATE_FAILURE',
@@ -1085,15 +1085,15 @@ describe('PostgresReconciliationLifecycleStore', () => {
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
-    await store.persistParsedRows(jobId, sourceFiles, rawRows);
+    await store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, rawRows);
 
     const canonicalRows = rawRows.map((row) =>
       buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
     );
-    await store.persistNormalizedRows(jobId, canonicalRows);
+    await store.persistNormalizedRows(defaultOrganizationId, jobId, canonicalRows);
 
     await expect(
-      store.persistMatchingArtifacts({
+      store.persistMatchingArtifacts(defaultOrganizationId, {
         jobId,
         matchResults: [
           {
@@ -1153,12 +1153,12 @@ describe('PostgresReconciliationLifecycleStore', () => {
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
-    await store.persistParsedRows(jobId, sourceFiles, rawRows);
+    await store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, rawRows);
 
     const canonicalRows = rawRows.map((row) =>
       buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
     );
-    await store.persistNormalizedRows(jobId, canonicalRows);
+    await store.persistNormalizedRows(defaultOrganizationId, jobId, canonicalRows);
 
     const probableMatch: MatchResult = {
       id: randomUUID(),
@@ -1176,7 +1176,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       exceptionCategory: 'ReferenceNumberMismatch',
     };
 
-    await store.persistMatchingArtifacts({
+    await store.persistMatchingArtifacts(defaultOrganizationId, {
       jobId,
       matchResults: [probableMatch],
       probableMatches: [probableMatch],
@@ -1222,14 +1222,14 @@ describe('PostgresReconciliationLifecycleStore', () => {
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
-    await store.persistParsedRows(jobId, sourceFiles, rawRows);
+    await store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, rawRows);
 
     const canonicalRows = rawRows.map((row) =>
       buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
     );
-    await store.persistNormalizedRows(jobId, canonicalRows);
+    await store.persistNormalizedRows(defaultOrganizationId, jobId, canonicalRows);
 
-    await store.persistMatchingArtifacts({
+    await store.persistMatchingArtifacts(defaultOrganizationId, {
       jobId,
       matchResults: [],
       probableMatches: [],
@@ -1237,7 +1237,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     });
 
     await expect(
-      store.persistReviewArtifacts({
+      store.persistReviewArtifacts(defaultOrganizationId, {
         jobId,
         exceptions: [
           {
@@ -1315,14 +1315,14 @@ describe('PostgresReconciliationLifecycleStore', () => {
       buildRawRow(randomUUID(), bankSourceFileId, 'bank', 2),
       buildRawRow(randomUUID(), glSourceFileId, 'gl', 2),
     ];
-    await store.persistParsedRows(jobId, sourceFiles, rawRows);
+    await store.persistParsedRows(defaultOrganizationId, jobId, sourceFiles, rawRows);
 
     const canonicalRows = rawRows.map((row) =>
       buildCanonicalRow(randomUUID(), row.id, row.sourceFileId, row.source, row.lineNumber),
     );
-    await store.persistNormalizedRows(jobId, canonicalRows);
+    await store.persistNormalizedRows(defaultOrganizationId, jobId, canonicalRows);
 
-    await store.persistMatchingArtifacts({
+    await store.persistMatchingArtifacts(defaultOrganizationId, {
       jobId,
       matchResults: [],
       probableMatches: [],
@@ -1351,7 +1351,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
       relatedTransactionIds: [canonicalRows[0]?.id ?? ''],
     }));
 
-    await store.persistReviewArtifacts({
+    await store.persistReviewArtifacts(defaultOrganizationId, {
       jobId,
       exceptions,
       reviewerObservations: [],
@@ -1361,7 +1361,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     const readModelStore = new PostgresReconciliationReadModelStore(pool);
 
     const pageLookup = await countQueriesDuring(pool as unknown as QueryCounterClient, () =>
-      readModelStore.listRunExceptionsPage(jobId, 20, 0),
+      readModelStore.listRunExceptionsPage(defaultOrganizationId, jobId, 20, 0),
     );
 
     expect(pageLookup.result.items).toHaveLength(exceptions.length);
@@ -1369,7 +1369,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(pageLookup.queryCount).toBeLessThanOrEqual(2);
 
     const reportLookup = await countQueriesDuring(pool as unknown as QueryCounterClient, () =>
-      readModelStore.findRunReportById(jobId),
+      readModelStore.findRunReportById(defaultOrganizationId, jobId),
     );
 
     expect(reportLookup.result?.exceptions).toHaveLength(exceptions.length);

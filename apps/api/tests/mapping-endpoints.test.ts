@@ -59,7 +59,24 @@ const createFakeMappingPool = (): Pool => {
     throw new Error(`createFakeMappingPool: unexpected query: ${text}`);
   };
 
-  return { query } as unknown as Pool;
+  // The save route's persistence calls now go through runInTenantScope
+  // (packages/persistence/src/postgres.ts), which checks out a client and runs
+  // BEGIN / SET LOCAL app.current_organization_id / ... / COMMIT rather than calling
+  // pool.query directly -- so the fake has to answer pool.connect() too.
+  const clientQuery = (text: string, params: unknown[] = []) => {
+    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+    if (text.includes('set_config(')) {
+      return Promise.resolve({ rows: [{ set_config: params[1] }], rowCount: 1 });
+    }
+    return query(text, params as unknown[] | undefined);
+  };
+
+  return {
+    query,
+    connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
+  } as unknown as Pool;
 };
 
 describe('GET /api/mapping/canonical-fields', () => {
