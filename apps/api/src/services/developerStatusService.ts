@@ -64,6 +64,20 @@ const coverageDockerIncompatibleTestExcludes = [
   'packages/persistence/tests/liquibase-migrations.test.ts',
   'packages/persistence/tests/postgresLifecycleStore.test.ts',
 ];
+// Dropping the tests above without also dropping the sources they exercise leaves those files in
+// the coverage denominator with nothing driving them, so the dashboard reports a near-zero number
+// for code that is in fact well covered — just not from this runtime. Only list sources whose
+// *sole* coverage comes from the excluded suites: postgres.ts and readModelStore.ts keep their own
+// src-level unit tests and must stay measured.
+//
+// Passed via env rather than `--coverage.exclude`: that CLI flag REPLACES coverage.exclude from
+// vitest.config.ts instead of merging with it, which would silently pull dist/, scripts/,
+// server.ts, and types.ts back into the denominator. vitest.config.ts reads this variable and
+// appends, keeping the base exclude list defined in exactly one place.
+const coverageDockerIncompatibleSourceExcludes = [
+  'packages/persistence/src/reconciliationLifecycleStore.ts',
+];
+const coverageExtraExcludesEnvVar = 'COVERAGE_EXTRA_EXCLUDES';
 const runtimePlaywrightBrowserMissingRegex =
   /browserType\.launch:\s*Executable doesn't exist at|Looks like Playwright was just installed or updated/i;
 const runtimeSkippableChecks = new Set([
@@ -1239,7 +1253,10 @@ export const createDeveloperStatusService = ({
       coverage: DeveloperCheck;
       security: DeveloperCheck;
     }> => {
-      const runCoverageCheck = (args: string[]): Promise<DeveloperCheck> =>
+      const runCoverageCheck = (
+        args: string[],
+        extraEnv?: Record<string, string>,
+      ): Promise<DeveloperCheck> =>
         runDeveloperCheck(
           heavyDeveloperCheckNames.coverage,
           args,
@@ -1251,21 +1268,32 @@ export const createDeveloperStatusService = ({
             coverageBenchmarks: buildCoverageBenchmarks(output, readCoverageSummaryMetrics),
             coverageFiles: readCoverageFiles(),
           }),
+          extraEnv,
         );
 
       let coverage = await runCoverageCheck(['run', 'coverage']);
 
       if (!coverage.ok && dockerSiblingMountPathDeniedRegex.test(coverage.details)) {
-        coverage = await runCoverageCheck([
-          'run',
-          'coverage',
-          '--',
-          ...coverageDockerIncompatibleTestExcludes.flatMap((path) => ['--exclude', path]),
-        ]);
+        coverage = await runCoverageCheck(
+          [
+            'run',
+            'coverage',
+            '--',
+            ...coverageDockerIncompatibleTestExcludes.flatMap((path) => ['--exclude', path]),
+          ],
+          { [coverageExtraExcludesEnvVar]: coverageDockerIncompatibleSourceExcludes.join(',') },
+        );
         coverage.highlights = appendUniqueHighlight(
           coverage.highlights,
           'Excluded Liquibase/Testcontainers persistence tests: they spawn sibling Docker ' +
             'containers that need a real host Docker CLI, unavailable from this runtime.',
+        );
+        coverage.highlights = appendUniqueHighlight(
+          coverage.highlights,
+          'Also dropped the sources those suites solely cover ' +
+            `(${coverageDockerIncompatibleSourceExcludes.join(', ')}) from the coverage ` +
+            'denominator — measuring them here understates them. Run `npm run coverage` from a ' +
+            'Docker-enabled host for a complete figure.',
         );
       }
 
@@ -1388,7 +1416,11 @@ export const createDeveloperStatusService = ({
       failedChecks: 0,
       lastCiRun: { status: 'healthy', durationMs: 0, at: new Date().toISOString() },
       commitsThisWeek: null,
-      branchFreshness: { remoteRef: 'origin/stage vs origin/dev', aheadCount: null, behindCount: null },
+      branchFreshness: {
+        remoteRef: 'origin/stage vs origin/dev',
+        aheadCount: null,
+        behindCount: null,
+      },
       openPrCount: null,
     },
   });

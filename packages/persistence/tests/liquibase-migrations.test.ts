@@ -1,17 +1,25 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createPostgresPool } from '../src/postgres';
 import {
   createImportApproval,
   createMappingProfileVersion,
   loadApprovalHistory,
   recordApprovalDecision,
 } from '../src/readModelStore';
-import { countChangesetFiles, replayPreLiquibaseBaseline, runLiquibase } from './testHelpers/liquibase';
+import {
+  countChangesetFiles,
+  replayPreLiquibaseBaseline,
+  runLiquibase,
+} from './testHelpers/liquibase';
+import {
+  createDatabaseFromTemplate,
+  createEmptyDatabase,
+  execInPostgresContainer,
+  postgresHarness,
+} from './testHelpers/database';
+import type { TestDatabase } from './testHelpers/database';
 
 import type { Pool } from 'pg';
-import { GenericContainer } from 'testcontainers';
-import type { StartedTestContainer } from 'testcontainers';
 
 /**
  * Verifies the Liquibase changelog under packages/persistence/liquibase/ (the replacement for
@@ -32,49 +40,20 @@ import type { StartedTestContainer } from 'testcontainers';
  * `update`) is the signal to re-verify the cutover procedure manually before a real deployment.
  */
 describe('Liquibase migrations', () => {
-  let container: StartedTestContainer | undefined;
+  let freshDatabase: TestDatabase | undefined;
+  let syncedDatabase: TestDatabase | undefined;
   let freshPool: Pool;
   let startupError: Error | null = null;
 
-  const credentials = { db: 'postgres', user: 'recon', password: 'recon' };
   const changesetFileCount = countChangesetFiles();
 
+  // These two start empty on purpose: this suite is what proves `liquibase update` works from
+  // nothing, so it cannot use the pre-migrated template the other suites clone.
   beforeAll(async () => {
     try {
-      container = await new GenericContainer('postgres:16.13')
-        .withEnvironment({
-          POSTGRES_DB: credentials.db,
-          POSTGRES_USER: credentials.user,
-          POSTGRES_PASSWORD: credentials.password,
-        })
-        .withCommand(['postgres', '-c', 'shared_preload_libraries=pg_stat_statements'])
-        .withUser('root')
-        .withExposedPorts(5432)
-        .start();
-
-      const pgtapInstall = await container.exec([
-        'bash',
-        '-lc',
-        [
-          'set -euo pipefail',
-          'apt-get update',
-          'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-16-pgtap',
-        ].join('; '),
-      ]);
-      if (pgtapInstall.exitCode !== 0) {
-        throw new Error(`Failed to install pgTap: ${pgtapInstall.output}`);
-      }
-
-      const adminPool = createPostgresPool({
-        connectionString: `postgresql://${credentials.user}:${credentials.password}@${container.getHost()}:${container.getMappedPort(5432)}/${credentials.db}`,
-      });
-      await adminPool.query('CREATE DATABASE recon_fresh');
-      await adminPool.query('CREATE DATABASE recon_synced');
-      await adminPool.end();
-
-      freshPool = createPostgresPool({
-        connectionString: `postgresql://${credentials.user}:${credentials.password}@${container.getHost()}:${container.getMappedPort(5432)}/recon_fresh`,
-      });
+      freshDatabase = await createEmptyDatabase('recon_fresh');
+      syncedDatabase = await createEmptyDatabase('recon_synced');
+      freshPool = freshDatabase.pool;
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       console.warn(`Liquibase migration test setup failed: ${startupError.message}`);
@@ -83,56 +62,52 @@ describe('Liquibase migrations', () => {
   }, 180000);
 
   afterAll(async () => {
-    if (freshPool) {
-      await freshPool.end();
+    if (freshDatabase) {
+      await freshDatabase.drop();
     }
-    if (container) {
-      await container.stop();
+    if (syncedDatabase) {
+      await syncedDatabase.drop();
     }
   });
 
-  it(
-    'applies every changeset to an empty database via a fresh `liquibase update`',
-    async () => {
-      if (startupError || !container) {
-        throw startupError ?? new Error('container not initialized');
-      }
+  it('applies every changeset to an empty database via a fresh `liquibase update`', async () => {
+    if (startupError || !freshDatabase) {
+      throw startupError ?? new Error('fresh database not initialized');
+    }
 
-      runLiquibase(container.getId(), 'recon_fresh', 'update');
+    runLiquibase(postgresHarness().containerId, freshDatabase.name, 'update');
 
-      const changelogCount = await freshPool.query<{ count: string }>(
-        'SELECT COUNT(*)::text AS count FROM databasechangelog',
-      );
-      expect(Number(changelogCount.rows[0]?.count ?? '0')).toBe(changesetFileCount);
+    const changelogCount = await freshPool.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM databasechangelog',
+    );
+    expect(Number(changelogCount.rows[0]?.count ?? '0')).toBe(changesetFileCount);
 
-      const tables = await freshPool.query<{ table_name: string }>(
-        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
-      );
-      const tableNames = new Set(tables.rows.map((row) => row.table_name));
+    const tables = await freshPool.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
+    );
+    const tableNames = new Set(tables.rows.map((row) => row.table_name));
 
-      // Ported legacy tables plus the new approval-pipeline tables from changesets 0011-0018.
-      for (const expected of [
-        'reconciliation_job',
-        'reconciliation_source_file',
-        'reconciliation_user',
-        'reconciliation_organization',
-        'reconciliation_mapping_profile',
-        'reconciliation_mapping_profile_version',
-        'reconciliation_template_definition',
-        'reconciliation_staged_transaction',
-        'reconciliation_validation_rule_version',
-        'reconciliation_validation_result',
-        'reconciliation_import_approval',
-        'reconciliation_approval_history',
-      ]) {
-        expect(tableNames.has(expected)).toBe(true);
-      }
+    // Ported legacy tables plus the new approval-pipeline tables from changesets 0011-0018.
+    for (const expected of [
+      'reconciliation_job',
+      'reconciliation_source_file',
+      'reconciliation_user',
+      'reconciliation_organization',
+      'reconciliation_mapping_profile',
+      'reconciliation_mapping_profile_version',
+      'reconciliation_template_definition',
+      'reconciliation_staged_transaction',
+      'reconciliation_validation_rule_version',
+      'reconciliation_validation_result',
+      'reconciliation_import_approval',
+      'reconciliation_approval_history',
+    ]) {
+      expect(tableNames.has(expected)).toBe(true);
+    }
 
-      // The old hand-rolled tracking table must not survive (dropped by changeset 0010).
-      expect(tableNames.has('schema_migrations')).toBe(false);
-    },
-    120000,
-  );
+    // The old hand-rolled tracking table must not survive (dropped by changeset 0010).
+    expect(tableNames.has('schema_migrations')).toBe(false);
+  }, 120000);
 
   it('runs pgTap assertions against the Liquibase-migrated database', async () => {
     if (startupError) {
@@ -147,7 +122,9 @@ describe('Liquibase migrations', () => {
     );
     expect(assertion.rows[0]?.assertion.startsWith('ok')).toBe(true);
 
-    const finishResult = await freshPool.query<{ result: string }>('SELECT * FROM finish() AS result');
+    const finishResult = await freshPool.query<{ result: string }>(
+      'SELECT * FROM finish() AS result',
+    );
     expect(finishResult.rows.some((row) => row.result.startsWith('not ok'))).toBe(false);
   });
 
@@ -165,82 +142,65 @@ describe('Liquibase migrations', () => {
     expect(Number(stats.rows[0]?.calls ?? '0')).toBeGreaterThan(0);
   });
 
-  it(
-    'changelog-sync-to-tag converges an already-migrated environment to the same schema as a fresh update',
-    async () => {
-      if (startupError || !container) {
-        throw startupError ?? new Error('container not initialized');
-      }
+  it('changelog-sync-to-tag converges an already-migrated environment to the same schema as a fresh update', async () => {
+    if (startupError || !freshDatabase || !syncedDatabase) {
+      throw startupError ?? new Error('databases not initialized');
+    }
 
-      const syncedPool = createPostgresPool({
-        connectionString: `postgresql://${credentials.user}:${credentials.password}@${container.getHost()}:${container.getMappedPort(5432)}/recon_synced`,
-      });
+    const harness = postgresHarness();
+    const syncedPool = syncedDatabase.pool;
 
-      try {
-        // Simulate an environment already migrated by the pre-Liquibase mechanism.
-        await replayPreLiquibaseBaseline(syncedPool);
+    // Simulate an environment already migrated by the pre-Liquibase mechanism.
+    await replayPreLiquibaseBaseline(syncedPool);
 
-        runLiquibase(container.getId(), 'recon_synced', 'changelog-sync-to-tag', '--tag=v1-v9-baseline');
-        runLiquibase(container.getId(), 'recon_synced', 'update');
+    runLiquibase(
+      harness.containerId,
+      syncedDatabase.name,
+      'changelog-sync-to-tag',
+      '--tag=v1-v9-baseline',
+    );
+    runLiquibase(harness.containerId, syncedDatabase.name, 'update');
 
-        // The pgTap and pg_stat_statements checks elsewhere in this file install those
-        // extensions into recon_fresh to verify the tooling itself works; neither extension
-        // is part of the Liquibase-managed application schema. Mirror them onto recon_synced
-        // so the migra diff below compares only Liquibase-managed schema objects instead of
-        // flagging this incidental test-harness setup as schema drift.
-        await syncedPool.query('CREATE EXTENSION IF NOT EXISTS pgtap');
-        await syncedPool.query('CREATE EXTENSION IF NOT EXISTS pg_stat_statements');
+    // The pgTap and pg_stat_statements checks elsewhere in this file install those
+    // extensions into the fresh database to verify the tooling itself works; neither
+    // extension is part of the Liquibase-managed application schema. Mirror them onto the
+    // synced database so the migra diff below compares only Liquibase-managed schema
+    // objects instead of flagging this incidental test-harness setup as schema drift.
+    await syncedPool.query('CREATE EXTENSION IF NOT EXISTS pgtap');
+    await syncedPool.query('CREATE EXTENSION IF NOT EXISTS pg_stat_statements');
 
-        const installResult = await container.exec([
-          'bash',
-          '-lc',
-          [
-            'set -euo pipefail',
-            'apt-get update',
-            'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-pip python3-setuptools',
-            'python3 -m pip install --no-cache-dir --break-system-packages migra psycopg2-binary',
-          ].join('; '),
-        ]);
-        expect(installResult.exitCode).toBe(0);
+    const installResult = execInPostgresContainer(
+      [
+        'set -euo pipefail',
+        'apt-get update',
+        'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-pip python3-setuptools',
+        'python3 -m pip install --no-cache-dir --break-system-packages migra psycopg2-binary',
+      ].join('; '),
+    );
+    expect(installResult.exitCode).toBe(0);
 
-        const freshUrl = `postgresql://${credentials.user}:${credentials.password}@127.0.0.1:5432/recon_fresh`;
-        const syncedUrl = `postgresql://${credentials.user}:${credentials.password}@127.0.0.1:5432/recon_synced`;
-        const diffResult = await container.exec([
-          'bash',
-          '-lc',
-          `set -euo pipefail; migra --unsafe --schema public "${syncedUrl}" "${freshUrl}"`,
-        ]);
+    const freshUrl = `postgresql://${harness.user}:${harness.password}@127.0.0.1:5432/${freshDatabase.name}`;
+    const syncedUrl = `postgresql://${harness.user}:${harness.password}@127.0.0.1:5432/${syncedDatabase.name}`;
+    const diffResult = execInPostgresContainer(
+      `set -euo pipefail; migra --unsafe --schema public "${syncedUrl}" "${freshUrl}"`,
+    );
 
-        // migra exits 0 with empty output when the two schemas are identical; exit 2 means it
-        // found differences and printed the SQL to reconcile them.
-        expect(diffResult.exitCode).toBe(0);
-        expect(diffResult.output.trim()).toBe('');
-      } finally {
-        await syncedPool.end();
-      }
-    },
-    150000,
-  );
+    // migra exits 0 with empty output when the two schemas are identical; exit 2 means it
+    // found differences and printed the SQL to reconcile them.
+    expect(diffResult.exitCode).toBe(0);
+    expect(diffResult.output.trim()).toBe('');
+  }, 150000);
 });
 
 describe('Approval-pipeline schema constraints (against the Liquibase-migrated database)', () => {
-  let container: StartedTestContainer | undefined;
+  let database: TestDatabase | undefined;
   let pool: Pool;
   let startupError: Error | null = null;
 
   beforeAll(async () => {
     try {
-      container = await new GenericContainer('postgres:16.13')
-        .withEnvironment({ POSTGRES_DB: 'recon_test', POSTGRES_USER: 'recon', POSTGRES_PASSWORD: 'recon' })
-        .withUser('root')
-        .withExposedPorts(5432)
-        .start();
-
-      runLiquibase(container.getId(), 'recon_test', 'update');
-
-      pool = createPostgresPool({
-        connectionString: `postgresql://recon:recon@${container.getHost()}:${container.getMappedPort(5432)}/recon_test`,
-      });
+      database = await createDatabaseFromTemplate('recon_approval');
+      pool = database.pool;
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       throw startupError;
@@ -248,11 +208,8 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
   }, 180000);
 
   afterAll(async () => {
-    if (pool) {
-      await pool.end();
-    }
-    if (container) {
-      await container.stop();
+    if (database) {
+      await database.drop();
     }
   });
 
@@ -351,7 +308,9 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
       );
 
     await insertSourceFile();
-    await expect(insertSourceFile()).rejects.toThrow(/duplicate key value violates unique constraint/);
+    await expect(insertSourceFile()).rejects.toThrow(
+      /duplicate key value violates unique constraint/,
+    );
   });
 
   it('records an approval decision and its append-only history via the persistence-layer helpers', async () => {

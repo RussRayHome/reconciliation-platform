@@ -75,6 +75,7 @@
     "test:integration": "LOG_LEVEL=silent vitest run --project integration --reporter=dot",
     "test:integration:dashboard": "LOG_LEVEL=silent vitest run --project integration --reporter=dot --exclude apps/api/tests/deploy-cleanup.test.ts --exclude apps/api/tests/nginx-config.test.ts",
     "test:postgres": "RUN_POSTGRES_TESTS=true vitest run --config vitest.postgres.config.ts",
+    "test:postgres:update-baseline": "UPDATE_SCHEMA_BASELINE=true vitest run --config vitest.postgres.config.ts packages/persistence/tests/schemaBaseline.test.ts",
     "test:postgres:dashboard": "DB_PREFLIGHT_FAIL_ON_CRITICAL=false npm run docker:db:preflight:dev",
     "test:e2e": "NODE_OPTIONS=--no-deprecation playwright test",
     "lint": "eslint .",

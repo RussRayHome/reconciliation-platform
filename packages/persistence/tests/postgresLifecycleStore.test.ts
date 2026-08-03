@@ -14,17 +14,15 @@ import {
   PostgresReconciliationLifecycleStore,
   PostgresReconciliationReadModelStore,
   computeSha256Hex,
-  createPostgresPool,
 } from '../src';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { GenericContainer } from 'testcontainers';
 import type { Pool } from 'pg';
-import type { StartedTestContainer } from 'testcontainers';
 import { createHash, randomUUID } from 'node:crypto';
-import { runLiquibase } from './testHelpers/liquibase';
+import { createDatabaseFromTemplate } from './testHelpers/database';
+import type { TestDatabase } from './testHelpers/database';
 
-let container: StartedTestContainer;
+let database: TestDatabase | undefined;
 let pool: Pool;
 let startupError: Error | null = null;
 
@@ -260,18 +258,8 @@ const countQueriesDuring = async <T>(
 describe('PostgresReconciliationLifecycleStore', () => {
   beforeAll(async () => {
     try {
-      container = await new GenericContainer('postgres:16.13')
-        .withEnvironment({
-          POSTGRES_DB: 'recon_test',
-          POSTGRES_USER: 'recon',
-          POSTGRES_PASSWORD: 'recon',
-        })
-        .withExposedPorts(5432)
-        .start();
-      runLiquibase(container.getId(), 'recon_test', 'update');
-      pool = createPostgresPool({
-        connectionString: `postgresql://recon:recon@${container.getHost()}:${container.getMappedPort(5432)}/recon_test`,
-      });
+      database = await createDatabaseFromTemplate('recon_lifecycle');
+      pool = database.pool;
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       console.warn(`PostgreSQL integration setup failed: ${startupError.message}`);
@@ -280,11 +268,8 @@ describe('PostgresReconciliationLifecycleStore', () => {
   });
 
   afterAll(async () => {
-    if (pool) {
-      await pool.end();
-    }
-    if (container) {
-      await container.stop();
+    if (database) {
+      await database.drop();
     }
   });
 
