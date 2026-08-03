@@ -70,21 +70,49 @@ describe('Liquibase rollback', () => {
       expect(await changelogCount(database!.pool)).toBe(changesetFileCount);
     });
 
-    it('actually changes the schema, proving the rollback SQL ran', () => {
-      expect(rolledBackSchema).not.toEqual(migratedSchema);
-    });
-
     it('restores the exact original schema when the changeset is re-applied', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
+    it('changeset 0027 is a verify-only no-op, so its rollback leaves the schema unchanged', () => {
+      // 0027 (the most recent changeset as of this test) only checks that pgaudit is actually
+      // installed when shared_preload_libraries says it should be -- it makes no schema change,
+      // so unlike every other changeset here, "rollback changes nothing" IS the correct
+      // assertion, not a sign the rollback SQL didn't run. When a future changeset lands on top
+      // of 0027 (most of which DO change schema), swap this back to asserting the rolled-back
+      // schema differs from the migrated one, describing whatever that changeset actually did --
+      // this block is intentionally pinned to "whatever is currently the most recent changeset".
+      expect(rolledBackSchema).toEqual(migratedSchema);
+    });
+
+  });
+
+  describe('rolling back two changesets (0027 verify-only, then 0026 schema-changing)', () => {
+    let database: TestDatabase | undefined;
+    let migratedSchema: string;
+    let rolledBackTwoSchema: string;
+
+    beforeAll(async () => {
+      database = await createEmptyDatabase('recon_rollback_two');
+      const { containerId } = postgresHarness();
+
+      runLiquibase(containerId, database.name, 'update');
+      migratedSchema = await generateSchemaBaseline(database.pool);
+
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=2');
+      rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
+    }, 180000);
+
+    afterAll(async () => {
+      if (database) {
+        await database.drop();
+      }
+    });
+
     it('reverses changeset 0026 by dropping the auth/tenancy columns from reconciliation_user', () => {
-      // 0026 (the most recent changeset as of this test) added password_hash/role/organization_id
-      // and dropped password; its rollback puts password back and drops the three new columns.
-      // Asserting on the columns themselves rather than just "the schema differs" is what proves
-      // the rollback did the right thing, not merely something. When a future changeset lands on
-      // top of 0026, update this test to describe that changeset instead -- it is intentionally
-      // pinned to "whatever is currently the most recent changeset", not to 0026 forever.
+      // 0026 added password_hash/role/organization_id and dropped password; its rollback puts
+      // password back and drops the three new columns. Two changesets deep because 0027 (the
+      // one directly on top of it) is a verify-only no-op with nothing to reverse.
       expect(migratedSchema).toContain(
         "col_type_is('public', 'reconciliation_user', 'password_hash', 'text'",
       );
@@ -92,13 +120,13 @@ describe('Liquibase rollback', () => {
         "col_type_is('public', 'reconciliation_user', 'password', 'text'",
       );
 
-      expect(rolledBackSchema).toContain(
+      expect(rolledBackTwoSchema).toContain(
         "col_type_is('public', 'reconciliation_user', 'password', 'text'",
       );
-      expect(rolledBackSchema).not.toContain(
+      expect(rolledBackTwoSchema).not.toContain(
         "col_type_is('public', 'reconciliation_user', 'password_hash', 'text'",
       );
-      expect(rolledBackSchema).not.toContain(
+      expect(rolledBackTwoSchema).not.toContain(
         "col_type_is('public', 'reconciliation_user', 'role', 'text'",
       );
     });
