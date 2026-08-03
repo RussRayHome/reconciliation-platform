@@ -40,11 +40,21 @@ describe('Liquibase rollback', () => {
     return result.rows[0]?.exists === true;
   };
 
+  const runtimeRoleCanSelectJob = async (pool: Pool): Promise<boolean> => {
+    const result = await pool.query<{ can_select: boolean }>(
+      "SELECT has_table_privilege('recon_app_runtime', 'public.reconciliation_job', 'SELECT') AS can_select",
+    );
+    return result.rows[0]?.can_select === true;
+  };
+
   describe('rolling back the most recent changeset', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackSchema: string;
     let reappliedSchema: string;
+    let migratedCanSelect: boolean;
+    let rolledBackCanSelect: boolean;
+    let reappliedCanSelect: boolean;
 
     beforeAll(async () => {
       database = await createEmptyDatabase('recon_rollback_one');
@@ -52,12 +62,15 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
+      migratedCanSelect = await runtimeRoleCanSelectJob(database.pool);
 
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
+      rolledBackCanSelect = await runtimeRoleCanSelectJob(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
+      reappliedCanSelect = await runtimeRoleCanSelectJob(database.pool);
     }, 180000);
 
     afterAll(async () => {
@@ -74,25 +87,23 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0028 by dropping organization_id from reconciliation_job', () => {
-      // 0028 (the most recent changeset as of this test) added organization_id NOT NULL to
-      // reconciliation_job (the aggregate root) and denormalized it onto every descendant table;
-      // its rollback drops all of that back off. Asserting on the aggregate root's own column
-      // is enough to prove the rollback SQL ran, without re-asserting all ~21 tables it touches.
-      // When a future changeset lands on top of 0028, update this test to describe that
-      // changeset instead -- it is intentionally pinned to "whatever is currently the most
-      // recent changeset", not to 0028 forever.
-      expect(migratedSchema).toContain(
-        "col_type_is('public', 'reconciliation_job', 'organization_id', 'uuid'",
-      );
-      expect(rolledBackSchema).not.toContain(
-        "col_type_is('public', 'reconciliation_job', 'organization_id', 'uuid'",
-      );
-      expect(rolledBackSchema).not.toEqual(migratedSchema);
+    it('reverses changeset 0029 by revoking recon_app_runtime table grants', () => {
+      // 0029 (the most recent changeset as of this test) grants recon_app_runtime SELECT/etc on
+      // every application table; its rollback revokes those grants (see 0029's own rollback
+      // comment for why it stops short of also dropping the role). Table/column shape is
+      // unaffected by 0029 either way, so migratedSchema/rolledBackSchema are asserted equal
+      // here rather than diffing -- the signal for this changeset lives in privileges, not
+      // schema shape. When a future changeset lands on top of 0029, update this test to
+      // describe that changeset instead -- it is intentionally pinned to "whatever is currently
+      // the most recent changeset", not to 0029 forever.
+      expect(migratedCanSelect).toBe(true);
+      expect(rolledBackCanSelect).toBe(false);
+      expect(reappliedCanSelect).toBe(true);
+      expect(rolledBackSchema).toEqual(migratedSchema);
     });
   });
 
-  describe('rolling back three changesets (0028 schema-changing, 0027 verify-only, then 0026 schema-changing)', () => {
+  describe('rolling back four changesets (0029, 0028, 0027 verify-only, then 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -104,10 +115,11 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now three changesets back from HEAD (0028), not two -- 0027 (verify-only) and
-      // 0028 (adds organization_id elsewhere, doesn't touch reconciliation_user) both sit on top
-      // of it without reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=3');
+      // 0026 is now four changesets back from HEAD (0029), not two -- 0027 (verify-only), 0028
+      // (adds organization_id elsewhere, doesn't touch reconciliation_user), and 0029 (grants
+      // only, no schema change) all sit on top of it without reversing anything this test cares
+      // about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=4');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

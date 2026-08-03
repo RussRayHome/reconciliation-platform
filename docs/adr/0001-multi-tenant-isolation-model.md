@@ -198,8 +198,15 @@ Ordered. Steps 1–3 are the prerequisite data model; no policy can be written b
        (`app.ts`, `reconciliationQueue.ts`) were updated in the same pass to populate the column on
        every write — `organization_id` is a schema constraint AND actually gets set correctly by
        every code path, not just addable-in-theory.
-4. [ ] **Least-privilege roles** — backlog task #1. Policies are written against roles, so this
-       lands before them. Grant `BYPASSRLS` to the Liquibase/migration role.
+4. [x] **Least-privilege roles.** Landed 2026-08-03 (changeset `0029`): non-superuser
+       `recon_app_runtime` role scoped to explicit SELECT/INSERT/UPDATE/DELETE grants on the ~24
+       application tables (plus the one BIGSERIAL sequence), with `ALTER DEFAULT PRIVILEGES` so
+       future tables inherit the grant automatically. `recon_app` (the migration/owner role,
+       already superuser) is left as-is -- superuser already implies `BYPASSRLS`, so RLS policies
+       added next apply to `recon_app_runtime` and not to migrations. Still open, deliberately
+       deferred as a deployment/credential change rather than a schema migration: the API's own
+       `DATABASE_URL` still connects as `recon_app`, not `recon_app_runtime` -- switching it needs
+       a rotated password in `.env.docker.*`, not a Liquibase changeset.
 5. [ ] **Enable RLS and write policies** on every tenant-scoped table.
 6. [ ] **Set the tenant at pool checkout** in `packages/persistence/src/postgres.ts` — not per
        query. A missed `SET LOCAL` on a pooled connection serves the previous request's tenant.
