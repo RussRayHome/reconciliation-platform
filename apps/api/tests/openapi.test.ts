@@ -5,15 +5,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import request from 'supertest';
 import { tmpdir } from 'node:os';
+import { authedApp } from './testHelpers/authToken';
 
 const execFileAsync = promisify(execFile);
 
 describe('openapi contract', () => {
   it('serves the generated openapi document from the runtime endpoint', async () => {
     const app = createApp();
-    const response = await request(app).get('/api/openapi.json').expect(200);
+    const response = await authedApp(app).get('/api/openapi.json').expect(200);
 
     expect(response.body).toEqual(buildOpenApiSpec());
     expect(response.body.paths['/api/reconciliation/run'].post.responses['202']).toEqual(

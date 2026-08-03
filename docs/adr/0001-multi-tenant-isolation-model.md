@@ -178,12 +178,15 @@ None of this is optional, and none of it is policy authoring:
 
 Ordered. Steps 1–3 are the prerequisite data model; no policy can be written before they land.
 
-1. [ ] **Server-side authentication.** The GUC is derived from the authenticated principal, so
-       there is nothing to set until requests carry an identity. Currently no route is behind an
-       auth check.
-2. [ ] **Link principals to tenants.** Add `reconciliation_user.organization_id`, or a membership
-       table if a user may belong to more than one organization. Decide which — it is hard to
-       reverse.
+1. [x] **Server-side authentication.** Landed 2026-08-03 (ADR-0002): JWT-based auth,
+       deny-by-default middleware, role authorization. Every request that reaches a route handler
+       now carries `request.auth.{username,role,organizationId}` — the GUC has something to read.
+       Still open: nothing sets `app.current_organization_id` yet (step 6 below) and the tenancy
+       data model itself (step 3) hasn't landed, so the GUC has an authenticated principal to read
+       but no tenant-scoped tables to filter with it.
+2. [x] **Link principals to tenants.** Decided 2026-08-03: single org per user — a `NOT NULL` FK
+       `reconciliation_user.organization_id` column, not a membership table. No consultant/support
+       use case needing multi-org access today.
 3. [ ] **Tenant the data model.** Add `organization_id NOT NULL` to `reconciliation_job`, the
        aggregate root. Make `reconciliation_source_file.organization_id` `NOT NULL` and backfill.
        Choose denormalize-down vs. join-to-job for the ~24 descendant tables (see Prerequisite

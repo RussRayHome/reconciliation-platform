@@ -8,16 +8,18 @@ import {
   nonStandardHeaderBankRows,
   nonStandardHeaderGlRows,
 } from '@recon/test-fixtures';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { PostgresReconciliationReadModelStore } from '@recon/persistence';
 
 import ExcelJS from 'exceljs';
 import { FileBackedRunRepository } from '../src/services/runRepository';
 import { createApp } from '../src/app';
+import { authedApp } from './testHelpers/authToken';
+import request from 'supertest';
+import { hashPassword } from '../src/services/authService';
 import { errorCategoryDisplayNames } from '@recon/domain';
 import path from 'node:path';
-import request from 'supertest';
 import { tmpdir } from 'node:os';
 
 const parseBinaryBody = (
@@ -42,7 +44,16 @@ type QueryableAuthPool = {
   query: (
     text: string,
     params?: unknown[],
-  ) => Promise<{ rows: Array<{ user_name: string; first_name: string; last_name: string }> }>;
+  ) => Promise<{
+    rows: Array<{
+      user_name: string;
+      first_name: string;
+      last_name: string;
+      password_hash: string;
+      role: string;
+      organization_id: string;
+    }>;
+  }>;
 };
 
 const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
@@ -189,6 +200,10 @@ const createCountingReadModelPool = (runId: string, exceptionCount: number) => {
 };
 
 describe('reconciliation API', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('runs reconciliation and exposes summary, exceptions, and workbook export endpoints', async () => {
     const app = createApp();
     const [bankBuffer, glBuffer] = await Promise.all([
@@ -196,7 +211,7 @@ describe('reconciliation API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .field('accountIdentifier', 'OPERATING-001')
       .field('periodLabel', 'January 2025')
@@ -226,20 +241,20 @@ describe('reconciliation API', () => {
 
     const { id } = runPayload;
 
-    const latestResponse = await request(app).get('/api/reconciliation/latest').expect(200);
+    const latestResponse = await authedApp(app).get('/api/reconciliation/latest').expect(200);
     const latestPayload = latestResponse.body as { id: string };
     expect(latestPayload.id).toBe(id);
     expect((latestResponse.body as Record<string, unknown>).rawRows).toBeUndefined();
     expect((latestResponse.body as Record<string, unknown>).normalizedTransactions).toBeUndefined();
 
-    const summaryResponse = await request(app).get(`/api/reconciliation/${id}/summary`).expect(200);
+    const summaryResponse = await authedApp(app).get(`/api/reconciliation/${id}/summary`).expect(200);
     const summaryPayload = summaryResponse.body as {
       exactMatches: number;
       countsByCategory: Record<string, number>;
     };
     expect(summaryPayload.exactMatches).toBeGreaterThanOrEqual(1);
 
-    const exceptionsResponse = await request(app)
+    const exceptionsResponse = await authedApp(app)
       .get(`/api/reconciliation/${id}/exceptions`)
       .expect(200);
     expect(Array.isArray(exceptionsResponse.body)).toBe(true);
@@ -257,7 +272,7 @@ describe('reconciliation API', () => {
       ),
     ).toBe(true);
 
-    const workbookResponse = await request(app)
+    const workbookResponse = await authedApp(app)
       .get(`/api/reconciliation/${id}/export/workbook`)
       .buffer(true)
       .parse(
@@ -336,7 +351,7 @@ describe('reconciliation API', () => {
       createWorkbookFromRows(nonStandardHeaderGlRows),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .field('accountIdentifier', '5703')
       .field('periodLabel', 'January 2025')
@@ -368,7 +383,7 @@ describe('reconciliation API', () => {
       createAllExceptionsGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .field('accountIdentifier', 'OPERATING-001')
       .field('periodLabel', 'All Exception Categories')
@@ -396,7 +411,7 @@ describe('reconciliation API', () => {
       ),
     ).toBe(true);
 
-    const exceptionsResponse = await request(app)
+    const exceptionsResponse = await authedApp(app)
       .get(`/api/reconciliation/${runPayload.id}/exceptions`)
       .expect(200);
 
@@ -419,7 +434,7 @@ describe('reconciliation API', () => {
       createAllExceptionsGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .field('accountIdentifier', 'OPERATING-001')
       .field('periodLabel', 'Paginated Exceptions')
@@ -435,7 +450,7 @@ describe('reconciliation API', () => {
 
     const runPayload = runResponse.body as { id: string; exceptions: Array<{ id: string }> };
 
-    const pagedResponse = await request(app)
+    const pagedResponse = await authedApp(app)
       .get(`/api/reconciliation/${runPayload.id}/exceptions?limit=5&offset=3`)
       .expect(200);
 
@@ -462,7 +477,7 @@ describe('reconciliation API', () => {
       createAllExceptionsGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .field('accountIdentifier', 'OPERATING-001')
       .field('periodLabel', 'Filtered Exceptions')
@@ -487,7 +502,7 @@ describe('reconciliation API', () => {
       (item) => item.category === targetCategory,
     );
 
-    const categoryResponse = await request(app)
+    const categoryResponse = await authedApp(app)
       .get(`/api/reconciliation/${runPayload.id}/exceptions?category=${targetCategory}`)
       .expect(200);
 
@@ -504,7 +519,7 @@ describe('reconciliation API', () => {
       (item) => item.category === targetCategory && item.severity === targetSeverity,
     );
 
-    const combinedResponse = await request(app)
+    const combinedResponse = await authedApp(app)
       .get(
         `/api/reconciliation/${runPayload.id}/exceptions?category=${targetCategory}&severity=${targetSeverity}`,
       )
@@ -522,11 +537,11 @@ describe('reconciliation API', () => {
       ),
     ).toBe(true);
 
-    await request(app)
+    await authedApp(app)
       .get(`/api/reconciliation/${runPayload.id}/exceptions?category=NotACategory`)
       .expect(400);
 
-    await request(app)
+    await authedApp(app)
       .get(`/api/reconciliation/${runPayload.id}/exceptions?severity=Bogus`)
       .expect(400);
   });
@@ -539,7 +554,7 @@ describe('reconciliation API', () => {
     );
     const app = createApp(undefined, undefined, readModelStore);
 
-    const pagedResponse = await request(app)
+    const pagedResponse = await authedApp(app)
       .get(`/api/reconciliation/${runId}/exceptions?limit=20&offset=0`)
       .expect(200);
 
@@ -560,7 +575,7 @@ describe('reconciliation API', () => {
 
     resetQueryCount();
 
-    const runResponse = await request(app).get(`/api/reconciliation/${runId}`).expect(200);
+    const runResponse = await authedApp(app).get(`/api/reconciliation/${runId}`).expect(200);
     const runPayload = runResponse.body as { id: string; exceptions: unknown[] };
 
     expect(runPayload.id).toBe(runId);
@@ -575,7 +590,7 @@ describe('reconciliation API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const response = await request(app)
+    const response = await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, {
         filename: 'bank.xlsx',
@@ -600,7 +615,7 @@ describe('reconciliation API', () => {
     const app = createApp();
     const glBuffer = await createSampleGlWorkbook();
 
-    const response = await request(app)
+    const response = await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', Buffer.from('not-an-excel-file'), {
         filename: 'bank.txt',
@@ -619,7 +634,7 @@ describe('reconciliation API', () => {
   it('rejects requests that do not provide both required files', async () => {
     const app = createApp();
 
-    const response = await request(app).post('/api/reconciliation/run').expect(400);
+    const response = await authedApp(app).post('/api/reconciliation/run').expect(400);
     const payload = response.body as { message: string };
     expect(payload.message).toContain('Both bankFile and glFile');
   });
@@ -627,7 +642,7 @@ describe('reconciliation API', () => {
   it('returns 404 when no latest reconciliation run has been stored yet', async () => {
     const app = createApp();
 
-    const response = await request(app).get('/api/reconciliation/latest').expect(404);
+    const response = await authedApp(app).get('/api/reconciliation/latest').expect(404);
     const payload = response.body as { message: string };
 
     expect(payload.message).toContain('No completed reconciliation run found');
@@ -646,7 +661,7 @@ describe('reconciliation API', () => {
         createSampleGlWorkbook(),
       ]);
 
-      const runResponse = await request(firstApp)
+      const runResponse = await authedApp(firstApp)
         .post('/api/reconciliation/run')
         .attach('bankFile', bankBuffer, {
           filename: 'bank.xlsx',
@@ -671,7 +686,7 @@ describe('reconciliation API', () => {
       );
       expect(probableTarget).toBeDefined();
 
-      const decisionResponse = await request(firstApp)
+      const decisionResponse = await authedApp(firstApp)
         .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
         .send({
           targetType:
@@ -695,7 +710,7 @@ describe('reconciliation API', () => {
       expect(savedDecision.outcome).toBe('ApprovedMatch');
       expect(savedDecision.reviewerName).toBe('Controller');
 
-      const reviewerDecisionList = await request(firstApp)
+      const reviewerDecisionList = await authedApp(firstApp)
         .get(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
         .expect(200);
       const reviewerDecisionsPayload = reviewerDecisionList.body as Array<{ targetId: string }>;
@@ -703,7 +718,7 @@ describe('reconciliation API', () => {
       expect(reviewerDecisionsPayload[0]?.targetId).toBe(probableTarget?.id);
 
       const restartedApp = createApp(new FileBackedRunRepository(repositoryFilePath));
-      const runAfterRestart = await request(restartedApp)
+      const runAfterRestart = await authedApp(restartedApp)
         .get(`/api/reconciliation/${runPayload.id}`)
         .expect(200);
       const hydratedRun = runAfterRestart.body as {
@@ -726,7 +741,7 @@ describe('reconciliation API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, { filename: 'bank.xlsx', contentType: spreadsheetMime })
       .attach('glFile', glBuffer, { filename: 'gl.xlsx', contentType: spreadsheetMime })
@@ -744,25 +759,25 @@ describe('reconciliation API', () => {
       target?.disposition === 'AmbiguousReview' ? 'AmbiguousReview' : 'ProbableMatch';
     const targetId = target?.id ?? '';
 
-    await request(app)
+    await authedApp(app)
       .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
       .send({ targetType, targetId, outcome: 'ApprovedMatch' })
       .expect(201);
 
-    await request(app)
+    await authedApp(app)
       .delete(
         `/api/reconciliation/${runPayload.id}/reviewer-decisions/${encodeURIComponent(targetId)}`,
       )
       .query({ targetType })
       .expect(204);
 
-    const afterDelete = await request(app)
+    const afterDelete = await authedApp(app)
       .get(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
       .expect(200);
     expect(afterDelete.body).toEqual([]);
 
     // A second delete is a no-op and still succeeds.
-    await request(app)
+    await authedApp(app)
       .delete(
         `/api/reconciliation/${runPayload.id}/reviewer-decisions/${encodeURIComponent(targetId)}`,
       )
@@ -778,7 +793,7 @@ describe('reconciliation API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, { filename: 'bank.xlsx', contentType: spreadsheetMime })
       .attach('glFile', glBuffer, { filename: 'gl.xlsx', contentType: spreadsheetMime })
@@ -786,7 +801,7 @@ describe('reconciliation API', () => {
 
     const { id } = runResponse.body as { id: string };
 
-    await request(app)
+    await authedApp(app)
       .delete(`/api/reconciliation/${id}/reviewer-decisions/some-target`)
       .expect(400);
   });
@@ -795,19 +810,19 @@ describe('reconciliation API', () => {
     const app = createApp();
     const unknownId = 'does-not-exist';
 
-    await request(app).get(`/api/reconciliation/${unknownId}`).expect(404);
-    await request(app).get(`/api/reconciliation/${unknownId}/summary`).expect(404);
-    await request(app).get(`/api/reconciliation/${unknownId}/exceptions`).expect(404);
-    await request(app)
+    await authedApp(app).get(`/api/reconciliation/${unknownId}`).expect(404);
+    await authedApp(app).get(`/api/reconciliation/${unknownId}/summary`).expect(404);
+    await authedApp(app).get(`/api/reconciliation/${unknownId}/exceptions`).expect(404);
+    await authedApp(app)
       .get(`/api/reconciliation/${unknownId}/exceptions?limit=5&offset=0`)
       .expect(404);
-    await request(app).get(`/api/reconciliation/${unknownId}/export/workbook`).expect(404);
+    await authedApp(app).get(`/api/reconciliation/${unknownId}/export/workbook`).expect(404);
   });
 
   it('returns 404 when posting a reviewer decision to an unknown run id', async () => {
     const app = createApp();
 
-    const response = await request(app)
+    const response = await authedApp(app)
       .post('/api/reconciliation/does-not-exist/reviewer-decisions')
       .send({ targetType: 'ExceptionItem', targetId: 'some-id', outcome: 'ConfirmedException' })
       .expect(404);
@@ -823,7 +838,7 @@ describe('reconciliation API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, {
         filename: 'bank.xlsx',
@@ -843,7 +858,7 @@ describe('reconciliation API', () => {
     expect(runPayload.exceptions.length).toBeGreaterThan(1);
     const [exception1, exception2] = runPayload.exceptions;
 
-    const confirmedResponse = await request(app)
+    const confirmedResponse = await authedApp(app)
       .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
       .send({
         targetType: 'ExceptionItem',
@@ -857,7 +872,7 @@ describe('reconciliation API', () => {
     expect(confirmedDecision.outcome).toBe('ConfirmedException');
     expect(confirmedDecision.targetId).toBe(exception1?.id);
 
-    const reclassifiedResponse = await request(app)
+    const reclassifiedResponse = await authedApp(app)
       .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
       .send({
         targetType: 'ExceptionItem',
@@ -882,7 +897,7 @@ describe('reconciliation API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, {
         filename: 'bank.xlsx',
@@ -900,25 +915,25 @@ describe('reconciliation API', () => {
     };
     const exceptionId = exceptions[0]?.id;
 
-    const missingTargetType = await request(app)
+    const missingTargetType = await authedApp(app)
       .post(`/api/reconciliation/${id}/reviewer-decisions`)
       .send({ targetId: exceptionId, outcome: 'ConfirmedException' })
       .expect(400);
     expect((missingTargetType.body as { message: string }).message).toContain('targetType');
 
-    const emptyTargetId = await request(app)
+    const emptyTargetId = await authedApp(app)
       .post(`/api/reconciliation/${id}/reviewer-decisions`)
       .send({ targetType: 'ExceptionItem', targetId: '   ', outcome: 'ConfirmedException' })
       .expect(400);
     expect((emptyTargetId.body as { message: string }).message).toContain('targetId');
 
-    const missingOutcome = await request(app)
+    const missingOutcome = await authedApp(app)
       .post(`/api/reconciliation/${id}/reviewer-decisions`)
       .send({ targetType: 'ExceptionItem', targetId: exceptionId })
       .expect(400);
     expect((missingOutcome.body as { message: string }).message).toContain('outcome');
 
-    const nonExistentTarget = await request(app)
+    const nonExistentTarget = await authedApp(app)
       .post(`/api/reconciliation/${id}/reviewer-decisions`)
       .send({
         targetType: 'ExceptionItem',
@@ -936,7 +951,7 @@ describe('reconciliation API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const runResponse = await request(app)
+    const runResponse = await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, {
         filename: 'bank.xlsx',
@@ -953,7 +968,7 @@ describe('reconciliation API', () => {
       exceptions: Array<{ id: string }>;
     };
 
-    const invalidOutcomeResponse = await request(app)
+    const invalidOutcomeResponse = await authedApp(app)
       .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
       .send({
         targetType: 'ExceptionItem',
@@ -965,7 +980,7 @@ describe('reconciliation API', () => {
     const invalidOutcomePayload = invalidOutcomeResponse.body as { message: string };
     expect(invalidOutcomePayload.message).toContain('not valid for the specified target type');
 
-    const missingCategoryResponse = await request(app)
+    const missingCategoryResponse = await authedApp(app)
       .post(`/api/reconciliation/${runPayload.id}/reviewer-decisions`)
       .send({
         targetType: 'ExceptionItem',
@@ -979,6 +994,9 @@ describe('reconciliation API', () => {
   });
 
   it('authenticates against local fallback users when a database pool is unavailable', async () => {
+    // ADR-0002 step 7: the local fallback (username == password) must be an explicit opt-in,
+    // never reachable just because no pool happens to be configured.
+    vi.stubEnv('ALLOW_LOCAL_LOGIN_FALLBACK', 'true');
     const app = createApp();
 
     const response = await request(app)
@@ -986,11 +1004,34 @@ describe('reconciliation API', () => {
       .send({ username: 'rray', password: 'rray' })
       .expect(200);
 
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       username: 'rray',
       firstName: 'rray',
       lastName: '',
+      role: 'superuser',
     });
+    expect(typeof (response.body as { token: unknown }).token).toBe('string');
+    expect(typeof (response.body as { organizationId: unknown }).organizationId).toBe('string');
+  });
+
+  it('refuses to start with the local login fallback enabled in production', () => {
+    vi.stubEnv('ALLOW_LOCAL_LOGIN_FALLBACK', 'true');
+    vi.stubEnv('NODE_ENV', 'production');
+
+    expect(() => createApp()).toThrow(/ALLOW_LOCAL_LOGIN_FALLBACK/);
+  });
+
+  it('rejects local fallback login when the flag is not enabled', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'rray', password: 'rray' })
+      .expect(401);
+
+    expect((response.body as { message: string }).message).toBe(
+      'The user or password does not match.',
+    );
   });
 
   it('returns 401 for invalid login credentials', async () => {
@@ -1016,12 +1057,12 @@ describe('reconciliation API', () => {
   });
 
   it('returns user profile details for valid login credentials', async () => {
+    const passwordHash = await hashPassword('rray');
     const authPool: QueryableAuthPool = {
       query: (_text, params) => {
         const username = typeof params?.[0] === 'string' ? params[0] : '';
-        const password = typeof params?.[1] === 'string' ? params[1] : '';
 
-        if (username !== 'rray' || password !== 'rray') {
+        if (username !== 'rray') {
           return Promise.resolve({ rows: [] });
         }
 
@@ -1031,6 +1072,9 @@ describe('reconciliation API', () => {
               user_name: 'rray',
               first_name: 'Ryan',
               last_name: 'Ray',
+              password_hash: passwordHash,
+              role: 'superuser',
+              organization_id: 'org-1',
             },
           ],
         });
@@ -1049,10 +1093,13 @@ describe('reconciliation API', () => {
       .send({ username: 'rray', password: 'rray' })
       .expect(200);
 
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       username: 'rray',
       firstName: 'Ryan',
       lastName: 'Ray',
+      role: 'superuser',
+      organizationId: 'org-1',
     });
+    expect(typeof (response.body as { token: unknown }).token).toBe('string');
   });
 });

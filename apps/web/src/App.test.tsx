@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { UserRole } from '@recon/domain';
 import type * as ApiModule from './lib/api';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -66,8 +67,27 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
 
+// Mirrors the role assignments migration 0026 backfilled server-side (and that
+// apps/web/src/App.tsx used to hardcode in a usersByUsername map before ADR-0002 moved role onto
+// the session itself). Tests seed localStorage directly to skip a real login round trip, so this
+// mapping has to live somewhere -- here, not in App.tsx.
+const testUserRoles: Record<string, UserRole> = {
+  rray2: 'developer',
+  bray: 'financial-analyst',
+  rray3: 'admin',
+  rray: 'superuser',
+};
+
 const setAuthenticatedUser = (username: string): void => {
-  globalThis.localStorage.setItem(AUTHENTICATED_USER_STORAGE_KEY, JSON.stringify({ username }));
+  const role = testUserRoles[username];
+  if (!role) {
+    throw new Error(`setAuthenticatedUser: no test role mapped for username "${username}"`);
+  }
+
+  globalThis.localStorage.setItem(
+    AUTHENTICATED_USER_STORAGE_KEY,
+    JSON.stringify({ username, role, organizationId: 'test-org' }),
+  );
 };
 
 const monthsWithinYear = [
@@ -385,9 +405,12 @@ describe('App', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
+          token: 'test-token',
           username: 'rray',
           firstName: 'Ryan',
           lastName: 'Ray',
+          role: 'superuser',
+          organizationId: 'test-org',
         }),
         { status: 200 },
       ),
@@ -411,9 +434,17 @@ describe('App', () => {
 
   it('resets the URL to the app root after a successful login', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ username: 'rray', firstName: 'Ryan', lastName: 'Ray' }), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify({
+          token: 'test-token',
+          username: 'rray',
+          firstName: 'Ryan',
+          lastName: 'Ray',
+          role: 'superuser',
+          organizationId: 'test-org',
+        }),
+        { status: 200 },
+      ),
     );
 
     globalThis.history.pushState({}, '', '/login');

@@ -7,7 +7,9 @@ import type {
   ReviewerDecision,
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
+  UserRole,
 } from '@recon/domain';
+import { clearAuthToken, getAuthToken, setAuthToken } from './authToken';
 
 /** Alias for the full reconciliation run report returned by the API. */
 export type ReconciliationRunResponse = ReconciliationRunReport;
@@ -30,7 +32,21 @@ interface LoginPayload {
 }
 
 interface LoginResponse {
+  token: string;
   username: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+  organizationId: string;
+}
+
+/** The authenticated principal as reported by the server -- ADR-0002 step 6: the frontend stops
+ * trusting a cached identity and instead asks the server (via /api/auth/me) or trusts the just-
+ * issued login response, not a locally reconstructed role. */
+export interface AuthenticatedPrincipal {
+  username: string;
+  role: UserRole;
+  organizationId: string;
   firstName: string;
   lastName: string;
 }
@@ -56,6 +72,26 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
   return (await response.json()) as T;
 };
 
+/**
+ * Wraps `fetch` to attach the bearer token (ADR-0002 DECIDE 1 = JWT), so every authenticated
+ * request goes through one place instead of each call site remembering the header. Every request
+ * in this module except `loginRequest` itself should use this instead of the global `fetch`.
+ */
+export const apiFetch = (input: string, init?: RequestInit): Promise<Response> => {
+  const token = getAuthToken();
+
+  // No token: call fetch with whatever arity the caller used, rather than wrapping it in a
+  // freshly-constructed (but equivalent) Headers object -- keeps this a true no-op when there's
+  // nothing to add, including matching a caller that passed no init object at all.
+  if (!token) {
+    return init === undefined ? fetch(input) : fetch(input, init);
+  }
+
+  const headers = new Headers(init?.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
+};
+
 const isQueuedEnqueueResponse = (
   payload: ReconciliationRunResponse | QueuedReconciliationEnqueueResponse,
 ): payload is QueuedReconciliationEnqueueResponse => {
@@ -78,14 +114,14 @@ const wait = async (durationMs: number): Promise<void> => {
 export const getReconciliationRunByIdRequest = async (
   runId: string,
 ): Promise<ReconciliationRunResponse> => {
-  const response = await fetch(`/api/reconciliation/${encodeURIComponent(runId)}`);
+  const response = await apiFetch(`/api/reconciliation/${encodeURIComponent(runId)}`);
   return parseResponse<ReconciliationRunResponse>(response);
 };
 
 const getQueuedReconciliationStatusRequest = async (
   jobId: string,
 ): Promise<QueuedReconciliationStatusResponse> => {
-  const response = await fetch(`/api/reconciliation/jobs/${encodeURIComponent(jobId)}`);
+  const response = await apiFetch(`/api/reconciliation/jobs/${encodeURIComponent(jobId)}`);
   return parseResponse<QueuedReconciliationStatusResponse>(response);
 };
 
@@ -144,7 +180,7 @@ export const runReconciliationRequest = async ({
     formData.append('varianceOverrides', JSON.stringify(varianceOverrides));
   }
 
-  const response = await fetch('/api/reconciliation/run', {
+  const response = await apiFetch('/api/reconciliation/run', {
     method: 'POST',
     body: formData,
   });
@@ -162,11 +198,12 @@ export const runReconciliationRequest = async ({
 
 /** Fetches the most recently completed reconciliation run report. */
 export const getLatestReconciliationRunRequest = async (): Promise<ReconciliationRunResponse> => {
-  const response = await fetch('/api/reconciliation/latest');
+  const response = await apiFetch('/api/reconciliation/latest');
   return parseResponse<ReconciliationRunResponse>(response);
 };
 
-/** Authenticates a user and returns profile details for the active session. */
+/** Authenticates a user, stores the returned bearer token, and returns the login profile.
+ * Deliberately uses the bare `fetch` -- there is no token yet to attach. */
 export const loginRequest = async ({
   username,
   password,
@@ -179,16 +216,55 @@ export const loginRequest = async ({
     body: JSON.stringify({ username, password }),
   });
 
-  return parseResponse<LoginResponse>(response);
+  const result = await parseResponse<LoginResponse>(response);
+  setAuthToken(result.token);
+  return result;
 };
 
-/** Returns the workbook download URL for the given run ID. */
-export const downloadWorkbookUrl = (runId: string): string =>
-  `/api/reconciliation/${runId}/export/workbook`;
+/** Revokes the current token server-side (best effort) and always clears it locally. Network
+ * failure here (offline, server down) must not block sign-out, so it's swallowed rather than
+ * thrown -- the token still expires naturally, same tradeoff as the server-side denylist. */
+export const logoutRequest = async (): Promise<void> => {
+  try {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+  } catch {
+    // Best-effort only; see comment above.
+  } finally {
+    clearAuthToken();
+  }
+};
+
+/** Re-derives the authenticated principal from the current bearer token -- ADR-0002 step 6, the
+ * server is the source of truth for identity/role, not a cached copy in localStorage. */
+export const meRequest = async (): Promise<AuthenticatedPrincipal> => {
+  const response = await apiFetch('/api/auth/me');
+  return parseResponse<AuthenticatedPrincipal>(response);
+};
+
+/** Downloads the output workbook for a run. A plain `<a href>` can't carry the bearer token, so
+ * this fetches the bytes and triggers the save via a blob URL instead. */
+export const downloadWorkbookRequest = async (runId: string, fileName: string): Promise<void> => {
+  const response = await apiFetch(`/api/reconciliation/${encodeURIComponent(runId)}/export/workbook`);
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({ message: 'Request failed.' }))) as {
+      message?: string;
+    };
+    throw new Error(payload.message ?? 'Request failed.');
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
 
 /** Fetches the canonical transaction schema the Create Mapping canvas targets. */
 export const getCanonicalFieldsRequest = async (): Promise<CanonicalField[]> => {
-  const response = await fetch('/api/mapping/canonical-fields');
+  const response = await apiFetch('/api/mapping/canonical-fields');
   return parseResponse<CanonicalField[]>(response);
 };
 
@@ -196,7 +272,7 @@ export const getCanonicalFieldsRequest = async (): Promise<CanonicalField[]> => 
 export const saveMappingProfileRequest = async (
   payload: MappingProfileSavePayload,
 ): Promise<MappingProfileSaveResult> => {
-  const response = await fetch('/api/mapping/profiles', {
+  const response = await apiFetch('/api/mapping/profiles', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -218,7 +294,7 @@ export interface ReviewerDecisionInput {
 
 /** Fetches all persisted reviewer decisions for a reconciliation run. */
 export const getReviewerDecisionsRequest = async (runId: string): Promise<ReviewerDecision[]> => {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/reconciliation/${encodeURIComponent(runId)}/reviewer-decisions`,
   );
   return parseResponse<ReviewerDecision[]>(response);
@@ -229,7 +305,7 @@ export const saveReviewerDecisionRequest = async (
   runId: string,
   input: ReviewerDecisionInput,
 ): Promise<ReviewerDecision> => {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/reconciliation/${encodeURIComponent(runId)}/reviewer-decisions`,
     {
       method: 'POST',
@@ -248,7 +324,7 @@ export const deleteReviewerDecisionRequest = async (
   targetId: string,
   targetType: ReviewerDecisionTargetType = 'ExceptionItem',
 ): Promise<void> => {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/reconciliation/${encodeURIComponent(runId)}/reviewer-decisions/${encodeURIComponent(
       targetId,
     )}?targetType=${encodeURIComponent(targetType)}`,

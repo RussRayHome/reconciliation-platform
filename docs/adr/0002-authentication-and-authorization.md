@@ -1,7 +1,7 @@
 # ADR-0002: Authentication and Authorization
 
-**Status:** Proposed — DECIDE 1 resolved 2026-08-03 (Option B, JWT); DECIDE 2 and DECIDE 3 still
-need the owner's call
+**Status:** Accepted — all three decisions resolved 2026-08-03: DECIDE 1 = Option B (JWT),
+DECIDE 2 = Option A (role column), DECIDE 3 = Option B (hash in place, no forced reset)
 **Date:** 2026-08-03
 **Deciders:** Repository owner
 **Blocks:** [ADR-0001](0001-multi-tenant-isolation-model.md) — the tenant GUC is derived from the
@@ -67,6 +67,8 @@ _Recommendation: **A** now, B later if a customer demands custom roles. The four
 and a join table buys nothing today. Note the current permission matrix is already role→booleans,
 which maps cleanly onto a column._
 
+**Decided: Option A (`role` column), 2026-08-03.** Matches the recommendation.
+
 ### DECIDE 3 — Password migration for existing users
 
 Existing passwords are plaintext, so they can be hashed in place — but that also means they should
@@ -79,6 +81,12 @@ have been stored in the clear.
 
 _Recommendation: **A** for any real customer data; **B** is only defensible if every existing
 account is a developer test account — which, given `localLoginUsers`, it may well be._
+
+**Decided: Option B (hash in place, no forced reset), 2026-08-03.** Overrides the recommendation
+above on the basis that current accounts are developer/test accounts, not real customer data — the
+condition the recommendation itself named as the exception. Revisit this decision before onboarding
+the first real customer; at that point their initial passwords need a real issuance flow (invite +
+set-password), not a silent hash of a plaintext value that was never a real secret to begin with.
 
 ## Consequences
 
@@ -112,10 +120,25 @@ Each is a reasonable follow-on once the base layer exists.
 
 ## Action Items
 
-1. [ ] Owner answers DECIDE 1, 2, 3
-2. [ ] Land steps 1–2 as one `reconciliation_user` migration, coordinated with ADR-0001
-3. [ ] Steps 3–5 (server-side auth and authz)
-4. [ ] Step 6 (frontend), then step 7 (remove fallback credentials)
-5. [ ] Step 8 tests throughout, not at the end
-6. [ ] Regenerate the pgTap baseline (`npm run test:postgres:update-baseline`) — the schema-drift
-       test fails until it reflects the new `reconciliation_user` shape
+1. [x] Owner answers DECIDE 1, 2, 3 — resolved 2026-08-03
+2. [x] Land steps 1–2 as one `reconciliation_user` migration, coordinated with ADR-0001 — changeset
+       `0026`, landed 2026-08-03
+3. [x] Steps 3–5 (server-side auth and authz) — landed 2026-08-03: JWT issuance/verification
+       (`authService.ts`), deny-by-default middleware with a public allowlist, `canAccessApplication`
+       / `canAccessDeveloperDashboard` role gates (`authMiddleware.ts`), `/api/auth/logout`
+       (Redis denylist, degrades to natural-expiry if Redis is unavailable) and `/api/auth/me`
+4. [x] Step 6 (frontend), then step 7 (remove fallback credentials) — landed 2026-08-03: bearer
+       token in `apps/web/src/lib/authToken.ts`, `apiFetch` wrapper, `/api/auth/me` re-validates
+       the cached session on load, `usersByUsername` deleted (role now travels on the session).
+       `localLoginUsers` gated behind `ALLOW_LOCAL_LOGIN_FALLBACK`, which `createApp` refuses to
+       honor when `NODE_ENV=production`
+5. [x] Step 8 tests throughout, not at the end — `apps/api/tests/auth-endpoints.test.ts` (401/403
+       matrix, token tampering/expiry, hash-not-plaintext, logout-then-reuse-rejected) plus every
+       existing route test updated to authenticate via `testHelpers/authToken.ts`
+6. [x] Regenerate the pgTap baseline (`npm run test:postgres:update-baseline`) — done 2026-08-03
+
+**Not yet done:** DECIDE 1's revocation follow-up (short expiry vs. denylist) is resolved as
+"denylist via Redis, degrade to natural 8h expiry if Redis is down" — reasonable but not
+formally re-reviewed against the "track separately" note above. Self-registration (`/signup`) is
+still a placeholder screen with no backing endpoint; out of ADR-0002's original scope, not
+mentioned in steps 1-8, and deliberately left alone.

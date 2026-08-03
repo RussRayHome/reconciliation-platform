@@ -6,6 +6,7 @@ import type {
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
   SeverityLevel,
+  UserRole,
 } from '@recon/domain';
 import {
   computeSha256Hex,
@@ -29,6 +30,19 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { CANONICAL_FIELDS } from './services/canonicalFields';
+import {
+  AUTH_TOKEN_TTL_SECONDS,
+  denylistToken,
+  isProductionRuntime,
+  signAuthToken,
+  verifyPassword,
+  type DenylistRedisClient,
+} from './services/authService';
+import {
+  createAuthMiddleware,
+  requireApplicationAccess,
+  requireDeveloperDashboardAccess,
+} from './services/authMiddleware';
 import { createDeveloperStatusService } from './services/developerStatusService';
 import { createDeveloperRuntimeService } from './services/developerRuntimeService';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
@@ -186,26 +200,39 @@ type ReconciliationJobEnqueueResponse = {
 
 const invalidLoginMessage = 'The user or password does not match.';
 
-const localLoginUsers: Record<string, { password: string; firstName: string; lastName: string }> = {
+/** ADR-0002 step 7: username == password, so this must never be reachable in production. Gated
+ * behind an explicit opt-in flag (see `localLoginFallbackEnabled` in createApp) rather than the
+ * mere absence of a DB pool, and `createApp` throws at startup if both that flag and production
+ * are set together. */
+const LOCAL_LOGIN_FALLBACK_ORGANIZATION_ID = 'local-dev-fallback';
+
+const localLoginUsers: Record<
+  string,
+  { password: string; firstName: string; lastName: string; role: UserRole }
+> = {
   rray: {
     password: 'rray',
     firstName: 'rray',
     lastName: '',
+    role: 'superuser',
   },
   rray2: {
     password: 'rray2',
     firstName: 'rray2',
     lastName: '',
+    role: 'developer',
   },
   rray3: {
     password: 'rray3',
     firstName: 'rray3',
     lastName: '',
+    role: 'admin',
   },
   bray: {
     password: 'bray',
     firstName: 'bray',
     lastName: '',
+    role: 'financial-analyst',
   },
 };
 
@@ -245,7 +272,7 @@ const cleanOptionalText = (value: unknown): string | undefined => {
 const authenticateWithLocalUsers = (
   username: string,
   password: string,
-): { username: string; firstName: string; lastName: string } | null => {
+): { username: string; firstName: string; lastName: string; role: UserRole } | null => {
   const localUser = localLoginUsers[username];
 
   if (localUser?.password !== password) {
@@ -256,6 +283,7 @@ const authenticateWithLocalUsers = (
     username,
     firstName: localUser.firstName,
     lastName: localUser.lastName,
+    role: localUser.role,
   };
 };
 
@@ -682,10 +710,14 @@ const parsePositiveInteger = (
 
 type ApiRateLimiter = {
   middleware: ReturnType<typeof rateLimit>;
-  redisClient: {
-    isOpen: boolean;
-    quit: () => Promise<unknown>;
-  } | null;
+  // Also used as the auth denylist client (see DenylistRedisClient in authService.ts) so logout
+  // revocation shares the same connection rather than opening a second one.
+  redisClient:
+    | (DenylistRedisClient & {
+        isOpen: boolean;
+        quit: () => Promise<unknown>;
+      })
+    | null;
 };
 
 type ReconciliationQueueConfiguration = {
@@ -858,8 +890,28 @@ export const buildOpenApiSpec = () => ({
           },
         },
         responses: {
-          200: { description: 'Authenticated user profile' },
+          200: { description: 'Bearer token and authenticated user profile' },
           401: { description: 'Authentication failed' },
+        },
+      },
+    },
+    '/api/auth/logout': {
+      post: {
+        summary: 'Revoke the current bearer token',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          204: { description: 'Token revoked (or already expired/absent)' },
+          401: { description: 'Not authenticated' },
+        },
+      },
+    },
+    '/api/auth/me': {
+      get: {
+        summary: 'Get the authenticated principal for the current bearer token',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Current username, role, and organization' },
+          401: { description: 'Not authenticated' },
         },
       },
     },
@@ -991,6 +1043,11 @@ export const buildOpenApiSpec = () => ({
       },
     },
   },
+  components: {
+    securitySchemes: {
+      bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+    },
+  },
 });
 
 const isDeveloperDiagnosticsEnabled = (): boolean => {
@@ -1025,6 +1082,17 @@ export const createApp = (
   const apiRateLimiter = createApiRateLimiter(httpLogger);
   const openApiSpec = buildOpenApiSpec();
   const queueConfiguration = resolveReconciliationQueueConfiguration();
+
+  // ADR-0002 step 7: username == password in localLoginUsers, so this fallback must be
+  // impossible to reach in production even by misconfiguration -- checked at startup, not at
+  // request time, so a bad deploy fails immediately instead of quietly shipping a backdoor.
+  const localLoginFallbackEnabled = parseBooleanFlag(process.env.ALLOW_LOCAL_LOGIN_FALLBACK) === true;
+  if (localLoginFallbackEnabled && isProductionRuntime()) {
+    throw new Error(
+      'ALLOW_LOCAL_LOGIN_FALLBACK is set in a production runtime; refusing to start. ' +
+        'This fallback authenticates with username == password and must only exist in local dev.',
+    );
+  }
 
   initializeApiSentry(httpLogger);
 
@@ -1152,6 +1220,15 @@ export const createApp = (
 
     next();
   });
+
+  // ADR-0002 step 4: deny-by-default across /api from this point on. See PUBLIC_ROUTES in
+  // authMiddleware.ts for the (short, justified) allowlist. Everything registered below this
+  // line requires a valid bearer token; a forgotten route 401s instead of silently staying open.
+  app.use(createAuthMiddleware(httpLogger, () => apiRateLimiter.redisClient));
+
+  // ADR-0002 step 5: the reconciliation/aliases/mapping surface additionally requires
+  // canAccessApplication -- the 'developer' role can authenticate but has no business here.
+  app.use(['/api/reconciliation', '/api/aliases', '/api/mapping'], requireApplicationAccess);
 
   const loadFromReadModelOrRepository = async <T>(
     loadFromReadModel: (() => Promise<T | undefined>) | undefined,
@@ -1288,6 +1365,11 @@ export const createApp = (
       }
 
       if (!pool) {
+        if (!localLoginFallbackEnabled) {
+          response.status(401).json({ message: invalidLoginMessage });
+          return;
+        }
+
         const localUser = authenticateWithLocalUsers(username, password);
 
         if (!localUser) {
@@ -1295,7 +1377,24 @@ export const createApp = (
           return;
         }
 
-        response.json(localUser);
+        const { token } = signAuthToken(
+          {
+            sub: localUser.username,
+            role: localUser.role,
+            organizationId: LOCAL_LOGIN_FALLBACK_ORGANIZATION_ID,
+            firstName: localUser.firstName,
+            lastName: localUser.lastName,
+          },
+          httpLogger,
+        );
+        response.json({
+          token,
+          username: localUser.username,
+          firstName: localUser.firstName,
+          lastName: localUser.lastName,
+          role: localUser.role,
+          organizationId: LOCAL_LOGIN_FALLBACK_ORGANIZATION_ID,
+        });
         return;
       }
 
@@ -1303,34 +1402,87 @@ export const createApp = (
         user_name: string;
         first_name: string;
         last_name: string;
+        password_hash: string;
+        role: UserRole;
+        organization_id: string;
       }>(
         `
-          SELECT user_name, first_name, last_name
+          SELECT user_name, first_name, last_name, password_hash, role, organization_id
           FROM reconciliation_user
-          WHERE user_name = $1 AND password = $2
+          WHERE user_name = $1
           LIMIT 1
         `,
-        [username, password],
+        [username],
       );
 
       const user = authenticatedUser.rows[0];
 
-      if (!user) {
+      if (!user || !(await verifyPassword(password, user.password_hash))) {
         response.status(401).json({ message: invalidLoginMessage });
         return;
       }
 
+      const { token } = signAuthToken(
+        {
+          sub: user.user_name,
+          role: user.role,
+          organizationId: user.organization_id,
+          firstName: user.first_name,
+          lastName: user.last_name,
+        },
+        httpLogger,
+      );
+
       response.json({
+        token,
         username: user.user_name,
         firstName: user.first_name,
         lastName: user.last_name,
+        role: user.role,
+        organizationId: user.organization_id,
       });
     } catch (error) {
       next(error);
     }
   });
 
-  app.use('/api/developer', (_request, response, next) => {
+  app.post('/api/auth/logout', async (request, response, next) => {
+    try {
+      if (request.auth) {
+        // Denylisted for the token's full nominal lifetime rather than its actual remaining
+        // time -- simpler than decoding `exp` again here, and over-retaining a denylist entry
+        // by a few hours is harmless (it only ever blocks a token that would otherwise still be
+        // valid).
+        await denylistToken(
+          apiRateLimiter.redisClient,
+          request.auth.jti,
+          AUTH_TOKEN_TTL_SECONDS,
+          httpLogger,
+        );
+      }
+
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/auth/me', (request, response) => {
+    if (!request.auth) {
+      response.status(401).json({ message: 'Authentication required.' });
+      return;
+    }
+
+    response.json({
+      username: request.auth.username,
+      role: request.auth.role,
+      organizationId: request.auth.organizationId,
+      firstName: request.auth.firstName,
+      lastName: request.auth.lastName,
+    });
+  });
+
+  app.use('/api/developer', requireDeveloperDashboardAccess, (_request, response, next) => {
     if (developerDiagnosticsEnabled) {
       next();
       return;

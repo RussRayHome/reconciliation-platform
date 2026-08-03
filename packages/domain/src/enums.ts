@@ -181,3 +181,54 @@ export const sourceFileApprovalStatuses = [
 ] as const;
 /** Union of valid source-file approval statuses. */
 export type SourceFileApprovalStatus = (typeof sourceFileApprovalStatuses)[number];
+
+/** The four application user roles (ADR-0002, DECIDE 2 = a single role column). */
+export const userRoles = ['developer', 'financial-analyst', 'admin', 'superuser'] as const;
+/** Union of valid user roles. */
+export type UserRole = (typeof userRoles)[number];
+
+/** Per-role feature access, shared by the API (route-level enforcement) and the web app (UI gating). */
+export interface RolePermissions {
+  canAccessApplication: boolean;
+  canAccessDocumentation: boolean;
+  canAccessDeveloperDashboard: boolean;
+  canAdjustSliderDefaults: boolean;
+  canAccessRunBook: boolean;
+}
+
+/**
+ * Single source of truth for role -> permission mapping. Previously duplicated between
+ * apps/web/src/App.tsx (UI gating only) and nothing on the server (ADR-0002 found zero
+ * server-side enforcement); both now import this instead of maintaining their own copy, so the
+ * two can no longer drift out of sync with each other.
+ */
+export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
+  developer: {
+    canAccessApplication: false,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+  },
+  'financial-analyst': {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: false,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+  },
+  admin: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: false,
+    canAdjustSliderDefaults: true,
+    canAccessRunBook: true,
+  },
+  superuser: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAccessDeveloperDashboard: true,
+    canAdjustSliderDefaults: true,
+    canAccessRunBook: true,
+  },
+};

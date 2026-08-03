@@ -5,7 +5,7 @@ import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fi
 
 import { InMemoryRunRepository } from '../src/services/runRepository';
 import { createApp } from '../src/app';
-import request from 'supertest';
+import { authedApp } from './testHelpers/authToken';
 
 const queueState = vi.hoisted(() => ({
   enabled: true,
@@ -56,7 +56,7 @@ describe('reconciliation queue API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const response = await request(app)
+    const response = await authedApp(app)
       .post('/api/reconciliation/run')
       .field('accountIdentifier', 'OPERATING-001')
       .field('reconciliationFrequency', 'Monthly')
@@ -101,7 +101,7 @@ describe('reconciliation queue API', () => {
     queueState.enabled = false;
     const app = createApp();
 
-    const response = await request(app).get('/api/reconciliation/jobs/job-1').expect(404);
+    const response = await authedApp(app).get('/api/reconciliation/jobs/job-1').expect(404);
     expect((response.body as { message: string }).message).toContain('disabled');
   });
 
@@ -109,13 +109,13 @@ describe('reconciliation queue API', () => {
     const app = createApp();
 
     queueState.getStatus.mockResolvedValueOnce({ status: 'queued' });
-    const queuedResponse = await request(app)
+    const queuedResponse = await authedApp(app)
       .get('/api/reconciliation/jobs/job-queued')
       .expect(200);
     expect(queuedResponse.body).toMatchObject({ status: 'queued' });
 
     queueState.getStatus.mockResolvedValueOnce({ status: 'processing' });
-    const processingResponse = await request(app)
+    const processingResponse = await authedApp(app)
       .get('/api/reconciliation/jobs/job-processing')
       .expect(200);
     expect(processingResponse.body).toMatchObject({ status: 'processing' });
@@ -129,7 +129,7 @@ describe('reconciliation queue API', () => {
       reason: 'Queue worker failed',
     });
 
-    const response = await request(app).get('/api/reconciliation/jobs/job-failed').expect(200);
+    const response = await authedApp(app).get('/api/reconciliation/jobs/job-failed').expect(200);
 
     expect(response.body).toMatchObject({
       status: 'failed',
@@ -148,7 +148,7 @@ describe('reconciliation queue API', () => {
       createSampleGlWorkbook(),
     ]);
 
-    const syncRunResponse = await request(syncApp)
+    const syncRunResponse = await authedApp(syncApp)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, {
         filename: 'bank.xlsx',
@@ -169,7 +169,7 @@ describe('reconciliation queue API', () => {
     });
 
     const queuedApp = createApp(repository);
-    const queuedResponse = await request(queuedApp)
+    const queuedResponse = await authedApp(queuedApp)
       .get('/api/reconciliation/jobs/job-done')
       .expect(200);
 
@@ -188,7 +188,7 @@ describe('reconciliation queue API', () => {
     const app = createApp();
     queueState.getStatus.mockResolvedValue(undefined);
 
-    const response = await request(app).get('/api/reconciliation/jobs/missing-job').expect(404);
+    const response = await authedApp(app).get('/api/reconciliation/jobs/missing-job').expect(404);
     expect((response.body as { message: string }).message).toContain('not found');
   });
 });

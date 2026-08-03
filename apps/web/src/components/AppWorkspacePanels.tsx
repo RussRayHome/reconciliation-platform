@@ -8,7 +8,7 @@ import {
 import { SectionCard, StatCard } from '@recon/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import { downloadWorkbookUrl } from '../lib/api';
+import { downloadWorkbookRequest } from '../lib/api';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
 import { formatCurrency, formatCurrencyWhole } from '../lib/format';
 import {
@@ -743,13 +743,21 @@ function ExportArtifactsContent({
         metaLabel="Worksheet tabs"
         metaValue={run.outputWorkbook?.tabNames.join(' | ') ?? 'Pending generation'}
         action={
-          <a
+          <button
+            type="button"
             className="secondary-button"
-            href={downloadWorkbookUrl(run.id)}
-            onClick={onDownloadWorkbook}
+            onClick={() => {
+              // A plain <a href> can't carry the bearer token now that this route requires auth,
+              // so the download goes through fetch + a blob URL instead of top-level navigation.
+              void downloadWorkbookRequest(run.id, run.outputWorkbook?.fileName ?? `${run.id}.xlsx`)
+                .then(onDownloadWorkbook)
+                .catch((error: unknown) => {
+                  console.error('Workbook download failed', error);
+                });
+            }}
           >
             Download workbook
-          </a>
+          </button>
         }
       />
 

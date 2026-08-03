@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
-import request from 'supertest';
 
 import { createApp } from '../src/app';
+import { authedApp } from './testHelpers/authToken';
 
 /**
  * The save route runs its GL-side and Bank-side persistence concurrently
@@ -65,7 +65,7 @@ const createFakeMappingPool = (): Pool => {
 describe('GET /api/mapping/canonical-fields', () => {
   it('returns the canonical field list without requiring a database connection', async () => {
     const app = createApp();
-    const response = await request(app).get('/api/mapping/canonical-fields').expect(200);
+    const response = await authedApp(app).get('/api/mapping/canonical-fields').expect(200);
     const fields = response.body as Array<{ id: string; required: boolean }>;
 
     expect(fields.length).toBeGreaterThan(0);
@@ -76,7 +76,7 @@ describe('GET /api/mapping/canonical-fields', () => {
 describe('POST /api/mapping/profiles', () => {
   it('returns 501 when no database is configured', async () => {
     const app = createApp();
-    await request(app)
+    await authedApp(app)
       .post('/api/mapping/profiles')
       .send({ name: 'Test', gl: [], bank: [], createdBy: 'rray' })
       .expect(501);
@@ -84,7 +84,7 @@ describe('POST /api/mapping/profiles', () => {
 
   it('rejects a request with no name', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    await request(app)
+    await authedApp(app)
       .post('/api/mapping/profiles')
       .send({ name: '', gl: [], bank: [], createdBy: 'rray' })
       .expect(400);
@@ -92,7 +92,7 @@ describe('POST /api/mapping/profiles', () => {
 
   it('rejects a pair mapped to a field outside the BusinessField vocabulary', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    await request(app)
+    await authedApp(app)
       .post('/api/mapping/profiles')
       .send({
         name: 'Test',
@@ -105,7 +105,7 @@ describe('POST /api/mapping/profiles', () => {
 
   it('creates a profile and version for both sides on a valid request', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    const response = await request(app)
+    const response = await authedApp(app)
       .post('/api/mapping/profiles')
       .send({
         name: 'Monthly Bank + GL',

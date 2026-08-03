@@ -6,8 +6,8 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
+import { authedApp } from './testHelpers/authToken';
 
-import request from 'supertest';
 
 type ExecFileCallback = (error: Error | null, result?: { stdout: string; stderr: string }) => void;
 
@@ -461,6 +461,11 @@ describe('developer endpoints', () => {
     mockExecFile.mockClear();
     process.env = { ...originalEnv };
     process.env.ENABLE_DEVELOPER_DIAGNOSTICS = 'true';
+    // vi.resetModules() gives every test a fresh authService.ts instance, which would otherwise
+    // generate its own ephemeral JWT secret per test -- while authedApp() (testHelpers/authToken)
+    // signs against the one statically-imported copy resolved when this file first loaded. An
+    // explicit shared secret keeps mint and verify on the same value regardless of module resets.
+    process.env.JWT_SECRET = 'test-secret-developer-endpoints';
     // Isolate every test from any real persisted developer-status cache
     // (present inside the tools container) so cold-start expectations hold.
     statusCacheDir = mkdtempSync(join(tmpdir(), 'dev-status-cache-'));
@@ -479,7 +484,7 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    const response = await request(app).get('/api/health').expect(200);
+    const response = await authedApp(app).get('/api/health').expect(200);
     const body = response.body as HealthResponseBody;
 
     expect(body.status).toBe('ok');
@@ -490,9 +495,9 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    await request(app).get('/api/health').expect(200);
+    await authedApp(app).get('/api/health').expect(200);
 
-    const response = await request(app).get('/api/metrics').expect(200);
+    const response = await authedApp(app).get('/api/metrics').expect(200);
 
     expect(response.headers['content-type']).toContain('text/plain');
     expect(response.text).toContain('recon_api_http_requests_total');
@@ -505,7 +510,7 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    const response = await request(app).get('/api/metrics').expect(404);
+    const response = await authedApp(app).get('/api/metrics').expect(404);
 
     expect(response.text).toContain('API metrics are disabled');
   });
@@ -519,14 +524,14 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    await request(app).get('/api/health').expect(200);
-    await request(app).get('/api/health').expect(200);
+    await authedApp(app).get('/api/health').expect(200);
+    await authedApp(app).get('/api/health').expect(200);
 
-    await request(app).get('/api/metrics').expect(200);
-    await request(app).get('/api/metrics').expect(200);
+    await authedApp(app).get('/api/metrics').expect(200);
+    await authedApp(app).get('/api/metrics').expect(200);
 
-    await request(app).get('/api/reconciliation/latest').expect(404);
-    const throttledResponse = await request(app).get('/api/reconciliation/latest').expect(429);
+    await authedApp(app).get('/api/reconciliation/latest').expect(404);
+    const throttledResponse = await authedApp(app).get('/api/reconciliation/latest').expect(429);
 
     const throttledBody = throttledResponse.body as ErrorResponseBody;
     expect(throttledBody.message).toContain('Too many requests');
@@ -536,7 +541,7 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    const response = await request(app).get('/api/developer/status?force=1').expect(200);
+    const response = await authedApp(app).get('/api/developer/status?force=1').expect(200);
     const body = response.body as DeveloperStatusResponseBody;
 
     expect(body.overallStatus).toBe('healthy');
@@ -710,7 +715,7 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    const response = await request(app).get('/api/developer/status').expect(200);
+    const response = await authedApp(app).get('/api/developer/status').expect(200);
     const body = response.body as DeveloperStatusResponseBody;
 
     expect(body.cache).toMatchObject({
@@ -766,7 +771,7 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    const response = await request(app).get('/api/developer/status').expect(200);
+    const response = await authedApp(app).get('/api/developer/status').expect(200);
     const body = response.body as DeveloperStatusResponseBody;
 
     expect(body.cache.fromCache).toBe(true);
@@ -784,7 +789,7 @@ describe('developer endpoints', () => {
       createSampleGlWorkbook(),
     ]);
 
-    await request(app)
+    await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', bankBuffer, {
         filename: 'bank.xlsx',
@@ -796,7 +801,7 @@ describe('developer endpoints', () => {
       })
       .expect(201);
 
-    await request(app)
+    await authedApp(app)
       .post('/api/reconciliation/run')
       .attach('bankFile', Buffer.from('not-an-excel-file'), {
         filename: 'bank.txt',
@@ -808,7 +813,7 @@ describe('developer endpoints', () => {
       })
       .expect(400);
 
-    const runtime = await request(app).get('/api/developer/runtime').expect(200);
+    const runtime = await authedApp(app).get('/api/developer/runtime').expect(200);
     const runtimeBody = runtime.body as RuntimeResponseBody;
 
     expect(runtimeBody.apiStatus).toBe('reachable');
@@ -862,19 +867,19 @@ describe('developer endpoints', () => {
     expect(runtimeBody.recentFailedRequests.length).toBeGreaterThanOrEqual(1);
     expect(runtimeBody.recentExceptions.length).toBeGreaterThanOrEqual(1);
 
-    const requests = await request(app).get('/api/developer/runtime/requests?limit=1').expect(200);
+    const requests = await authedApp(app).get('/api/developer/runtime/requests?limit=1').expect(200);
     const requestsBody = requests.body as ItemsResponseBody;
 
     expect(requestsBody.items).toHaveLength(1);
 
-    const exceptions = await request(app)
+    const exceptions = await authedApp(app)
       .get('/api/developer/runtime/exceptions?limit=1')
       .expect(200);
     const exceptionsBody = exceptions.body as ItemsResponseBody;
 
     expect(exceptionsBody.items).toHaveLength(1);
 
-    const runs = await request(app).get('/api/developer/runtime/runs?limit=1').expect(200);
+    const runs = await authedApp(app).get('/api/developer/runtime/runs?limit=1').expect(200);
     const runsBody = runs.body as ItemsResponseBody;
 
     expect(runsBody.items).toHaveLength(1);
@@ -885,7 +890,7 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    const response = await request(app).get('/api/developer/runtime').expect(403);
+    const response = await authedApp(app).get('/api/developer/runtime').expect(403);
     const body = response.body as ErrorResponseBody;
 
     expect(body.message).toContain('Developer diagnostics are disabled');
@@ -895,8 +900,8 @@ describe('developer endpoints', () => {
     const createApp = await importCreateApp();
     const app = createApp();
 
-    await request(app).get('/api/reconciliation/missing-id/summary').expect(404);
-    await request(app).get('/api/reconciliation/missing-id/exceptions').expect(404);
-    await request(app).get('/api/reconciliation/missing-id/export/workbook').expect(404);
+    await authedApp(app).get('/api/reconciliation/missing-id/summary').expect(404);
+    await authedApp(app).get('/api/reconciliation/missing-id/exceptions').expect(404);
+    await authedApp(app).get('/api/reconciliation/missing-id/export/workbook').expect(404);
   });
 });

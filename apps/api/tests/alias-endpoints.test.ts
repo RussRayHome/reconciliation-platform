@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
-import request from 'supertest';
 
 import { createApp } from '../src/app';
+import { authedApp } from './testHelpers/authToken';
 
 interface AliasRow {
   id: string;
@@ -124,14 +124,14 @@ describe('alias endpoints', () => {
 
   describe('GET /api/aliases', () => {
     it('returns an empty array when no aliases exist', async () => {
-      const response = await request(appWithPool(createFakeAliasPool())).get('/api/aliases');
+      const response = await authedApp(appWithPool(createFakeAliasPool())).get('/api/aliases');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual([]);
     });
 
     it('maps stored rows onto the camelCase API shape', async () => {
-      const response = await request(appWithPool(pool)).get('/api/aliases');
+      const response = await authedApp(appWithPool(pool)).get('/api/aliases');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual([
@@ -154,7 +154,7 @@ describe('alias endpoints', () => {
         { ...seededAlias, id: 'alias-3', account_identifier: 'ACCT-2' },
       ]);
 
-      const response = await request(appWithPool(scopedPool)).get(
+      const response = await authedApp(appWithPool(scopedPool)).get(
         '/api/aliases?accountIdentifier=ACCT-1',
       );
 
@@ -168,7 +168,7 @@ describe('alias endpoints', () => {
     it('omits aliases that have been soft-deleted', async () => {
       const inactivePool = createFakeAliasPool([{ ...seededAlias, is_active: false }]);
 
-      const response = await request(appWithPool(inactivePool)).get('/api/aliases');
+      const response = await authedApp(appWithPool(inactivePool)).get('/api/aliases');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual([]);
@@ -177,7 +177,7 @@ describe('alias endpoints', () => {
 
   describe('POST /api/aliases', () => {
     it('creates an alias and returns 201 with the persisted record', async () => {
-      const response = await request(appWithPool(pool))
+      const response = await authedApp(appWithPool(pool))
         .post('/api/aliases')
         .send({
           bankPattern: 'AMZN MKTP',
@@ -202,7 +202,7 @@ describe('alias endpoints', () => {
     });
 
     it('applies defaults for the optional fields', async () => {
-      const response = await request(appWithPool(pool))
+      const response = await authedApp(appWithPool(pool))
         .post('/api/aliases')
         .send({ bankPattern: 'AMZN MKTP', canonicalPayeeName: 'Amazon' });
 
@@ -215,7 +215,7 @@ describe('alias endpoints', () => {
     });
 
     it('rejects a body with no bankPattern', async () => {
-      const response = await request(appWithPool(pool))
+      const response = await authedApp(appWithPool(pool))
         .post('/api/aliases')
         .send({ canonicalPayeeName: 'Amazon' });
 
@@ -224,7 +224,7 @@ describe('alias endpoints', () => {
     });
 
     it('rejects a body with no canonicalPayeeName', async () => {
-      const response = await request(appWithPool(pool))
+      const response = await authedApp(appWithPool(pool))
         .post('/api/aliases')
         .send({ bankPattern: 'AMZN MKTP' });
 
@@ -235,7 +235,7 @@ describe('alias endpoints', () => {
     });
 
     it('rejects an empty body', async () => {
-      const response = await request(appWithPool(pool)).post('/api/aliases').send({});
+      const response = await authedApp(appWithPool(pool)).post('/api/aliases').send({});
 
       expect(response.status).toBe(400);
     });
@@ -244,7 +244,7 @@ describe('alias endpoints', () => {
     // back to the default instead of returning 400. Pinning that here so the coercion is a
     // deliberate contract rather than an accident nobody notices until a client sends garbage.
     it('coerces an out-of-range matchConfidence to the default rather than rejecting it', async () => {
-      const response = await request(appWithPool(pool)).post('/api/aliases').send({
+      const response = await authedApp(appWithPool(pool)).post('/api/aliases').send({
         bankPattern: 'AMZN MKTP',
         canonicalPayeeName: 'Amazon',
         matchConfidence: 42,
@@ -255,7 +255,7 @@ describe('alias endpoints', () => {
     });
 
     it('coerces an unknown sourceDirection to bank_to_gl rather than rejecting it', async () => {
-      const response = await request(appWithPool(pool)).post('/api/aliases').send({
+      const response = await authedApp(appWithPool(pool)).post('/api/aliases').send({
         bankPattern: 'AMZN MKTP',
         canonicalPayeeName: 'Amazon',
         sourceDirection: 'sideways',
@@ -266,7 +266,7 @@ describe('alias endpoints', () => {
     });
 
     it('drops non-string entries from normalizedTokens', async () => {
-      const response = await request(appWithPool(pool))
+      const response = await authedApp(appWithPool(pool))
         .post('/api/aliases')
         .send({
           bankPattern: 'AMZN MKTP',
@@ -284,7 +284,7 @@ describe('alias endpoints', () => {
 
   describe('PUT /api/aliases/:id', () => {
     it('updates only the supplied fields and returns the new record', async () => {
-      const response = await request(appWithPool(pool))
+      const response = await authedApp(appWithPool(pool))
         .put('/api/aliases/alias-1')
         .send({ canonicalPayeeName: 'Square Coffee Co.' });
 
@@ -297,7 +297,7 @@ describe('alias endpoints', () => {
     });
 
     it('returns 404 for an unknown alias id', async () => {
-      const response = await request(appWithPool(pool))
+      const response = await authedApp(appWithPool(pool))
         .put('/api/aliases/does-not-exist')
         .send({ canonicalPayeeName: 'Square Coffee Co.' });
 
@@ -309,7 +309,7 @@ describe('alias endpoints', () => {
     // that apart from a missing row — so an empty body 404s on an alias that plainly exists.
     // Documenting the current behavior; the message is misleading and worth revisiting.
     it('returns 404 for an empty update body even though the alias exists', async () => {
-      const response = await request(appWithPool(pool)).put('/api/aliases/alias-1').send({});
+      const response = await authedApp(appWithPool(pool)).put('/api/aliases/alias-1').send({});
 
       expect(response.status).toBe(404);
     });
@@ -317,8 +317,8 @@ describe('alias endpoints', () => {
     it('persists the update so a subsequent read reflects it', async () => {
       const app = appWithPool(pool);
 
-      await request(app).put('/api/aliases/alias-1').send({ bankPattern: 'SQ *COFFEE SHOP' });
-      const response = await request(app).get('/api/aliases');
+      await authedApp(app).put('/api/aliases/alias-1').send({ bankPattern: 'SQ *COFFEE SHOP' });
+      const response = await authedApp(app).get('/api/aliases');
 
       expect(response.body).toEqual([
         expect.objectContaining({ id: 'alias-1', bankPattern: 'SQ *COFFEE SHOP' }),
@@ -328,14 +328,14 @@ describe('alias endpoints', () => {
 
   describe('DELETE /api/aliases/:id', () => {
     it('soft-deletes the alias and returns 204 with no body', async () => {
-      const response = await request(appWithPool(pool)).delete('/api/aliases/alias-1');
+      const response = await authedApp(appWithPool(pool)).delete('/api/aliases/alias-1');
 
       expect(response.status).toBe(204);
       expect(response.body).toEqual({});
     });
 
     it('returns 404 for an unknown alias id', async () => {
-      const response = await request(appWithPool(pool)).delete('/api/aliases/does-not-exist');
+      const response = await authedApp(appWithPool(pool)).delete('/api/aliases/does-not-exist');
 
       expect(response.status).toBe(404);
       expect((response.body as { message: string }).message).toBe('Alias not found.');
@@ -344,8 +344,8 @@ describe('alias endpoints', () => {
     it('removes the alias from subsequent reads', async () => {
       const app = appWithPool(pool);
 
-      await request(app).delete('/api/aliases/alias-1');
-      const response = await request(app).get('/api/aliases');
+      await authedApp(app).delete('/api/aliases/alias-1');
+      const response = await authedApp(app).get('/api/aliases');
 
       expect(response.body).toEqual([]);
     });
@@ -353,8 +353,8 @@ describe('alias endpoints', () => {
     it('returns 404 when the same alias is deleted twice', async () => {
       const app = appWithPool(pool);
 
-      await request(app).delete('/api/aliases/alias-1');
-      const response = await request(app).delete('/api/aliases/alias-1');
+      await authedApp(app).delete('/api/aliases/alias-1');
+      const response = await authedApp(app).delete('/api/aliases/alias-1');
 
       expect(response.status).toBe(404);
     });
@@ -369,7 +369,7 @@ describe('alias endpoints', () => {
     ] as const)('%s %s returns 501', async (method, route) => {
       const app = createApp();
 
-      const response = await request(app)[method](route).send({});
+      const response = await authedApp(app)[method](route).send({});
 
       expect(response.status).toBe(501);
       expect((response.body as { message: string }).message).toBe(

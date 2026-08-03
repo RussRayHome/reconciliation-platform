@@ -78,13 +78,29 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0025 by narrowing the mapping profile uniqueness constraint', () => {
-      // 0025 widened UNIQUE (organization_id, name) to include source_type; its rollback puts
-      // the two-column form back. Asserting on the constraint itself rather than just "the
-      // schema differs" is what proves the rollback did the right thing, not merely something.
-      expect(migratedSchema).toContain('UNIQUE (organization_id, name, source_type)');
-      expect(rolledBackSchema).toContain('UNIQUE (organization_id, name)');
-      expect(rolledBackSchema).not.toContain('UNIQUE (organization_id, name, source_type)');
+    it('reverses changeset 0026 by dropping the auth/tenancy columns from reconciliation_user', () => {
+      // 0026 (the most recent changeset as of this test) added password_hash/role/organization_id
+      // and dropped password; its rollback puts password back and drops the three new columns.
+      // Asserting on the columns themselves rather than just "the schema differs" is what proves
+      // the rollback did the right thing, not merely something. When a future changeset lands on
+      // top of 0026, update this test to describe that changeset instead -- it is intentionally
+      // pinned to "whatever is currently the most recent changeset", not to 0026 forever.
+      expect(migratedSchema).toContain(
+        "col_type_is('public', 'reconciliation_user', 'password_hash', 'text'",
+      );
+      expect(migratedSchema).not.toContain(
+        "col_type_is('public', 'reconciliation_user', 'password', 'text'",
+      );
+
+      expect(rolledBackSchema).toContain(
+        "col_type_is('public', 'reconciliation_user', 'password', 'text'",
+      );
+      expect(rolledBackSchema).not.toContain(
+        "col_type_is('public', 'reconciliation_user', 'password_hash', 'text'",
+      );
+      expect(rolledBackSchema).not.toContain(
+        "col_type_is('public', 'reconciliation_user', 'role', 'text'",
+      );
     });
   });
 

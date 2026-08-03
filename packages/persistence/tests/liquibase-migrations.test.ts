@@ -225,7 +225,10 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     const organizationId = org.rows[0]!.id;
 
     await pool.query(
-      "INSERT INTO reconciliation_user (user_name, first_name, last_name, password) VALUES ('alice', 'Alice', 'Smith', 'hash') ON CONFLICT DO NOTHING",
+      `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+       VALUES ('alice', 'Alice', 'Smith', 'hash', 'financial-analyst', $1)
+       ON CONFLICT DO NOTHING`,
+      [organizationId],
     );
 
     const profileResult = await pool.query<{ id: string }>(
@@ -317,7 +320,16 @@ describe('Approval-pipeline schema constraints (against the Liquibase-migrated d
     if (startupError) throw startupError;
 
     await pool.query(
-      "INSERT INTO reconciliation_user (user_name, first_name, last_name, password) VALUES ('bob', 'Bob', 'Jones', 'hash') ON CONFLICT DO NOTHING",
+      "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Bob Co') ON CONFLICT DO NOTHING",
+    );
+    const bobOrg = await pool.query<{ id: string }>(
+      "SELECT id FROM reconciliation_organization WHERE name = 'Bob Co'",
+    );
+    await pool.query(
+      `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+       VALUES ('bob', 'Bob', 'Jones', 'hash', 'financial-analyst', $1)
+       ON CONFLICT DO NOTHING`,
+      [bobOrg.rows[0]!.id],
     );
 
     const jobId = crypto.randomUUID();

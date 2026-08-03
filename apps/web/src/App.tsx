@@ -21,7 +21,13 @@ import {
   useNavigate,
 } from 'react-router-dom';
 import { SectionCard } from '@recon/ui';
-import type { ReviewerDecision } from '@recon/domain';
+import {
+  rolePermissionsByRole,
+  userRoles,
+  type ReviewerDecision,
+  type RolePermissions,
+  type UserRole,
+} from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
 import { DeveloperDashboard } from './components/DeveloperDashboard';
@@ -40,7 +46,13 @@ import {
 import { RunBar } from './components/RunBar';
 import { NavRail } from './components/NavRail';
 import kinneyHighlander from './assets/kinney-highlander.png';
-import { getLatestReconciliationRunRequest, loginRequest } from './lib/api';
+import {
+  getLatestReconciliationRunRequest,
+  loginRequest,
+  logoutRequest,
+  meRequest,
+} from './lib/api';
+import { clearAuthToken, getAuthToken } from './lib/authToken';
 import {
   rulesCatalog,
   rulesCatalogLastRefresh,
@@ -58,22 +70,15 @@ import { useWatchlist } from './hooks/useWatchlist';
 type ReconciliationFrequency = 'Monthly' | 'Annual';
 type ReconciliationModel = ReturnType<typeof useReconciliationRun>;
 type RunData = NonNullable<ReconciliationModel['data']>;
-type UserRole = 'developer' | 'financial-analyst' | 'admin' | 'superuser';
-type AppUser = {
-  username: string;
-  role: UserRole;
-};
+/** The authenticated principal, as reported by the server (login response or /api/auth/me) --
+ * ADR-0002 step 6: role travels with the session instead of being looked up from a hardcoded
+ * client-side username map. */
 type AuthenticatedUserSession = {
   username: string;
+  role: UserRole;
+  organizationId: string;
   firstName?: string;
   lastName?: string;
-};
-type RolePermissions = {
-  canAccessApplication: boolean;
-  canAccessDocumentation: boolean;
-  canAccessDeveloperDashboard: boolean;
-  canAdjustSliderDefaults: boolean;
-  canAccessRunBook: boolean;
 };
 
 type SelectOption = {
@@ -91,49 +96,11 @@ const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
 const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-updated-at';
 const invalidLoginMessage = 'Invalid username or password. Try again.';
 
-const usersByUsername: Record<string, AppUser> = {
-  rray2: { username: 'rray2', role: 'developer' },
-  bray: { username: 'bray', role: 'financial-analyst' },
-  rray3: { username: 'rray3', role: 'admin' },
-  rray: { username: 'rray', role: 'superuser' },
-};
-
 const roleDisplayLabels: Record<UserRole, string> = {
   developer: 'Developer',
   'financial-analyst': 'Financial Analyst',
   admin: 'Admin',
   superuser: 'SuperUser',
-};
-
-const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
-  developer: {
-    canAccessApplication: false,
-    canAccessDocumentation: true,
-    canAccessDeveloperDashboard: true,
-    canAdjustSliderDefaults: false,
-    canAccessRunBook: false,
-  },
-  'financial-analyst': {
-    canAccessApplication: true,
-    canAccessDocumentation: true,
-    canAccessDeveloperDashboard: false,
-    canAdjustSliderDefaults: false,
-    canAccessRunBook: false,
-  },
-  admin: {
-    canAccessApplication: true,
-    canAccessDocumentation: true,
-    canAccessDeveloperDashboard: false,
-    canAdjustSliderDefaults: true,
-    canAccessRunBook: true,
-  },
-  superuser: {
-    canAccessApplication: true,
-    canAccessDocumentation: true,
-    canAccessDeveloperDashboard: true,
-    canAdjustSliderDefaults: true,
-    canAccessRunBook: true,
-  },
 };
 
 /** Role-aware landing tab: analysts land on Review, everyone else on Setup. */
@@ -180,9 +147,15 @@ const loadPersistedRun = (): RunData | undefined => {
   }
 };
 
-const isKnownUsername = (value: string): value is keyof typeof usersByUsername =>
-  Object.hasOwn(usersByUsername, value);
+const isUserRole = (value: unknown): value is UserRole =>
+  typeof value === 'string' && (userRoles as readonly string[]).includes(value);
 
+/**
+ * Reads the last-known session as an optimistic cache for a non-flashing initial render -- the
+ * actual identity check happens against /api/auth/me on mount (see the effect in App()), which
+ * corrects or evicts this if the token is stale, expired, or the role changed server-side.
+ * ADR-0002 step 6: the server is authoritative, this is a display cache, not the source of truth.
+ */
 const loadAuthenticatedUserSession = (): AuthenticatedUserSession | null => {
   try {
     const serializedSession = globalThis.localStorage?.getItem(AUTHENTICATED_USER_STORAGE_KEY);
@@ -191,10 +164,14 @@ const loadAuthenticatedUserSession = (): AuthenticatedUserSession | null => {
       const parsedSession = JSON.parse(serializedSession) as AuthenticatedUserSession;
       const username =
         typeof parsedSession.username === 'string' ? parsedSession.username.trim() : '';
+      const organizationId =
+        typeof parsedSession.organizationId === 'string' ? parsedSession.organizationId : '';
 
-      if (isKnownUsername(username)) {
+      if (username.length > 0 && isUserRole(parsedSession.role) && organizationId.length > 0) {
         return {
           username,
+          role: parsedSession.role,
+          organizationId,
           firstName:
             typeof parsedSession.firstName === 'string' ? parsedSession.firstName : undefined,
           lastName: typeof parsedSession.lastName === 'string' ? parsedSession.lastName : undefined,
@@ -410,10 +387,7 @@ function App() {
 
   const [authenticatedUserSession, setAuthenticatedUserSession] =
     useState<AuthenticatedUserSession | null>(() => loadAuthenticatedUserSession());
-  const activeUser =
-    authenticatedUserSession && isKnownUsername(authenticatedUserSession.username)
-      ? usersByUsername[authenticatedUserSession.username]
-      : null;
+  const activeUser = authenticatedUserSession;
   const rolePermissions = activeUser ? rolePermissionsByRole[activeUser.role] : null;
   const showDeveloperDashboardLink =
     Boolean(activeUser) &&
@@ -423,6 +397,44 @@ function App() {
   useEffect(() => {
     persistAuthenticatedUserSession(authenticatedUserSession);
   }, [authenticatedUserSession]);
+
+  // ADR-0002 step 6: the cached session above is an optimistic display value; the identity check
+  // itself happens here, against the server. A stale/expired/denylisted token gets evicted, and a
+  // server-side role change (or an org/tenant change once that lands) is picked up on next load.
+  useEffect(() => {
+    if (!getAuthToken()) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void meRequest()
+      .then((principal) => {
+        if (cancelled) {
+          return;
+        }
+
+        setAuthenticatedUserSession((previous) => ({
+          username: principal.username,
+          role: principal.role,
+          organizationId: principal.organizationId,
+          firstName: principal.firstName || previous?.firstName,
+          lastName: principal.lastName || previous?.lastName,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        clearAuthToken();
+        setAuthenticatedUserSession(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!activeUser || !rolePermissions) {
     return (
@@ -463,6 +475,7 @@ function App() {
 
   const handleSignOut = (): void => {
     setAuthenticatedUserSession(null);
+    void logoutRequest();
   };
 
   const controls = (
@@ -1375,13 +1388,10 @@ function LoginShell({
 
     void loginRequest({ username: username.trim(), password })
       .then((result) => {
-        if (!isKnownUsername(result.username)) {
-          setLoginError(invalidLoginMessage);
-          return;
-        }
-
         onAuthenticated({
           username: result.username,
+          role: result.role,
+          organizationId: result.organizationId,
           firstName: result.firstName,
           lastName: result.lastName,
         });
@@ -1482,7 +1492,7 @@ function UserRoleControls({
   displayName,
   onSignOut,
 }: Readonly<{
-  activeUser: AppUser;
+  activeUser: Pick<AuthenticatedUserSession, 'username' | 'role'>;
   rolePermissions: RolePermissions;
   displayName?: string;
   onSignOut: () => void;
