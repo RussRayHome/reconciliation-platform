@@ -32,13 +32,6 @@ export function resolveEnvironmentPaths(env: Record<string, unknown>): Environme
     .trim()
     .replace(/^\/+|\/+$/g, '');
 
-  if (pathname === '/' && configuredEnvironmentPathSegment.toLowerCase() === 'dev') {
-    const developmentAppPath = `/${configuredEnvironmentPathSegment}`;
-
-    globalThis.history.replaceState(globalThis.history.state, '', developmentAppPath);
-    pathname = developmentAppPath;
-  }
-
   const nestedRouteEnvironmentPathSegment =
     /^\/([A-Za-z0-9_-]+)\/(?:docs(?:\/|$)|developer-dashboard\.html$)/.exec(pathname)?.[1] ?? '';
   const rootRouteEnvironmentPathSegment = /^\/([A-Za-z0-9_-]+)\/?$/.exec(pathname)?.[1] ?? '';
@@ -47,6 +40,31 @@ export function resolveEnvironmentPaths(env: Record<string, unknown>): Environme
     (knownTopLevelRouteSegments.has(rootRouteEnvironmentPathSegment.toLowerCase())
       ? ''
       : rootRouteEnvironmentPathSegment);
+
+  const pathnameAlreadyOnConfiguredSegment =
+    pathname === `/${configuredEnvironmentPathSegment}` ||
+    pathname.startsWith(`/${configuredEnvironmentPathSegment}/`);
+
+  // A pathname with no environment segment of its own -- bare `/`, or a real app route hit
+  // directly (e.g. `/export`, `/mapping/create`) -- gets rewritten onto the configured `dev`
+  // segment before the router (or anything else) reads location.pathname. This used to only
+  // cover the bare `/` case: any other direct load or deep link ended up with a basename
+  // (`/dev`) that never matched the un-rewritten URL, so BrowserRouter matched nothing and the
+  // app rendered blank.
+  if (
+    !routeEnvironmentPathSegment &&
+    !pathnameAlreadyOnConfiguredSegment &&
+    configuredEnvironmentPathSegment.toLowerCase() === 'dev'
+  ) {
+    const developmentAppPath =
+      pathname === '/'
+        ? `/${configuredEnvironmentPathSegment}`
+        : `/${configuredEnvironmentPathSegment}${pathname}`;
+
+    globalThis.history.replaceState(globalThis.history.state, '', developmentAppPath);
+    pathname = developmentAppPath;
+  }
+
   const activeEnvironmentPathSegment =
     routeEnvironmentPathSegment || configuredEnvironmentPathSegment;
   const docsHref = activeEnvironmentPathSegment ? `/${activeEnvironmentPathSegment}/docs` : '/docs';

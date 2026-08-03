@@ -494,6 +494,39 @@ describe('App', () => {
     expect(globalThis.location.pathname).toBe('/dev');
   });
 
+  it('redirects a single-segment route hit directly onto /dev instead of rendering blank', () => {
+    setAuthenticatedUser('rray');
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'dev');
+    globalThis.history.pushState({}, '', '/export');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/dev/export');
+    expect(screen.getByRole('link', { name: /Reports/i })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('redirects a multi-segment deep link onto /dev instead of rendering blank', () => {
+    setAuthenticatedUser('rray');
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'dev');
+    globalThis.history.pushState({}, '', '/mapping/create');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/dev/mapping/create');
+    expect(screen.getByRole('heading', { name: 'Create Mapping' })).toBeInTheDocument();
+  });
+
+  it('does not double-prefix a route that is already under /dev', () => {
+    setAuthenticatedUser('rray');
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'dev');
+    globalThis.history.pushState({}, '', '/dev/mapping/create');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/dev/mapping/create');
+    expect(screen.getByRole('heading', { name: 'Create Mapping' })).toBeInTheDocument();
+  });
+
   it('renders the documentation hub on the docs route', () => {
     setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/docs');
