@@ -323,7 +323,7 @@ test.describe('stage navigation', () => {
       createSampleGlWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
-    await expect(page.getByRole('link', { name: 'Recon summary' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Reconciliation' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -336,7 +336,7 @@ test.describe('stage navigation', () => {
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Recon summary' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Reconciliation' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -361,7 +361,8 @@ test.describe('stage navigation', () => {
       createSampleGlWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
-    await page.getByRole('link', { name: 'Export' }).click();
+    // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
+    await page.getByRole('link', { name: 'Reports' }).click();
     await expect(page.getByRole('link', { name: 'Download workbook' })).toBeVisible();
   });
 });
@@ -463,9 +464,9 @@ test.describe('edge cases', () => {
   }) => {
     await openSetup(page);
     await page.getByRole('link', { name: 'Import Files' }).focus();
-    await page.getByRole('link', { name: 'Recon summary' }).focus();
+    await page.getByRole('link', { name: 'Reconciliation' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('link', { name: 'Recon summary' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Reconciliation' })).toHaveAttribute(
       'aria-current',
       'page',
     );

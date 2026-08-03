@@ -94,6 +94,16 @@ const heavyDeveloperCheckNames = {
   coverage: 'Coverage',
   security: 'Security vulnerabilities',
 } as const;
+// The E2E suite runs 49 specs with workers: 1 (see playwright.config.ts — visual-baseline specs
+// race when parallel). That is minutes of wall clock, far longer than a status request should
+// block for, and the old inline 240s budget killed the subprocess before Playwright could write
+// its JSON report — which is why the dashboard's E2E panel was permanently empty. It now runs
+// detached with a real budget, and the payload carries a placeholder until it lands.
+const e2eBackgroundTimeoutMs = Number(process.env.DEV_STATUS_E2E_TIMEOUT_MS ?? '1800000');
+const e2eRunningHighlight =
+  'E2E tests are running in the background. This section refreshes automatically once they finish.';
+const e2eNotRunHighlight =
+  'E2E tests have not run yet in this session. Use Force refresh to start them in the background.';
 const deferredHeavyCheckHighlight =
   'Result reused from the last force refresh. Use Force refresh to run this check now.';
 
@@ -740,6 +750,10 @@ export const createDeveloperStatusService = ({
   let developerStatusCache: { payload: DeveloperStatusPayload; cachedAt: number } | null = null;
   let developerStatusInFlight: DeveloperStatusInFlight | null = null;
   const developerStatusHistory: DeveloperStatusSnapshot[] = [];
+  // Detached E2E run. `e2eBackgroundRun` is non-null only while a run is in flight, so it doubles
+  // as the "is it running" flag the payload placeholder is built from.
+  let e2eBackgroundRun: Promise<void> | null = null;
+  let lastCompletedE2eCheck: DeveloperCheck | null = null;
 
   // The check cache/history are otherwise in-memory only, so a tools-container
   // restart (e.g. a redeploy) wipes them and the dashboard shows an empty,
@@ -1130,6 +1144,113 @@ export const createDeveloperStatusService = ({
     };
   };
 
+  const e2eCommand = formatCommand(npmExecutable, [
+    'run',
+    'test:e2e',
+    '--',
+    '--reporter=list,json',
+  ]);
+
+  /** Placeholder shown while the detached E2E run is still going. */
+  const buildE2eRunningCheck = (): DeveloperCheck => ({
+    name: heavyDeveloperCheckNames.e2e,
+    command: e2eCommand,
+    // Deliberately not `false`: a run in progress is neither passed nor failed, and marking it
+    // failed would flip overallStatus to attention-needed for the whole dashboard.
+    ok: true,
+    running: true,
+    exitCode: 0,
+    durationMs: 0,
+    summary: 'Running in the background',
+    details: e2eRunningHighlight,
+    highlights: [e2eRunningHighlight],
+    areaLabel: 'E2E',
+    testType: 'e2e',
+    e2eSpecs: [],
+  });
+
+  /** Placeholder for a session where E2E has not been started yet. */
+  const buildE2eNotRunCheck = (): DeveloperCheck => ({
+    name: heavyDeveloperCheckNames.e2e,
+    command: e2eCommand,
+    ok: true,
+    exitCode: 0,
+    durationMs: 0,
+    summary: 'Not run yet',
+    details: e2eNotRunHighlight,
+    highlights: [e2eNotRunHighlight],
+    areaLabel: 'E2E',
+    testType: 'e2e',
+    e2eSpecs: [],
+  });
+
+  const runE2eCheck = async (): Promise<DeveloperCheck> => {
+    const check = await runDeveloperCheck(
+      heavyDeveloperCheckNames.e2e,
+      ['run', 'test:e2e', '--', '--reporter=list,json'],
+      (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
+      parseTestHighlights,
+      e2eBackgroundTimeoutMs,
+      parseTestMetadata('e2e', 'E2E'),
+      { PLAYWRIGHT_JSON_OUTPUT_NAME: e2eJsonReportPath },
+    );
+    check.e2eSpecs = readJsonReportFile(e2eJsonReportPath, parsePlaywrightJsonSpecs);
+    return check;
+  };
+
+  /**
+   * Swaps the finished E2E result into the cached payload so the next poll picks it up, and
+   * recomputes the pass/fail tallies the placeholder was excluded from.
+   */
+  const applyE2eResultToCache = (completed: DeveloperCheck): void => {
+    const cached = developerStatusCache;
+    if (!cached) {
+      return;
+    }
+
+    const checks = cached.payload.checks.map((check) =>
+      check.name === heavyDeveloperCheckNames.e2e ? completed : check,
+    );
+    const failedChecks = checks.filter((check) => !check.ok && check.running !== true).length;
+
+    developerStatusCache = {
+      payload: {
+        ...cached.payload,
+        checks,
+        failedChecks,
+        passedChecks: checks.length - failedChecks,
+        overallStatus: failedChecks > 0 ? 'attention-needed' : 'healthy',
+      },
+      cachedAt: cached.cachedAt,
+    };
+    persistDeveloperStatus();
+  };
+
+  /** Starts the detached E2E run unless one is already in flight. Never throws. */
+  const startE2eBackgroundRun = (): void => {
+    if (e2eBackgroundRun !== null) {
+      return;
+    }
+
+    e2eBackgroundRun = (async () => {
+      try {
+        const completed = await runE2eCheck();
+        lastCompletedE2eCheck = completed;
+        applyE2eResultToCache(completed);
+      } catch {
+        // Swallowed on purpose: a failed background run must not reject an unhandled promise or
+        // wipe the last good result. The next force refresh retries.
+      } finally {
+        e2eBackgroundRun = null;
+      }
+    })();
+  };
+
+  const resolveE2eCheck = (): DeveloperCheck =>
+    e2eBackgroundRun !== null
+      ? buildE2eRunningCheck()
+      : (lastCompletedE2eCheck ?? buildE2eNotRunCheck());
+
   const collectDeveloperStatus = async ({
     includeHeavyChecks,
     cachedPayload,
@@ -1248,8 +1369,10 @@ export const createDeveloperStatusService = ({
       () => ({ areaLabel: 'Static analysis' }),
     );
 
+    // E2E is deliberately absent here — it is started detached by startE2eBackgroundRun() and
+    // reconciled into the cache when it finishes, so a force refresh returns as soon as coverage
+    // and security are done rather than blocking for the whole Playwright suite.
     const runHeavyChecks = async (): Promise<{
-      e2eTests: DeveloperCheck;
       coverage: DeveloperCheck;
       security: DeveloperCheck;
     }> => {
@@ -1306,31 +1429,32 @@ export const createDeveloperStatusService = ({
         (output) => ({ areaLabel: 'Security', ...parseSecurityMetadata(output) }),
       );
 
-      const e2eTests = await runDeveloperCheck(
-        heavyDeveloperCheckNames.e2e,
-        ['run', 'test:e2e', '--', '--reporter=list,json'],
-        (stdout, stderr) => summarizeTestOutput(`${stdout}\n${stderr}`),
-        parseTestHighlights,
-        240000,
-        parseTestMetadata('e2e', 'E2E'),
-        { PLAYWRIGHT_JSON_OUTPUT_NAME: e2eJsonReportPath },
-      );
-      e2eTests.e2eSpecs = readJsonReportFile(e2eJsonReportPath, parsePlaywrightJsonSpecs);
-
       return {
         coverage,
         security: {
           ...securityBase,
           penetrationTestStatuses,
         },
-        e2eTests,
       };
     };
 
     const deferredHeavyChecks = includeHeavyChecks
       ? null
       : resolveDeferredHeavyChecks(cachedPayload ?? developerStatusCache?.payload);
-    const { e2eTests, coverage, security } = deferredHeavyChecks ?? (await runHeavyChecks());
+
+    if (includeHeavyChecks) {
+      // Kick E2E off before awaiting coverage/security so it overlaps with them instead of
+      // queueing behind them.
+      startE2eBackgroundRun();
+    }
+
+    const { coverage, security } = deferredHeavyChecks ?? (await runHeavyChecks());
+    // An in-flight run always wins, so a poll during the run shows "running" rather than the
+    // stale result it is about to replace. Otherwise fall back to the cached result.
+    const e2eTests =
+      e2eBackgroundRun !== null
+        ? buildE2eRunningCheck()
+        : (deferredHeavyChecks?.e2eTests ?? resolveE2eCheck());
 
     const checks = [
       unitTests,
@@ -1342,7 +1466,8 @@ export const createDeveloperStatusService = ({
       security,
       e2eTests,
     ];
-    const failedChecks = checks.filter((item) => !item.ok).length;
+    // A check still running in the background counts as neither passed nor failed.
+    const failedChecks = checks.filter((item) => !item.ok && item.running !== true).length;
     const passedChecks = checks.length - failedChecks;
     const totalDurationMs = checks.reduce((sum, item) => sum + item.durationMs, 0);
     const overallStatus: 'healthy' | 'attention-needed' =

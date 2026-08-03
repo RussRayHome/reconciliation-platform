@@ -91,6 +91,8 @@ type DeveloperCheckResponse = {
   }>;
   dbTestItems?: DbTestItem[];
   e2eSpecs?: E2eSpecItem[];
+  /** Set while the check is still executing detached on the server. */
+  running?: boolean;
   securityComponentScores?: SecurityComponentScore[];
   securityAggregateScore?: {
     critical: number;
@@ -203,6 +205,9 @@ const securityVerdict = (check: DeveloperCheckResponse | undefined): Verdict => 
 
 const e2eVerdict = (check: DeveloperCheckResponse | undefined): Verdict => {
   if (!check) return 'neutral';
+  // A detached run in progress carries ok: true so it does not count as a failure; without this
+  // it would render a green "pass" pill before a single spec has reported.
+  if (check.running === true) return 'neutral';
   if (!check.ok) return 'fail';
   const hasFlaky = (check.e2eSpecs ?? []).some((spec) => spec.status === 'flaky');
   return hasFlaky ? 'warn' : 'pass';
@@ -655,15 +660,24 @@ function E2ePanel({ check }: Readonly<{ check: DeveloperCheckResponse | undefine
     return rank(a.status) - rank(b.status);
   });
 
+  const isRunning = check?.running === true;
+
   return (
     <div className="detail-panel" id="e2e">
       <div className="detail-panel__head">
         <h3>E2E test results</h3>
         <span className="detail-panel__sub">
-          Playwright · {specs.length} specs · {formatDuration(check?.durationMs ?? 0)}
+          {isRunning
+            ? 'Playwright · running in the background'
+            : `Playwright · ${specs.length} specs · ${formatDuration(check?.durationMs ?? 0)}`}
         </span>
       </div>
-      {specs.length === 0 ? (
+      {isRunning ? (
+        <p className="detail-panel__empty" role="status" aria-live="polite">
+          E2E tests are running in the background. This section refreshes automatically once they
+          finish — no need to force refresh again.
+        </p>
+      ) : specs.length === 0 ? (
         <p className="detail-panel__empty">No per-spec detail available for this run.</p>
       ) : (
         <table>
@@ -724,33 +738,59 @@ export function DeveloperDashboard() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<'refresh' | 'force' | null>(null);
 
-  const loadDashboard = useCallback(async (forceRefresh: boolean): Promise<void> => {
-    setBusyAction(forceRefresh ? 'force' : 'refresh');
+  // `silent` skips the busy indicator so the background poll does not disable the toolbar buttons
+  // or flicker their labels every time it ticks.
+  const loadDashboard = useCallback(
+    async (forceRefresh: boolean, silent = false): Promise<void> => {
+      if (!silent) {
+        setBusyAction(forceRefresh ? 'force' : 'refresh');
+      }
 
-    const statusRequest = fetch(
-      forceRefresh ? '/api/developer/status?force=true' : '/api/developer/status',
-    )
-      .then((response) => parseJsonResponse<DeveloperStatusResponse>(response))
-      .then((payload) => {
-        setStatus(payload);
-        setStatusError(null);
-      })
-      .catch((error: unknown) => {
-        setStatusError(error instanceof Error ? error.message : 'Unable to load repo status.');
-      });
+      const statusRequest = fetch(
+        forceRefresh ? '/api/developer/status?force=true' : '/api/developer/status',
+      )
+        .then((response) => parseJsonResponse<DeveloperStatusResponse>(response))
+        .then((payload) => {
+          setStatus(payload);
+          setStatusError(null);
+        })
+        .catch((error: unknown) => {
+          setStatusError(error instanceof Error ? error.message : 'Unable to load repo status.');
+        });
 
-    const runtimeRequest = fetch('/api/developer/runtime')
-      .then((response) => parseJsonResponse<DeveloperRuntimeResponse>(response))
-      .then((payload) => setRuntime(payload))
-      .catch(() => undefined);
+      const runtimeRequest = fetch('/api/developer/runtime')
+        .then((response) => parseJsonResponse<DeveloperRuntimeResponse>(response))
+        .then((payload) => setRuntime(payload))
+        .catch(() => undefined);
 
-    await Promise.all([statusRequest, runtimeRequest]);
-    setBusyAction(null);
-  }, []);
+      await Promise.all([statusRequest, runtimeRequest]);
+      if (!silent) {
+        setBusyAction(null);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadDashboard(false);
   }, [loadDashboard]);
+
+  const hasRunningCheck = (status?.checks ?? []).some((check) => check.running === true);
+
+  // While a check runs detached on the server (currently only E2E, which takes minutes), poll for
+  // the result so the panel fills itself in. A plain non-force reload is enough — the server
+  // swaps the finished result into its cache, so no extra work is triggered by polling.
+  useEffect(() => {
+    if (!hasRunningCheck) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void loadDashboard(false, true);
+    }, 15000);
+
+    return () => clearInterval(timer);
+  }, [hasRunningCheck, loadDashboard]);
 
   if (!status) {
     return (

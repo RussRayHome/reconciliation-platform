@@ -112,6 +112,10 @@ if [[ "${DOCKER_COMPOSE_EXTRA_FILE:-}" == *"stage"* ]] || [[ "$ENV_FILE" == *"st
   DEPLOY_ENV="stage"
 fi
 
+if [[ "$DEPLOY_ENV" == "dev" ]]; then
+  bash "$ROOT_DIR/scripts/pre-flight/generate-dev-cert.sh"
+fi
+
 if [[ "$DEPLOY_ENV" == "dev" || "$DEPLOY_ENV" == "stage" ]]; then
   export AUX_HEALTH_CHECK_REQUIRED="${AUX_HEALTH_CHECK_REQUIRED:-true}"
   export AUX_HEALTH_CHECK_RETRIES="${AUX_HEALTH_CHECK_RETRIES:-90}"

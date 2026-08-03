@@ -1,6 +1,7 @@
 # ADR-0002: Authentication and Authorization
 
-**Status:** Proposed — three decisions need the owner's call (marked **DECIDE** below)
+**Status:** Proposed — DECIDE 1 resolved 2026-08-03 (Option B, JWT); DECIDE 2 and DECIDE 3 still
+need the owner's call
 **Date:** 2026-08-03
 **Deciders:** Repository owner
 **Blocks:** [ADR-0001](0001-multi-tenant-isolation-model.md) — the tenant GUC is derived from the
@@ -50,6 +51,12 @@ revocation needs a denylist, and storing it in `localStorage` re-creates the XSS
 _Recommendation: **A**. This is a single API serving its own SPA, so there is no cross-origin or
 third-party consumer to justify JWT's cost, and revocation matters for a finance product._
 
+**Decided: Option B (JWT), 2026-08-03.** Overrides the recommendation above — owner's call. This
+reopens the revocation question the recommendation flagged: a stateless JWT needs either a short
+expiry with refresh tokens, or a denylist (e.g. Redis, which is already in the stack for rate
+limiting) for logout/compromise to take effect before natural expiry. Not yet decided — track
+separately before step 3 below ships.
+
 ### DECIDE 2 — Where roles live
 
 **Option A: `reconciliation_user.role` column** with a CHECK constraint over the four existing
@@ -88,16 +95,16 @@ Sized in dependency order. **Steps 1–2 are one migration, not three** — `rec
 needs `password_hash`, `role`, and `organization_id` (the last from ADR-0001), and changing that
 table once is much cheaper than three times.
 
-| #   | Work                                                                                                                                                         | Notes                                                          |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| 1   | **Schema:** add `password_hash`, `role`, `organization_id` to `reconciliation_user`; drop `password`                                                         | Single Liquibase changeset. Coordinate with ADR-0001 task      |
-| 2   | **Hashing:** argon2id (or bcrypt), hash on registration, verify on login, migrate existing rows per DECIDE 3                                                 | Replaces the `password = $2` SQL comparison                    |
-| 3   | **Session issuance:** login sets an httpOnly cookie; add `POST /api/auth/logout` and a `GET /api/auth/me` for session rehydration                            | Per DECIDE 1                                                   |
-| 4   | **Auth middleware:** deny-by-default across `/api`, with an explicit public allowlist (`/api/health`, `/api/auth/login`, and whatever the ops tooling needs) | The single highest-value step                                  |
-| 5   | **Authorization:** map the existing 5 permission booleans to route-level checks; enforce server-side                                                         | Client keeps its UI gating, but it stops being the control     |
-| 6   | **Frontend:** rely on the cookie, fetch role from `/api/auth/me`, delete `usersByUsername`, stop trusting `localStorage` for identity                        | `App.tsx`                                                      |
-| 7   | **Remove `localLoginUsers`** or gate it behind an explicit dev-only flag that cannot be set in production                                                    | Currently username == password                                 |
-| 8   | **Tests:** unauthenticated → 401 on every protected route; wrong role → 403; a persistence test asserting the stored credential is not the plaintext input   | The last one makes the hashing migration fail-before-it-passes |
+| #   | Work                                                                                                                                                                      | Notes                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1   | **Schema:** add `password_hash`, `role`, `organization_id` to `reconciliation_user`; drop `password`                                                                      | Single Liquibase changeset. Coordinate with ADR-0001 task                             |
+| 2   | **Hashing:** argon2id (or bcrypt), hash on registration, verify on login, migrate existing rows per DECIDE 3                                                              | Replaces the `password = $2` SQL comparison                                           |
+| 3   | **Session issuance:** login returns a signed JWT (`Authorization: Bearer`); add `POST /api/auth/logout` (denylist entry) and a `GET /api/auth/me` for session rehydration | Per DECIDE 1 (JWT). Revocation strategy (denylist vs short expiry+refresh) still open |
+| 4   | **Auth middleware:** deny-by-default across `/api`, with an explicit public allowlist (`/api/health`, `/api/auth/login`, and whatever the ops tooling needs)              | The single highest-value step                                                         |
+| 5   | **Authorization:** map the existing 5 permission booleans to route-level checks; enforce server-side                                                                      | Client keeps its UI gating, but it stops being the control                            |
+| 6   | **Frontend:** rely on the bearer token, fetch role from `/api/auth/me`, delete `usersByUsername`, stop trusting `localStorage` for identity                               | `App.tsx`                                                                             |
+| 7   | **Remove `localLoginUsers`** or gate it behind an explicit dev-only flag that cannot be set in production                                                                 | Currently username == password                                                        |
+| 8   | **Tests:** unauthenticated → 401 on every protected route; wrong role → 403; a persistence test asserting the stored credential is not the plaintext input                | The last one makes the hashing migration fail-before-it-passes                        |
 
 **Not in scope, deliberately:** SSO/SAML, MFA, password-reset email flows, rate limiting on login
 (the API already has a rate limiter that could be tightened separately), and account lockout.

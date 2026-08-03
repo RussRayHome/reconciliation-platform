@@ -151,6 +151,12 @@ export type DeveloperCheck = {
   dbTestItems?: DbTestItem[];
   e2eSpecs?: E2eSpecItem[];
   coverageFiles?: CoverageFileEntry[];
+  /**
+   * True while the check is still executing in the background. The E2E suite runs far longer than
+   * a request should block for, so it is started detached and the payload carries a placeholder
+   * until it finishes. A running check is neither passed nor failed — exclude it from both counts.
+   */
+  running?: boolean;
 };
 
 /** Pass/fail counts for one test suite type within a status snapshot. */

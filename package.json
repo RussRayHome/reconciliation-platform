@@ -40,6 +40,7 @@
     "docker:preflight:dev": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/preflight-build-checks.sh",
     "docker:preflight:stage": "DOCKER_ENV_FILE=.env.docker.stage DOCKER_ENV_FALLBACK_FILE=.env.docker.stage.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.stage.yaml bash scripts/pre-flight/preflight-build-checks.sh",
     "docker:build": "sh -c 'env_file=.env.docker.dev; [ -f \"$env_file\" ] || env_file=.env.docker.dev.fallback; docker compose -f compose.yaml -f compose.dev.yaml --env-file \"$env_file\" build'",
+    "docker:cert:dev": "bash scripts/pre-flight/generate-dev-cert.sh",
     "docker:predeploy": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/predeploy-stack-checks.sh",
     "docker:db:preflight": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/db-preflight-checks.sh",
     "docker:db:preflight:dev": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/db-preflight-checks.sh",
