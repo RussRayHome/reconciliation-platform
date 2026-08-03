@@ -8,7 +8,13 @@ import type { CanonicalField, MappingProfilePair, TransformKind } from '@recon/d
 import { getCanonicalFieldsRequest, saveMappingProfileRequest } from '../lib/api';
 import { readHeaderOnly, type MappingSourceColumn } from '../lib/csvHeader';
 import { suggestMapping } from '../lib/mappingSuggest';
-import { applyTransform, defaultTransformForType, TRANSFORM_KINDS, TRANSFORM_LABELS, validateSampleValue } from '../lib/mappingTransforms';
+import {
+  applyTransform,
+  defaultTransformForType,
+  TRANSFORM_KINDS,
+  TRANSFORM_LABELS,
+  validateSampleValue,
+} from '../lib/mappingTransforms';
 import { routePaths } from '../routes/routePaths';
 import { CreateMappingCanvas } from './CreateMappingCanvas';
 
@@ -77,7 +83,10 @@ export function CreateMappingScreen() {
     [],
   );
 
-  const canonicalFieldIds = useMemo(() => canonicalFields.map((field) => field.id), [canonicalFields]);
+  const canonicalFieldIds = useMemo(
+    () => canonicalFields.map((field) => field.id),
+    [canonicalFields],
+  );
   const requiredFieldIds = useMemo(
     () => canonicalFields.filter((field) => field.required).map((field) => field.id),
     [canonicalFields],
@@ -117,8 +126,14 @@ export function CreateMappingScreen() {
     });
   }, [mapping.bank, fieldTypeById]);
 
-  const glSampleByColumn = useMemo(() => Object.fromEntries(glCols.map((c) => [c.id, c.sample])), [glCols]);
-  const bankSampleByColumn = useMemo(() => Object.fromEntries(bankCols.map((c) => [c.id, c.sample])), [bankCols]);
+  const glSampleByColumn = useMemo(
+    () => Object.fromEntries(glCols.map((c) => [c.id, c.sample])),
+    [glCols],
+  );
+  const bankSampleByColumn = useMemo(
+    () => Object.fromEntries(bankCols.map((c) => [c.id, c.sample])),
+    [bankCols],
+  );
 
   const handleFileChange = useCallback(
     (side: UploadSide) => async (event: ChangeEvent<HTMLInputElement>) => {
@@ -193,7 +208,8 @@ export function CreateMappingScreen() {
     () =>
       mapping.gl.map((pair) => ({
         ...pair,
-        transform: glTransforms[pair.col] ?? defaultTransformForType(fieldTypeById[pair.db] ?? 'text'),
+        transform:
+          glTransforms[pair.col] ?? defaultTransformForType(fieldTypeById[pair.db] ?? 'text'),
       })),
     [mapping.gl, glTransforms, fieldTypeById],
   );
@@ -201,12 +217,14 @@ export function CreateMappingScreen() {
     () =>
       mapping.bank.map((pair) => ({
         ...pair,
-        transform: bankTransforms[pair.col] ?? defaultTransformForType(fieldTypeById[pair.db] ?? 'text'),
+        transform:
+          bankTransforms[pair.col] ?? defaultTransformForType(fieldTypeById[pair.db] ?? 'text'),
       })),
     [mapping.bank, bankTransforms, fieldTypeById],
   );
 
-  const hasUnsavedWork = glCols.length > 0 || bankCols.length > 0 || mapping.gl.length > 0 || mapping.bank.length > 0;
+  const hasUnsavedWork =
+    glCols.length > 0 || bankCols.length > 0 || mapping.gl.length > 0 || mapping.bank.length > 0;
 
   // Warns on tab close/refresh/typed-URL navigation. In-app navigation can't be blocked the same
   // way without a data router (this app uses plain BrowserRouter, where useBlocker is a no-op) —
@@ -298,8 +316,12 @@ export function CreateMappingScreen() {
             </button>
           </div>
         </div>
-        {canonicalFieldsError ? <span className="mapping-upload__error">{canonicalFieldsError}</span> : null}
-        {saveState === 'error' && saveError ? <span className="mapping-upload__error">{saveError}</span> : null}
+        {canonicalFieldsError ? (
+          <span className="mapping-upload__error">{canonicalFieldsError}</span>
+        ) : null}
+        {saveState === 'error' && saveError ? (
+          <span className="mapping-upload__error">{saveError}</span>
+        ) : null}
       </div>
 
       <div className="mapping-uploads">
@@ -326,7 +348,9 @@ export function CreateMappingScreen() {
             <span className="mapping-upload__error">{glError}</span>
           ) : (
             <span className="mapping-upload__meta">
-              {glCols.length > 0 ? `${glCols.length} columns detected · header row only` : 'Header row only is read'}
+              {glCols.length > 0
+                ? `${glCols.length} columns detected · header row only`
+                : 'Header row only is read'}
             </span>
           )}
         </div>
@@ -353,7 +377,9 @@ export function CreateMappingScreen() {
             <span className="mapping-upload__error">{bankError}</span>
           ) : (
             <span className="mapping-upload__meta">
-              {bankCols.length > 0 ? `${bankCols.length} columns detected · header row only` : 'Header row only is read'}
+              {bankCols.length > 0
+                ? `${bankCols.length} columns detected · header row only`
+                : 'Header row only is read'}
             </span>
           )}
         </div>
@@ -368,7 +394,9 @@ export function CreateMappingScreen() {
                 ? 'mapping-bar__fill mapping-bar__fill--gl-ok'
                 : 'mapping-bar__fill'
             }
-            style={{ width: `${Math.round((glRequiredDone / Math.max(1, requiredFieldIds.length)) * 100)}%` }}
+            style={{
+              width: `${Math.round((glRequiredDone / Math.max(1, requiredFieldIds.length)) * 100)}%`,
+            }}
           />
         </span>
         <span className="mapping-coverage__count">
@@ -381,7 +409,9 @@ export function CreateMappingScreen() {
                 ? 'mapping-bar__fill mapping-bar__fill--bank-ok'
                 : 'mapping-bar__fill'
             }
-            style={{ width: `${Math.round((bankRequiredDone / Math.max(1, requiredFieldIds.length)) * 100)}%` }}
+            style={{
+              width: `${Math.round((bankRequiredDone / Math.max(1, requiredFieldIds.length)) * 100)}%`,
+            }}
           />
         </span>
         <span className="mapping-coverage__count">
@@ -485,7 +515,13 @@ export function CreateMappingScreen() {
                   : 'mapping-table__status mapping-table__status--muted';
               return (
                 <tr key={field.id}>
-                  <td className={gl ? 'mapping-table__col mapping-table__col--gl' : 'mapping-table__col mapping-table__col--empty'}>
+                  <td
+                    className={
+                      gl
+                        ? 'mapping-table__col mapping-table__col--gl'
+                        : 'mapping-table__col mapping-table__col--empty'
+                    }
+                  >
                     {gl ?? '—'}
                   </td>
                   <td className="mapping-table__col">
@@ -503,7 +539,11 @@ export function CreateMappingScreen() {
                   </td>
                   <td className="mapping-table__col mapping-table__col--db">{field.id}</td>
                   <td
-                    className={bank ? 'mapping-table__col mapping-table__col--bank' : 'mapping-table__col mapping-table__col--empty'}
+                    className={
+                      bank
+                        ? 'mapping-table__col mapping-table__col--bank'
+                        : 'mapping-table__col mapping-table__col--empty'
+                    }
                   >
                     {bank ?? '—'}
                   </td>

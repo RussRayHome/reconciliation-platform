@@ -121,12 +121,22 @@ const buildRunFromRows = async (
   });
 };
 
-const splitCombineNearMissBankFixture = splitCombineNearMissBankRows as Array<Array<string | number>>;
+const splitCombineNearMissBankFixture = splitCombineNearMissBankRows as Array<
+  Array<string | number>
+>;
 const splitCombineNearMissGlFixture = splitCombineNearMissGlRows as Array<Array<string | number>>;
-const depositGroupingOversizedBankFixture = depositGroupingOversizedBankRows as Array<Array<string | number>>;
-const depositGroupingOversizedGlFixture = depositGroupingOversizedGlRows as Array<Array<string | number>>;
-const staleOutstandingMixedResidualBankFixture = staleOutstandingMixedResidualBankRows as Array<Array<string | number>>;
-const staleOutstandingMixedResidualGlFixture = staleOutstandingMixedResidualGlRows as Array<Array<string | number>>;
+const depositGroupingOversizedBankFixture = depositGroupingOversizedBankRows as Array<
+  Array<string | number>
+>;
+const depositGroupingOversizedGlFixture = depositGroupingOversizedGlRows as Array<
+  Array<string | number>
+>;
+const staleOutstandingMixedResidualBankFixture = staleOutstandingMixedResidualBankRows as Array<
+  Array<string | number>
+>;
+const staleOutstandingMixedResidualGlFixture = staleOutstandingMixedResidualGlRows as Array<
+  Array<string | number>
+>;
 
 const countExceptionsByCategory = (
   output: Awaited<ReturnType<typeof buildRunFromRows>>,
@@ -140,35 +150,46 @@ describe('runReconciliation', () => {
     );
   });
 
-  it.each(exceptionScenarioFixtures)('produces $expectedCategory from the $name fixture', async (fixture) => {
-    const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
+  it.each(exceptionScenarioFixtures)(
+    'produces $expectedCategory from the $name fixture',
+    async (fixture) => {
+      const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
 
-    expect(countExceptionsByCategory(output, fixture.expectedCategory)).toBe(fixture.expectedCount);
-  });
+      expect(countExceptionsByCategory(output, fixture.expectedCategory)).toBe(
+        fixture.expectedCount,
+      );
+    },
+  );
 
-  it.each(exceptionEdgeCaseFixtures)('keeps the $name edge case on the intended fallback path', async (fixture) => {
-    const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
+  it.each(exceptionEdgeCaseFixtures)(
+    'keeps the $name edge case on the intended fallback path',
+    async (fixture) => {
+      const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
 
-    fixture.expectedPresent.forEach(({ category, count }) => {
-      expect(countExceptionsByCategory(output, category)).toBe(count);
-    });
+      fixture.expectedPresent.forEach(({ category, count }) => {
+        expect(countExceptionsByCategory(output, category)).toBe(count);
+      });
 
-    fixture.expectedAbsent.forEach((category) => {
-      expect(countExceptionsByCategory(output, category)).toBe(0);
-    });
-  });
+      fixture.expectedAbsent.forEach((category) => {
+        expect(countExceptionsByCategory(output, category)).toBe(0);
+      });
+    },
+  );
 
-  it.each(exceptionPrecedenceFixtures)('applies precedence so that $name keeps only the winning categories', async (fixture) => {
-    const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
+  it.each(exceptionPrecedenceFixtures)(
+    'applies precedence so that $name keeps only the winning categories',
+    async (fixture) => {
+      const output = await buildRunFromRows(fixture.bankRows, fixture.glRows);
 
-    fixture.expectedPresent.forEach(({ category, count }) => {
-      expect(countExceptionsByCategory(output, category)).toBe(count);
-    });
+      fixture.expectedPresent.forEach(({ category, count }) => {
+        expect(countExceptionsByCategory(output, category)).toBe(count);
+      });
 
-    fixture.expectedAbsent.forEach((category) => {
-      expect(countExceptionsByCategory(output, category)).toBe(0);
-    });
-  });
+      fixture.expectedAbsent.forEach((category) => {
+        expect(countExceptionsByCategory(output, category)).toBe(0);
+      });
+    },
+  );
 
   it('triggers the full exception taxonomy from a single combined workbook pair', async () => {
     const combinedRows = buildAllExceptionsCombinedRows();
@@ -185,7 +206,9 @@ describe('runReconciliation', () => {
       staleOutstandingMixedResidualGlFixture,
     );
 
-    expect(output.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
+    expect(
+      output.exceptions.filter((item) => item.category === 'StaleOutstandingCheck'),
+    ).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(2);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
@@ -204,9 +227,17 @@ describe('runReconciliation', () => {
       ],
     );
 
-    expect(output.exceptions.filter((item) => item.category === 'DepositGroupingIssue')).toHaveLength(3);
-    expect(output.exceptions.some((item) => item.category === 'AmbiguousMatchRequiringReview')).toBe(false);
-    expect(output.probableMatches.some((item) => item.exceptionCategory === 'AmbiguousMatchRequiringReview')).toBe(false);
+    expect(
+      output.exceptions.filter((item) => item.category === 'DepositGroupingIssue'),
+    ).toHaveLength(3);
+    expect(
+      output.exceptions.some((item) => item.category === 'AmbiguousMatchRequiringReview'),
+    ).toBe(false);
+    expect(
+      output.probableMatches.some(
+        (item) => item.exceptionCategory === 'AmbiguousMatchRequiringReview',
+      ),
+    ).toBe(false);
   });
 
   it('prefers the closest grouped batch when overlapping grouped candidates compete for the same gl transactions', async () => {
@@ -223,12 +254,18 @@ describe('runReconciliation', () => {
       ],
     );
 
-    const groupedItems = output.exceptions.filter((item) => item.category === 'DepositGroupingIssue');
+    const groupedItems = output.exceptions.filter(
+      (item) => item.category === 'DepositGroupingIssue',
+    );
 
     expect(groupedItems).toHaveLength(3);
-    expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual')).toBe(true);
+    expect(
+      groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual'),
+    ).toBe(true);
     expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 2)).toBe(true);
-    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 3)).toBe(false);
+    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 3)).toBe(
+      false,
+    );
     expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(0);
   });
@@ -236,7 +273,11 @@ describe('runReconciliation', () => {
   it('excludes GL beginning balance rows and creates workbook tabs', async () => {
     const output = await buildRun();
 
-    expect(output.normalizedTransactions.some((item) => item.exclusionReason?.includes('Beginning balance'))).toBe(true);
+    expect(
+      output.normalizedTransactions.some((item) =>
+        item.exclusionReason?.includes('Beginning balance'),
+      ),
+    ).toBe(true);
     expect(output.outputWorkbook.tabNames).toEqual(
       expect.arrayContaining([
         'Summary',
@@ -294,8 +335,7 @@ describe('runReconciliation', () => {
     const summarySheet = workbook.getWorksheet('Summary');
     const summaryLabels = summarySheet
       ?.getColumn(1)
-      .values
-      .filter((value) => typeof value === 'string') as string[];
+      .values.filter((value) => typeof value === 'string') as string[];
 
     expect(summaryLabels).toEqual(
       expect.arrayContaining([
@@ -341,8 +381,14 @@ describe('runReconciliation', () => {
     const timingItems = output.exceptions.filter((item) => item.category === 'TimingDifference');
 
     expect(timingItems).toHaveLength(2);
-    expect(timingItems.every((item) => item.ruleTrace?.ruleId === 'residual-timing-difference')).toBe(true);
-    expect(timingItems.every((item) => item.priorRuleTraces?.[0]?.ruleName === 'Amount + Extended Date Window Match')).toBe(true);
+    expect(
+      timingItems.every((item) => item.ruleTrace?.ruleId === 'residual-timing-difference'),
+    ).toBe(true);
+    expect(
+      timingItems.every(
+        (item) => item.priorRuleTraces?.[0]?.ruleName === 'Amount + Extended Date Window Match',
+      ),
+    ).toBe(true);
     expect(output.matchResults.some((item) => item.disposition === 'DateVariance')).toBe(true);
     expect(output.summary.timingDifferences).toBe(1);
     expect(output.summary.dateVariances).toBe(0);
@@ -353,11 +399,19 @@ describe('runReconciliation', () => {
   it('classifies one-to-many residual expense groupings as likely split/combine issues', async () => {
     const output = await buildRunFromRows(splitCombineBankRows, splitCombineGlRows);
 
-    const groupedItems = output.exceptions.filter((item) => item.category === 'LikelySplitCombineIssue');
+    const groupedItems = output.exceptions.filter(
+      (item) => item.category === 'LikelySplitCombineIssue',
+    );
 
     expect(groupedItems).toHaveLength(3);
-    expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-split-combine-residual')).toBe(true);
-    expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=withdrawal')))).toBe(true);
+    expect(
+      groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-split-combine-residual'),
+    ).toBe(true);
+    expect(
+      groupedItems.every((item) =>
+        item.ruleTrace?.evidence.some((entry) => entry.includes('bank=withdrawal')),
+      ),
+    ).toBe(true);
     expect(groupedItems.some((item) => (item.ruleTrace?.counterparts?.length ?? 0) > 1)).toBe(true);
     expect(output.groupedMatchResults).toHaveLength(1);
     expect(output.groupedMatchResults[0]?.category).toBe('LikelySplitCombineIssue');
@@ -369,11 +423,19 @@ describe('runReconciliation', () => {
   it('classifies grouped receipt batches as deposit grouping issues', async () => {
     const output = await buildRunFromRows(depositGroupingBankRows, depositGroupingGlRows);
 
-    const groupedItems = output.exceptions.filter((item) => item.category === 'DepositGroupingIssue');
+    const groupedItems = output.exceptions.filter(
+      (item) => item.category === 'DepositGroupingIssue',
+    );
 
     expect(groupedItems).toHaveLength(3);
-    expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual')).toBe(true);
-    expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=deposit')))).toBe(true);
+    expect(
+      groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual'),
+    ).toBe(true);
+    expect(
+      groupedItems.every((item) =>
+        item.ruleTrace?.evidence.some((entry) => entry.includes('bank=deposit')),
+      ),
+    ).toBe(true);
     expect(groupedItems.some((item) => (item.ruleTrace?.counterparts?.length ?? 0) > 1)).toBe(true);
     expect(output.groupedMatchResults).toHaveLength(1);
     expect(output.groupedMatchResults[0]?.category).toBe('DepositGroupingIssue');
@@ -383,15 +445,23 @@ describe('runReconciliation', () => {
   });
 
   it('does not classify grouped near-miss totals as split/combine issues', async () => {
-    const output = await buildRunFromRows(splitCombineNearMissBankFixture, splitCombineNearMissGlFixture);
+    const output = await buildRunFromRows(
+      splitCombineNearMissBankFixture,
+      splitCombineNearMissGlFixture,
+    );
 
-    expect(output.exceptions.some((item) => item.category === 'LikelySplitCombineIssue')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'LikelySplitCombineIssue')).toBe(
+      false,
+    );
     expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(true);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(2);
   });
 
   it('does not classify grouped deposits when the grouped side exceeds the supported residual limit', async () => {
-    const output = await buildRunFromRows(depositGroupingOversizedBankFixture, depositGroupingOversizedGlFixture);
+    const output = await buildRunFromRows(
+      depositGroupingOversizedBankFixture,
+      depositGroupingOversizedGlFixture,
+    );
 
     expect(output.exceptions.some((item) => item.category === 'DepositGroupingIssue')).toBe(false);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
@@ -399,18 +469,24 @@ describe('runReconciliation', () => {
   });
 
   it('lets account-level grouped overrides classify larger grouped residual sets', async () => {
-    const output = await buildRunFromRows(depositGroupingOversizedBankFixture, depositGroupingOversizedGlFixture, {
-      config: {
-        ...defaultReconciliationConfig,
-        matching: {
-          ...defaultReconciliationConfig.matching,
-          groupedCandidatePoolSize: 8,
-          groupedMatchMaxSize: 4,
+    const output = await buildRunFromRows(
+      depositGroupingOversizedBankFixture,
+      depositGroupingOversizedGlFixture,
+      {
+        config: {
+          ...defaultReconciliationConfig,
+          matching: {
+            ...defaultReconciliationConfig.matching,
+            groupedCandidatePoolSize: 8,
+            groupedMatchMaxSize: 4,
+          },
         },
       },
-    });
+    );
 
-    expect(output.exceptions.filter((item) => item.category === 'DepositGroupingIssue')).toHaveLength(5);
+    expect(
+      output.exceptions.filter((item) => item.category === 'DepositGroupingIssue'),
+    ).toHaveLength(5);
     expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
@@ -448,7 +524,8 @@ describe('runReconciliation', () => {
 
     expect(
       output.exceptions.some(
-        (item) => item.category === 'CheckNumberMismatch' || item.category === 'ReferenceNumberMismatch',
+        (item) =>
+          item.category === 'CheckNumberMismatch' || item.category === 'ReferenceNumberMismatch',
       ),
     ).toBe(true);
     expect(output.summary.exactMatches).toBe(0);
@@ -457,8 +534,12 @@ describe('runReconciliation', () => {
   it('marks near-equal competing candidates as ambiguous review items', async () => {
     const output = await buildRunFromRows(ambiguousBankRows, ambiguousGlRows);
 
-    expect(output.exceptions.some((item) => item.category === 'AmbiguousMatchRequiringReview')).toBe(true);
-    expect(output.probableMatches.some((item) => item.disposition === 'AmbiguousReview')).toBe(true);
+    expect(
+      output.exceptions.some((item) => item.category === 'AmbiguousMatchRequiringReview'),
+    ).toBe(true);
+    expect(output.probableMatches.some((item) => item.disposition === 'AmbiguousReview')).toBe(
+      true,
+    );
   });
 
   it('keeps exception categories mutually exclusive for invalid rows', async () => {
@@ -473,7 +554,9 @@ describe('runReconciliation', () => {
       ],
     );
 
-    const invalidItems = output.exceptions.filter((item) => item.category === 'InvalidOrMissingData');
+    const invalidItems = output.exceptions.filter(
+      (item) => item.category === 'InvalidOrMissingData',
+    );
     const missingItems = output.exceptions.filter((item) => item.category === 'MissingFromGL');
 
     expect(invalidItems.length).toBeGreaterThanOrEqual(1);
@@ -542,10 +625,18 @@ describe('runReconciliation', () => {
       },
     });
 
-    expect(defaultOutput.exceptions.some((item) => item.category === 'StaleOutstandingCheck')).toBe(false);
-    expect(defaultOutput.exceptions.filter((item) => item.category === 'OutstandingCheck')).toHaveLength(1);
-    expect(overrideOutput.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
-    expect(overrideOutput.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
+    expect(defaultOutput.exceptions.some((item) => item.category === 'StaleOutstandingCheck')).toBe(
+      false,
+    );
+    expect(
+      defaultOutput.exceptions.filter((item) => item.category === 'OutstandingCheck'),
+    ).toHaveLength(1);
+    expect(
+      overrideOutput.exceptions.filter((item) => item.category === 'StaleOutstandingCheck'),
+    ).toHaveLength(1);
+    expect(overrideOutput.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(
+      false,
+    );
   });
 
   it('classifies likely miscoding when same-amount near-date transactions conflict on context', async () => {
@@ -563,7 +654,9 @@ describe('runReconciliation', () => {
     const miscodingItems = output.exceptions.filter((item) => item.category === 'LikelyMiscoding');
 
     expect(miscodingItems).toHaveLength(2);
-    expect(miscodingItems.every((item) => item.ruleTrace?.ruleId === 'likely-miscoding')).toBe(true);
+    expect(miscodingItems.every((item) => item.ruleTrace?.ruleId === 'likely-miscoding')).toBe(
+      true,
+    );
     expect(
       miscodingItems.every(
         (item) =>

@@ -14,5 +14,6 @@ const persistent = new PersistentStack(app, 'ReconPersistentStack', {
 new EphemeralStack(app, 'ReconEphemeralStack', {
   env,
   persistent,
-  description: 'Recon PROD — ephemeral compute (VPC, NAT, RDS, ECS, ALB). Safe to destroy when idle.',
+  description:
+    'Recon PROD — ephemeral compute (VPC, NAT, RDS, ECS, ALB). Safe to destroy when idle.',
 });

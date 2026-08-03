@@ -71,16 +71,10 @@ The initial supported target types should be:
 ### Proposed Types
 
 ```ts
-export type ReviewerDecisionTargetType =
-  | 'ProbableMatch'
-  | 'AmbiguousReview'
-  | 'ExceptionItem';
+export type ReviewerDecisionTargetType = 'ProbableMatch' | 'AmbiguousReview' | 'ExceptionItem';
 
 export type ReviewerDecisionOutcome =
-  | 'ApprovedMatch'
-  | 'RejectedMatch'
-  | 'ConfirmedException'
-  | 'ReclassifiedException';
+  'ApprovedMatch' | 'RejectedMatch' | 'ConfirmedException' | 'ReclassifiedException';
 
 export interface ReviewerDecision {
   id: string;

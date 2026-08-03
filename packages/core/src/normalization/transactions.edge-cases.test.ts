@@ -105,12 +105,12 @@ describe('normalizeTransactions edge cases', () => {
       defaultReconciliationConfig,
     );
 
-    expect(normalized.find((item) => item.rawRowId === 'missing-amount')?.dataQualityIssues).toContain(
-      'Amount is missing or malformed.',
-    );
-    expect(normalized.find((item) => item.rawRowId === 'missing-date')?.dataQualityIssues).toContain(
-      'Transaction date is missing or malformed.',
-    );
+    expect(
+      normalized.find((item) => item.rawRowId === 'missing-amount')?.dataQualityIssues,
+    ).toContain('Amount is missing or malformed.');
+    expect(
+      normalized.find((item) => item.rawRowId === 'missing-date')?.dataQualityIssues,
+    ).toContain('Transaction date is missing or malformed.');
     expect(normalized.find((item) => item.rawRowId === 'zero-amount')?.dataQualityIssues).toContain(
       'Zero amount transaction requires review.',
     );
@@ -125,7 +125,7 @@ describe('normalizeTransactions edge cases', () => {
           transactionDateRaw: '2025-01-15',
           debitRaw: '45.00',
           descriptionRaw: 'PAY: DOE, JOHN - INVOICE #INV-2025-001',
-          merchantNameRaw: 'McDonald\'s',
+          merchantNameRaw: "McDonald's",
           payeeNameRaw: 'AT&T',
           checkNumberRaw: 'CHK-123456',
           referenceNumberRaw: '123-456-789',
@@ -136,7 +136,17 @@ describe('normalizeTransactions edge cases', () => {
 
     const [first] = normalized;
     expect(first?.normalizedComparisonTokens).toEqual(
-      expect.arrayContaining(['DOE', 'JOHN', 'INVOICE', 'INV', '2025', '001', 'MCDONALD', 'AT', 'T']),
+      expect.arrayContaining([
+        'DOE',
+        'JOHN',
+        'INVOICE',
+        'INV',
+        '2025',
+        '001',
+        'MCDONALD',
+        'AT',
+        'T',
+      ]),
     );
     expect(first?.normalizedReferenceTokens).toEqual(
       expect.arrayContaining(['CHK', '123456', '123', '456', '789']),

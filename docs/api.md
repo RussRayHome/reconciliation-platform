@@ -39,7 +39,7 @@ Most errors return:
 ## Endpoint summary
 
 | Method | Path                                         | Purpose                                    |
-|--------|----------------------------------------------|--------------------------------------------|
+| ------ | -------------------------------------------- | ------------------------------------------ |
 | GET    | `/api/health`                                | Liveness check                             |
 | GET    | `/api/developer/status`                      | Aggregate quality gate status              |
 | GET    | `/api/developer/runtime`                     | Runtime diagnostics overview               |

@@ -29,7 +29,7 @@ display string "Missing from GL" — but only the display layer followed. Change
 0022 and 0023 retire the old vocabulary everywhere else:
 
 - **0022** renames the seven `qbo_*` columns to `gl_*`, plus the one index whose
-  *name* embedded the old term (renaming a column does not rename its indexes).
+  _name_ embedded the old term (renaming a column does not rename its indexes).
 - **0023** migrates stored enum values: `source_system`/`source_type`/
   `template_type` `'qbo'` → `'gl'`, `source_direction` `'bank_to_qbo'` →
   `'bank_to_gl'`, and the two `ErrorCategory` values `MissingFromQBO` /
@@ -53,7 +53,7 @@ complete JSON string and cannot match inside `"qbo.xlsx"`.
 
 Two parser traps worth knowing if you extend 0023:
 
-- A comment line must never *begin* with the word `changeset` or `rollback`.
+- A comment line must never _begin_ with the word `changeset` or `rollback`.
   Liquibase's formatted-SQL parser matches `--\s*changeset`, so ordinary prose
   starting with that word is read as a malformed directive.
 - Use `jsonb_exists_any(col, ARRAY[…])` rather than the equivalent JSONB
@@ -70,12 +70,12 @@ migration tool.
 Four tables had a meaningful natural primary key and gained `id` as a UNIQUE
 surrogate rather than a replacement PK:
 
-| Table | Retained PK | Why it was not replaced |
-| --- | --- | --- |
-| `reconciliation_job_summary` | `job_id` | enforces one summary per job |
-| `reconciliation_source_file_content` | `source_file_id` | enforces one preserved copy per file |
-| `reconciliation_user` | `user_name` | five foreign keys reference it |
-| `reconciliation_audit_event` | `event_id` | BIGSERIAL carries append order a UUID cannot |
+| Table                                | Retained PK      | Why it was not replaced                      |
+| ------------------------------------ | ---------------- | -------------------------------------------- |
+| `reconciliation_job_summary`         | `job_id`         | enforces one summary per job                 |
+| `reconciliation_source_file_content` | `source_file_id` | enforces one preserved copy per file         |
+| `reconciliation_user`                | `user_name`      | five foreign keys reference it               |
+| `reconciliation_audit_event`         | `event_id`       | BIGSERIAL carries append order a UUID cannot |
 
 Promoting `id` to PK on the first two would silently allow duplicates the schema
 currently prevents structurally, so the natural keys stay.

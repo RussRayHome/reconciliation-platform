@@ -91,24 +91,31 @@ Current production gate reminder:
 ## [Release Date or Milestone Name]
 
 ### Summary
+
 - Brief description of the release scope.
 
 ### User-Facing Changes
+
 - UI, workflow, export, or API changes visible to users.
 
 ### Internal Changes
+
 - Refactors, diagnostics, maintainability work, tooling changes.
 
 ### Configuration Changes
+
 - New env vars, changed defaults, removed settings.
 
 ### Validation Evidence
+
 - Commands run and pass/fail summary.
 
 ### Risks and Follow-Up
+
 - Known limitations, monitoring expectations, deferred work.
 
 ### Rollback Notes
+
 - What to revert, disable, or validate if the change must be backed out.
 ```
 

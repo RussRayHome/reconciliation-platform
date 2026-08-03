@@ -369,9 +369,12 @@ const normalizeSecurityCveFinding = (
 
   const path = readOptionalText(source.path);
   const status = readOptionalText(source.status);
-  const validPath = path === 'direct' || path === 'transitive' || path === 'base-image' ? path : undefined;
+  const validPath =
+    path === 'direct' || path === 'transitive' || path === 'base-image' ? path : undefined;
   const validStatus =
-    status === 'open' || status === 'patch-available' || status === 'mitigated' ? status : undefined;
+    status === 'open' || status === 'patch-available' || status === 'mitigated'
+      ? status
+      : undefined;
 
   return {
     id,
@@ -735,9 +738,7 @@ export const parseVitestJsonTestItems = (jsonRaw: string, repoRoot?: string): Te
       const rawStatus = readOptionalText(source.status)?.toLowerCase();
       const status: TestItem['status'] =
         rawStatus === 'failed' ? 'failed' : rawStatus === 'passed' ? 'passed' : 'skipped';
-      const failureMessages = Array.isArray(source.failureMessages)
-        ? source.failureMessages
-        : [];
+      const failureMessages = Array.isArray(source.failureMessages) ? source.failureMessages : [];
       const reason =
         status === 'failed' && failureMessages.length > 0
           ? clipText(String(failureMessages[0]), 220)
@@ -759,10 +760,18 @@ export const parseVitestJsonTestItems = (jsonRaw: string, repoRoot?: string): Te
 const dbTestCategoryFromName = (name: string): DbTestItem['category'] => {
   const normalized = name.toLowerCase();
   if (normalized.includes('migrat') || normalized.includes('changelog')) return 'migration';
-  if (normalized.includes('constraint') || normalized.includes('fk') || normalized.includes('check_'))
+  if (
+    normalized.includes('constraint') ||
+    normalized.includes('fk') ||
+    normalized.includes('check_')
+  )
     return 'constraint';
   if (normalized.includes('seed')) return 'seed';
-  if (normalized.includes('isolation') || normalized.includes('deadlock') || normalized.includes('lifecycle'))
+  if (
+    normalized.includes('isolation') ||
+    normalized.includes('deadlock') ||
+    normalized.includes('lifecycle')
+  )
     return 'behavior';
   return 'other';
 };
@@ -801,7 +810,9 @@ export const parsePlaywrightJsonSpecs = (jsonRaw: string): E2eSpecItem[] => {
     if (typeof suite !== 'object' || suite === null) return;
     const source = suite as Record<string, unknown>;
     const suiteTitle = readOptionalText(source.title);
-    const prefix = suiteTitle ? `${titlePrefix}${titlePrefix ? ' › ' : ''}${suiteTitle}` : titlePrefix;
+    const prefix = suiteTitle
+      ? `${titlePrefix}${titlePrefix ? ' › ' : ''}${suiteTitle}`
+      : titlePrefix;
 
     const specs = Array.isArray(source.specs) ? source.specs : [];
     for (const spec of specs) {
@@ -810,12 +821,16 @@ export const parsePlaywrightJsonSpecs = (jsonRaw: string): E2eSpecItem[] => {
       const tests = Array.isArray(specSource.tests) ? specSource.tests : [];
       const firstTest = tests[0];
       const results =
-        typeof firstTest === 'object' && firstTest !== null && Array.isArray((firstTest as Record<string, unknown>).results)
+        typeof firstTest === 'object' &&
+        firstTest !== null &&
+        Array.isArray((firstTest as Record<string, unknown>).results)
           ? ((firstTest as Record<string, unknown>).results as unknown[])
           : [];
       const lastResult = results[results.length - 1];
       const lastResultSource =
-        typeof lastResult === 'object' && lastResult !== null ? (lastResult as Record<string, unknown>) : {};
+        typeof lastResult === 'object' && lastResult !== null
+          ? (lastResult as Record<string, unknown>)
+          : {};
       const ok = specSource.ok === true;
       const retries = Math.max(0, results.length - 1);
       // A spec skipped by a serial-mode abort still gets one result entry with
@@ -832,7 +847,9 @@ export const parsePlaywrightJsonSpecs = (jsonRaw: string): E2eSpecItem[] => {
               : 'passed';
       const totalDurationMs = results.reduce((sum: number, result) => {
         const duration =
-          typeof result === 'object' && result !== null ? (result as Record<string, unknown>).duration : 0;
+          typeof result === 'object' && result !== null
+            ? (result as Record<string, unknown>).duration
+            : 0;
         return sum + (typeof duration === 'number' ? duration : 0);
       }, 0);
       const attachments = Array.isArray(lastResultSource.attachments)
@@ -911,7 +928,10 @@ export const parseEslintJsonIssues = (output: string, repoRoot?: string): LintIs
  * Reads every per-file entry from an Istanbul `coverage-summary.json` payload (the `"total"` key
  * is the aggregate and is skipped), flagging rows below the 75%-lines-per-file minimum.
  */
-export const parseCoverageSummaryJson = (jsonRaw: string, repoRoot?: string): CoverageFileEntry[] => {
+export const parseCoverageSummaryJson = (
+  jsonRaw: string,
+  repoRoot?: string,
+): CoverageFileEntry[] => {
   let payload: unknown;
   try {
     payload = JSON.parse(jsonRaw);

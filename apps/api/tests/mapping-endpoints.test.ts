@@ -14,7 +14,10 @@ const createFakeMappingPool = (): Pool => {
     if (text.includes('SELECT id FROM reconciliation_organization')) {
       return Promise.resolve({ rows: [{ id: 'org-1' }] });
     }
-    if (text.includes('FROM reconciliation_mapping_profile') && text.includes('WHERE organization_id')) {
+    if (
+      text.includes('FROM reconciliation_mapping_profile') &&
+      text.includes('WHERE organization_id')
+    ) {
       return Promise.resolve({ rows: [] });
     }
     if (text.includes('INSERT INTO reconciliation_mapping_profile ')) {
@@ -36,14 +39,8 @@ const createFakeMappingPool = (): Pool => {
       return Promise.resolve({ rows: [] });
     }
     if (text.includes('INSERT INTO reconciliation_mapping_profile_version')) {
-      const [id, profileId, versionNumber, columnMapping, transformationRules, createdBy] = params as [
-        string,
-        string,
-        number,
-        string,
-        string,
-        string,
-      ];
+      const [id, profileId, versionNumber, columnMapping, transformationRules, createdBy] =
+        params as [string, string, number, string, string, string];
       return Promise.resolve({
         rows: [
           {

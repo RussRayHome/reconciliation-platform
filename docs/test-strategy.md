@@ -73,7 +73,7 @@ npm run test:e2e
 ## 3. Command matrix
 
 | Command                    | Purpose                         | Typical use               |
-|----------------------------|---------------------------------|---------------------------|
+| -------------------------- | ------------------------------- | ------------------------- |
 | `npm run test`             | unit + integration aggregate    | default pre-PR validation |
 | `npm run test:unit`        | fast deterministic logic checks | iterative development     |
 | `npm run test:integration` | API contract behavior           | route/service changes     |

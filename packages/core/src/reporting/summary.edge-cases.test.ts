@@ -127,10 +127,10 @@ describe('Summary Edge Cases', () => {
 
     it('handles mixed positive, negative, and zero amounts', () => {
       const transactions: NormalizedTransaction[] = [
-          buildTransaction({ id: 'bank-1', source: 'bank', amount: 1000.5 }),
+        buildTransaction({ id: 'bank-1', source: 'bank', amount: 1000.5 }),
         buildTransaction({ id: 'bank-2', source: 'bank', amount: -500.25 }),
         buildTransaction({ id: 'bank-3', source: 'bank', amount: 0 }),
-          buildTransaction({ id: 'gl-1', source: 'gl', amount: 1000.5 }),
+        buildTransaction({ id: 'gl-1', source: 'gl', amount: 1000.5 }),
       ];
 
       const summary = buildSummaryMetrics(transactions, [], []);

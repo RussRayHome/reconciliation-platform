@@ -115,7 +115,9 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
                     color: '#e6edf3',
                   }}
                   cursor={{ fill: 'rgba(240, 246, 252, 0.06)' }}
-                  formatter={(value: number | string | ReadonlyArray<number | string> | undefined) => {
+                  formatter={(
+                    value: number | string | ReadonlyArray<number | string> | undefined,
+                  ) => {
                     if (typeof value === 'number' || typeof value === 'string') {
                       return formatCurrencyWhole(Number(value));
                     }

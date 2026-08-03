@@ -1,9 +1,9 @@
 # Handoff: CSS Monolith → Layered Per-Component Stylesheets (v3)
 
-
 > **STATUS (2026-07-30): EXECUTED on branch `refactor/css-layers`.**
 > All phases complete; visual baselines 15/15 zero-diff at 1440/1100/900px.
 > Deltas from this plan discovered during execution:
+>
 > - `styles.css` had grown again: 4,392 lines, nine responsive/media blocks (3×880px, 1180px, min-1181px, 1200px, 1280px, 980px, reduced-motion, 960px, print) and six keyframes.
 > - New component groups beyond the planned tree: `nav-rail.css`, `review.css` (segmented control + bento/KPI/exposure/watchlist dashboard), `developer.css` (in-app developer panel: env-matrix, promotion, runtime), `access-denied.css` kept, plus `patterns/skeleton.css`.
 > - `patterns/buttons.css` lives under patterns/ but is wrapped in `@layer components` and imported between review.css and exceptions.css — original source order had the base button rules beating earlier component rules (`.user-role-shell__signout`, rule reset buttons) and losing to later ones (`.exception-facets__clear`); a patterns-layer placement flipped those ties (caught by baselines).
@@ -127,7 +127,7 @@ App CSS never references `dashboard-styles/`; dashboard CSS never references `sr
 ## Phase 2 — Shared patterns
 
 Extract most-shared first: `layout.css`, `buttons.css`, `badges.css`, `forms.css`, `tables.css`, `surface.css`.
-`surface.css` is the subtle one: keep only the *shared* frosted declarations (background, blur, border, shadow, transition, animation); leave per-component radius/padding/hover for Phase 3. Delete moved rules from `legacy.css` after each extraction; verify; commit per file or per phase.
+`surface.css` is the subtle one: keep only the _shared_ frosted declarations (background, blur, border, shadow, transition, animation); leave per-component radius/padding/hover for Phase 3. Delete moved rules from `legacy.css` after each extraction; verify; commit per file or per phase.
 
 ## Phase 3 — Per-component files (16 files)
 
@@ -183,4 +183,3 @@ A snapshot diff means: (a) a rule left unlayered, (b) a source-order tie re-orde
 7. Then: `design_handoff_dark_system/` Phase 1 lands as a `tokens.css` swap.
 8. Dead selectors found in Phase 5 (listed, not deleted — verify and remove in a dedicated PR):
    `.exception-card`, `.exception-card-list`, `.exception-card__detail-block`, `.exception-card__header`, `.exception-card__row`, `.exception-virtual-card`, `.exception-virtual-card__grid`, `.exception-virtual-card__header`, `.exception-virtual-card__meta`, `.exception-virtual-card__reason`, `.exception-virtual-list`, `.exception-virtual-list__canvas` (exceptions.css — superseded by the triage master–detail), `.field-help-popover`, `.field-label-row`, `.help-icon`, `.help-icon-button` (forms.css), `.hero-cta-row`, `.hero-heading-row`, `.hero-secondary-cta`, `.hero-secondary-cta--spaced`, `.hero-title-block` (hero.css), `.report-link`, `.report-link--active`, `.reports-browser`, `.reports-display__header`, `.reports-list` (reports.css), `.review-segment`, `.review-segment--active`, `.review-segmented` (review.css), `.rules-overview-grid` (rules.css), `.tab-button`, `.tab-button--active`, `.tab-button__icon`, `.tab-button__icon-shell`, `.tab-button__label-row`, `.tab-button__label-text`, `.tab-list`, `.tab-shell` (tabs.css), `.table-reset-button`, `.table-toolbar` (tables.css).
-

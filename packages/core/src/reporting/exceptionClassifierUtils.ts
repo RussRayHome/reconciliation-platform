@@ -4,12 +4,7 @@ import { dateDifferenceDays } from '../matching/similarity';
 
 /** Inferred transaction direction or instrument type used for timing-compatibility checks. */
 export type TransactionKind =
-  | 'deposit'
-  | 'withdrawal'
-  | 'transfer'
-  | 'journal'
-  | 'check'
-  | 'unknown';
+  'deposit' | 'withdrawal' | 'transfer' | 'journal' | 'check' | 'unknown';
 
 /** Parses an ISO date string (`YYYY-MM-DD`) to a midnight UTC `Date`, or returns `undefined` for invalid input. */
 export const parseIsoDate = (value?: string): Date | undefined => {
@@ -45,7 +40,10 @@ export const buildAmountFrequency = (
  */
 export const isCheckLikeGlTransaction = (transaction: NormalizedTransaction): boolean => {
   const transactionType = (transaction.transactionType ?? '').toLowerCase();
-  if (Boolean(transaction.checkNumber || transaction.serialNumber) || transactionType.includes('check')) {
+  if (
+    Boolean(transaction.checkNumber || transaction.serialNumber) ||
+    transactionType.includes('check')
+  ) {
     return true;
   }
 

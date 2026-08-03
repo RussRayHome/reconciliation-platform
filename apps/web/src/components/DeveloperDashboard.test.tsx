@@ -25,7 +25,11 @@ const jsonResponse = (payload: unknown, status = 200): Response =>
 const baseRepoHealth = {
   overallStatus: 'attention-needed' as const,
   failedChecks: 2,
-  lastCiRun: { status: 'attention-needed' as const, durationMs: 125000, at: '2026-07-30T12:00:00.000Z' },
+  lastCiRun: {
+    status: 'attention-needed' as const,
+    durationMs: 125000,
+    at: '2026-07-30T12:00:00.000Z',
+  },
   commitsThisWeek: 17,
   branchFreshness: { remoteRef: 'origin/stage vs origin/dev', aheadCount: 0, behindCount: 4 },
   openPrCount: 2,
@@ -57,8 +61,20 @@ const baseStatus = {
       summary: '2 lint problems',
       areaLabel: 'Static analysis',
       lintIssues: [
-        { rule: 'no-unused-vars', severity: 'error', file: 'apps/web/src/App.tsx', line: 10, message: 'unused var' },
-        { rule: 'react-hooks/exhaustive-deps', severity: 'warning', file: 'apps/web/src/App.tsx', line: 20, message: 'missing dep' },
+        {
+          rule: 'no-unused-vars',
+          severity: 'error',
+          file: 'apps/web/src/App.tsx',
+          line: 10,
+          message: 'unused var',
+        },
+        {
+          rule: 'react-hooks/exhaustive-deps',
+          severity: 'warning',
+          file: 'apps/web/src/App.tsx',
+          line: 20,
+          message: 'missing dep',
+        },
       ],
     },
     {
@@ -78,7 +94,12 @@ const baseStatus = {
       failedCount: 1,
       totalCount: 13,
       dbTestItems: [
-        { name: 'migration_apply_clean_db', category: 'migration', status: 'passed', durationMs: 3200 },
+        {
+          name: 'migration_apply_clean_db',
+          category: 'migration',
+          status: 'passed',
+          durationMs: 3200,
+        },
         {
           name: 'check_amount_precision',
           category: 'constraint',
@@ -278,7 +299,9 @@ describe('DeveloperDashboard', () => {
     // Unit tests: all passed, so the failed & skipped table shows the empty state.
     const unitPanel = document.querySelector('#unit-tests');
     expect(unitPanel).not.toBeNull();
-    expect(within(unitPanel as HTMLElement).getByText('All unit tests passed.')).toBeInTheDocument();
+    expect(
+      within(unitPanel as HTMLElement).getByText('All unit tests passed.'),
+    ).toBeInTheDocument();
 
     // Static analysis: both lint issues listed with correct severities.
     const staticPanel = document.querySelector('#static');
@@ -288,7 +311,9 @@ describe('DeveloperDashboard', () => {
 
     // Database tests: both rows shown, including the failure message.
     const dbPanel = document.querySelector('#db-tests');
-    expect(within(dbPanel as HTMLElement).getByText('migration_apply_clean_db')).toBeInTheDocument();
+    expect(
+      within(dbPanel as HTMLElement).getByText('migration_apply_clean_db'),
+    ).toBeInTheDocument();
     expect(within(dbPanel as HTMLElement).getByText('check_amount_precision')).toBeInTheDocument();
     expect(within(dbPanel as HTMLElement).getByText('expected NUMERIC(18,4)')).toBeInTheDocument();
   });
@@ -302,13 +327,17 @@ describe('DeveloperDashboard', () => {
     expect(
       within(coveragePanel as HTMLElement).getByText('apps/web/src/components/ExceptionTable.tsx'),
     ).toBeInTheDocument();
-    expect(within(coveragePanel as HTMLElement).getByText(/1 files below minimum/)).toBeInTheDocument();
+    expect(
+      within(coveragePanel as HTMLElement).getByText(/1 files below minimum/),
+    ).toBeInTheDocument();
 
     // Security: four component sub-groups, each with its own header pill.
     const securityPanel = document.querySelector('#security');
     expect(within(securityPanel as HTMLElement).getByText('API')).toBeInTheDocument();
     expect(within(securityPanel as HTMLElement).getByText('Web Server')).toBeInTheDocument();
-    expect(within(securityPanel as HTMLElement).getByText('Container Component')).toBeInTheDocument();
+    expect(
+      within(securityPanel as HTMLElement).getByText('Container Component'),
+    ).toBeInTheDocument();
     expect(within(securityPanel as HTMLElement).getByText('Database')).toBeInTheDocument();
     expect(within(securityPanel as HTMLElement).getByText('CVE-2026-30154')).toBeInTheDocument();
     expect(within(securityPanel as HTMLElement).getByText('jsonwebtoken')).toBeInTheDocument();
@@ -398,9 +427,7 @@ describe('DeveloperDashboard', () => {
       await Promise.resolve();
     });
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled(),
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled());
   });
 
   it('requests a forced refresh with the force=true query parameter', async () => {

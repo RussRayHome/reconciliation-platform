@@ -74,12 +74,7 @@ const encodePng = (width: number, height: number, pixels: Uint8Array): Buffer =>
   ]);
 };
 
-const setPixel = (
-  surface: DrawSurface,
-  x: number,
-  y: number,
-  color: Rgba,
-): void => {
+const setPixel = (surface: DrawSurface, x: number, y: number, color: Rgba): void => {
   const { pixels, width, height } = surface;
   if (x < 0 || y < 0 || x >= width || y >= height) {
     return;
@@ -92,11 +87,7 @@ const setPixel = (
   pixels[offset + 3] = color[3] ?? 255;
 };
 
-const fillRect = (
-  surface: DrawSurface,
-  rectangle: Rectangle,
-  color: Rgba,
-): void => {
+const fillRect = (surface: DrawSurface, rectangle: Rectangle, color: Rgba): void => {
   const { width, height } = surface;
   const startX = Math.max(0, Math.floor(rectangle.x));
   const startY = Math.max(0, Math.floor(rectangle.y));
@@ -110,11 +101,7 @@ const fillRect = (
   }
 };
 
-const drawLine = (
-  surface: DrawSurface,
-  line: LineSegment,
-  color: Rgba,
-): void => {
+const drawLine = (surface: DrawSurface, line: LineSegment, color: Rgba): void => {
   const thickness = line.thickness ?? 1;
   let currentX = Math.round(line.x1);
   let currentY = Math.round(line.y1);
@@ -211,19 +198,25 @@ export const createBarChartPng = (
 
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = plotTop + Math.round((plotHeight / 4) * tick);
-    drawLine(surface, { x1: plotLeft, y1: y, x2: plotLeft + plotWidth, y2: y }, [220, 226, 232, 255]);
+    drawLine(
+      surface,
+      { x1: plotLeft, y1: y, x2: plotLeft + plotWidth, y2: y },
+      [220, 226, 232, 255],
+    );
   }
 
-  drawLine(surface, { x1: plotLeft, y1: plotTop, x2: plotLeft, y2: plotBottom, thickness: 2 }, [64, 74, 86, 255]);
+  drawLine(
+    surface,
+    { x1: plotLeft, y1: plotTop, x2: plotLeft, y2: plotBottom, thickness: 2 },
+    [64, 74, 86, 255],
+  );
   drawLine(
     surface,
     { x1: plotLeft, y1: plotBottom, x2: plotLeft + plotWidth, y2: plotBottom, thickness: 2 },
     [64, 74, 86, 255],
   );
 
-  const scaleMax = roundUpToNiceNumber(
-    Math.max(...data.map((item) => Math.abs(item.value)), 1),
-  );
+  const scaleMax = roundUpToNiceNumber(Math.max(...data.map((item) => Math.abs(item.value)), 1));
 
   const slotWidth = plotWidth / Math.max(data.length, 1);
   const barWidth = Math.max(24, Math.floor(slotWidth * 0.66));

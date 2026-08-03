@@ -83,11 +83,22 @@ type DeveloperCheckResponse = {
   testItems?: TestItem[];
   lintIssues?: LintIssue[];
   coverageFiles?: CoverageFileEntry[];
-  coverageBenchmarks?: Array<{ key: string; label: string; value: string; meetsThreshold: boolean }>;
+  coverageBenchmarks?: Array<{
+    key: string;
+    label: string;
+    value: string;
+    meetsThreshold: boolean;
+  }>;
   dbTestItems?: DbTestItem[];
   e2eSpecs?: E2eSpecItem[];
   securityComponentScores?: SecurityComponentScore[];
-  securityAggregateScore?: { critical: number; high: number; moderate: number; low: number; info: number };
+  securityAggregateScore?: {
+    critical: number;
+    high: number;
+    moderate: number;
+    low: number;
+    info: number;
+  };
 };
 
 type RepoHealthKpis = {
@@ -151,9 +162,7 @@ const formatClock = (iso: string | null | undefined): string => {
   }
 
   const value = new Date(iso);
-  return Number.isFinite(value.valueOf())
-    ? value.toLocaleString('en-US', { hour12: false })
-    : '—';
+  return Number.isFinite(value.valueOf()) ? value.toLocaleString('en-US', { hour12: false }) : '—';
 };
 
 const shortRevision = (revision: string | null | undefined): string =>
@@ -228,21 +237,29 @@ function RepoHealthBand({ repoHealth }: Readonly<{ repoHealth: RepoHealthKpis }>
 
   return (
     <div className="kpi-wells kpi-wells--six">
-      <div className="kpi-well" data-tone={repoHealth.overallStatus === 'healthy' ? 'positive' : 'critical'}>
+      <div
+        className="kpi-well"
+        data-tone={repoHealth.overallStatus === 'healthy' ? 'positive' : 'critical'}
+      >
         <span>Overall</span>
         <strong>{repoHealth.overallStatus === 'healthy' ? 'Healthy' : 'Attention'}</strong>
       </div>
       <div className="kpi-well" data-tone="neutral">
         <span>Open PRs</span>
         <strong>{repoHealth.openPrCount ?? '—'}</strong>
-        {repoHealth.openPrNote ? <span className="kpi-well__detail">{repoHealth.openPrNote}</span> : null}
+        {repoHealth.openPrNote ? (
+          <span className="kpi-well__detail">{repoHealth.openPrNote}</span>
+        ) : null}
       </div>
       <div className="kpi-well" data-tone={branchFreshness.behindCount ? 'warning' : 'neutral'}>
         <span>Branch freshness</span>
         <strong>{drift}</strong>
         <span className="kpi-well__detail">{branchFreshness.remoteRef}</span>
       </div>
-      <div className="kpi-well" data-tone={repoHealth.lastCiRun.status === 'healthy' ? 'positive' : 'critical'}>
+      <div
+        className="kpi-well"
+        data-tone={repoHealth.lastCiRun.status === 'healthy' ? 'positive' : 'critical'}
+      >
         <span>Last CI run</span>
         <strong>{repoHealth.lastCiRun.status === 'healthy' ? 'Pass' : 'Fail'}</strong>
         <span className="kpi-well__detail">{formatDuration(repoHealth.lastCiRun.durationMs)}</span>
@@ -279,7 +296,12 @@ function OverviewCard({
   stats: string[];
   hint: string;
 }>) {
-  const edgeClass = verdict === 'fail' ? ' overview-card--edge-fail' : verdict === 'warn' ? ' overview-card--edge-warn' : '';
+  const edgeClass =
+    verdict === 'fail'
+      ? ' overview-card--edge-fail'
+      : verdict === 'warn'
+        ? ' overview-card--edge-warn'
+        : '';
 
   return (
     <a className={`overview-card${edgeClass}`} href={href}>
@@ -345,9 +367,7 @@ function UnitTestsPanel({ check }: Readonly<{ check: DeveloperCheckResponse | un
   );
 }
 
-function StaticAnalysisPanel({
-  lint,
-}: Readonly<{ lint: DeveloperCheckResponse | undefined }>) {
+function StaticAnalysisPanel({ lint }: Readonly<{ lint: DeveloperCheckResponse | undefined }>) {
   const issues = lint?.lintIssues ?? [];
 
   return (
@@ -375,7 +395,13 @@ function StaticAnalysisPanel({
                 <td>
                   <StatusPill
                     verdict={issue.severity === 'error' ? 'fail' : 'warn'}
-                    label={issue.severity === 'error' ? 'Error' : issue.severity === 'warning' ? 'Warning' : 'Info'}
+                    label={
+                      issue.severity === 'error'
+                        ? 'Error'
+                        : issue.severity === 'warning'
+                          ? 'Warning'
+                          : 'Info'
+                    }
                   />
                 </td>
                 <td className="mono">
@@ -466,7 +492,8 @@ function CoveragePanel({ check }: Readonly<{ check: DeveloperCheckResponse | und
         <span className="detail-panel__sub">
           All {files.length} files, lowest first ·{' '}
           <strong className={belowMinimum > 0 ? 'detail-panel__warning-text' : undefined}>
-            minimum 75% lines per file{belowMinimum > 0 ? ` — ${belowMinimum} files below minimum` : ''}
+            minimum 75% lines per file
+            {belowMinimum > 0 ? ` — ${belowMinimum} files below minimum` : ''}
           </strong>
         </span>
       </div>
@@ -522,7 +549,8 @@ const securityComponentOrder = ['API', 'Web Server', 'Container Component', 'Dat
 function SecurityPanel({ check }: Readonly<{ check: DeveloperCheckResponse | undefined }>) {
   const scores = check?.securityComponentScores ?? [];
   const ordered = [...scores].sort(
-    (a, b) => securityComponentOrder.indexOf(a.component) - securityComponentOrder.indexOf(b.component),
+    (a, b) =>
+      securityComponentOrder.indexOf(a.component) - securityComponentOrder.indexOf(b.component),
   );
   const aggregate = check?.securityAggregateScore;
 
@@ -726,7 +754,11 @@ export function DeveloperDashboard() {
 
   if (!status) {
     return (
-      <section className="developer-dashboard" id="tab-panel-developer" aria-label="Developer dashboard">
+      <section
+        className="developer-dashboard"
+        id="tab-panel-developer"
+        aria-label="Developer dashboard"
+      >
         <header className="developer-dashboard__header">
           <h2>Developer dashboard</h2>
         </header>
@@ -761,16 +793,30 @@ export function DeveloperDashboard() {
   };
   const verdict = overallVerdict(Object.values(verdicts));
 
-  const lintErrorCount = (lintCheck?.lintIssues ?? []).filter((issue) => issue.severity === 'error').length;
-  const lintWarningCount = (lintCheck?.lintIssues ?? []).filter((issue) => issue.severity === 'warning').length;
-  const lintInfoCount = (lintCheck?.lintIssues ?? []).filter((issue) => issue.severity === 'info').length;
-  const belowMinimumFiles = (coverageCheck?.coverageFiles ?? []).filter((file) => !file.meetsMinimum).length;
-  const linesBenchmark = coverageCheck?.coverageBenchmarks?.find((benchmark) => benchmark.key === 'L');
+  const lintErrorCount = (lintCheck?.lintIssues ?? []).filter(
+    (issue) => issue.severity === 'error',
+  ).length;
+  const lintWarningCount = (lintCheck?.lintIssues ?? []).filter(
+    (issue) => issue.severity === 'warning',
+  ).length;
+  const lintInfoCount = (lintCheck?.lintIssues ?? []).filter(
+    (issue) => issue.severity === 'info',
+  ).length;
+  const belowMinimumFiles = (coverageCheck?.coverageFiles ?? []).filter(
+    (file) => !file.meetsMinimum,
+  ).length;
+  const linesBenchmark = coverageCheck?.coverageBenchmarks?.find(
+    (benchmark) => benchmark.key === 'L',
+  );
   const securityAggregate = securityCheck?.securityAggregateScore;
   const e2eFlakyCount = (e2eCheck?.e2eSpecs ?? []).filter((spec) => spec.status === 'flaky').length;
 
   return (
-    <section className="developer-dashboard" id="tab-panel-developer" aria-label="Developer dashboard">
+    <section
+      className="developer-dashboard"
+      id="tab-panel-developer"
+      aria-label="Developer dashboard"
+    >
       <header className="developer-dashboard__header">
         <div className="developer-dashboard__title-row">
           <h2>Developer dashboard</h2>
@@ -778,7 +824,9 @@ export function DeveloperDashboard() {
           <span className="developer-dashboard__revision mono">
             {runtime?.gitContext.branch ?? '—'} @ {shortRevision(runtime?.gitContext.commit)}
           </span>
-          <span className="developer-dashboard__meta">Refreshed {formatClock(status.generatedAt)}</span>
+          <span className="developer-dashboard__meta">
+            Refreshed {formatClock(status.generatedAt)}
+          </span>
         </div>
         <div className="developer-dashboard__actions">
           <button
@@ -807,7 +855,8 @@ export function DeveloperDashboard() {
       <div className="developer-dashboard__section-head">
         <h2>Testing &amp; verification</h2>
         <span className="developer-dashboard__section-sub">
-          All results from the latest check run on <span className="mono">{shortRevision(runtime?.gitContext.commit)}</span>
+          All results from the latest check run on{' '}
+          <span className="mono">{shortRevision(runtime?.gitContext.commit)}</span>
         </span>
       </div>
 
@@ -834,9 +883,17 @@ export function DeveloperDashboard() {
           href="#static"
           title="Static code analysis"
           verdict={verdicts.staticAnalysis}
-          verdictLabel={lintErrorCount + lintWarningCount === 0 ? 'Clean' : `${lintErrorCount + lintWarningCount} issues`}
+          verdictLabel={
+            lintErrorCount + lintWarningCount === 0
+              ? 'Clean'
+              : `${lintErrorCount + lintWarningCount} issues`
+          }
           headline={String(lintErrorCount + lintWarningCount + lintInfoCount)}
-          stats={[`${lintErrorCount} errors`, `${lintWarningCount} warnings`, `${lintInfoCount} info`]}
+          stats={[
+            `${lintErrorCount} errors`,
+            `${lintWarningCount} warnings`,
+            `${lintInfoCount} info`,
+          ]}
           hint="Issue listing"
         />
         <OverviewCard
@@ -880,14 +937,20 @@ export function DeveloperDashboard() {
           href="#e2e"
           title="E2E tests"
           verdict={verdicts.e2e}
-          verdictLabel={verdicts.e2e === 'fail' ? 'Fail' : verdicts.e2e === 'warn' ? 'Flaky' : 'Pass'}
+          verdictLabel={
+            verdicts.e2e === 'fail' ? 'Fail' : verdicts.e2e === 'warn' ? 'Flaky' : 'Pass'
+          }
           headline={
             e2eCheck?.totalCount
               ? `${(((e2eCheck.passedCount ?? 0) / e2eCheck.totalCount) * 100).toFixed(0)}`
               : '—'
           }
           headlineUnit="%"
-          stats={[`${e2eCheck?.passedCount ?? 0} passed`, `${e2eCheck?.failedCount ?? 0} failed`, `${e2eFlakyCount} flaky`]}
+          stats={[
+            `${e2eCheck?.passedCount ?? 0} passed`,
+            `${e2eCheck?.failedCount ?? 0} failed`,
+            `${e2eFlakyCount} flaky`,
+          ]}
           hint="By spec"
         />
       </div>

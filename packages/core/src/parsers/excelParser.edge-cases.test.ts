@@ -1,15 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 describe('Excel Parser - Edge Cases', () => {
-
   describe('Header Normalization and Scoring', () => {
     it('handles headers with leading/trailing whitespace', () => {
       // Test normalization of headers with various whitespace patterns
-      const testCases = [
-        '  Transaction Date  ',
-        '\tAmount\n',
-        '   CHECK NUMBER   ',
-      ];
+      const testCases = ['  Transaction Date  ', '\tAmount\n', '   CHECK NUMBER   '];
 
       testCases.forEach((header) => {
         expect(header.trim()).toBeDefined();
@@ -47,18 +42,12 @@ describe('Excel Parser - Edge Cases', () => {
     it('handles very long headers', () => {
       const longHeader = 'A' + 'verylongheadername'.repeat(50);
       expect(longHeader.length).toBeGreaterThan(100);
-      const normalized = longHeader
-        .toUpperCase()
-        .trim();
+      const normalized = longHeader.toUpperCase().trim();
       expect(normalized).toBeDefined();
     });
 
     it('handles Unicode and special language characters', () => {
-      const testCases = [
-        'Montant€Amount',
-        'Dátum日期Date',
-        'Descripción•Description',
-      ];
+      const testCases = ['Montant€Amount', 'Dátum日期Date', 'Descripción•Description'];
 
       testCases.forEach((header) => {
         const normalized = header
@@ -265,12 +254,7 @@ describe('Excel Parser - Edge Cases', () => {
     });
 
     it('handles dates in various formats', () => {
-      const dates = [
-        '2025-01-15',
-        '01/15/2025',
-        '15-01-2025',
-        'January 15, 2025',
-      ];
+      const dates = ['2025-01-15', '01/15/2025', '15-01-2025', 'January 15, 2025'];
 
       dates.forEach((date) => {
         const parsed = new Date(date);

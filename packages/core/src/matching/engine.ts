@@ -7,7 +7,12 @@ import type {
   NormalizedTransaction,
   PayeeAlias,
 } from '@recon/domain';
-import { amountDifference, currencyEquals, dateDifferenceDays, tokenSimilarity } from './similarity';
+import {
+  amountDifference,
+  currencyEquals,
+  dateDifferenceDays,
+  tokenSimilarity,
+} from './similarity';
 import {
   reserveGroupedTransactionIds,
   type GroupedReservationCandidate,
@@ -53,10 +58,7 @@ const findMatchingAlias = (
 
   return {
     alias: bestAlias,
-    canonicalTokens: bestAlias.canonicalPayeeName
-      .toUpperCase()
-      .split(/\s+/)
-      .filter(Boolean),
+    canonicalTokens: bestAlias.canonicalPayeeName.toUpperCase().split(/\s+/).filter(Boolean),
   };
 };
 
@@ -127,9 +129,11 @@ const isMonthEndTransferProbable = (
     return false;
   }
 
-  return glDate >= bankDate &&
+  return (
+    glDate >= bankDate &&
     bankDate.getUTCFullYear() === glDate.getUTCFullYear() &&
-    bankDate.getUTCMonth() === glDate.getUTCMonth();
+    bankDate.getUTCMonth() === glDate.getUTCMonth()
+  );
 };
 
 const isDistinctiveShortContextExactMatch = (
@@ -142,9 +146,11 @@ const isDistinctiveShortContextExactMatch = (
     return false;
   }
 
-  return (bankAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
+  return (
+    (bankAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
     (glAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
-    glTransaction.normalizedComparisonTokens.length <= SHORT_CONTEXT_TOKEN_LIMIT;
+    glTransaction.normalizedComparisonTokens.length <= SHORT_CONTEXT_TOKEN_LIMIT
+  );
 };
 
 const buildCandidate = (
@@ -227,9 +233,7 @@ const buildGroupedMatchMembers = (
     amount: transaction.amount,
   }));
 
-const createGroupedMatchResult = (
-  candidate: GroupedReservationCandidate,
-): GroupedMatchResult => ({
+const createGroupedMatchResult = (candidate: GroupedReservationCandidate): GroupedMatchResult => ({
   id: randomUUID(),
   disposition: 'GroupedReviewMatch',
   confidence: 'Probable',
@@ -238,7 +242,10 @@ const createGroupedMatchResult = (
   glTransactionIds: candidate.glTransactionIds,
   bankMembers: buildGroupedMatchMembers(candidate.bankTransactions),
   glMembers: buildGroupedMatchMembers(candidate.glTransactions),
-  totalAmount: candidate.bankTransactions.reduce((total, transaction) => total + transaction.amount, 0),
+  totalAmount: candidate.bankTransactions.reduce(
+    (total, transaction) => total + transaction.amount,
+    0,
+  ),
   dateDifferenceDays: candidate.dateDifferenceDays,
   score: candidate.score,
   ruleId: candidate.ruleId,
@@ -331,7 +338,11 @@ const rankCandidates = (
         continue;
       }
 
-      const sameAmount = currencyEquals(bankTransaction.amount, glTransaction.amount, config.amountTolerance);
+      const sameAmount = currencyEquals(
+        bankTransaction.amount,
+        glTransaction.amount,
+        config.amountTolerance,
+      );
       const dateDifference = dateDifferenceDays(
         bankTransaction.transactionDate ?? bankTransaction.postingDate,
         glTransaction.transactionDate ?? glTransaction.postingDate,
@@ -347,7 +358,8 @@ const rankCandidates = (
       const hasCheckOrReferenceValues =
         Boolean(bankTransaction.checkNumber || glTransaction.checkNumber) ||
         Boolean(bankTransaction.referenceNumber || glTransaction.referenceNumber) ||
-        (bankTransaction.normalizedReferenceTokens.length > 0 && glTransaction.normalizedReferenceTokens.length > 0);
+        (bankTransaction.normalizedReferenceTokens.length > 0 &&
+          glTransaction.normalizedReferenceTokens.length > 0);
 
       const referenceMismatchCategory: MatchCandidate['exceptionCategory'] =
         bankTransaction.checkNumber || glTransaction.checkNumber
@@ -373,7 +385,10 @@ const rankCandidates = (
         glTransaction.checkNumber &&
         referenceSimilarity >= config.referenceSimilarityThreshold
       ) {
-        if (!sameAmount && (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays) {
+        if (
+          !sameAmount &&
+          (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
+        ) {
           candidates.push(
             buildCandidate(
               bankTransaction,
@@ -456,11 +471,15 @@ const rankCandidates = (
         sameAmount &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
-        const aliasSimilarity = tokenSimilarity(aliasHit.canonicalTokens, glTransaction.normalizedComparisonTokens);
+        const aliasSimilarity = tokenSimilarity(
+          aliasHit.canonicalTokens,
+          glTransaction.normalizedComparisonTokens,
+        );
         const effectiveSimilarity = aliasSimilarity * aliasHit.alias.matchConfidence;
 
         if (effectiveSimilarity >= config.textSimilarityThreshold) {
-          const withinPrimaryWindow = (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays;
+          const withinPrimaryWindow =
+            (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays;
           candidates.push(
             buildCandidate(
               bankTransaction,
@@ -480,7 +499,10 @@ const rankCandidates = (
         }
       }
 
-      if (sameAmount && isMonthEndTransferProbable(bankTransaction, glTransaction, dateDifference)) {
+      if (
+        sameAmount &&
+        isMonthEndTransferProbable(bankTransaction, glTransaction, dateDifference)
+      ) {
         candidates.push(
           buildCandidate(
             bankTransaction,
@@ -531,11 +553,18 @@ const rankCandidates = (
         (textSimilarity >= config.textSimilarityThreshold || lowContextExactMatch)
       ) {
         candidates.push(
-          buildCandidate(bankTransaction, glTransaction, 'Amount + Date + Text Match', 0.93, 'Exact', [
-            'Amounts agree within configured tolerance.',
-            'Dates fall within the primary tolerance window.',
-            'Merchant, payee, or description tokens align strongly.',
-          ]),
+          buildCandidate(
+            bankTransaction,
+            glTransaction,
+            'Amount + Date + Text Match',
+            0.93,
+            'Exact',
+            [
+              'Amounts agree within configured tolerance.',
+              'Dates fall within the primary tolerance window.',
+              'Merchant, payee, or description tokens align strongly.',
+            ],
+          ),
         );
         continue;
       }
@@ -569,10 +598,18 @@ const rankCandidates = (
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
         candidates.push(
-          buildCandidate(bankTransaction, glTransaction, 'Amount + Extended Date Window Match', 0.82, 'DateVariance', [
-            'Amounts agree within configured tolerance.',
-            'Date variance remains outside the primary tolerance but inside the extended review window.',
-          ], 'DateVariance'),
+          buildCandidate(
+            bankTransaction,
+            glTransaction,
+            'Amount + Extended Date Window Match',
+            0.82,
+            'DateVariance',
+            [
+              'Amounts agree within configured tolerance.',
+              'Date variance remains outside the primary tolerance but inside the extended review window.',
+            ],
+            'DateVariance',
+          ),
         );
         continue;
       }
@@ -614,7 +651,8 @@ const rankCandidates = (
         textSimilarity >= config.textSimilarityThreshold
       ) {
         const larger = Math.max(Math.abs(bankTransaction.amount), Math.abs(glTransaction.amount));
-        const diffPct = larger > 0 ? Math.abs(bankTransaction.amount - glTransaction.amount) / larger : 0;
+        const diffPct =
+          larger > 0 ? Math.abs(bankTransaction.amount - glTransaction.amount) / larger : 0;
         if (diffPct >= FX_VARIANCE_MIN_PCT && diffPct <= FX_VARIANCE_MAX_PCT) {
           candidates.push(
             buildCandidate(
@@ -641,13 +679,19 @@ const rankCandidates = (
         textSimilarity >= config.amountMismatchTextSimilarityThreshold
       ) {
         candidates.push(
-          buildCandidate(bankTransaction, glTransaction, 'Possible Amount Mismatch', 0.7, 'AmountMismatch', [
-            'Dates and narrative context indicate likely related transactions.',
-            'Recorded amounts differ beyond configured tolerance.',
-          ]),
+          buildCandidate(
+            bankTransaction,
+            glTransaction,
+            'Possible Amount Mismatch',
+            0.7,
+            'AmountMismatch',
+            [
+              'Dates and narrative context indicate likely related transactions.',
+              'Recorded amounts differ beyond configured tolerance.',
+            ],
+          ),
         );
       }
-
     }
   }
 
@@ -682,7 +726,9 @@ export const reconcileMatches = (
   const activeTransactions = transactions.filter(
     (transaction) => !transaction.isExcluded && transaction.dataQualityIssues.length === 0,
   );
-  const bankTransactions = activeTransactions.filter((transaction) => transaction.source === 'bank');
+  const bankTransactions = activeTransactions.filter(
+    (transaction) => transaction.source === 'bank',
+  );
   const glTransactions = activeTransactions.filter((transaction) => transaction.source === 'gl');
 
   const duplicateBank = detectDuplicates(bankTransactions, config);
@@ -706,7 +752,10 @@ export const reconcileMatches = (
   const probableMatches: MatchResult[] = [];
 
   for (const candidate of candidates) {
-    if (exactMatchedBank.has(candidate.bankTransactionId) || exactMatchedGl.has(candidate.glTransactionId)) {
+    if (
+      exactMatchedBank.has(candidate.bankTransactionId) ||
+      exactMatchedGl.has(candidate.glTransactionId)
+    ) {
       continue;
     }
 
@@ -795,10 +844,14 @@ export const reconcileMatches = (
     groupedMatchResults,
     probableMatches,
     unmatchedBankTransactionIds: new Set(
-      remainingBank.filter((transaction) => !exactMatchedBank.has(transaction.id)).map((transaction) => transaction.id),
+      remainingBank
+        .filter((transaction) => !exactMatchedBank.has(transaction.id))
+        .map((transaction) => transaction.id),
     ),
     unmatchedGlTransactionIds: new Set(
-      remainingGl.filter((transaction) => !exactMatchedGl.has(transaction.id)).map((transaction) => transaction.id),
+      remainingGl
+        .filter((transaction) => !exactMatchedGl.has(transaction.id))
+        .map((transaction) => transaction.id),
     ),
     duplicateTransactionIds: duplicateIds,
   };

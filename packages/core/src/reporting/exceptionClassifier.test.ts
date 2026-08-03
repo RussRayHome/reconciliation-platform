@@ -1,4 +1,9 @@
-import type { GroupedMatchResult, MatchResult, NormalizedTransaction, SourceFile } from '@recon/domain';
+import type {
+  GroupedMatchResult,
+  MatchResult,
+  NormalizedTransaction,
+  SourceFile,
+} from '@recon/domain';
 import { describe, expect, it } from 'vitest';
 
 import { classifyExceptions } from './exceptionClassifier';
@@ -9,7 +14,8 @@ const buildSourceFile = (overrides: Partial<SourceFile>): SourceFile => ({
   id: overrides.id ?? randomUUID(),
   source: overrides.source ?? 'bank',
   fileName: overrides.fileName ?? 'workbook.xlsx',
-  mimeType: overrides.mimeType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  mimeType:
+    overrides.mimeType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   sizeBytes: overrides.sizeBytes ?? 1024,
   worksheetName: overrides.worksheetName ?? 'Sheet1',
   headerRow: overrides.headerRow ?? 1,
@@ -441,17 +447,25 @@ describe('classifyExceptions', () => {
     const miscodingItems = output.exceptions.filter((item) => item.category === 'LikelyMiscoding');
 
     expect(miscodingItems).toHaveLength(2);
-    expect(miscodingItems.every((item) => item.ruleTrace?.ruleId === 'likely-miscoding')).toBe(true);
+    expect(miscodingItems.every((item) => item.ruleTrace?.ruleId === 'likely-miscoding')).toBe(
+      true,
+    );
     expect(output.exceptions.some((item) => item.category === 'DateVariance')).toBe(false);
     expect(
-      miscodingItems.every((item) => item.priorRuleTraces?.[0]?.ruleId === 'amount-extended-date-window-match'),
-    ).toBe(true);
-    expect(
-      miscodingItems.every((item) => item.priorRuleTraces?.[0]?.ruleName === 'Amount + Extended Date Window Match'),
+      miscodingItems.every(
+        (item) => item.priorRuleTraces?.[0]?.ruleId === 'amount-extended-date-window-match',
+      ),
     ).toBe(true);
     expect(
       miscodingItems.every(
-        (item) => item.ruleTrace?.counterpart?.spreadsheetFileName === 'bank.xlsx' || item.ruleTrace?.counterpart?.spreadsheetFileName === 'gl.xlsx',
+        (item) => item.priorRuleTraces?.[0]?.ruleName === 'Amount + Extended Date Window Match',
+      ),
+    ).toBe(true);
+    expect(
+      miscodingItems.every(
+        (item) =>
+          item.ruleTrace?.counterpart?.spreadsheetFileName === 'bank.xlsx' ||
+          item.ruleTrace?.counterpart?.spreadsheetFileName === 'gl.xlsx',
       ),
     ).toBe(true);
     expect(
@@ -554,10 +568,14 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Monthly',
     });
 
-    const bankGroupedException = output.exceptions.find((item) => item.id && item.source === 'bank' && item.category === 'LikelySplitCombineIssue');
+    const bankGroupedException = output.exceptions.find(
+      (item) => item.id && item.source === 'bank' && item.category === 'LikelySplitCombineIssue',
+    );
 
     expect(bankGroupedException?.ruleTrace?.counterparts).toHaveLength(2);
-    expect(bankGroupedException?.ruleTrace?.counterparts?.map((trace) => trace.lineNumber)).toEqual([31, 32]);
+    expect(bankGroupedException?.ruleTrace?.counterparts?.map((trace) => trace.lineNumber)).toEqual(
+      [31, 32],
+    );
   });
 
   it('classifies unmatched same-amount residuals as timing differences before missing-item fallback', () => {
@@ -604,7 +622,9 @@ describe('classifyExceptions', () => {
     const timingItems = output.exceptions.filter((item) => item.category === 'TimingDifference');
 
     expect(timingItems).toHaveLength(2);
-    expect(timingItems.every((item) => item.ruleTrace?.ruleId === 'residual-timing-difference')).toBe(true);
+    expect(
+      timingItems.every((item) => item.ruleTrace?.ruleId === 'residual-timing-difference'),
+    ).toBe(true);
     expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
@@ -661,7 +681,9 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Monthly',
     });
 
-    expect(output.exceptions.filter((item) => item.category === 'StaleOutstandingCheck')).toHaveLength(1);
+    expect(
+      output.exceptions.filter((item) => item.category === 'StaleOutstandingCheck'),
+    ).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
@@ -719,11 +741,19 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Monthly',
     });
 
-    const groupedItems = output.exceptions.filter((item) => item.category === 'LikelySplitCombineIssue');
+    const groupedItems = output.exceptions.filter(
+      (item) => item.category === 'LikelySplitCombineIssue',
+    );
 
     expect(groupedItems).toHaveLength(3);
-    expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-split-combine-residual')).toBe(true);
-    expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=withdrawal')))).toBe(true);
+    expect(
+      groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-split-combine-residual'),
+    ).toBe(true);
+    expect(
+      groupedItems.every((item) =>
+        item.ruleTrace?.evidence.some((entry) => entry.includes('bank=withdrawal')),
+      ),
+    ).toBe(true);
     expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
@@ -781,11 +811,19 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Monthly',
     });
 
-    const groupedItems = output.exceptions.filter((item) => item.category === 'DepositGroupingIssue');
+    const groupedItems = output.exceptions.filter(
+      (item) => item.category === 'DepositGroupingIssue',
+    );
 
     expect(groupedItems).toHaveLength(3);
-    expect(groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual')).toBe(true);
-    expect(groupedItems.every((item) => item.ruleTrace?.evidence.some((entry) => entry.includes('bank=deposit')))).toBe(true);
+    expect(
+      groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual'),
+    ).toBe(true);
+    expect(
+      groupedItems.every((item) =>
+        item.ruleTrace?.evidence.some((entry) => entry.includes('bank=deposit')),
+      ),
+    ).toBe(true);
     expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
@@ -843,7 +881,9 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Monthly',
     });
 
-    expect(output.exceptions.some((item) => item.category === 'LikelySplitCombineIssue')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'LikelySplitCombineIssue')).toBe(
+      false,
+    );
     expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
     expect(output.exceptions.filter((item) => item.category === 'MissingFromBank')).toHaveLength(2);
   });
@@ -920,7 +960,9 @@ describe('classifyExceptions', () => {
       normalizedTransactions: [bankTransaction, ...glTransactions],
       matchResults: [],
       unmatchedBankTransactionIds: new Set<string>(['bank-oversized-group']),
-      unmatchedGlTransactionIds: new Set<string>(glTransactions.map((transaction) => transaction.id)),
+      unmatchedGlTransactionIds: new Set<string>(
+        glTransactions.map((transaction) => transaction.id),
+      ),
       duplicateTransactionIds: new Set<string>(),
       reporting: defaultReconciliationConfig.reporting,
       matching: defaultReconciliationConfig.matching,
@@ -987,7 +1029,9 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Monthly',
     });
 
-    const chargebackException = output.exceptions.find((item) => item.category === 'ChargebackReturn');
+    const chargebackException = output.exceptions.find(
+      (item) => item.category === 'ChargebackReturn',
+    );
     expect(chargebackException).toBeDefined();
     expect(chargebackException?.ruleTrace?.ruleId).toBe('chargeback-return');
     expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
@@ -1005,7 +1049,7 @@ describe('classifyExceptions', () => {
       lineNumber: 5,
       transactionDate: '2025-05-31',
       description: 'INTEREST EARNED MONTHLY',
-      amount: 12.50,
+      amount: 12.5,
     });
 
     const output = classifyExceptions({
@@ -1097,8 +1141,14 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Monthly',
     });
 
-    const bankException = output.exceptions.find((item) => item.id && output.exceptions.find((e) => e.category === 'IntercompanyMismatch' && e.source === 'bank'));
-    const intercompanyExceptions = output.exceptions.filter((item) => item.category === 'IntercompanyMismatch');
+    const bankException = output.exceptions.find(
+      (item) =>
+        item.id &&
+        output.exceptions.find((e) => e.category === 'IntercompanyMismatch' && e.source === 'bank'),
+    );
+    const intercompanyExceptions = output.exceptions.filter(
+      (item) => item.category === 'IntercompanyMismatch',
+    );
     expect(intercompanyExceptions).toHaveLength(2);
     expect(intercompanyExceptions.some((item) => item.source === 'bank')).toBe(true);
     expect(intercompanyExceptions.some((item) => item.source === 'gl')).toBe(true);
@@ -1109,7 +1159,10 @@ describe('classifyExceptions', () => {
   });
 
   const buildGroupedMatchResult = (
-    overrides: Partial<GroupedMatchResult> & { bankTransactionIds: string[]; glTransactionIds: string[] },
+    overrides: Partial<GroupedMatchResult> & {
+      bankTransactionIds: string[];
+      glTransactionIds: string[];
+    },
   ): GroupedMatchResult => ({
     id: randomUUID(),
     disposition: 'GroupedReviewMatch',
@@ -1131,9 +1184,27 @@ describe('classifyExceptions', () => {
   it('classifies engine-reserved FeeNettingMatch groups and excludes members from MissingFromGL/MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
     const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
-    const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: 93.17, lineNumber: 2 });
-    const glRevenue = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: 101.80, lineNumber: 2 });
-    const glFee = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -8.63, lineNumber: 3 });
+    const bankTx = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: 93.17,
+      lineNumber: 2,
+    });
+    const glRevenue = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: 101.8,
+      lineNumber: 2,
+    });
+    const glFee = buildTransaction({
+      id: 'gl-2',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -8.63,
+      lineNumber: 3,
+    });
 
     const grouped = buildGroupedMatchResult({
       category: 'FeeNettingMatch',
@@ -1165,9 +1236,27 @@ describe('classifyExceptions', () => {
   it('classifies engine-reserved PartialPaymentMatch groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
     const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
-    const bank1 = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -150.75, lineNumber: 2 });
-    const bank2 = buildTransaction({ id: 'bank-2', source: 'bank', sourceFileId: 'bank-file', amount: -150.75, lineNumber: 3 });
-    const glTx = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -301.50, lineNumber: 2 });
+    const bank1 = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: -150.75,
+      lineNumber: 2,
+    });
+    const bank2 = buildTransaction({
+      id: 'bank-2',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: -150.75,
+      lineNumber: 3,
+    });
+    const glTx = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -301.5,
+      lineNumber: 2,
+    });
 
     const grouped = buildGroupedMatchResult({
       category: 'PartialPaymentMatch',
@@ -1190,7 +1279,9 @@ describe('classifyExceptions', () => {
       matching: defaultReconciliationConfig.matching,
     });
 
-    const partialPaymentExceptions = output.exceptions.filter((e) => e.category === 'PartialPaymentMatch');
+    const partialPaymentExceptions = output.exceptions.filter(
+      (e) => e.category === 'PartialPaymentMatch',
+    );
     expect(partialPaymentExceptions).toHaveLength(3);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
     expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
@@ -1199,9 +1290,27 @@ describe('classifyExceptions', () => {
   it('classifies engine-reserved PayrollBatchMatch groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
     const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
-    const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -5001.00, lineNumber: 2 });
-    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -3001.00, lineNumber: 2 });
-    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -2000.00, lineNumber: 3 });
+    const bankTx = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: -5001.0,
+      lineNumber: 2,
+    });
+    const gl1 = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -3001.0,
+      lineNumber: 2,
+    });
+    const gl2 = buildTransaction({
+      id: 'gl-2',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -2000.0,
+      lineNumber: 3,
+    });
 
     const grouped = buildGroupedMatchResult({
       category: 'PayrollBatchMatch',
@@ -1233,9 +1342,27 @@ describe('classifyExceptions', () => {
   it('classifies engine-reserved BankServiceChargeAmortization groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
     const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
-    const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -121.00, lineNumber: 2 });
-    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -61.00, lineNumber: 2 });
-    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -60.00, lineNumber: 3 });
+    const bankTx = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: -121.0,
+      lineNumber: 2,
+    });
+    const gl1 = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -61.0,
+      lineNumber: 2,
+    });
+    const gl2 = buildTransaction({
+      id: 'gl-2',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -60.0,
+      lineNumber: 3,
+    });
 
     const grouped = buildGroupedMatchResult({
       category: 'BankServiceChargeAmortization',
@@ -1258,7 +1385,9 @@ describe('classifyExceptions', () => {
       matching: defaultReconciliationConfig.matching,
     });
 
-    const serviceChargeExceptions = output.exceptions.filter((e) => e.category === 'BankServiceChargeAmortization');
+    const serviceChargeExceptions = output.exceptions.filter(
+      (e) => e.category === 'BankServiceChargeAmortization',
+    );
     expect(serviceChargeExceptions).toHaveLength(3);
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
     expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
@@ -1267,9 +1396,30 @@ describe('classifyExceptions', () => {
   it('classifies LikelySplitCombineIssue via residual grouped stage even when present in groupedMatchResults', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
     const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
-    const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -300.00, lineNumber: 2, transactionDate: '2025-07-15' });
-    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -120.00, lineNumber: 2, transactionDate: '2025-07-15' });
-    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -180.00, lineNumber: 3, transactionDate: '2025-07-16' });
+    const bankTx = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: -300.0,
+      lineNumber: 2,
+      transactionDate: '2025-07-15',
+    });
+    const gl1 = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -120.0,
+      lineNumber: 2,
+      transactionDate: '2025-07-15',
+    });
+    const gl2 = buildTransaction({
+      id: 'gl-2',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -180.0,
+      lineNumber: 3,
+      transactionDate: '2025-07-16',
+    });
 
     const grouped = buildGroupedMatchResult({
       category: 'LikelySplitCombineIssue',
@@ -1292,7 +1442,9 @@ describe('classifyExceptions', () => {
       matching: defaultReconciliationConfig.matching,
     });
 
-    expect(output.exceptions.filter((e) => e.category === 'LikelySplitCombineIssue')).toHaveLength(3);
+    expect(output.exceptions.filter((e) => e.category === 'LikelySplitCombineIssue')).toHaveLength(
+      3,
+    );
     expect(output.exceptions.some((e) => e.category === 'MissingFromBank')).toBe(false);
     expect(output.exceptions.some((e) => e.category === 'MissingFromGL')).toBe(false);
   });
@@ -1300,9 +1452,28 @@ describe('classifyExceptions', () => {
   it('classifies engine-reserved LoanPaymentSplit groups and excludes members from MissingFromBank', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
     const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
-    const bankTx = buildTransaction({ id: 'bank-1', source: 'bank', sourceFileId: 'bank-file', amount: -1250.00, lineNumber: 2, description: 'MORTGAGE PAYMENT' });
-    const gl1 = buildTransaction({ id: 'gl-1', source: 'gl', sourceFileId: 'gl-file', amount: -1000.00, lineNumber: 2 });
-    const gl2 = buildTransaction({ id: 'gl-2', source: 'gl', sourceFileId: 'gl-file', amount: -250.00, lineNumber: 3 });
+    const bankTx = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: -1250.0,
+      lineNumber: 2,
+      description: 'MORTGAGE PAYMENT',
+    });
+    const gl1 = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -1000.0,
+      lineNumber: 2,
+    });
+    const gl2 = buildTransaction({
+      id: 'gl-2',
+      source: 'gl',
+      sourceFileId: 'gl-file',
+      amount: -250.0,
+      lineNumber: 3,
+    });
 
     const grouped = buildGroupedMatchResult({
       category: 'LoanPaymentSplit',
@@ -1365,7 +1536,7 @@ describe('classifyExceptions', () => {
       id: 'bank-1',
       source: 'bank',
       sourceFileId: 'bank-file',
-      amount: -300.00,
+      amount: -300.0,
       lineNumber: 2,
       description: 'ACH DEBIT VENDOR GAMMA',
       transactionDate: '2025-10-10',
@@ -1374,7 +1545,7 @@ describe('classifyExceptions', () => {
       id: 'bank-2',
       source: 'bank',
       sourceFileId: 'bank-file',
-      amount: 300.00,
+      amount: 300.0,
       lineNumber: 3,
       description: 'NSF RETURN ACH VENDOR GAMMA',
       transactionDate: '2025-10-11',
@@ -1433,7 +1604,7 @@ describe('classifyExceptions', () => {
       id: 'bank-1',
       source: 'bank',
       sourceFileId: 'bank-file',
-      amount: -200.00,
+      amount: -200.0,
       lineNumber: 2,
       description: 'VENDOR PAYMENT EFT',
     });
@@ -1455,8 +1626,16 @@ describe('classifyExceptions', () => {
   });
 
   it('annual mode: skips date-less transactions when computing month coverage gaps', () => {
-    const bankFile = buildSourceFile({ id: 'bank-annual-nd', source: 'bank', fileName: 'bank-annual.xlsx' });
-    const glFile = buildSourceFile({ id: 'gl-annual-nd', source: 'gl', fileName: 'gl-annual.xlsx' });
+    const bankFile = buildSourceFile({
+      id: 'bank-annual-nd',
+      source: 'bank',
+      fileName: 'bank-annual.xlsx',
+    });
+    const glFile = buildSourceFile({
+      id: 'gl-annual-nd',
+      source: 'gl',
+      fileName: 'gl-annual.xlsx',
+    });
 
     const dated = buildTransaction({
       id: 'tx-dated',
@@ -1489,7 +1668,9 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Annual',
     });
 
-    const gapObs = output.reviewerObservations.filter((o) => o.title === 'Annual month coverage gap detected');
+    const gapObs = output.reviewerObservations.filter(
+      (o) => o.title === 'Annual month coverage gap detected',
+    );
     expect(gapObs.length).toBeGreaterThan(0);
     const bankGap = gapObs.find((o) => o.message.includes('bank-annual.xlsx'));
     expect(bankGap).toBeDefined();
@@ -1497,7 +1678,11 @@ describe('classifyExceptions', () => {
   });
 
   it('annual mode: emits no month-coverage observation when all 12 months have transactions', () => {
-    const bankFile = buildSourceFile({ id: 'bank-annual-full', source: 'bank', fileName: 'bank-full.xlsx' });
+    const bankFile = buildSourceFile({
+      id: 'bank-annual-full',
+      source: 'bank',
+      fileName: 'bank-full.xlsx',
+    });
 
     const allMonths = Array.from({ length: 12 }, (_, i) => {
       const mm = String(i + 1).padStart(2, '0');
@@ -1524,7 +1709,9 @@ describe('classifyExceptions', () => {
       reconciliationFrequency: 'Annual',
     });
 
-    const gapObs = output.reviewerObservations.filter((o) => o.title === 'Annual month coverage gap detected');
+    const gapObs = output.reviewerObservations.filter(
+      (o) => o.title === 'Annual month coverage gap detected',
+    );
     expect(gapObs).toHaveLength(0);
   });
 });

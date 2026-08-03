@@ -65,9 +65,16 @@ describe('reconciliation job state machine', () => {
 
   it('allows all active processing states to transition to FAILED or CANCELLED', () => {
     const failableStates = [
-      'CREATED', 'FILE_REGISTERED', 'IMPORTING', 'IMPORTED',
-      'NORMALIZING', 'NORMALIZED', 'MATCHING', 'MATCHED',
-      'EXCEPTIONS_IDENTIFIED', 'REVIEW_READY',
+      'CREATED',
+      'FILE_REGISTERED',
+      'IMPORTING',
+      'IMPORTED',
+      'NORMALIZING',
+      'NORMALIZED',
+      'MATCHING',
+      'MATCHED',
+      'EXCEPTIONS_IDENTIFIED',
+      'REVIEW_READY',
     ] as const;
 
     for (const state of failableStates) {

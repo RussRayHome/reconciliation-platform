@@ -7,7 +7,14 @@ import { suggestMapping } from './mappingSuggest';
 const FIELDS: BusinessField[] = ['transactionDate', 'description', 'amount', 'accountIdentifier'];
 
 const ALIASES: ColumnAliasMap = {
-  transactionDate: ['date', 'transaction date', 'trans date', 'posted date', 'posting date', 'effective date'],
+  transactionDate: [
+    'date',
+    'transaction date',
+    'trans date',
+    'posted date',
+    'posting date',
+    'effective date',
+  ],
   postingDate: ['posting date', 'post date'],
   transactionType: ['type'],
   checkNumber: ['check'],

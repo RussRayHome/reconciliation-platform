@@ -1,4 +1,9 @@
-import type { ExceptionItem, MatchResult, NormalizedTransaction, SummaryMetrics } from '@recon/domain';
+import type {
+  ExceptionItem,
+  MatchResult,
+  NormalizedTransaction,
+  SummaryMetrics,
+} from '@recon/domain';
 
 import { buildChartSeries } from './chartData';
 
@@ -7,7 +12,9 @@ const sumAmounts = (items: Array<number | null | undefined>): number =>
 
 const buildExceptionCaseKey = (item: ExceptionItem): string => {
   if (item.relatedTransactionIds.length > 0) {
-    return [...item.relatedTransactionIds].sort((left, right) => left.localeCompare(right)).join('|');
+    return [...item.relatedTransactionIds]
+      .sort((left, right) => left.localeCompare(right))
+      .join('|');
   }
 
   return `${item.category}:${item.source}:${item.spreadsheetFileName}:${item.lineNumber}`;
@@ -45,10 +52,12 @@ export const buildSummaryMetrics = (
   );
 
   const countsByCategory = Object.fromEntries(
-    exceptions.map((item) => item.category).reduce<Map<string, number>>((map, category) => {
-      map.set(category, (map.get(category) ?? 0) + 1);
-      return map;
-    }, new Map()),
+    exceptions
+      .map((item) => item.category)
+      .reduce<Map<string, number>>((map, category) => {
+        map.set(category, (map.get(category) ?? 0) + 1);
+        return map;
+      }, new Map()),
   );
 
   const amountByCategory = Object.fromEntries(
@@ -63,12 +72,8 @@ export const buildSummaryMetrics = (
   const dataQualityItems = exceptions.filter((item) => item.category === 'InvalidOrMissingData');
   const bankDataQualityItems = dataQualityItems.filter((item) => item.source === 'bank');
   const glDataQualityItems = dataQualityItems.filter((item) => item.source === 'gl');
-  const bankDuplicateItems = exceptions.filter(
-    (item) => item.category === 'DuplicateInBank',
-  );
-  const glDuplicateItems = exceptions.filter(
-    (item) => item.category === 'DuplicateInGL',
-  );
+  const bankDuplicateItems = exceptions.filter((item) => item.category === 'DuplicateInBank');
+  const glDuplicateItems = exceptions.filter((item) => item.category === 'DuplicateInGL');
   const dateVarianceCount = countExceptionCases(exceptions, 'DateVariance');
   const timingDifferenceCount = countExceptionCases(exceptions, 'TimingDifference');
 
@@ -100,14 +105,15 @@ export const buildSummaryMetrics = (
     ),
     cleanMatchedAmount: sumAmounts(
       exactMatches
-        .map((result) =>
-          normalizedTransactions.find((transaction) => transaction.id === result.bankTransactionId)?.amount,
+        .map(
+          (result) =>
+            normalizedTransactions.find(
+              (transaction) => transaction.id === result.bankTransactionId,
+            )?.amount,
         )
         .filter((amount) => amount !== undefined),
     ),
-    unresolvedExposure: sumAmounts(
-      exceptions.map((item) => Math.abs(item.amount ?? 0)),
-    ),
+    unresolvedExposure: sumAmounts(exceptions.map((item) => Math.abs(item.amount ?? 0))),
     countsByCategory,
     amountByCategory,
     charts: [],

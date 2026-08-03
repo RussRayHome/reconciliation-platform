@@ -21,7 +21,11 @@ const listListeners = async (port: number): Promise<Listener[]> => {
   }
 
   try {
-    const { stdout } = await execFileAsync('lsof', ['-nP', '-iTCP:' + String(port), '-sTCP:LISTEN']);
+    const { stdout } = await execFileAsync('lsof', [
+      '-nP',
+      '-iTCP:' + String(port),
+      '-sTCP:LISTEN',
+    ]);
     return stdout
       .split(/\r?\n/u)
       .slice(1)

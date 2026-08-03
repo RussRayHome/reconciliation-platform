@@ -15,7 +15,5 @@
     "playwright.config.ts",
     "vitest.postgres.config.ts"
   ],
-  "exclude": [
-    "packages/infra/**"
-  ]
+  "exclude": ["packages/infra/**"]
 }

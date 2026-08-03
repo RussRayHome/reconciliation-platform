@@ -177,7 +177,7 @@ export const recommendedNextActionsByCategory: Record<ErrorCategory, string[]> =
     'Confirm each GL line is allocated to the correct account or cost center.',
   ],
   LoanPaymentSplit: [
-    'Confirm that the GL principal and interest allocation matches the lender\'s amortization schedule for the period.',
+    "Confirm that the GL principal and interest allocation matches the lender's amortization schedule for the period.",
     'Verify the outstanding loan balance on the balance sheet reflects the correct principal reduction.',
   ],
   NSFReturnedDeposit: [

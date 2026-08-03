@@ -506,11 +506,7 @@ describe('reconcileMatches', () => {
       amount: -49.99,
     });
 
-    const result = reconcileMatches(
-      [bank, gl],
-      defaultReconciliationConfig.matching,
-      [alias],
-    );
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching, [alias]);
 
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.ruleName).toBe('Historical Pattern Match');
@@ -603,11 +599,7 @@ describe('reconcileMatches', () => {
       amount: -49.99,
     });
 
-    const result = reconcileMatches(
-      [bank, gl],
-      defaultReconciliationConfig.matching,
-      [alias],
-    );
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching, [alias]);
 
     expect(result.matchResults.some((m) => m.ruleName === 'Historical Pattern Match')).toBe(false);
   });

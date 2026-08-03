@@ -155,7 +155,7 @@ npm run docker:cleanup
 ### Service topology
 
 | Service    | Role                                 | Host port       | Environments    |
-|------------|--------------------------------------|-----------------|-----------------|
+| ---------- | ------------------------------------ | --------------- | --------------- |
 | `web`      | NGINX public gateway                 | `4173`          | dev, stage      |
 | `api`      | Express API                          | internal        | dev, stage      |
 | `postgres` | PostgreSQL data store                | `5432`          | dev, stage      |

@@ -7,7 +7,10 @@ const punctuationPattern = /[^A-Z0-9\s]/g;
  * Steps are applied in order: uppercase → strip punctuation → collapse whitespace → remove stop words.
  * Returns an empty string for null/undefined input.
  */
-export const normalizeText = (value: string | undefined, config: TextNormalizationConfig): string => {
+export const normalizeText = (
+  value: string | undefined,
+  config: TextNormalizationConfig,
+): string => {
   if (!value) {
     return '';
   }

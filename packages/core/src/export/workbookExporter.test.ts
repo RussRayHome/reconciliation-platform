@@ -102,8 +102,7 @@ describe('exportWorkbook', () => {
     const summarySheet = workbook.getWorksheet('Summary');
     const summaryLabels = summarySheet
       ?.getColumn(1)
-      .values
-      .filter((value) => typeof value === 'string') as string[];
+      .values.filter((value) => typeof value === 'string') as string[];
 
     expect(summaryLabels).toEqual(
       expect.arrayContaining([

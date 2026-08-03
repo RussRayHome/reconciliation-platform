@@ -256,7 +256,9 @@ const execFileMatchers: ExecFileMatcher[] = [
                 {
                   title: 'requires login',
                   ok: true,
-                  tests: [{ results: [{ status: 'passed', duration: 500, retry: 0, attachments: [] }] }],
+                  tests: [
+                    { results: [{ status: 'passed', duration: 500, retry: 0, attachments: [] }] },
+                  ],
                 },
               ],
             },
@@ -274,7 +276,10 @@ const execFileMatchers: ExecFileMatcher[] = [
     },
   },
   {
-    matches: (joined) => joined.includes('npm') && joined.includes('run test:postgres') && joined.includes('--reporter=json'),
+    matches: (joined) =>
+      joined.includes('npm') &&
+      joined.includes('run test:postgres') &&
+      joined.includes('--reporter=json'),
     result: { stdout: '', stderr: '' },
     sideEffect: (args) =>
       writeFixtureFromInlineArg(
@@ -288,7 +293,8 @@ const execFileMatchers: ExecFileMatcher[] = [
       ),
   },
   {
-    matches: (joined) => joined.includes('npm') && joined.includes('run lint') && joined.includes('--format'),
+    matches: (joined) =>
+      joined.includes('npm') && joined.includes('run lint') && joined.includes('--format'),
     result: { stdout: '', stderr: '' },
     sideEffect: (args) =>
       writeFixtureFromFlagValue(
@@ -660,7 +666,11 @@ describe('developer endpoints', () => {
 
     const postgresCheck = body.checks.find((check) => check.name === 'Postgres DB tests');
     expect(postgresCheck?.dbTestItems).toEqual([
-      expect.objectContaining({ name: 'migration_apply_clean_db', category: 'migration', status: 'passed' }),
+      expect.objectContaining({
+        name: 'migration_apply_clean_db',
+        category: 'migration',
+        status: 'passed',
+      }),
     ]);
 
     const lintCheck = body.checks.find((check) => check.name === 'Static analysis (lint)');
@@ -670,7 +680,10 @@ describe('developer endpoints', () => {
 
     const e2eCheck = body.checks.find((check) => check.name === 'E2E tests');
     expect(e2eCheck?.e2eSpecs).toEqual([
-      expect.objectContaining({ name: expect.stringContaining('requires login'), status: 'passed' }),
+      expect.objectContaining({
+        name: expect.stringContaining('requires login'),
+        status: 'passed',
+      }),
     ]);
 
     expect(databaseSecurityScore?.cveFindings?.[0]).toMatchObject({
@@ -737,7 +750,11 @@ describe('developer endpoints', () => {
           failedChecks: 0,
           lastCiRun: { status: 'healthy', durationMs: 1234, at: new Date().toISOString() },
           commitsThisWeek: 5,
-          branchFreshness: { remoteRef: 'origin/stage vs origin/dev', aheadCount: 0, behindCount: 0 },
+          branchFreshness: {
+            remoteRef: 'origin/stage vs origin/dev',
+            aheadCount: 0,
+            behindCount: 0,
+          },
           openPrCount: 1,
         },
       },

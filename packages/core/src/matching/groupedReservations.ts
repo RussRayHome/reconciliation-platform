@@ -4,9 +4,30 @@ import { currencyEquals, dateDifferenceDays, tokenSimilarity } from './similarit
 
 /** A proposed many-to-many grouped match candidate with its constituent bank and GL transactions. */
 export interface GroupedReservationCandidate {
-  category: 'DepositGroupingIssue' | 'LikelySplitCombineIssue' | 'FeeNettingMatch' | 'PartialPaymentMatch' | 'PayrollBatchMatch' | 'BankServiceChargeAmortization' | 'LoanPaymentSplit';
-  ruleId: 'grouped-deposit-reserved' | 'grouped-split-combine-reserved' | 'fee-netting-reserved' | 'partial-payment-reserved' | 'payroll-batch-reserved' | 'bank-service-charge-reserved' | 'loan-payment-split-reserved';
-  ruleName: 'Grouped Deposit Candidate' | 'Grouped Split/Combine Candidate' | 'Fee Netting Candidate' | 'Partial Payment Candidate' | 'Payroll Batch Candidate' | 'Bank Service Charge Candidate' | 'Loan Payment Split Candidate';
+  category:
+    | 'DepositGroupingIssue'
+    | 'LikelySplitCombineIssue'
+    | 'FeeNettingMatch'
+    | 'PartialPaymentMatch'
+    | 'PayrollBatchMatch'
+    | 'BankServiceChargeAmortization'
+    | 'LoanPaymentSplit';
+  ruleId:
+    | 'grouped-deposit-reserved'
+    | 'grouped-split-combine-reserved'
+    | 'fee-netting-reserved'
+    | 'partial-payment-reserved'
+    | 'payroll-batch-reserved'
+    | 'bank-service-charge-reserved'
+    | 'loan-payment-split-reserved';
+  ruleName:
+    | 'Grouped Deposit Candidate'
+    | 'Grouped Split/Combine Candidate'
+    | 'Fee Netting Candidate'
+    | 'Partial Payment Candidate'
+    | 'Payroll Batch Candidate'
+    | 'Bank Service Charge Candidate'
+    | 'Loan Payment Split Candidate';
   reason: string;
   evidence: string[];
   dateDifferenceDays: number | null;
@@ -46,7 +67,11 @@ const inferTransactionKind = (
     return 'deposit';
   }
 
-  if ((transaction.amount ?? 0) < 0 || transactionType.includes('expense') || transactionType.includes('payment')) {
+  if (
+    (transaction.amount ?? 0) < 0 ||
+    transactionType.includes('expense') ||
+    transactionType.includes('payment')
+  ) {
     return 'withdrawal';
   }
 
@@ -68,7 +93,10 @@ const areTimingKindsCompatible = (
     return true;
   }
 
-  return (bankKind === 'transfer' && glKind === 'journal') || (bankKind === 'deposit' && glKind === 'transfer');
+  return (
+    (bankKind === 'transfer' && glKind === 'journal') ||
+    (bankKind === 'deposit' && glKind === 'transfer')
+  );
 };
 
 const areGroupedTransactionsCompatible = (
@@ -88,7 +116,9 @@ const sumTransactionAmounts = (
 const formatKinds = (transactions: NormalizedTransaction[]): string =>
   [...new Set(transactions.map((transaction) => inferTransactionKind(transaction)))].join(', ');
 
-const describeTransactionGroup = (transactions: Array<NormalizedTransaction & { amount: number }>): string =>
+const describeTransactionGroup = (
+  transactions: Array<NormalizedTransaction & { amount: number }>,
+): string =>
   transactions
     .map(
       (transaction) =>
@@ -145,7 +175,8 @@ const calculateGroupedDateDifference = (
         return null;
       }
 
-      maxDifference = maxDifference === null ? dateDifference : Math.max(maxDifference, dateDifference);
+      maxDifference =
+        maxDifference === null ? dateDifference : Math.max(maxDifference, dateDifference);
     }
   }
 
@@ -187,11 +218,15 @@ const buildGroupedReservationCandidate = (
 
   const bankKinds = formatKinds(bankTransactions);
   const glKinds = formatKinds(glTransactions);
-  const category = bankTotal > 0 && glTotal > 0 ? 'DepositGroupingIssue' : 'LikelySplitCombineIssue';
+  const category =
+    bankTotal > 0 && glTotal > 0 ? 'DepositGroupingIssue' : 'LikelySplitCombineIssue';
 
   return {
     category,
-    ruleId: category === 'DepositGroupingIssue' ? 'grouped-deposit-reserved' : 'grouped-split-combine-reserved',
+    ruleId:
+      category === 'DepositGroupingIssue'
+        ? 'grouped-deposit-reserved'
+        : 'grouped-split-combine-reserved',
     ruleName:
       category === 'DepositGroupingIssue'
         ? 'Grouped Deposit Candidate'
@@ -227,7 +262,10 @@ const collectGroupedCounterpartPool = (
         return false;
       }
 
-      if (Math.abs(counterpartTransaction.amount) > Math.abs(anchorTransaction.amount) + matching.amountTolerance) {
+      if (
+        Math.abs(counterpartTransaction.amount) >
+        Math.abs(anchorTransaction.amount) + matching.amountTolerance
+      ) {
         return false;
       }
 
@@ -249,7 +287,10 @@ const collectGroupedCounterpartPool = (
         return leftDateDifference - rightDateDifference;
       }
 
-      return Math.abs(anchorTransaction.amount - left.amount) - Math.abs(anchorTransaction.amount - right.amount);
+      return (
+        Math.abs(anchorTransaction.amount - left.amount) -
+        Math.abs(anchorTransaction.amount - right.amount)
+      );
     })
     .slice(0, matching.groupedCandidatePoolSize);
 
@@ -260,15 +301,21 @@ const findGroupedReservationCandidates = (
 ): GroupedReservationCandidate[] => {
   const candidates: GroupedReservationCandidate[] = [];
   const bankResiduals = bankTransactions.filter(
-    (transaction): transaction is NormalizedTransaction & { amount: number } => transaction.amount !== null,
+    (transaction): transaction is NormalizedTransaction & { amount: number } =>
+      transaction.amount !== null,
   );
   const glResiduals = glTransactions.filter(
-    (transaction): transaction is NormalizedTransaction & { amount: number } => transaction.amount !== null,
+    (transaction): transaction is NormalizedTransaction & { amount: number } =>
+      transaction.amount !== null,
   );
 
   for (const bankTransaction of bankResiduals) {
     const counterpartPool = collectGroupedCounterpartPool(bankTransaction, glResiduals, matching);
-    const combinations = generateTransactionCombinations(counterpartPool, 2, matching.groupedMatchMaxSize);
+    const combinations = generateTransactionCombinations(
+      counterpartPool,
+      2,
+      matching.groupedMatchMaxSize,
+    );
 
     for (const combination of combinations) {
       const candidate = buildGroupedReservationCandidate([bankTransaction], combination, matching);
@@ -281,7 +328,11 @@ const findGroupedReservationCandidates = (
 
   for (const glTransaction of glResiduals) {
     const counterpartPool = collectGroupedCounterpartPool(glTransaction, bankResiduals, matching);
-    const combinations = generateTransactionCombinations(counterpartPool, 2, matching.groupedMatchMaxSize);
+    const combinations = generateTransactionCombinations(
+      counterpartPool,
+      2,
+      matching.groupedMatchMaxSize,
+    );
 
     for (const combination of combinations) {
       const candidate = buildGroupedReservationCandidate(combination, [glTransaction], matching);
@@ -296,8 +347,16 @@ const findGroupedReservationCandidates = (
 };
 
 const FEE_NETTING_KEYWORDS = [
-  'merchant fee', 'processing fee', 'processor fee', 'gateway fee', 'interchange fee',
-  'merchant service fee', 'discount fee', 'settlement fee', 'transaction fee', 'card fee',
+  'merchant fee',
+  'processing fee',
+  'processor fee',
+  'gateway fee',
+  'interchange fee',
+  'merchant service fee',
+  'discount fee',
+  'settlement fee',
+  'transaction fee',
+  'card fee',
 ];
 
 const isFeeLikeGlTransaction = (transaction: NormalizedTransaction): boolean => {
@@ -386,7 +445,11 @@ const buildFeeNettingCandidates = (
 const PARTIAL_PAYMENT_POOL_SIZE = 30;
 
 const PARTIAL_PAYMENT_BANK_KEYWORDS = [
-  'installment', 'partial payment', 'payment plan', 'split payment', 'installment pmt',
+  'installment',
+  'partial payment',
+  'payment plan',
+  'split payment',
+  'installment pmt',
 ];
 
 const isPartialPaymentBankSignal = (transaction: NormalizedTransaction): boolean => {
@@ -409,7 +472,9 @@ const buildPartialPaymentCandidates = (
   // installments are ever considered. Gate on an installment-style description first.
   const bankDebits = bankTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
-      transaction.amount !== null && transaction.amount < 0 && isPartialPaymentBankSignal(transaction),
+      transaction.amount !== null &&
+      transaction.amount < 0 &&
+      isPartialPaymentBankSignal(transaction),
   );
   const glDebits = glTransactions.filter(
     (transaction): transaction is NormalizedTransaction & { amount: number } =>
@@ -434,13 +499,21 @@ const buildPartialPaymentCandidates = (
         return diff !== null && diff <= matching.partialPaymentWindowDays;
       })
       .sort((left, right) => {
-        const leftDiff = dateDifferenceDays(left.transactionDate ?? left.postingDate, glDate) ?? Number.MAX_SAFE_INTEGER;
-        const rightDiff = dateDifferenceDays(right.transactionDate ?? right.postingDate, glDate) ?? Number.MAX_SAFE_INTEGER;
+        const leftDiff =
+          dateDifferenceDays(left.transactionDate ?? left.postingDate, glDate) ??
+          Number.MAX_SAFE_INTEGER;
+        const rightDiff =
+          dateDifferenceDays(right.transactionDate ?? right.postingDate, glDate) ??
+          Number.MAX_SAFE_INTEGER;
         return leftDiff - rightDiff;
       })
       .slice(0, PARTIAL_PAYMENT_POOL_SIZE);
 
-    const combinations = generateTransactionCombinations(eligibleBankDebits, 2, matching.groupedMatchMaxSize);
+    const combinations = generateTransactionCombinations(
+      eligibleBankDebits,
+      2,
+      matching.groupedMatchMaxSize,
+    );
 
     for (const combination of combinations) {
       const bankTotal = combination.reduce((sum, tx) => sum + tx.amount, 0);
@@ -511,9 +584,21 @@ const PAYROLL_BATCH_MAX_GL_LINES = 25;
 const PAYROLL_BATCH_POOL_SIZE = 12;
 
 const PAYROLL_BANK_KEYWORDS = [
-  'payroll', 'adp', 'paychex', 'gusto', 'rippling', 'trinet', 'justworks',
-  'zenefits', 'bamboohr', 'patriot', 'intuit payroll', 'direct pay', 'ach batch',
-  'direct deposit', 'dd payroll',
+  'payroll',
+  'adp',
+  'paychex',
+  'gusto',
+  'rippling',
+  'trinet',
+  'justworks',
+  'zenefits',
+  'bamboohr',
+  'patriot',
+  'intuit payroll',
+  'direct pay',
+  'ach batch',
+  'direct deposit',
+  'dd payroll',
 ];
 
 const isPayrollBankSignal = (transaction: NormalizedTransaction): boolean => {
@@ -525,8 +610,14 @@ const isPayrollBankSignal = (transaction: NormalizedTransaction): boolean => {
 };
 
 const PAYROLL_GL_KEYWORDS = [
-  'payroll', 'wages', 'wage expense', 'salary', 'salaries', 'employee compensation',
-  'payroll tax', 'payroll expense',
+  'payroll',
+  'wages',
+  'wage expense',
+  'salary',
+  'salaries',
+  'employee compensation',
+  'payroll tax',
+  'payroll expense',
 ];
 
 const isPayrollGlSignal = (transaction: NormalizedTransaction): boolean => {
@@ -572,10 +663,17 @@ const buildPayrollBatchCandidates = (
         const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((glDebit) => Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .filter(
+        (glDebit) =>
+          Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance,
+      )
       .sort((left, right) => {
-        const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
-        const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        const leftDiff =
+          dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ??
+          Number.MAX_SAFE_INTEGER;
+        const rightDiff =
+          dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ??
+          Number.MAX_SAFE_INTEGER;
         return leftDiff - rightDiff;
       })
       .slice(0, PAYROLL_BATCH_POOL_SIZE);
@@ -584,7 +682,11 @@ const buildPayrollBatchCandidates = (
       continue;
     }
 
-    const combos = generateTransactionCombinations(pool, 2, Math.min(PAYROLL_BATCH_MAX_GL_LINES, pool.length));
+    const combos = generateTransactionCombinations(
+      pool,
+      2,
+      Math.min(PAYROLL_BATCH_MAX_GL_LINES, pool.length),
+    );
     const combo = combos.find((candidateCombo) =>
       currencyEquals(
         bankDebit.amount,
@@ -600,7 +702,8 @@ const buildPayrollBatchCandidates = (
     const glTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
 
     const maxDateDiff = combo.reduce<number>((max, glDebit) => {
-      const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
+      const diff =
+        dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
       return Math.max(max, diff);
     }, 0);
 
@@ -632,9 +735,19 @@ const BANK_SERVICE_CHARGE_MAX_GL_LINES = 5;
 const BANK_SERVICE_CHARGE_POOL_SIZE = 10;
 
 const BANK_SERVICE_CHARGE_KEYWORDS = [
-  'service charge', 'service fee', 'monthly fee', 'maintenance fee', 'account fee',
-  'bank fee', 'processing fee', 'overdraft fee', 'minimum balance fee',
-  'annual fee', 'transaction fee', 'sweep fee', 'treasury fee',
+  'service charge',
+  'service fee',
+  'monthly fee',
+  'maintenance fee',
+  'account fee',
+  'bank fee',
+  'processing fee',
+  'overdraft fee',
+  'minimum balance fee',
+  'annual fee',
+  'transaction fee',
+  'sweep fee',
+  'treasury fee',
 ];
 
 const isServiceChargeBankSignal = (transaction: NormalizedTransaction): boolean => {
@@ -646,7 +759,11 @@ const isServiceChargeBankSignal = (transaction: NormalizedTransaction): boolean 
 };
 
 const SERVICE_CHARGE_GL_KEYWORDS = [
-  'bank fee', 'bank charge', 'service charge', 'fee expense', 'bank service',
+  'bank fee',
+  'bank charge',
+  'service charge',
+  'fee expense',
+  'bank service',
 ];
 
 const isServiceChargeGlSignal = (transaction: NormalizedTransaction): boolean => {
@@ -686,10 +803,17 @@ const buildBankServiceChargeAmortizationCandidates = (
         const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((glDebit) => Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .filter(
+        (glDebit) =>
+          Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance,
+      )
       .sort((left, right) => {
-        const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
-        const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        const leftDiff =
+          dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ??
+          Number.MAX_SAFE_INTEGER;
+        const rightDiff =
+          dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ??
+          Number.MAX_SAFE_INTEGER;
         return leftDiff - rightDiff;
       })
       .slice(0, BANK_SERVICE_CHARGE_POOL_SIZE);
@@ -718,7 +842,8 @@ const buildBankServiceChargeAmortizationCandidates = (
     const glTotal = combo.reduce((sum, tx) => sum + tx.amount, 0);
 
     const maxDateDiff = combo.reduce<number>((max, glDebit) => {
-      const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
+      const diff =
+        dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
       return Math.max(max, diff);
     }, 0);
 
@@ -750,8 +875,17 @@ const LOAN_PAYMENT_MAX_GL_LINES = 3;
 const LOAN_PAYMENT_POOL_SIZE = 15;
 
 const LOAN_PAYMENT_KEYWORDS = [
-  'loan payment', 'mortgage payment', 'mortgage', 'note payable', 'line of credit',
-  'loc payment', 'heloc', 'sba loan', 'loan pmt', 'pmt loan', 'debt service',
+  'loan payment',
+  'mortgage payment',
+  'mortgage',
+  'note payable',
+  'line of credit',
+  'loc payment',
+  'heloc',
+  'sba loan',
+  'loan pmt',
+  'pmt loan',
+  'debt service',
   'installment loan',
 ];
 
@@ -764,8 +898,14 @@ const isLoanPaymentBankSignal = (transaction: NormalizedTransaction): boolean =>
 };
 
 const LOAN_PAYMENT_GL_KEYWORDS = [
-  'loan principal', 'loan interest', 'principal reduction', 'interest expense',
-  'note payable', 'mortgage', 'loan payment', 'debt service',
+  'loan principal',
+  'loan interest',
+  'principal reduction',
+  'interest expense',
+  'note payable',
+  'mortgage',
+  'loan payment',
+  'debt service',
 ];
 
 const isLoanPaymentGlSignal = (transaction: NormalizedTransaction): boolean => {
@@ -805,10 +945,17 @@ const buildLoanPaymentSplitCandidates = (
         const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate);
         return diff !== null && diff <= matching.dateToleranceDays;
       })
-      .filter((glDebit) => Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance)
+      .filter(
+        (glDebit) =>
+          Math.abs(glDebit.amount) < Math.abs(bankDebit.amount) + matching.amountTolerance,
+      )
       .sort((left, right) => {
-        const leftDiff = dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ?? Number.MAX_SAFE_INTEGER;
-        const rightDiff = dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ?? Number.MAX_SAFE_INTEGER;
+        const leftDiff =
+          dateDifferenceDays(bankDate, left.transactionDate ?? left.postingDate) ??
+          Number.MAX_SAFE_INTEGER;
+        const rightDiff =
+          dateDifferenceDays(bankDate, right.transactionDate ?? right.postingDate) ??
+          Number.MAX_SAFE_INTEGER;
         return leftDiff - rightDiff;
       })
       .slice(0, LOAN_PAYMENT_POOL_SIZE);
@@ -817,7 +964,11 @@ const buildLoanPaymentSplitCandidates = (
       continue;
     }
 
-    const combos = generateTransactionCombinations(pool, 2, Math.min(LOAN_PAYMENT_MAX_GL_LINES, pool.length));
+    const combos = generateTransactionCombinations(
+      pool,
+      2,
+      Math.min(LOAN_PAYMENT_MAX_GL_LINES, pool.length),
+    );
     let matched = false;
 
     for (const combo of combos) {
@@ -827,7 +978,8 @@ const buildLoanPaymentSplitCandidates = (
       }
 
       const maxDateDiff = combo.reduce<number>((max, glDebit) => {
-        const diff = dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
+        const diff =
+          dateDifferenceDays(bankDate, glDebit.transactionDate ?? glDebit.postingDate) ?? 0;
         return Math.max(max, diff);
       }, 0);
 
@@ -891,8 +1043,12 @@ export const reserveGroupedTransactionIds = (
 
   candidates.forEach((candidate) => {
     if (
-      candidate.bankTransactionIds.some((transactionId) => reservedBankTransactionIds.has(transactionId)) ||
-      candidate.glTransactionIds.some((transactionId) => reservedGlTransactionIds.has(transactionId))
+      candidate.bankTransactionIds.some((transactionId) =>
+        reservedBankTransactionIds.has(transactionId),
+      ) ||
+      candidate.glTransactionIds.some((transactionId) =>
+        reservedGlTransactionIds.has(transactionId),
+      )
     ) {
       return;
     }

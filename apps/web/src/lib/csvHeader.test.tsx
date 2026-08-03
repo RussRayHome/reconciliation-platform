@@ -4,7 +4,11 @@ import { parseCsvLine, parseHeaderRow, readHeaderOnly } from './csvHeader';
 
 describe('parseCsvLine', () => {
   it('splits a plain comma-delimited line', () => {
-    expect(parseCsvLine('Post Date,Description,Amount')).toEqual(['Post Date', 'Description', 'Amount']);
+    expect(parseCsvLine('Post Date,Description,Amount')).toEqual([
+      'Post Date',
+      'Description',
+      'Amount',
+    ]);
   });
 
   it('keeps commas inside quoted fields intact', () => {

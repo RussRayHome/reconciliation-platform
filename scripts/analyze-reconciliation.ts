@@ -3,11 +3,7 @@
  * similarity threshold windows to help calibrate matching configuration values.
  * Invoked via `npm run analyze:reconciliation`.
  */
-import {
-  normalizeTransactions,
-  parseWorkbook,
-  tokenSimilarity,
-} from '@recon/core';
+import { normalizeTransactions, parseWorkbook, tokenSimilarity } from '@recon/core';
 import { resolveReconciliationConfig, sampleAccountOverrides } from '@recon/config';
 
 import { basename } from 'node:path';
@@ -48,22 +44,7 @@ const usage = (): string =>
 
 const DEFAULT_WINDOWS = [0, 1, 2, 3, 4, 5, 7, 10, 14, 21];
 const DEFAULT_THRESHOLDS = [
-  0,
-  0.03,
-  0.05,
-  0.07,
-  0.08,
-  0.09,
-  0.1,
-  0.12,
-  0.15,
-  0.2,
-  0.25,
-  0.3,
-  0.4,
-  0.5,
-  0.6,
-  0.7,
+  0, 0.03, 0.05, 0.07, 0.08, 0.09, 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7,
 ];
 const DEFAULT_SIMILARITY_DAYS = 5;
 const DEFAULT_HYBRID_THRESHOLDS = [0.1, 0.15];
@@ -94,7 +75,9 @@ const parseNumberList = (
     .map(Number);
 
   if (parsed.length === 0 || parsed.some((item) => Number.isNaN(item))) {
-    throw new Error(`Invalid ${flagName} value: "${value}". Expected a comma-separated list of numbers.\n\n${usage()}`);
+    throw new Error(
+      `Invalid ${flagName} value: "${value}". Expected a comma-separated list of numbers.\n\n${usage()}`,
+    );
   }
 
   return Array.from(new Set(parsed)).sort((left, right) => left - right);
@@ -128,23 +111,33 @@ const parseArgs = (args: string[]): CliOptions => {
   }
 
   if (windows.some((value) => value < 0 || !Number.isInteger(value))) {
-    throw new Error(`Invalid --windows values. Each window must be a non-negative integer.\n\n${usage()}`);
+    throw new Error(
+      `Invalid --windows values. Each window must be a non-negative integer.\n\n${usage()}`,
+    );
   }
 
   if (thresholds.some((value) => value < 0 || value > 1)) {
-    throw new Error(`Invalid --thresholds values. Each threshold must be between 0 and 1.\n\n${usage()}`);
+    throw new Error(
+      `Invalid --thresholds values. Each threshold must be between 0 and 1.\n\n${usage()}`,
+    );
   }
 
   if (!Number.isInteger(similarityDays) || similarityDays < 0) {
-    throw new Error(`Invalid --similarity-days value. It must be a non-negative integer.\n\n${usage()}`);
+    throw new Error(
+      `Invalid --similarity-days value. It must be a non-negative integer.\n\n${usage()}`,
+    );
   }
 
   if (hybridThresholds.some((value) => value < 0 || value > 1)) {
-    throw new Error(`Invalid --hybrid-thresholds values. Each threshold must be between 0 and 1.\n\n${usage()}`);
+    throw new Error(
+      `Invalid --hybrid-thresholds values. Each threshold must be between 0 and 1.\n\n${usage()}`,
+    );
   }
 
   if (hybridOccurrences.some((value) => value < 1 || !Number.isInteger(value))) {
-    throw new Error(`Invalid --hybrid-occurrences values. Each value must be a positive integer.\n\n${usage()}`);
+    throw new Error(
+      `Invalid --hybrid-occurrences values. Each value must be a positive integer.\n\n${usage()}`,
+    );
   }
 
   return {
@@ -476,10 +469,7 @@ const main = async (): Promise<void> => {
           glItem.normalizedComparisonTokens.length <= 2;
 
         const hasAlternativeTimingCandidate = glTx.some((otherGlItem) => {
-          if (
-            otherGlItem.id === glItem.id ||
-            !sameAmount(bankItem.amount, otherGlItem.amount)
-          ) {
+          if (otherGlItem.id === glItem.id || !sameAmount(bankItem.amount, otherGlItem.amount)) {
             return false;
           }
 

@@ -81,9 +81,19 @@ describe('buildSummaryMetrics', () => {
   it('counts only bank-side data quality issues and folds them into unmatched totals', () => {
     const transactions: NormalizedTransaction[] = [
       buildTransaction({ id: 'bank-valid', source: 'bank', amount: 10 }),
-      buildTransaction({ id: 'bank-dq', source: 'bank', amount: 0, dataQualityIssues: ['Zero amount transaction requires review.'] }),
+      buildTransaction({
+        id: 'bank-dq',
+        source: 'bank',
+        amount: 0,
+        dataQualityIssues: ['Zero amount transaction requires review.'],
+      }),
       buildTransaction({ id: 'gl-valid', source: 'gl', amount: 10 }),
-      buildTransaction({ id: 'gl-dq', source: 'gl', amount: 0, dataQualityIssues: ['Amount is missing or malformed.'] }),
+      buildTransaction({
+        id: 'gl-dq',
+        source: 'gl',
+        amount: 0,
+        dataQualityIssues: ['Amount is missing or malformed.'],
+      }),
     ];
     const matchResults: MatchResult[] = [];
     const exceptions: ExceptionItem[] = [

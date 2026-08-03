@@ -11,9 +11,7 @@ export const bankHeaderOnlyRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
 ];
 
-export const glHeaderOnlyRows = [
-  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-];
+export const glHeaderOnlyRows = [['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount']];
 
 export const sampleBankRows = [
   ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
@@ -340,7 +338,14 @@ export const partialPaymentMatchBankRows = [
 
 export const partialPaymentMatchGlRows = [
   ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-  ['2025-10-05', 'Bill Payment', '', 'Vendor Delta', 'Vendor delta inv 992 installment plan', '-301.50'],
+  [
+    '2025-10-05',
+    'Bill Payment',
+    '',
+    'Vendor Delta',
+    'Vendor delta inv 992 installment plan',
+    '-301.50',
+  ],
 ];
 
 // PayrollBatchMatch: one bank payroll debit matches multiple GL payroll lines
@@ -385,9 +390,7 @@ export const nsfReturnedDepositBankRows = [
   ['2025-11-08', 'NSF RETURNED CHECK CUSTOMER ALPHA', '', '317.89', '', '9682.11'],
 ];
 
-export const nsfReturnedDepositGlRows = [
-  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-];
+export const nsfReturnedDepositGlRows = [['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount']];
 
 // VoidedCheckCleared: bank check debit with check number and no GL counterpart
 export const voidedCheckClearedBankRows = [
@@ -395,9 +398,7 @@ export const voidedCheckClearedBankRows = [
   ['2025-11-12', 'CHECK', '1042', '657.33', '', '9342.67'],
 ];
 
-export const voidedCheckClearedGlRows = [
-  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-];
+export const voidedCheckClearedGlRows = [['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount']];
 
 const buildWorkbookBuffer = async (rows: Array<Array<string | number>>): Promise<Buffer> => {
   const workbook = new ExcelJS.Workbook();
@@ -430,4 +431,5 @@ export const createSampleBankWorkbook = () => buildWorkbookBuffer(sampleBankRows
 export const createSampleGlWorkbook = () => buildWorkbookBuffer(sampleGlRows);
 
 /** Creates an Excel workbook buffer from arbitrary row data. */
-export const createWorkbookFromRows = (rows: Array<Array<string | number>>) => buildWorkbookBuffer(rows);
+export const createWorkbookFromRows = (rows: Array<Array<string | number>>) =>
+  buildWorkbookBuffer(rows);

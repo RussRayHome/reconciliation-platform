@@ -2,7 +2,7 @@ x-default-logging: &default-logging
   driver: json-file
   options:
     max-size: 10m
-    max-file: "3"
+    max-file: '3'
 
 x-api-environment: &api-environment
   NODE_ENV: production
@@ -27,7 +27,7 @@ x-api-environment: &api-environment
 services:
   redis:
     image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ['redis-server', '--appendonly', 'yes']
     restart: unless-stopped
     mem_limit: ${REDIS_MEM_LIMIT:-256m}
     mem_reservation: ${REDIS_MEM_RESERVATION:-64m}
@@ -38,7 +38,7 @@ services:
     networks:
       - data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -53,7 +53,7 @@ services:
       args:
         POSTGRES_BASE_IMAGE: ${POSTGRES_BASE_IMAGE:-postgres:16.14}
         ENABLE_PGAUDIT: ${ENABLE_PGAUDIT:-false}
-        BUILDKIT_INLINE_CACHE: "1"
+        BUILDKIT_INLINE_CACHE: '1'
     environment:
       LANG: en_US.UTF-8
       LANGUAGE: en_US:en
@@ -67,9 +67,9 @@ services:
     cpus: ${POSTGRES_CPUS:-1.50}
     stop_grace_period: 45s
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      - '${POSTGRES_HOST_PORT:-5432}:5432'
     expose:
-      - "5432"
+      - '5432'
     volumes:
       - recon-postgres-data:/var/lib/postgresql/data
     networks:
@@ -78,8 +78,8 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-recon_app} -d ${POSTGRES_DB:-reconciliation_platform}",
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_USER:-recon_app} -d ${POSTGRES_DB:-reconciliation_platform}',
         ]
       interval: 10s
       timeout: 5s
@@ -103,7 +103,7 @@ services:
     # already-migrated environment, override with:
     #   command: ["changelog-sync", "--to-tag=v1-v9-baseline"]
     # then redeploy this service with the default "update" command afterward.
-    restart: "no"
+    restart: 'no'
     mem_limit: ${MIGRATE_MEM_LIMIT:-768m}
     mem_reservation: ${MIGRATE_MEM_RESERVATION:-256m}
     cpus: ${MIGRATE_CPUS:-1.00}
@@ -118,7 +118,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
       args:
-        BUILDKIT_INLINE_CACHE: "1"
+        BUILDKIT_INLINE_CACHE: '1'
     depends_on:
       redis:
         condition: service_healthy
@@ -129,7 +129,7 @@ services:
     environment:
       <<: *api-environment
     expose:
-      - "4000"
+      - '4000'
     volumes:
       - recon-app-state:/var/lib/reconciliation
     networks:
@@ -143,7 +143,7 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
+          'CMD-SHELL',
           'node -e "fetch(''http://127.0.0.1:4000/api/health'').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"',
         ]
       interval: 30s
@@ -158,12 +158,12 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        BUILDKIT_INLINE_CACHE: "1"
+        BUILDKIT_INLINE_CACHE: '1'
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "${PUBLIC_WEB_PORT:-4173}:8080"
+      - '${PUBLIC_WEB_PORT:-4173}:8080'
     networks:
       - edge
       - app
@@ -173,11 +173,7 @@ services:
     cpus: ${WEB_CPUS:-1.00}
     stop_grace_period: 30s
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1",
-        ]
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1']
       interval: 30s
       timeout: 5s
       retries: 5

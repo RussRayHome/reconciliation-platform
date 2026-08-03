@@ -78,7 +78,10 @@ export function suggestMapping(
       }
     }
 
-    const threshold = Math.max(1, Math.round(normalizedColumn.length * MAX_SUGGESTION_DISTANCE_RATIO));
+    const threshold = Math.max(
+      1,
+      Math.round(normalizedColumn.length * MAX_SUGGESTION_DISTANCE_RATIO),
+    );
     if (bestField && bestDistance <= threshold) {
       suggestions[column] = bestField;
       claimedFields.add(bestField);

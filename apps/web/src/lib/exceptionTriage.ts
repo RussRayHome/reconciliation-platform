@@ -274,8 +274,8 @@ export const buildComparisonSides = (
       ? (item.ruleTrace?.counterparts ?? [])
       : [item.ruleTrace.counterpart];
 
-  const counterpartLines: Array<{ source: 'bank' | 'gl'; line: ComparisonLine }> =
-    counterparts.map((counterpart) => ({
+  const counterpartLines: Array<{ source: 'bank' | 'gl'; line: ComparisonLine }> = counterparts.map(
+    (counterpart) => ({
       source: counterpart.source ?? (item.source === 'bank' ? 'gl' : 'bank'),
       line: {
         fileName: counterpart.spreadsheetFileName ?? counterpart.transactionId ?? 'N/A',
@@ -284,7 +284,8 @@ export const buildComparisonSides = (
         dateLabel: formatDate(counterpart.transactionDate ?? null),
         isPrimary: false,
       },
-    }));
+    }),
+  );
 
   const bank: ComparisonLine[] = [];
   const gl: ComparisonLine[] = [];

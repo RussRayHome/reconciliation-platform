@@ -4,7 +4,11 @@ const dayMs = 24 * 60 * 60 * 1000;
  * Returns true when two nullable currency amounts are within `tolerance` of each other.
  * Either null operand is treated as "no amount available" and always returns false.
  */
-export const currencyEquals = (left: number | null, right: number | null, tolerance: number): boolean => {
+export const currencyEquals = (
+  left: number | null,
+  right: number | null,
+  tolerance: number,
+): boolean => {
   if (left === null || right === null) {
     return false;
   }

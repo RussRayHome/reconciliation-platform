@@ -29,7 +29,7 @@ Key design goals:
 ## 2. Services and ports
 
 | Service    | Role                         | Host port       | Environments    | Notes                                               |
-|------------|------------------------------|-----------------|-----------------|-----------------------------------------------------|
+| ---------- | ---------------------------- | --------------- | --------------- | --------------------------------------------------- |
 | `web`      | Public gateway and static UI | `4173`          | dev, stage      | Proxies `/api/*` to internal API                    |
 | `api`      | Reconciliation API           | none (internal) | dev, stage      | Exposed only to compose networks; `.git` mounted ro |
 | `postgres` | Primary data store           | `5432`          | dev, stage      | Uses `Dockerfile.postgres`                          |
@@ -65,7 +65,7 @@ Volume names are prefixed with `COMPOSE_PROJECT_NAME` (see section 4).
 `COMPOSE_PROJECT_NAME` in the env file controls both container naming and image labels.
 
 | Environment | `COMPOSE_PROJECT_NAME`          | Example image name                  |
-|-------------|---------------------------------|-------------------------------------|
+| ----------- | ------------------------------- | ----------------------------------- |
 | dev         | `reconciliation-platform-dev`   | `reconciliation-platform-dev-api`   |
 | stage       | `reconciliation-platform-stage` | `reconciliation-platform-stage-web` |
 
@@ -110,7 +110,7 @@ Access points after deploy:
 ## 6. Environment files
 
 | File                         | Purpose                                   | Committed |
-|------------------------------|-------------------------------------------|-----------|
+| ---------------------------- | ----------------------------------------- | --------- |
 | `.env.docker`                | Active dev env file (primary)             | No        |
 | `.env.docker.dev`            | Active dev env file (alternate)           | No        |
 | `.env.docker.dev.fallback`   | Dev defaults with placeholder passwords   | Yes       |
@@ -275,12 +275,12 @@ Behavior:
 
 The `tools` container runs Trivy scans for all four security components visible in the Developer Dashboard:
 
-| Component         | Trivy scan target          | Blocking severity |
-|-------------------|----------------------------|-------------------|
-| API               | api image (`dev` stage)    | HIGH+             |
-| Database          | postgres image             | informational     |
-| Container         | base OS layer of api image | informational     |
-| Web Server        | `apps/web/nginx.conf`      | HIGH+             |
+| Component  | Trivy scan target          | Blocking severity |
+| ---------- | -------------------------- | ----------------- |
+| API        | api image (`dev` stage)    | HIGH+             |
+| Database   | postgres image             | informational     |
+| Container  | base OS layer of api image | informational     |
+| Web Server | `apps/web/nginx.conf`      | HIGH+             |
 
 Each component produces an independent CVE count. The dashboard summary row totals across all components. The presence of CVEs does not fail the quality gate unless the component's blocking threshold is exceeded. The tools container must have external internet access (via the `default` network) to download the Trivy vulnerability database on first scan.
 

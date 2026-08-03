@@ -3,7 +3,7 @@ services:
     build:
       args:
         POSTGRES_BASE_IMAGE: postgres:16.14
-        ENABLE_PGAUDIT: "true"
+        ENABLE_PGAUDIT: 'true'
     command:
       - postgres
       - -c
@@ -15,20 +15,20 @@ services:
     volumes:
       - ./.git:/app/.git:ro
     environment:
-      DEVELOPER_SKIP_DIRTY_CHECK: "true"
-      GIT_CONFIG_COUNT: "1"
-      GIT_CONFIG_KEY_0: "safe.directory"
-      GIT_CONFIG_VALUE_0: "/app"
+      DEVELOPER_SKIP_DIRTY_CHECK: 'true'
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: 'safe.directory'
+      GIT_CONFIG_VALUE_0: '/app'
 
   web:
     build:
       args:
-        VITE_ENABLE_DEVELOPER_DASHBOARD: "true"
-        VITE_ENVIRONMENT_PATH_SEGMENT: "dev"
+        VITE_ENABLE_DEVELOPER_DASHBOARD: 'true'
+        VITE_ENVIRONMENT_PATH_SEGMENT: 'dev'
 
   tools:
     image: reconciliation-platform-tools:latest
-    user: "0:0"
+    user: '0:0'
     depends_on:
       api:
         condition: service_healthy
@@ -41,12 +41,12 @@ services:
       - recon-app-state:/var/lib/reconciliation
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      GIT_CONFIG_COUNT: "1"
-      GIT_CONFIG_KEY_0: "safe.directory"
-      GIT_CONFIG_VALUE_0: "/app"
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: 'safe.directory'
+      GIT_CONFIG_VALUE_0: '/app'
       NODE_ENV: test
       DEPLOY_ENV: dev
-      PORT: "4001"
+      PORT: '4001'
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
       RECON_PERSISTENCE_BACKEND: ${RECON_PERSISTENCE_BACKEND:-postgres}
@@ -57,7 +57,7 @@ services:
       RATE_LIMIT_USE_REDIS: ${RATE_LIMIT_USE_REDIS:-true}
       RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379}
       RATE_LIMIT_REDIS_PREFIX: ${RATE_LIMIT_REDIS_PREFIX:-recon:rate-limit:}
-      ENABLE_DEVELOPER_DIAGNOSTICS: "true"
+      ENABLE_DEVELOPER_DIAGNOSTICS: 'true'
       RECONCILIATION_RUN_STORE_PATH: /var/lib/reconciliation/latest-reconciliation-run.json
       PLAYWRIGHT_BASE_URL: http://web:8080
       PLAYWRIGHT_API_URL: http://api:4000
@@ -65,9 +65,9 @@ services:
       - sh
       - scripts/pre-flight/tools-startup-guard.sh
     expose:
-      - "4001"
+      - '4001'
     ports:
-      - "${TOOLS_PORT:-4001}:4001"
+      - '${TOOLS_PORT:-4001}:4001'
     networks:
       - default
       - app
@@ -80,7 +80,7 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
+          'CMD-SHELL',
           'node -e "fetch(''http://127.0.0.1:4001/api/health'').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"',
         ]
       interval: 30s
@@ -93,7 +93,7 @@ services:
     environment:
       PGWEB_DATABASE_URL: postgres://${POSTGRES_USER:-recon_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-reconciliation_platform}?sslmode=disable
     ports:
-      - "${PGWEB_PORT:-8081}:8081"
+      - '${PGWEB_PORT:-8081}:8081'
     depends_on:
       - postgres
     networks:
@@ -112,7 +112,7 @@ services:
     environment:
       TZ: ${TZ:-UTC}
     ports:
-      - "${NGINX_UI_HTTP_PORT:-8082}:9000"
+      - '${NGINX_UI_HTTP_PORT:-8082}:9000'
     volumes:
       - recon-nginx-ui-data:/etc/nginx-ui
       - /var/run/docker.sock:/var/run/docker.sock

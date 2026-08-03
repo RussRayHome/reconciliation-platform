@@ -62,7 +62,7 @@ Rows marked excluded or with data-quality issues are not eligible for matching.
 The default matching and reporting profile is defined in `packages/config/src/default-config.ts`.
 
 | Setting                                   | Default   |
-|-------------------------------------------|-----------|
+| ----------------------------------------- | --------- |
 | amount tolerance                          | `0.01`    |
 | primary date tolerance                    | `5` days  |
 | timing-difference window                  | `21` days |
@@ -223,7 +223,7 @@ For `DateVariance` match results, classifier post-processing can upgrade the cat
 When more than one category could apply to the same transaction key, the lower precedence number wins:
 
 | Level | Categories                                                                                                                                                                                                    |
-|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | `InvalidOrMissingData`                                                                                                                                                                                        |
 | 2     | `DuplicateInBank`, `DuplicateInQBO`                                                                                                                                                                           |
 | 3     | `AmountMismatch`, `ACHReturn`, `NSFReturnedDeposit`, `ChargebackReturn`                                                                                                                                       |
@@ -284,41 +284,41 @@ Bank-to-GL reconciliation is governed primarily by **ASC 305 (Cash and Cash Equi
 ### Standard bank reconciliation items — full coverage map
 
 | Standard reconciling item                   | GAAP basis | System category                                   | How detected                                                                                                         |
-|---------------------------------------------|------------|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
-| Outstanding checks — normal clearing window | ASC 305-10 | `OutstandingCheck`                                | Unmatched negative GL check items within the stale threshold                                                        |
+| ------------------------------------------- | ---------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Outstanding checks — normal clearing window | ASC 305-10 | `OutstandingCheck`                                | Unmatched negative GL check items within the stale threshold                                                         |
 | Outstanding checks — aged beyond policy     | ASC 305-10 | `StaleOutstandingCheck`                           | Same as above, age exceeds `staleOutstandingCheckDays` (default 45 d)                                                |
-| Deposits in transit                         | ASC 305-10 | `DepositInTransit`                                | Unmatched GL credit near period end within `depositInTransitDays` (default 7 d), not check-like                     |
+| Deposits in transit                         | ASC 305-10 | `DepositInTransit`                                | Unmatched GL credit near period end within `depositInTransitDays` (default 7 d), not check-like                      |
 | NSF / returned checks                       | ASC 310-10 | `NSFReturnedDeposit`                              | Bank debit with NSF or returned-check keywords, no paired bank credit                                                |
-| Bank service charges and fees               | ASC 305-10 | `BankServiceChargeAmortization`                   | Bank debit with service-charge keywords equals sum of 2–6 GL fee lines                                              |
-| Interest income credited by bank            | ASC 305-10 | `InterestIncome`                                  | Bank credit with interest keywords, no GL counterpart                                                               |
+| Bank service charges and fees               | ASC 305-10 | `BankServiceChargeAmortization`                   | Bank debit with service-charge keywords equals sum of 2–6 GL fee lines                                               |
+| Interest income credited by bank            | ASC 305-10 | `InterestIncome`                                  | Bank credit with interest keywords, no GL counterpart                                                                |
 | ACH / EFT returns                           | ASC 310-10 | `ACHReturn`                                       | Paired same-amount bank debit and credit (net zero) with ACH or NSF indicators within reversal window                |
 | Reversed or voided entries                  | ASC 305-10 | `ReversalVoid`                                    | Paired same-amount bank debit and credit with no ACH indicators, within reversal window                              |
-| Check voided in books but cleared bank      | ASC 305-10 | `VoidedCheckCleared`                              | Bank check debit (check number or “check”/”chk” description) with no GL counterpart                                 |
+| Check voided in books but cleared bank      | ASC 305-10 | `VoidedCheckCleared`                              | Bank check debit (check number or “check”/”chk” description) with no GL counterpart                                  |
 | Chargeback / disputed item returned         | ASC 606-10 | `ChargebackReturn`                                | Bank debit with chargeback keywords paired with same-amount bank credit                                              |
-| Loan payment — principal + interest split   | ASC 470-10 | `LoanPaymentSplit`                                | Single bank loan debit matched against 2–3 GL debits (principal + interest) summing to bank total                   |
-| Intercompany / entity transfer              | ASC 810-10 | `IntercompanyMismatch`                            | Bank or GL item with intercompany, due-to/from, or subsidiary keywords and no counterpart                           |
-| Payroll batch posting                       | ASC 718-10 | `PayrollBatchMatch`                               | Single bank payroll debit equals sum of multiple GL payroll expense lines                                           |
-| Fee netting (revenue net of bank fee)       | ASC 606-10 | `FeeNettingMatch`                                 | Bank credit equals GL revenue line minus GL fee line                                                               |
-| Partial payment accumulation                | ASC 310-10 | `PartialPaymentMatch`                             | Multiple bank debits accumulate to a single GL payable amount                                                       |
+| Loan payment — principal + interest split   | ASC 470-10 | `LoanPaymentSplit`                                | Single bank loan debit matched against 2–3 GL debits (principal + interest) summing to bank total                    |
+| Intercompany / entity transfer              | ASC 810-10 | `IntercompanyMismatch`                            | Bank or GL item with intercompany, due-to/from, or subsidiary keywords and no counterpart                            |
+| Payroll batch posting                       | ASC 718-10 | `PayrollBatchMatch`                               | Single bank payroll debit equals sum of multiple GL payroll expense lines                                            |
+| Fee netting (revenue net of bank fee)       | ASC 606-10 | `FeeNettingMatch`                                 | Bank credit equals GL revenue line minus GL fee line                                                                 |
+| Partial payment accumulation                | ASC 310-10 | `PartialPaymentMatch`                             | Multiple bank debits accumulate to a single GL payable amount                                                        |
 | Timing difference (posting-date lag)        | ASC 230-10 | `TimingDifference`                                | Same-amount pair within the extended timing window (`timingDifferenceDays`, default 21 d) but outside primary window |
 | Date variance (extended window match)       | ASC 230-10 | `DateVariance`                                    | Matched pair with date difference exceeding primary tolerance but within timing window                               |
 | Amount mismatch                             | ASC 305-10 | `AmountMismatch`                                  | Matched pair where amounts differ beyond `amountTolerance` with high description similarity                          |
 | Likely miscoding                            | ASC 820-10 | `LikelyMiscoding`                                 | Distinctive same-amount near-date pair where description/reference conflict suggests wrong account                   |
 | Duplicate bank posting                      | ASC 305-10 | `DuplicateInBank`                                 | Same-source same-amount duplicate within `duplicateDateWindowDays`                                                   |
-| Duplicate book entry                        | ASC 305-10 | `DuplicateInQBO`                                  | Same-source same-amount duplicate in GL within duplicate window                                                     |
+| Duplicate book entry                        | ASC 305-10 | `DuplicateInQBO`                                  | Same-source same-amount duplicate in GL within duplicate window                                                      |
 | Split transaction / grouped deposit         | ASC 230-10 | `LikelySplitCombineIssue`, `DepositGroupingIssue` | Balanced residual grouped sets where split or batched posting is likely                                              |
 | Check number mismatch                       | ASC 305-10 | `CheckNumberMismatch`                             | Amount and text align but check numbers differ                                                                       |
 | Reference number mismatch                   | ASC 305-10 | `ReferenceNumberMismatch`                         | Amount and text align but reference numbers differ                                                                   |
 | Description / merchant variance             | ASC 305-10 | `DescriptionMerchantVariance`                     | Amount and date match but description similarity is in the grey zone                                                 |
 | Ambiguous match requiring review            | ASC 305-10 | `AmbiguousMatchRequiringReview`                   | Multiple near-equal candidates exist for the same transaction                                                        |
-| Missing from GL (book)                     | ASC 305-10 | `MissingFromQBO`                                  | Bank transaction has no book counterpart after all other stages                                                      |
-| Missing from bank                           | ASC 305-10 | `MissingFromBank`                                 | GL transaction has no bank counterpart after all other stages                                                       |
+| Missing from GL (book)                      | ASC 305-10 | `MissingFromQBO`                                  | Bank transaction has no book counterpart after all other stages                                                      |
+| Missing from bank                           | ASC 305-10 | `MissingFromBank`                                 | GL transaction has no bank counterpart after all other stages                                                        |
 | Invalid or missing data                     | ASC 855-10 | `InvalidOrMissingData`                            | Amount, date, or other required field is absent or malformed                                                         |
 
 ### GAAP assertion coverage
 
 | GAAP assertion (ASC 315-10 / PCAOB AS 2315) | Coverage status   | Supporting categories                                                                                                                            |
-|---------------------------------------------|-------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Existence — recorded cash events occurred   | Covered           | `ExactMatch`, `ProbableMatch`, all grouped categories                                                                                            |
 | Completeness — all cash events are recorded | Covered           | `MissingFromQBO`, `MissingFromBank`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck`                                             |
 | Accuracy — amounts and periods are correct  | Covered           | `AmountMismatch`, `DateVariance`, `TimingDifference`, `InvalidOrMissingData`, `DuplicateInBank`, `DuplicateInQBO`                                |

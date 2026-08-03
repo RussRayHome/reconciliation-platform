@@ -66,9 +66,7 @@ The target architecture is:
 Introduce a grouped match model in the shared domain package.
 
 ```ts
-export type GroupedMatchDisposition =
-  | 'GroupedExactMatch'
-  | 'GroupedReviewMatch';
+export type GroupedMatchDisposition = 'GroupedExactMatch' | 'GroupedReviewMatch';
 
 export interface GroupedMatchMember {
   transactionId: string;
@@ -193,10 +191,7 @@ Recommended future addition:
 
 ```ts
 type ReviewerDecisionTargetType =
-  | 'ProbableMatch'
-  | 'AmbiguousReview'
-  | 'ExceptionItem'
-  | 'GroupedMatch';
+  'ProbableMatch' | 'AmbiguousReview' | 'ExceptionItem' | 'GroupedMatch';
 ```
 
 ## Migration Sequence

@@ -99,7 +99,7 @@ Class state before:
 
 ```ts
 {
-  runs: Map<string, ReconciliationRun>
+  runs: Map<string, ReconciliationRun>;
 }
 ```
 
@@ -107,7 +107,7 @@ Class state after:
 
 ```ts
 {
-  runs: Map<string, ReconciliationRun>
+  runs: Map<string, ReconciliationRun>;
   // Mutated only by save(run)
 }
 ```
@@ -208,7 +208,7 @@ Module: apps/api/src/app.ts
 ```ts
 {
   repositoryState: {
-    runsCount: number
+    runsCount: number;
   }
 }
 ```
@@ -326,7 +326,7 @@ Module: packages/core/src/normalization/text.ts
 
 ```ts
 {
-  normalizedText: string
+  normalizedText: string;
 }
 ```
 
@@ -419,7 +419,7 @@ Module: packages/core/src/matching/similarity.ts
 
 ```ts
 {
-  equalsWithinTolerance: boolean
+  equalsWithinTolerance: boolean;
 }
 ```
 
@@ -445,7 +445,7 @@ Module: packages/core/src/matching/similarity.ts
 
 ```ts
 {
-  difference: number
+  difference: number;
 }
 ```
 
@@ -471,7 +471,7 @@ Module: packages/core/src/matching/similarity.ts
 
 ```ts
 {
-  absoluteDayDifference: number | null
+  absoluteDayDifference: number | null;
 }
 ```
 
@@ -497,7 +497,7 @@ Module: packages/core/src/matching/similarity.ts
 
 ```ts
 {
-  jaccardLikeScore: number
+  jaccardLikeScore: number;
 }
 ```
 
@@ -648,8 +648,8 @@ Module: packages/core/src/reporting/chartData.ts
 {
   chartSeries: [
     { id: 'countByCategory', data: Array<{ label: string; value: number }> },
-    { id: 'exposureByCategory', data: Array<{ label: string; value: number }> }
-  ]
+    { id: 'exposureByCategory', data: Array<{ label: string; value: number }> },
+  ];
 }
 ```
 

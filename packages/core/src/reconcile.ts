@@ -1,8 +1,4 @@
-import type {
-  AuditEvent,
-  ReconciliationInput,
-  ReconciliationOutput,
-} from '@recon/domain';
+import type { AuditEvent, ReconciliationInput, ReconciliationOutput } from '@recon/domain';
 
 import { buildSummaryMetrics } from './reporting/summary';
 import { classifyExceptions } from './reporting/exceptionClassifier';

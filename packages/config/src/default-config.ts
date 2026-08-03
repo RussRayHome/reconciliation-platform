@@ -10,12 +10,26 @@ import type {
 } from '@recon/domain';
 
 export const baseAliases: Record<BusinessField, string[]> = {
-  transactionDate: ['date', 'transaction date', 'trans date', 'posted date', 'posting date', 'effective date'],
+  transactionDate: [
+    'date',
+    'transaction date',
+    'trans date',
+    'posted date',
+    'posting date',
+    'effective date',
+  ],
   postingDate: ['posting date', 'post date', 'bank posted date', 'posted', 'posting'],
   transactionType: ['type', 'transaction type', 'entry type'],
   checkNumber: ['check', 'check number', 'check no', 'chk no'],
   serialNumber: ['serial', 'serial number'],
-  referenceNumber: ['reference', 'reference number', 'ref', 'ref no', 'document number', 'transaction id'],
+  referenceNumber: [
+    'reference',
+    'reference number',
+    'ref',
+    'ref no',
+    'document number',
+    'transaction id',
+  ],
   description: ['description', 'memo', 'details', 'narrative', 'transaction description'],
   merchantName: ['merchant', 'merchant name', 'vendor'],
   payeeName: ['payee', 'name', 'payee/name', 'counterparty'],
@@ -23,7 +37,13 @@ export const baseAliases: Record<BusinessField, string[]> = {
   splitAmount: ['split amount', 'split amt', 'line amount', 'line amt', 'distribution amount'],
   debit: ['debit', 'withdrawal', 'payment', 'money out', 'debits', 'payments and other debits'],
   credit: ['credit', 'deposit', 'money in', 'credits', 'deposits and other credits'],
-  runningBalance: ['balance', 'running balance', 'account balance', 'current balance', 'running bal'],
+  runningBalance: [
+    'balance',
+    'running balance',
+    'account balance',
+    'current balance',
+    'running bal',
+  ],
   accountIdentifier: ['account', 'account number', 'account id'],
 };
 
@@ -155,8 +175,7 @@ const mergeSourceConfig = (
     ...override?.columnAliases,
   },
   excludedRows: override?.excludedRows ?? base.excludedRows,
-  beginningBalancePatterns:
-    override?.beginningBalancePatterns ?? base.beginningBalancePatterns,
+  beginningBalancePatterns: override?.beginningBalancePatterns ?? base.beginningBalancePatterns,
 });
 
 /**

@@ -91,7 +91,9 @@ describe('isCheckLikeGlTransaction', () => {
 
 describe('inferTransactionKind', () => {
   it('returns check when checkNumber is set', () => {
-    expect(inferTransactionKind(buildTransaction({ checkNumber: '1001', amount: -200 }))).toBe('check');
+    expect(inferTransactionKind(buildTransaction({ checkNumber: '1001', amount: -200 }))).toBe(
+      'check',
+    );
   });
 
   it('returns check when serialNumber is set', () => {
@@ -99,21 +101,27 @@ describe('inferTransactionKind', () => {
   });
 
   it('returns check when transactionType includes "check"', () => {
-    expect(inferTransactionKind(buildTransaction({ transactionType: 'Bill Check Payment' }))).toBe('check');
+    expect(inferTransactionKind(buildTransaction({ transactionType: 'Bill Check Payment' }))).toBe(
+      'check',
+    );
   });
 
   it('returns journal when transactionType includes "journal"', () => {
-    expect(inferTransactionKind(buildTransaction({ transactionType: 'Journal Entry' }))).toBe('journal');
+    expect(inferTransactionKind(buildTransaction({ transactionType: 'Journal Entry' }))).toBe(
+      'journal',
+    );
   });
 
   it('returns transfer when transactionType includes "transfer"', () => {
-    expect(inferTransactionKind(buildTransaction({ transactionType: 'Transfer' }))).toBe('transfer');
+    expect(inferTransactionKind(buildTransaction({ transactionType: 'Transfer' }))).toBe(
+      'transfer',
+    );
   });
 
   it('returns transfer when description includes "online from"', () => {
-    expect(
-      inferTransactionKind(buildTransaction({ description: 'ONLINE FROM ****1061' })),
-    ).toBe('transfer');
+    expect(inferTransactionKind(buildTransaction({ description: 'ONLINE FROM ****1061' }))).toBe(
+      'transfer',
+    );
   });
 
   it('returns deposit when amount is positive with no other indicators', () => {
@@ -121,7 +129,9 @@ describe('inferTransactionKind', () => {
   });
 
   it('returns deposit when transactionType includes "deposit"', () => {
-    expect(inferTransactionKind(buildTransaction({ transactionType: 'Deposit', amount: 0 }))).toBe('deposit');
+    expect(inferTransactionKind(buildTransaction({ transactionType: 'Deposit', amount: 0 }))).toBe(
+      'deposit',
+    );
   });
 
   it('returns withdrawal when amount is negative', () => {

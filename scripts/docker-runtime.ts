@@ -22,11 +22,11 @@ const fallbackComposeEnvFile = path.join(repoRoot, '.env.docker.dev.fallback');
 export type ComposeService = 'postgres' | 'migrate' | 'api' | 'web';
 
 const resolveEnvFilePath = (value: string): string =>
-	path.isAbsolute(value) ? value : path.resolve(repoRoot, value);
+  path.isAbsolute(value) ? value : path.resolve(repoRoot, value);
 
 /** Resolves the active Docker env file path from `DOCKER_ENV_FILE` env var or falls back to the dev fallback. */
 export const resolveDockerEnvFile = (): string => {
-	const configuredEnvFile = process.env.DOCKER_ENV_FILE ?? process.env.DOCKER_COMPOSE_ENV_FILE;
+  const configuredEnvFile = process.env.DOCKER_ENV_FILE ?? process.env.DOCKER_COMPOSE_ENV_FILE;
   if (configuredEnvFile) {
     return resolveEnvFilePath(configuredEnvFile);
   }

@@ -1785,7 +1785,10 @@ export const createApp = (
         return { profile, version };
       };
 
-      const [glResult, bankResult] = await Promise.all([saveSide(gl, 'gl'), saveSide(bank, 'bank')]);
+      const [glResult, bankResult] = await Promise.all([
+        saveSide(gl, 'gl'),
+        saveSide(bank, 'bank'),
+      ]);
 
       response.status(201).json({
         glProfile: glResult.profile,

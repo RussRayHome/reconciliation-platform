@@ -190,8 +190,7 @@ const findMatchResultByPair = (
 ): MatchResult | undefined =>
   matchResults.find(
     (result) =>
-      result.bankTransactionId === bankTransactionId &&
-      result.glTransactionId === glTransactionId,
+      result.bankTransactionId === bankTransactionId && result.glTransactionId === glTransactionId,
   );
 
 const buildReconciliationAnchorDate = (
@@ -308,9 +307,7 @@ const classifyOutstandingChecksStage = (
       return;
     }
 
-    const ageInDays = Math.floor(
-      (anchorDate.getTime() - transactionDate.getTime()) / 86400000,
-    );
+    const ageInDays = Math.floor((anchorDate.getTime() - transactionDate.getTime()) / 86400000);
 
     if (ageInDays < 0 || ageInDays >= matching.staleOutstandingCheckDays) {
       return;
@@ -367,7 +364,10 @@ const classifyAchReturnStage = (params: ResidualStageParams): Set<string> => {
 
   const bankTransactions = [...remainingUnmatchedBank]
     .map((id) => transactionById.get(id))
-    .filter((tx): tx is NormalizedTransaction & { amount: number } => tx !== undefined && tx.amount !== null);
+    .filter(
+      (tx): tx is NormalizedTransaction & { amount: number } =>
+        tx !== undefined && tx.amount !== null,
+    );
 
   for (let i = 0; i < bankTransactions.length; i += 1) {
     const debit = bankTransactions[i];
@@ -469,7 +469,10 @@ const classifyReversalVoidStage = (
   const bankTransactions = [...remainingUnmatchedBank]
     .filter((id) => !achReturnBankIds.has(id))
     .map((id) => transactionById.get(id))
-    .filter((tx): tx is NormalizedTransaction & { amount: number } => tx !== undefined && tx.amount !== null);
+    .filter(
+      (tx): tx is NormalizedTransaction & { amount: number } =>
+        tx !== undefined && tx.amount !== null,
+    );
 
   for (let i = 0; i < bankTransactions.length; i += 1) {
     const first = bankTransactions[i];
@@ -560,7 +563,15 @@ const classifyReversalVoidStage = (
 
 const CHARGEBACK_WINDOW_DAYS = 120;
 
-const CHARGEBACK_KEYWORDS = ['chargeback', 'chargebk', 'chgbk', 'disputed', 'dispute', 'reversal fee', 'merchant return'];
+const CHARGEBACK_KEYWORDS = [
+  'chargeback',
+  'chargebk',
+  'chgbk',
+  'disputed',
+  'dispute',
+  'reversal fee',
+  'merchant return',
+];
 
 const hasChargebackKeyword = (transaction: NormalizedTransaction): boolean => {
   const text = [transaction.description, transaction.transactionType, transaction.merchantName]
@@ -650,7 +661,14 @@ const classifyChargebackReturnStage = (
   return chargebackBankIds;
 };
 
-const INTEREST_KEYWORDS = ['interest', 'int income', 'earned interest', 'interest earned', 'daily interest', 'monthly interest'];
+const INTEREST_KEYWORDS = [
+  'interest',
+  'int income',
+  'earned interest',
+  'interest earned',
+  'daily interest',
+  'monthly interest',
+];
 
 const hasInterestKeyword = (transaction: NormalizedTransaction): boolean => {
   const text = [transaction.description, transaction.transactionType, transaction.merchantName]
@@ -664,7 +682,8 @@ const classifyInterestIncomeStage = (
   params: ResidualStageParams,
   alreadyConsumedBankIds: Set<string>,
 ): Set<string> => {
-  const { runId, reporting, transactionById, remainingUnmatchedBank, upsertTransactionException } = params;
+  const { runId, reporting, transactionById, remainingUnmatchedBank, upsertTransactionException } =
+    params;
   const interestBankIds = new Set<string>();
 
   for (const bankId of remainingUnmatchedBank) {
@@ -707,8 +726,16 @@ const classifyInterestIncomeStage = (
 };
 
 const INTERCOMPANY_KEYWORDS = [
-  'intercompany', 'inter-company', 'inter company', ' ico ', 'entity transfer',
-  'due to', 'due from', 'parent company', 'subsidiary', 'affiliate transfer',
+  'intercompany',
+  'inter-company',
+  'inter company',
+  ' ico ',
+  'entity transfer',
+  'due to',
+  'due from',
+  'parent company',
+  'subsidiary',
+  'affiliate transfer',
 ];
 
 const hasIntercompanyKeyword = (transaction: NormalizedTransaction): boolean => {
@@ -832,9 +859,7 @@ const classifyMiscodingStage = (
       transactionById,
     ),
     getTransactionsByIds(
-      [...remainingUnmatchedGl].filter(
-        (transactionId) => !excludedGlIds.has(transactionId),
-      ),
+      [...remainingUnmatchedGl].filter((transactionId) => !excludedGlIds.has(transactionId)),
       transactionById,
     ),
     matching,
@@ -904,8 +929,14 @@ const classifyMiscodingStage = (
 };
 
 const NSF_RETURNED_DEPOSIT_KEYWORDS = [
-  'returned check', 'return item', 'returned item', 'insufficient funds',
-  'check returned', 'chk ret', 'deposit return', 'returned deposit',
+  'returned check',
+  'return item',
+  'returned item',
+  'insufficient funds',
+  'check returned',
+  'chk ret',
+  'deposit return',
+  'returned deposit',
 ];
 
 const hasNsfReturnedDepositKeyword = (transaction: NormalizedTransaction): boolean => {
@@ -913,14 +944,17 @@ const hasNsfReturnedDepositKeyword = (transaction: NormalizedTransaction): boole
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  return /\bnsf\b/.test(text) || NSF_RETURNED_DEPOSIT_KEYWORDS.some((keyword) => text.includes(keyword));
+  return (
+    /\bnsf\b/.test(text) || NSF_RETURNED_DEPOSIT_KEYWORDS.some((keyword) => text.includes(keyword))
+  );
 };
 
 const classifyNSFReturnedDepositStage = (
   params: ResidualStageParams,
   achReturnBankIds: Set<string>,
 ): Set<string> => {
-  const { runId, reporting, transactionById, remainingUnmatchedBank, upsertTransactionException } = params;
+  const { runId, reporting, transactionById, remainingUnmatchedBank, upsertTransactionException } =
+    params;
   const nsfReturnedDepositBankIds = new Set<string>();
 
   for (const bankId of remainingUnmatchedBank) {
@@ -966,7 +1000,8 @@ const classifyVoidedCheckClearedStage = (
   params: ResidualStageParams,
   excludedBankIds: Set<string>,
 ): Set<string> => {
-  const { runId, reporting, transactionById, remainingUnmatchedBank, upsertTransactionException } = params;
+  const { runId, reporting, transactionById, remainingUnmatchedBank, upsertTransactionException } =
+    params;
   const voidedCheckClearedBankIds = new Set<string>();
 
   for (const bankId of remainingUnmatchedBank) {
@@ -1154,7 +1189,12 @@ const ENGINE_GROUPED_CATEGORIES = new Set([
   'LoanPaymentSplit',
 ] as const);
 
-type EngineGroupedCategory = 'FeeNettingMatch' | 'PartialPaymentMatch' | 'PayrollBatchMatch' | 'BankServiceChargeAmortization' | 'LoanPaymentSplit';
+type EngineGroupedCategory =
+  | 'FeeNettingMatch'
+  | 'PartialPaymentMatch'
+  | 'PayrollBatchMatch'
+  | 'BankServiceChargeAmortization'
+  | 'LoanPaymentSplit';
 
 const classifyEngineReservedGroupsStage = (
   params: ResidualStageParams,
@@ -1162,12 +1202,16 @@ const classifyEngineReservedGroupsStage = (
   engineGroupedBankIds: Set<string>;
   engineGroupedGlIds: Set<string>;
 } => {
-  const { runId, reporting, transactionById, upsertTransactionException, engineReservedGroups } = params;
+  const { runId, reporting, transactionById, upsertTransactionException, engineReservedGroups } =
+    params;
   const engineGroupedBankIds = new Set<string>();
   const engineGroupedGlIds = new Set<string>();
 
   for (const groupedResult of engineReservedGroups) {
-    if (!groupedResult.category || !ENGINE_GROUPED_CATEGORIES.has(groupedResult.category as EngineGroupedCategory)) {
+    if (
+      !groupedResult.category ||
+      !ENGINE_GROUPED_CATEGORIES.has(groupedResult.category as EngineGroupedCategory)
+    ) {
       continue;
     }
 
@@ -1434,9 +1478,7 @@ const classifyMissingFallbackStage = (
         if (!txDate) {
           return false;
         }
-        const ageDays = Math.abs(
-          Math.floor((anchorDate.getTime() - txDate.getTime()) / 86400000),
-        );
+        const ageDays = Math.abs(Math.floor((anchorDate.getTime() - txDate.getTime()) / 86400000));
         return ageDays <= matching.depositInTransitDays;
       })();
 
@@ -1482,18 +1524,31 @@ const classifyMissingFallbackStage = (
 export const classifyResidualStages = (params: ResidualStageParams): ResidualStageState => {
   const anchorDate = buildReconciliationAnchorDate(params.normalizedTransactions);
   const staleOutstandingGlIds = classifyStaleOutstandingChecksStage(params);
-  const outstandingCheckGlIds = classifyOutstandingChecksStage(params, staleOutstandingGlIds, anchorDate);
+  const outstandingCheckGlIds = classifyOutstandingChecksStage(
+    params,
+    staleOutstandingGlIds,
+    anchorDate,
+  );
   const achReturnBankIds = classifyAchReturnStage(params);
   const nsfReturnedDepositBankIds = classifyNSFReturnedDepositStage(params, achReturnBankIds);
   const reversalVoidBankIds = classifyReversalVoidStage(params, achReturnBankIds);
-  const chargebackBankIds = classifyChargebackReturnStage(params, achReturnBankIds, reversalVoidBankIds);
+  const chargebackBankIds = classifyChargebackReturnStage(
+    params,
+    achReturnBankIds,
+    reversalVoidBankIds,
+  );
   const interestBankIds = classifyInterestIncomeStage(
     params,
     new Set([...achReturnBankIds, ...reversalVoidBankIds, ...chargebackBankIds]),
   );
   const intercompanyStage = classifyIntercompanyMismatchStage(
     params,
-    new Set([...achReturnBankIds, ...reversalVoidBankIds, ...chargebackBankIds, ...interestBankIds]),
+    new Set([
+      ...achReturnBankIds,
+      ...reversalVoidBankIds,
+      ...chargebackBankIds,
+      ...interestBankIds,
+    ]),
     new Set([...staleOutstandingGlIds, ...outstandingCheckGlIds]),
   );
   const miscodingStage = classifyMiscodingStage(
@@ -1515,8 +1570,14 @@ export const classifyResidualStages = (params: ResidualStageParams): ResidualSta
     groupedBankIds: engineGroupedStage.engineGroupedBankIds,
     groupedGlIds: engineGroupedStage.engineGroupedGlIds,
   });
-  const allGroupedBankIds = new Set([...engineGroupedStage.engineGroupedBankIds, ...groupedStage.groupedBankIds]);
-  const allGroupedGlIds = new Set([...engineGroupedStage.engineGroupedGlIds, ...groupedStage.groupedGlIds]);
+  const allGroupedBankIds = new Set([
+    ...engineGroupedStage.engineGroupedBankIds,
+    ...groupedStage.groupedBankIds,
+  ]);
+  const allGroupedGlIds = new Set([
+    ...engineGroupedStage.engineGroupedGlIds,
+    ...groupedStage.groupedGlIds,
+  ]);
   const timingStage = classifyTimingStage(
     params,
     staleOutstandingGlIds,

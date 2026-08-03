@@ -62,7 +62,12 @@ type DbNodeData = Record<string, unknown> & {
  * (unlayered author styles beat layered ones in the cascade). Style handles inline instead of via
  * a CSS class so the per-side color reliably applies.
  */
-const handleStyle = (color: string): CSSProperties => ({ width: 10, height: 10, background: 'var(--bg-sunken)', border: `1.5px solid ${color}` });
+const handleStyle = (color: string): CSSProperties => ({
+  width: 10,
+  height: 10,
+  background: 'var(--bg-sunken)',
+  border: `1.5px solid ${color}`,
+});
 
 function SourceNode({ data }: Readonly<NodeProps<Node<SourceNodeData>>>) {
   const color = data.side === 'gl' ? 'var(--accent)' : 'var(--bank)';
@@ -80,12 +85,20 @@ function SourceNode({ data }: Readonly<NodeProps<Node<SourceNodeData>>>) {
         <span
           className={[
             'mapping-node__dot',
-            data.mapped ? (data.side === 'gl' ? 'mapping-node__dot--gl-on' : 'mapping-node__dot--bank-on') : '',
+            data.mapped
+              ? data.side === 'gl'
+                ? 'mapping-node__dot--gl-on'
+                : 'mapping-node__dot--bank-on'
+              : '',
           ]
             .filter(Boolean)
             .join(' ')}
         />
-        <span className={data.mapped ? 'mapping-node__name mapping-node__name--mapped' : 'mapping-node__name'}>
+        <span
+          className={
+            data.mapped ? 'mapping-node__name mapping-node__name--mapped' : 'mapping-node__name'
+          }
+        >
           {data.label}
         </span>
       </div>
@@ -113,7 +126,12 @@ function DbNode({ data }: Readonly<NodeProps<Node<DbNodeData>>>) {
         .join(' ')}
     >
       <Handle id="gl" type="target" position={Position.Left} style={handleStyle('var(--accent)')} />
-      <Handle id="bank" type="target" position={Position.Right} style={handleStyle('var(--bank)')} />
+      <Handle
+        id="bank"
+        type="target"
+        position={Position.Right}
+        style={handleStyle('var(--bank)')}
+      />
       <div className="mapping-node__row">
         <span
           className={[
@@ -125,7 +143,11 @@ function DbNode({ data }: Readonly<NodeProps<Node<DbNodeData>>>) {
             .join(' ')}
           title="GL side"
         />
-        <span className={mapped ? 'mapping-node__name mapping-node__name--mapped' : 'mapping-node__name'}>
+        <span
+          className={
+            mapped ? 'mapping-node__name mapping-node__name--mapped' : 'mapping-node__name'
+          }
+        >
           {data.label}
         </span>
         <span
@@ -143,7 +165,11 @@ function DbNode({ data }: Readonly<NodeProps<Node<DbNodeData>>>) {
         <span className="mapping-node__sub" style={{ paddingLeft: 0 }}>
           {data.type}
         </span>
-        <span className={data.required ? 'mapping-node__pill mapping-node__pill--required' : 'mapping-node__pill'}>
+        <span
+          className={
+            data.required ? 'mapping-node__pill mapping-node__pill--required' : 'mapping-node__pill'
+          }
+        >
           {data.required ? 'Required' : 'Optional'}
         </span>
       </div>
@@ -166,7 +192,10 @@ const edgeForSide = (side: SourceSide, source: string, target: string): Edge => 
 const pairsFromEdges = (edges: Edge[], side: SourceSide): MappingProfilePair[] =>
   edges
     .filter((edge) => edge.targetHandle === side)
-    .map((edge) => ({ col: bareColumnName(edge.source), db: edge.target as MappingProfilePair['db'] }));
+    .map((edge) => ({
+      col: bareColumnName(edge.source),
+      db: edge.target as MappingProfilePair['db'],
+    }));
 
 export function CreateMappingCanvas({
   glCols,
@@ -230,7 +259,10 @@ export function CreateMappingCanvas({
     const suggested = Object.entries(initialBankMapping ?? {})
       .filter(([col]) => bankColumnIds.has(col))
       .map(([col, db]) => edgeForSide('bank', bankNodeId(col), db));
-    setEdges((current) => [...current.filter((edge) => edge.targetHandle !== 'bank'), ...suggested]);
+    setEdges((current) => [
+      ...current.filter((edge) => edge.targetHandle !== 'bank'),
+      ...suggested,
+    ]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bankCols, setEdges]);
 
@@ -253,47 +285,54 @@ export function CreateMappingCanvas({
 
   const builtNodes = useMemo<Node[]>(
     () => [
-      ...glCols.map(
-        (column, index): Node<SourceNodeData> => ({
-          id: glNodeId(column.id),
-          type: 'src',
-          position: { x: 0, y: index * ROW_Y },
-          data: { label: column.id, sample: column.sample, side: 'gl', mapped: glMappedSources.has(glNodeId(column.id)) },
-          draggable: false,
-        }),
-      ),
-      ...canonicalFields.map(
-        (field, index): Node<DbNodeData> => ({
-          id: field.id,
-          type: 'db',
-          position: { x: NODE_W + COL_GAP, y: index * ROW_Y },
-          data: {
-            label: field.id,
-            type: field.type,
-            note: field.note,
-            required: field.required,
-            glMapped: glMappedTargets.has(field.id),
-            bankMapped: bankMappedTargets.has(field.id),
-          },
-          draggable: false,
-        }),
-      ),
-      ...bankCols.map(
-        (column, index): Node<SourceNodeData> => ({
-          id: bankNodeId(column.id),
-          type: 'src',
-          position: { x: (NODE_W + COL_GAP) * 2, y: index * ROW_Y },
-          data: {
-            label: column.id,
-            sample: column.sample,
-            side: 'bank',
-            mapped: bankMappedSources.has(bankNodeId(column.id)),
-          },
-          draggable: false,
-        }),
-      ),
+      ...glCols.map((column, index): Node<SourceNodeData> => ({
+        id: glNodeId(column.id),
+        type: 'src',
+        position: { x: 0, y: index * ROW_Y },
+        data: {
+          label: column.id,
+          sample: column.sample,
+          side: 'gl',
+          mapped: glMappedSources.has(glNodeId(column.id)),
+        },
+        draggable: false,
+      })),
+      ...canonicalFields.map((field, index): Node<DbNodeData> => ({
+        id: field.id,
+        type: 'db',
+        position: { x: NODE_W + COL_GAP, y: index * ROW_Y },
+        data: {
+          label: field.id,
+          type: field.type,
+          note: field.note,
+          required: field.required,
+          glMapped: glMappedTargets.has(field.id),
+          bankMapped: bankMappedTargets.has(field.id),
+        },
+        draggable: false,
+      })),
+      ...bankCols.map((column, index): Node<SourceNodeData> => ({
+        id: bankNodeId(column.id),
+        type: 'src',
+        position: { x: (NODE_W + COL_GAP) * 2, y: index * ROW_Y },
+        data: {
+          label: column.id,
+          sample: column.sample,
+          side: 'bank',
+          mapped: bankMappedSources.has(bankNodeId(column.id)),
+        },
+        draggable: false,
+      })),
     ],
-    [glCols, bankCols, canonicalFields, glMappedSources, bankMappedSources, glMappedTargets, bankMappedTargets],
+    [
+      glCols,
+      bankCols,
+      canonicalFields,
+      glMappedSources,
+      bankMappedSources,
+      glMappedTargets,
+      bankMappedTargets,
+    ],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(builtNodes);
@@ -309,7 +348,9 @@ export function CreateMappingCanvas({
         addEdge(
           edgeForSide(side, connection.source, connection.target),
           current.filter(
-            (edge) => edge.source !== connection.source && !(edge.target === connection.target && edge.targetHandle === side),
+            (edge) =>
+              edge.source !== connection.source &&
+              !(edge.target === connection.target && edge.targetHandle === side),
           ),
         ),
       );
@@ -342,7 +383,11 @@ export function CreateMappingCanvas({
   // No fitView: with content taller than the canvas it centers and clips row 1.
   const onInit = useCallback((instance: ReactFlowInstance) => {
     const width = wrapperRef.current?.clientWidth ?? 0;
-    void instance.setViewport({ x: Math.max(16, Math.round((width - CONTENT_W) / 2)), y: 16, zoom: 1 });
+    void instance.setViewport({
+      x: Math.max(16, Math.round((width - CONTENT_W) / 2)),
+      y: 16,
+      zoom: 1,
+    });
   }, []);
 
   const rowCount = Math.max(glCols.length, bankCols.length, canonicalFields.length);

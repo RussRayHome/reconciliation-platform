@@ -46,7 +46,7 @@ const usage = [
 ].join('\n');
 
 const toString = (value: string | Buffer | undefined): string =>
-  typeof value === 'string' ? value : value?.toString() ?? '';
+  typeof value === 'string' ? value : (value?.toString() ?? '');
 
 const runCommand = (command: string, args: string[], input?: string): CommandResult => {
   try {
@@ -129,9 +129,7 @@ const resolveRepo = (explicitRepo?: string): string => {
     }
   }
 
-  throw new Error(
-    'Unable to resolve repository. Pass --repo owner/repo or set GITHUB_REPOSITORY.',
-  );
+  throw new Error('Unable to resolve repository. Pass --repo owner/repo or set GITHUB_REPOSITORY.');
 };
 
 const printUsageAndExit = (): never => {
@@ -220,16 +218,12 @@ const parseArgs = (argv: string[]): CliOptions => {
 const ensureGithubCliReady = (): void => {
   const ghVersion = runCommand('gh', ['--version']);
   if (!ghVersion.ok) {
-    throw new Error(
-      'GitHub CLI (gh) is required. Install it first, then re-run this command.',
-    );
+    throw new Error('GitHub CLI (gh) is required. Install it first, then re-run this command.');
   }
 
   const authStatus = runCommand('gh', ['auth', 'status']);
   if (!authStatus.ok) {
-    throw new Error(
-      'GitHub CLI is not authenticated. Run "gh auth login" and try again.',
-    );
+    throw new Error('GitHub CLI is not authenticated. Run "gh auth login" and try again.');
   }
 };
 
@@ -253,10 +247,7 @@ const isNotFound = (result: CommandResult): boolean => {
   return /404|not\s+found|branch\s+not\s+protected/i.test(output);
 };
 
-const getExistingProtection = (
-  repo: string,
-  branch: string,
-): BranchProtectionResponse | null => {
+const getExistingProtection = (repo: string, branch: string): BranchProtectionResponse | null => {
   const endpoint = `/repos/${repo}/branches/${branch}/protection`;
   const response = runGhApi('GET', endpoint);
 

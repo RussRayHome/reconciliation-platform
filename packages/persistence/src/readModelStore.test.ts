@@ -923,7 +923,10 @@ describe('createMappingProfile', () => {
 describe('listMappingProfileVersions', () => {
   it('maps every version row', async () => {
     const pool = makePool({
-      rows: [MAPPING_PROFILE_VERSION_ROW, { ...MAPPING_PROFILE_VERSION_ROW, id: 'version-2', version_number: 2 }],
+      rows: [
+        MAPPING_PROFILE_VERSION_ROW,
+        { ...MAPPING_PROFILE_VERSION_ROW, id: 'version-2', version_number: 2 },
+      ],
     });
     const versions = await listMappingProfileVersions(pool, 'profile-1');
     expect(versions).toHaveLength(2);

@@ -314,7 +314,9 @@ describe('reserveGroupedTransactionIds', () => {
       defaultReconciliationConfig.matching,
     );
 
-    const payrollCandidates = result.selectedCandidates.filter((c) => c.category === 'PayrollBatchMatch');
+    const payrollCandidates = result.selectedCandidates.filter(
+      (c) => c.category === 'PayrollBatchMatch',
+    );
     expect(payrollCandidates).toHaveLength(0);
   });
 
@@ -349,7 +351,9 @@ describe('reserveGroupedTransactionIds', () => {
     );
 
     expect(result.reservedBankTransactionIds.has('bank-svc-mismatch')).toBe(false);
-    expect(result.selectedCandidates.filter((c) => c.category === 'BankServiceChargeAmortization')).toHaveLength(0);
+    expect(
+      result.selectedCandidates.filter((c) => c.category === 'BankServiceChargeAmortization'),
+    ).toHaveLength(0);
   });
 
   it('does not reserve a loan payment split when fewer than two GL debits are within the date window', () => {
@@ -376,6 +380,8 @@ describe('reserveGroupedTransactionIds', () => {
     );
 
     expect(result.reservedBankTransactionIds.has('bank-loan-solo')).toBe(false);
-    expect(result.selectedCandidates.filter((c) => c.category === 'LoanPaymentSplit')).toHaveLength(0);
+    expect(result.selectedCandidates.filter((c) => c.category === 'LoanPaymentSplit')).toHaveLength(
+      0,
+    );
   });
 });

@@ -2,26 +2,26 @@
    same-named variables from the copied app tokens.css (--bg, --ink, --muted,
    --accent): @layer base outranks @layer tokens. */
 @layer base {
-      :root {
-        --bg: #f2f5f7;
-        --card: #ffffff;
-        --ink: #1f2933;
-        --muted: #52606d;
-        --border: #d9e2ec;
-        --ok: #18794e;
-        --warn: #b26a00;
-        --bad: #b42318;
-        --accent: #0f6c7a;
-      }
+  :root {
+    --bg: #f2f5f7;
+    --card: #ffffff;
+    --ink: #1f2933;
+    --muted: #52606d;
+    --border: #d9e2ec;
+    --ok: #18794e;
+    --warn: #b26a00;
+    --bad: #b42318;
+    --accent: #0f6c7a;
+  }
 
-      * {
-        box-sizing: border-box;
-      }
+  * {
+    box-sizing: border-box;
+  }
 
-      body {
-        margin: 0;
-        font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
-        background: linear-gradient(160deg, #f8fbff 0%, #edf2f7 42%, #f2f5f7 100%);
-        color: var(--ink);
-      }
+  body {
+    margin: 0;
+    font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+    background: linear-gradient(160deg, #f8fbff 0%, #edf2f7 42%, #f2f5f7 100%);
+    color: var(--ink);
+  }
 }

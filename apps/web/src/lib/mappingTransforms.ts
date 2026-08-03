@@ -112,5 +112,7 @@ export function validateSampleValue(
   }
 
   const result = SAMPLE_VALIDATORS[type].safeParse(transformedValue);
-  return result.success ? { valid: true } : { valid: false, message: result.error.issues[0]?.message };
+  return result.success
+    ? { valid: true }
+    : { valid: false, message: result.error.issues[0]?.message };
 }

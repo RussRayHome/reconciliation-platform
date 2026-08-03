@@ -52,7 +52,10 @@ const trimmedString = () =>
 
 /** Same as `trimmedString`, but a failed length check reports `message` instead of zod's default. */
 const requiredTrimmedString = (message: string) =>
-  z.preprocess((value) => (typeof value === 'string' ? value.trim() : ''), z.string().min(1, message));
+  z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim() : ''),
+    z.string().min(1, message),
+  );
 
 export const loginBodySchema = z.object({
   username: trimmedString().catch(''),
@@ -75,7 +78,10 @@ export const exceptionsQuerySchema = z
   .superRefine((query, ctx) => {
     if (
       query.category !== undefined &&
-      !(typeof query.category === 'string' && (errorCategories as readonly string[]).includes(query.category))
+      !(
+        typeof query.category === 'string' &&
+        (errorCategories as readonly string[]).includes(query.category)
+      )
     ) {
       ctx.addIssue({
         code: 'custom',
@@ -86,7 +92,10 @@ export const exceptionsQuerySchema = z
 
     if (
       query.severity !== undefined &&
-      !(typeof query.severity === 'string' && (severityLevels as readonly string[]).includes(query.severity))
+      !(
+        typeof query.severity === 'string' &&
+        (severityLevels as readonly string[]).includes(query.severity)
+      )
     ) {
       ctx.addIssue({
         code: 'custom',
@@ -200,7 +209,9 @@ export const aliasesQuerySchema = z.object({
 const optionalNormalizedTokens = z
   .array(z.unknown())
   .optional()
-  .transform((tokens) => (tokens ?? []).filter((token): token is string => typeof token === 'string'));
+  .transform((tokens) =>
+    (tokens ?? []).filter((token): token is string => typeof token === 'string'),
+  );
 
 export const createAliasBodySchema = z.object({
   bankPattern: requiredTrimmedString('bankPattern is required.'),

@@ -77,7 +77,9 @@ describe('normalizeTransactions', () => {
     }
 
     expect(first.isZeroAmount).toBe(true);
-    expect(first.dataQualityIssues).toEqual(expect.arrayContaining(['Zero amount transaction requires review.']));
+    expect(first.dataQualityIssues).toEqual(
+      expect.arrayContaining(['Zero amount transaction requires review.']),
+    );
   });
 
   it('parses accounting amount formats like parentheses and DR/CR markers', () => {

@@ -317,7 +317,9 @@ export const exceptionScenarioFixtures: ExceptionScenarioFixture[] = [
 ];
 
 /** Ordered list of every `ErrorCategory` covered by `exceptionScenarioFixtures`. */
-export const allExceptionCategories = exceptionScenarioFixtures.map((fixture) => fixture.expectedCategory);
+export const allExceptionCategories = exceptionScenarioFixtures.map(
+  (fixture) => fixture.expectedCategory,
+);
 
 /** Fixtures for edge cases that produce multiple or zero exception categories. */
 export const exceptionEdgeCaseFixtures: ExceptionEdgeCaseFixture[] = [
@@ -434,7 +436,15 @@ const GL_COLUMN_BY_NORMALIZED_HEADER: Record<string, string> = {
   AMOUNT: 'amount',
 };
 
-const COMBINED_BANK_HEADER = ['Date', 'Description', 'Check Number', 'Reference', 'Debit', 'Credit', 'Balance'];
+const COMBINED_BANK_HEADER = [
+  'Date',
+  'Description',
+  'Check Number',
+  'Reference',
+  'Debit',
+  'Credit',
+  'Balance',
+];
 const COMBINED_GL_HEADER = ['Date', 'Type', 'Num', 'Reference', 'Name', 'Memo', 'Amount'];
 
 type RowRecord = Record<string, string | number>;
@@ -469,7 +479,10 @@ const recordToRow = (record: RowRecord, columns: string[]): Array<string | numbe
   columns.map((column) => record[column] ?? '');
 
 /** Merges all scenario fixture rows into a single bank/GL row set covering every exception category. */
-export const buildAllExceptionsCombinedRows = (): { bankRows: WorkbookRows; glRows: WorkbookRows } => {
+export const buildAllExceptionsCombinedRows = (): {
+  bankRows: WorkbookRows;
+  glRows: WorkbookRows;
+} => {
   const bankRecords = exceptionScenarioFixtures.flatMap((fixture) =>
     rowsToCombinedRecord(fixture.bankRows, BANK_COLUMN_BY_NORMALIZED_HEADER),
   );
@@ -478,16 +491,40 @@ export const buildAllExceptionsCombinedRows = (): { bankRows: WorkbookRows; glRo
   );
 
   return {
-    bankRows: [COMBINED_BANK_HEADER, ...bankRecords.map((record) => recordToRow(record, ['date', 'description', 'checkNumber', 'referenceNumber', 'debit', 'credit', 'balance']))],
-    glRows: [COMBINED_GL_HEADER, ...glRecords.map((record) => recordToRow(record, ['date', 'type', 'num', 'reference', 'name', 'memo', 'amount']))],
+    bankRows: [
+      COMBINED_BANK_HEADER,
+      ...bankRecords.map((record) =>
+        recordToRow(record, [
+          'date',
+          'description',
+          'checkNumber',
+          'referenceNumber',
+          'debit',
+          'credit',
+          'balance',
+        ]),
+      ),
+    ],
+    glRows: [
+      COMBINED_GL_HEADER,
+      ...glRecords.map((record) =>
+        recordToRow(record, ['date', 'type', 'num', 'reference', 'name', 'memo', 'amount']),
+      ),
+    ],
   };
 };
 
 /** Aggregated expected exception counts keyed by `ErrorCategory` across all scenario fixtures. */
-export const allExceptionsExpectedCounts = exceptionScenarioFixtures.reduce<Record<ErrorCategory, number>>((counts, fixture) => {
-  counts[fixture.expectedCategory] = (counts[fixture.expectedCategory] ?? 0) + fixture.expectedCount;
-  return counts;
-}, {} as Record<ErrorCategory, number>);
+export const allExceptionsExpectedCounts = exceptionScenarioFixtures.reduce<
+  Record<ErrorCategory, number>
+>(
+  (counts, fixture) => {
+    counts[fixture.expectedCategory] =
+      (counts[fixture.expectedCategory] ?? 0) + fixture.expectedCount;
+    return counts;
+  },
+  {} as Record<ErrorCategory, number>,
+);
 
 /** Creates an Excel workbook buffer containing bank rows for every exception scenario combined. */
 export const createAllExceptionsBankWorkbook = async (): Promise<Buffer> => {
