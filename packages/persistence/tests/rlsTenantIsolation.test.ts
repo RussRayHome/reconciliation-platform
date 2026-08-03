@@ -8,7 +8,8 @@ import type { TestDatabase } from './testHelpers/database';
 /**
  * ADR-0001 step 8. Every other test in this suite connects as recon_app (superuser, so RLS
  * never applies to it at all -- see leastPrivilegeRole.test.ts's own comment on this). These
- * tests connect as recon_app_runtime through runInTenantScope, exactly as the API does in
+ * tests connect as app_user (renamed from recon_app_runtime by changeset 0031) through
+ * runInTenantScope, exactly as the API does in
  * production, and prove the policies from changeset 0030 actually stop a connection scoped to
  * one tenant from reading or writing another tenant's rows -- not just that the GRANT/ENABLE
  * statements ran without error.
@@ -29,7 +30,7 @@ describe('RLS tenant isolation (leak tests)', () => {
       database = await createDatabaseFromTemplate('recon_rls_isolation');
       adminPool = database.pool;
       const harness = postgresHarness();
-      const runtimeConnectionString = `postgresql://recon_app_runtime:CHANGE_ME_recon_app_runtime_dev_only@${harness.host}:${harness.port}/${database.name}`;
+      const runtimeConnectionString = `postgresql://app_user:P%40ssw0rd@${harness.host}:${harness.port}/${database.name}`;
       runtimePool = createPostgresPool({ connectionString: runtimeConnectionString });
 
       // Fixture setup runs as recon_app (superuser, bypasses RLS unconditionally) so it can

@@ -8,11 +8,11 @@ import type { TestDatabase } from './testHelpers/database';
 /**
  * Postgres hardening backlog item 1: the app previously had no least-privilege role at all --
  * every query ran as recon_app, which changeset 0029's own comment confirms (via \du) is a
- * superuser. These tests connect AS recon_app_runtime (not the admin pool every other test file
- * uses) to prove the role changeset actually constrains what that connection can do, rather than
- * just asserting the GRANT statements ran without error.
+ * superuser. These tests connect AS app_user (renamed from recon_app_runtime by changeset 0031;
+ * not the admin pool every other test file uses) to prove the role actually constrains what that
+ * connection can do, rather than just asserting the GRANT statements ran without error.
  */
-describe('least-privilege application role (recon_app_runtime)', () => {
+describe('least-privilege application role (app_user)', () => {
   let database: TestDatabase | undefined;
   let runtimePool: Pool;
   let startupError: Error | null = null;
@@ -21,7 +21,7 @@ describe('least-privilege application role (recon_app_runtime)', () => {
     try {
       database = await createDatabaseFromTemplate('recon_least_priv');
       const harness = postgresHarness();
-      const runtimeConnectionString = `postgresql://recon_app_runtime:CHANGE_ME_recon_app_runtime_dev_only@${harness.host}:${harness.port}/${database.name}`;
+      const runtimeConnectionString = `postgresql://app_user:P%40ssw0rd@${harness.host}:${harness.port}/${database.name}`;
       runtimePool = createPostgresPool({ connectionString: runtimeConnectionString });
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
@@ -128,7 +128,7 @@ describe('least-privilege application role (recon_app_runtime)', () => {
 
       const harness = postgresHarness();
       const futureRuntimePool = createPostgresPool({
-        connectionString: `postgresql://recon_app_runtime:CHANGE_ME_recon_app_runtime_dev_only@${harness.host}:${harness.port}/${futureTableDb.name}`,
+        connectionString: `postgresql://app_user:P%40ssw0rd@${harness.host}:${harness.port}/${futureTableDb.name}`,
       });
 
       try {
