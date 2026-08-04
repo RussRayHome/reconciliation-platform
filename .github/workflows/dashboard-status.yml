@@ -1,0 +1,123 @@
+name: Dashboard Status
+
+# Runs the full quality-gate suite nightly and publishes one JSON result per environment to the
+# status-data branch. This is the only place these checks execute -- see issue_tracker for the
+# incident (a wedged local `tools` container silently took the whole Developer Dashboard down for
+# hours) that motivated moving execution out of any long-lived server process entirely.
+on:
+  schedule:
+    - cron: '0 8 * * *' # 03:00 America/New_York (04:00 during DST) -- nightly, off business hours
+  workflow_dispatch: {} # manual trigger from GitHub's UI, for testing this workflow itself
+
+jobs:
+  generate-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [dev, stage]
+
+    steps:
+      - name: Check out ${{ matrix.branch }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0 # full history -- commitsThisWeek/branch-compare/tag lookups need it
+
+      - name: Set up Node.js
+        run: |
+          set -euo pipefail
+          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          trivy --version
+
+      - name: Build container images
+        run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml build
+
+      - name: Generate dashboard status
+        id: generate
+        continue-on-error: true # a failing check should still get published, not vanish
+        env:
+          COMPOSE_PROJECT_NAME: reconciliation-platform-dev
+        run: npx tsx scripts/ci/generate-dashboard-status.ts --env ${{ matrix.branch }} --out dashboard-status/${{ matrix.branch }}.json
+
+      - name: Upload status JSON as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-status-${{ matrix.branch }}
+          path: dashboard-status/${{ matrix.branch }}.json
+          retention-days: 14
+
+      - name: Publish to status-data branch
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "dashboard-status/${{ matrix.branch }}.json" ]; then
+            echo "No status file produced -- generate-dashboard-status.ts crashed before writing output. Not publishing." >&2
+            exit 1
+          fi
+
+          RESULT_FILE="$(pwd)/dashboard-status/${{ matrix.branch }}.json"
+          TARGET_PATH="dashboard-status/${{ matrix.branch }}.json"
+
+          git config user.name "dashboard-status-bot"
+          git config user.email "dashboard-status-bot@users.noreply.github.com"
+
+          PUBLISH_DIR="$(mktemp -d)"
+          # The dev and stage matrix jobs run in parallel and both publish to this same branch --
+          # each only ever touches its OWN file (dashboard-status/<branch>.json), never the whole
+          # tree, and retries its own push on conflict. That keeps the two jobs from racing each
+          # other into a lost update.
+          git clone --branch status-data "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR" 2>/dev/null \
+            || git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR"
+
+          cd "$PUBLISH_DIR"
+          git checkout status-data 2>/dev/null || git checkout --orphan status-data
+
+          attempt=1
+          while true; do
+            mkdir -p dashboard-status
+            cp "$RESULT_FILE" "$TARGET_PATH"
+            git add "$TARGET_PATH"
+
+            if git diff --staged --quiet; then
+              echo "No change to $TARGET_PATH -- skipping commit."
+              break
+            fi
+
+            git commit -m "dashboard-status(${{ matrix.branch }}): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+            if git push origin status-data; then
+              break
+            fi
+
+            if [ "$attempt" -ge 5 ]; then
+              echo "Failed to push to status-data after $attempt attempts." >&2
+              exit 1
+            fi
+
+            echo "Push rejected (attempt $attempt) -- pulling and retrying."
+            git fetch origin status-data
+            git reset --soft origin/status-data
+            attempt=$((attempt + 1))
+          done
+
+      - name: Fail the job if any check failed
+        if: steps.generate.outcome == 'failure'
+        run: exit 1
