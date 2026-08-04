@@ -62,10 +62,46 @@
         },
         "responses": {
           "200": {
-            "description": "Authenticated user profile"
+            "description": "Bearer token and authenticated user profile"
           },
           "401": {
             "description": "Authentication failed"
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Revoke the current bearer token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Token revoked (or already expired/absent)"
+          },
+          "401": {
+            "description": "Not authenticated"
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Get the authenticated principal for the current bearer token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current username, role, and organization"
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         }
       }
@@ -81,14 +117,14 @@
                 "type": "object",
                 "required": [
                   "bankFile",
-                  "qboFile"
+                  "glFile"
                 ],
                 "properties": {
                   "bankFile": {
                     "type": "string",
                     "format": "binary"
                   },
-                  "qboFile": {
+                  "glFile": {
                     "type": "string",
                     "format": "binary"
                   },
@@ -265,6 +301,15 @@
             "description": "Workbook not available for run"
           }
         }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }
