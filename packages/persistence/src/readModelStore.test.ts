@@ -8,7 +8,6 @@ import {
   createPayeeAlias,
   deactivatePayeeAlias,
   findMappingProfile,
-  findOrCreateDefaultOrganization,
   listMappingProfileVersions,
   loadPayeeAliases,
   updatePayeeAlias,
@@ -873,36 +872,6 @@ describe('loadPayeeAliases', () => {
   it('returns empty array when no active aliases', async () => {
     const pool = makePool({ rows: [] });
     expect(await loadPayeeAliases(pool, 'org-1')).toEqual([]);
-  });
-});
-
-describe('findOrCreateDefaultOrganization', () => {
-  it('returns the existing default organization id without inserting', async () => {
-    const pool = makePool({ rows: [{ id: 'org-1' }] });
-    const id = await findOrCreateDefaultOrganization(pool);
-    expect(id).toBe('org-1');
-    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
-  });
-
-  it('creates the default organization on first use', async () => {
-    const pool = makePool({ rows: [] }, { rows: [{ id: 'org-2' }] });
-    const id = await findOrCreateDefaultOrganization(pool);
-    expect(id).toBe('org-2');
-    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
-  });
-
-  it('re-selects after losing an insert race to a concurrent request', async () => {
-    const pool = makePool({ rows: [] }, { rows: [] }, { rows: [{ id: 'org-3' }] });
-    const id = await findOrCreateDefaultOrganization(pool);
-    expect(id).toBe('org-3');
-    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3);
-  });
-
-  it('throws if the organization still cannot be resolved after a lost race', async () => {
-    const pool = makePool({ rows: [] }, { rows: [] }, { rows: [] });
-    await expect(findOrCreateDefaultOrganization(pool)).rejects.toThrow(
-      'findOrCreateDefaultOrganization: could not resolve the default organization',
-    );
   });
 });
 

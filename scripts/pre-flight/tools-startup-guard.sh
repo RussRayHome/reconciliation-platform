@@ -51,19 +51,32 @@ ensure_playwright_browsers() {
     return
   fi
 
-  expected_browser_dir="$(npx playwright install --dry-run chromium 2>/dev/null | awk -F': *' '/Install location:/ {print $2; exit}' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  # `chromium` pulls in three separate downloads (chromium itself, ffmpeg, and
+  # chromium-headless-shell -- the variant Playwright's test runner launches by default for
+  # headless runs). Checking only the first "Install location:" line missed the headless-shell
+  # directory entirely: after a Playwright version bump it can be the only one still absent,
+  # leaving "browserType.launch: Executable doesn't exist" failures even though this check
+  # reported everything as current. Check every expected location, not just the first.
+  expected_browser_dirs="$(npx playwright install --dry-run chromium 2>/dev/null | awk -F': *' '/Install location:/ {print $2}' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 
-  if [ -z "$expected_browser_dir" ]; then
-    echo "[tools-startup-guard] Unable to resolve expected Playwright browser directory; skipping browser sync."
+  if [ -z "$expected_browser_dirs" ]; then
+    echo "[tools-startup-guard] Unable to resolve expected Playwright browser directories; skipping browser sync."
     return
   fi
 
-  if [ -d "$expected_browser_dir" ]; then
-    echo "[tools-startup-guard] Playwright Chromium browsers are current ($expected_browser_dir)."
+  missing_dir=0
+  for dir in $expected_browser_dirs; do
+    if [ ! -d "$dir" ]; then
+      missing_dir=1
+    fi
+  done
+
+  if [ "$missing_dir" -eq 0 ]; then
+    echo "[tools-startup-guard] Playwright Chromium browsers are current ($expected_browser_dirs)."
     return
   fi
 
-  echo "[tools-startup-guard] Installing Playwright Chromium browsers for tools runtime ($expected_browser_dir)."
+  echo "[tools-startup-guard] Installing Playwright Chromium browsers for tools runtime ($expected_browser_dirs)."
   if npx playwright install --with-deps chromium; then
     echo "[tools-startup-guard] Playwright Chromium browser install completed."
   else

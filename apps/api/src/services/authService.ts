@@ -59,6 +59,16 @@ export const hashPassword = async (plaintext: string): Promise<string> => bcrypt
 export const verifyPassword = async (plaintext: string, hash: string): Promise<boolean> =>
   bcrypt.compare(plaintext, hash);
 
+/**
+ * A precomputed bcrypt hash (cost 12, matching `hashPassword`) with no corresponding real
+ * password. Callers run `verifyPassword` against this when a username lookup finds no row, so a
+ * login attempt against a nonexistent account takes the same bcrypt-bound time as one against a
+ * real account with the wrong password -- otherwise the two cases are distinguishable by response
+ * time, which lets an attacker enumerate valid usernames without ever guessing a password.
+ */
+export const DUMMY_PASSWORD_HASH =
+  '$2b$12$K5GqiP7rEn3PxltxmM9.N.Csv5QYCRrPYMC0NAobId1O.Wta4d8KS';
+
 const isUserRole = (value: unknown): value is UserRole =>
   typeof value === 'string' && (userRoles as readonly string[]).includes(value);
 

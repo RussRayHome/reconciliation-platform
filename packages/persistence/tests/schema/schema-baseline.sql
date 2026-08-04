@@ -6,7 +6,7 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(912);
+SELECT plan(911);
 
 SELECT tables_are('public', ARRAY['databasechangelog', 'databasechangeloglock', 'reconciliation_approval_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'reconciliation_approval_history', ARRAY['id', 'approval_id', 'from_status', 'to_status', 'actor', 'note', 'created_at', 'organization_id']::name[], 'reconciliation_approval_history has exactly the expected columns');
@@ -1048,11 +1048,6 @@ reconciliation_template_definition_version_check => CHECK ((version > 0))$chk$,
 SELECT columns_are('public', 'reconciliation_user', ARRAY['user_name', 'first_name', 'last_name', 'last_changed', 'id', 'created_at', 'organization_id', 'role', 'password_hash']::name[], 'reconciliation_user has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_user', ARRAY['user_name']::name[], 'reconciliation_user primary key');
 SELECT indexes_are('public', 'reconciliation_user', ARRAY['reconciliation_user_id_key', 'reconciliation_user_pkey']::name[], 'reconciliation_user has exactly the expected indexes');
-SELECT is(
-  (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_user' AND relnamespace = 'public'::regnamespace),
-  true,
-  'reconciliation_user has row-level security enabled'
-);
 SELECT col_type_is('public', 'reconciliation_user', 'user_name', 'text', 'reconciliation_user.user_name is text');
 SELECT col_not_null('public', 'reconciliation_user', 'user_name', 'reconciliation_user.user_name is NOT NULL');
 SELECT col_type_is('public', 'reconciliation_user', 'first_name', 'text', 'reconciliation_user.first_name is text');

@@ -1,4 +1,4 @@
-ARG LIQUIBASE_IMAGE=liquibase/liquibase:4.31
+ARG LIQUIBASE_IMAGE=liquibase/liquibase:4.33.0
 
 FROM ${LIQUIBASE_IMAGE}
 

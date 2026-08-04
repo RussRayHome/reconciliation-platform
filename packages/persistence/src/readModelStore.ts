@@ -1024,47 +1024,6 @@ export const createMappingProfile = async (
   });
 };
 
-/**
- * Resolves the id of the single default organization, creating it on first use. The schema
- * models multi-tenancy (`reconciliation_organization` / `organization_id` foreign keys) but
- * nothing in the app resolves a "current organization" yet — this keeps mapping profiles working
- * out of the box without a manual seed step, while staying forward-compatible with a real
- * per-session organization lookup later.
- */
-export const findOrCreateDefaultOrganization = async (pool: Pool): Promise<string> => {
-  const DEFAULT_ORGANIZATION_NAME = 'Default Organization';
-
-  const existing = await pool.query<{ id: string }>(
-    'SELECT id FROM reconciliation_organization WHERE name = $1',
-    [DEFAULT_ORGANIZATION_NAME],
-  );
-  if (existing.rows[0]) {
-    return existing.rows[0].id;
-  }
-
-  const inserted = await pool.query<{ id: string }>(
-    `INSERT INTO reconciliation_organization (id, name)
-     VALUES (gen_random_uuid(), $1)
-     ON CONFLICT (name) DO NOTHING
-     RETURNING id`,
-    [DEFAULT_ORGANIZATION_NAME],
-  );
-  if (inserted.rows[0]) {
-    return inserted.rows[0].id;
-  }
-
-  // Lost a race with a concurrent request that inserted the same row first; re-select.
-  const afterConflict = await pool.query<{ id: string }>(
-    'SELECT id FROM reconciliation_organization WHERE name = $1',
-    [DEFAULT_ORGANIZATION_NAME],
-  );
-  const row = afterConflict.rows[0];
-  if (!row) {
-    throw new Error('findOrCreateDefaultOrganization: could not resolve the default organization');
-  }
-  return row.id;
-};
-
 /** Input fields accepted when requesting approval for an uploaded source file. */
 export interface CreateImportApprovalInput {
   id: string;

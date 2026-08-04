@@ -11,7 +11,7 @@ COPY packages/ui/package.json /packages/ui/package.json
 
 # ── Build pipeline (Alpine — small and fast) ──────────────────────────────────
 
-FROM node:26.1.0-alpine AS build-base
+FROM node:26.5.1-alpine AS build-base
 WORKDIR /app
 ARG NPM_VERSION=11.14.1
 RUN npm install -g "npm@${NPM_VERSION}"
@@ -37,7 +37,7 @@ RUN npm prune --omit=dev
 
 # ── Production runtime (Alpine) ───────────────────────────────────────────────
 
-FROM node:26.1.0-alpine AS runtime-base
+FROM node:26.5.1-alpine AS runtime-base
 WORKDIR /app
 COPY --from=manifests / /app/
 
@@ -59,9 +59,9 @@ CMD ["node", "apps/api/dist/index.cjs"]
 
 # Docker CLI and Trivy binaries copied directly — avoids apt-get overhead (~50s)
 FROM docker:29-cli AS docker-cli-source
-FROM aquasec/trivy:0.71.1 AS trivy-source
+FROM aquasec/trivy:0.73.0 AS trivy-source
 
-FROM node:26.1.0-bookworm-slim AS dev-base
+FROM node:26.5.1-bookworm-slim AS dev-base
 WORKDIR /app
 ARG NPM_VERSION=11.14.1
 RUN apt-get update && \
@@ -77,7 +77,7 @@ RUN npm install
 # Chromium system deps via RUN (small packages, commits fine); binary via COPY from local pre-download
 # Avoids virtiofs layer-commit hang that occurs when downloading large binaries inside RUN
 FROM dev-base AS playwright-browsers
-ARG PLAYWRIGHT_VERSION=1.59.1
+ARG PLAYWRIGHT_VERSION=1.62.1
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN npm install -g "@playwright/test@${PLAYWRIGHT_VERSION}" && \
 	playwright install-deps chromium && \

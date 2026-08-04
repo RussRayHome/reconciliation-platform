@@ -20,6 +20,14 @@ const extraCoverageExclude = (process.env.COVERAGE_EXTRA_EXCLUDES ?? '')
   .map((pattern) => pattern.trim())
   .filter((pattern) => pattern.length > 0);
 
+// package.json's "coverage" script runs with --no-file-parallelism. Without it, V8 coverage
+// collected in each forked worker process never makes it back into the merged report -- every
+// file shows structurally correct totals (source-map-derived line/branch/function counts) but
+// `covered` is always exactly 0, regardless of real test coverage. Confirmed directly: the same
+// run against the same files reports real, plausible percentages with file parallelism off and
+// uniformly 0% with it on default (forks-pool). This makes `npm run coverage` slower than a
+// normal parallel test run, but a wrong 0% number is worse than a slow correct one, especially
+// since the Developer Dashboard reports this figure as fact.
 export default defineConfig({
   test: {
     coverage: {
@@ -76,6 +84,7 @@ export default defineConfig({
           name: 'integration',
           environment: 'node',
           include: ['apps/api/tests/**/*.test.ts'],
+          setupFiles: ['apps/api/tests/testHelpers/integrationSetup.ts'],
         },
       },
     ],

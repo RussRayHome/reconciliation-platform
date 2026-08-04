@@ -29,6 +29,10 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'retain-on-failure',
+    // baseURL is plain http in the default (non-Docker) local dev path, and only https against
+    // the Docker `tools` container's self-signed dev cert (PLAYWRIGHT_BASE_URL=https://web:8443)
+    // -- harmless to leave on unconditionally either way.
+    ignoreHTTPSErrors: true,
   },
   webServer: [
     {
@@ -42,6 +46,9 @@ export default defineConfig({
       url: baseURL,
       reuseExistingServer: true,
       cwd: './',
+      // Same self-signed-cert reasoning as `use.ignoreHTTPSErrors` above, but this is a separate
+      // setting: Playwright's own readiness probe against `url` doesn't inherit `use`.
+      ignoreHTTPSErrors: true,
     },
   ],
 });

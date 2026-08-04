@@ -89,19 +89,32 @@ ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
 -- won't exist yet on a brand-new database — skip quietly in that case. deploy.sh
 -- also re-runs this script after migrations complete, at which point the table
 -- exists and this block seeds/updates the accounts.
+-- Changeset 0026 replaced the plaintext `password` column with `password_hash` (bcrypt, via the
+-- pgcrypto extension that same changeset installs) and added NOT NULL `role` and
+-- `organization_id` columns. This block hashes with pgcrypto's crypt()/gen_salt('bf') -- the
+-- same bcrypt algorithm apps/api/src/services/authService.ts verifies with bcryptjs -- and
+-- resolves organization_id by name against 'Default Organization', which changeset 0026 itself
+-- seeds. Roles mirror apps/api/src/app.ts's localLoginUsers fallback table, so DB-backed and
+-- local-fallback login behave the same for these four accounts.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'reconciliation_user') THEN
-    INSERT INTO reconciliation_user (user_name, first_name, last_name, password)
-    VALUES
-      ('rray', 'R', 'Ray', 'P@ssw0rd'),
-      ('rray2', 'R', 'Ray2', 'P@ssw0rd'),
-      ('rray3', 'R', 'Ray3', 'P@ssw0rd'),
-      ('bray', 'B', 'Ray', 'bray123')
+    INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+    SELECT
+      v.user_name, v.first_name, v.last_name, crypt(v.plain_password, gen_salt('bf')), v.role, org.id
+    FROM (VALUES
+      ('rray', 'R', 'Ray', 'P@ssw0rd', 'superuser'),
+      ('rray2', 'R', 'Ray2', 'P@ssw0rd', 'developer'),
+      ('rray3', 'R', 'Ray3', 'P@ssw0rd', 'admin'),
+      ('bray', 'B', 'Ray', 'bray123', 'financial-analyst')
+    ) AS v(user_name, first_name, last_name, plain_password, role)
+    CROSS JOIN (SELECT id FROM reconciliation_organization WHERE name = 'Default Organization') AS org
     ON CONFLICT (user_name) DO UPDATE
       SET first_name = EXCLUDED.first_name,
           last_name = EXCLUDED.last_name,
-          password = EXCLUDED.password;
+          password_hash = EXCLUDED.password_hash,
+          role = EXCLUDED.role,
+          organization_id = EXCLUDED.organization_id;
     RAISE NOTICE 'Application login accounts (rray, rray2, rray3, bray) seeded in reconciliation_user.';
   ELSE
     RAISE NOTICE 'reconciliation_user does not exist yet — skipping application login seed (re-run after migrations).';

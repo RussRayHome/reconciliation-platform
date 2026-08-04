@@ -31,6 +31,7 @@ import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { CANONICAL_FIELDS } from './services/canonicalFields';
 import {
   AUTH_TOKEN_TTL_SECONDS,
+  DUMMY_PASSWORD_HASH,
   denylistToken,
   isProductionRuntime,
   signAuthToken,
@@ -1431,8 +1432,13 @@ export const createApp = (
       );
 
       const user = authenticatedUser.rows[0];
+      // Always run the bcrypt compare, even when no row was found, against a fixed dummy hash --
+      // otherwise a nonexistent username short-circuits before the compare and responds
+      // measurably faster than a real username with the wrong password, which lets a caller
+      // enumerate valid usernames purely from response timing.
+      const passwordMatches = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
 
-      if (!user || !(await verifyPassword(password, user.password_hash))) {
+      if (!user || !passwordMatches) {
         response.status(401).json({ message: invalidLoginMessage });
         return;
       }
@@ -1950,10 +1956,9 @@ export const createApp = (
       }
 
       const { name, gl, bank, createdBy } = bodyResult.data;
-      // ADR-0001: organizationId comes from the authenticated principal, not
-      // findOrCreateDefaultOrganization -- a shared default org would let every tenant's mapping
-      // profiles land in (and become visible in) the same organization once RLS is enforcing
-      // isolation everywhere else.
+      // ADR-0001: organizationId comes from the authenticated principal, not a shared default
+      // organization -- that would let every tenant's mapping profiles land in (and become
+      // visible in) the same organization once RLS is enforcing isolation everywhere else.
       const organizationId = request.auth!.organizationId;
 
       const saveSide = async (pairs: typeof gl, sourceType: 'gl' | 'bank') => {

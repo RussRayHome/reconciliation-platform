@@ -54,6 +54,24 @@ describe('developerStatusParsing', () => {
     expect(parseTestMetrics('no test summary here')).toBeNull();
   });
 
+  it('parses playwright metrics when passed/failed land on separate summary lines', () => {
+    // Real shape when a run has failures: "N failed" appears first, followed by the list of
+    // failing tests and any skipped-as-a-consequence tests, with "N passed" trailing at the very
+    // end -- not on the same line as "N failed" the way a clean run's single-line summary is.
+    const output = [
+      '  7 failed',
+      '    apps/web/tests/e2e/reconciliation-edge-cases.spec.ts:345:3 › some failing test',
+      '  14 did not run',
+      '  28 passed (7.3m)',
+    ].join('\n');
+
+    expect(parseTestMetrics(output)).toEqual({
+      passed: 28,
+      failed: 7,
+      total: 35,
+    });
+  });
+
   it('summarizes test/lint/typecheck output across success and failure paths', () => {
     expect(summarizeTestOutput('Tests  3 passed (3)')).toBe('Passed: 3, Failed: 0');
     expect(summarizeTestOutput('npm ERR! something bad happened')).toBe('Failed (see details)');

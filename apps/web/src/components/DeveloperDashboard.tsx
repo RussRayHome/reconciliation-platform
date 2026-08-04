@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 
+import { apiFetch } from '../lib/api';
 import { SkeletonPanel, KpiWellsSkeleton, SkeletonLines, TableSkeleton } from './Skeleton';
 
 type Verdict = 'pass' | 'fail' | 'warn' | 'neutral';
@@ -746,7 +747,7 @@ export function DeveloperDashboard() {
         setBusyAction(forceRefresh ? 'force' : 'refresh');
       }
 
-      const statusRequest = fetch(
+      const statusRequest = apiFetch(
         forceRefresh ? '/api/developer/status?force=true' : '/api/developer/status',
       )
         .then((response) => parseJsonResponse<DeveloperStatusResponse>(response))
@@ -758,7 +759,7 @@ export function DeveloperDashboard() {
           setStatusError(error instanceof Error ? error.message : 'Unable to load repo status.');
         });
 
-      const runtimeRequest = fetch('/api/developer/runtime')
+      const runtimeRequest = apiFetch('/api/developer/runtime')
         .then((response) => parseJsonResponse<DeveloperRuntimeResponse>(response))
         .then((payload) => setRuntime(payload))
         .catch(() => undefined);

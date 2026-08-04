@@ -180,7 +180,16 @@ export const generateSchemaBaseline = async (pool: Pool): Promise<string> => {
     // stop. That makes this assertion self-updating: a future changeset that adds organization_id
     // to a new table without also enabling RLS on it fails this baseline diff immediately, rather
     // than shipping a silently unprotected tenant table.
-    if (tableColumns.some((column) => column.column_name === 'organization_id')) {
+    //
+    // reconciliation_user is the one deliberate exception (changeset 0032): /api/auth/login must
+    // look up a row by username before any tenant is known -- that lookup is how the tenant gets
+    // established in the first place, so it cannot itself be gated by a tenant GUC that doesn't
+    // exist yet. Same category as reconciliation_organization (already excluded, no
+    // organization_id column at all): both bootstrap tenant context rather than operate within it.
+    if (
+      table !== 'reconciliation_user' &&
+      tableColumns.some((column) => column.column_name === 'organization_id')
+    ) {
       assertions.push(
         `SELECT is(
   (SELECT relrowsecurity FROM pg_class WHERE relname = ${quote(table)} AND relnamespace = 'public'::regnamespace),

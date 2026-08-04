@@ -20,8 +20,8 @@
 #   DB11 — pgAudit extension enabled
 #   DB12 — Expected database users exist (rray for dev/stage)
 #   DB13 — User role attributes correct (SUPERUSER, CREATEDB, CREATEROLE, LOGIN)
-#   DB5  — schema_migrations tracking table exists
-#   DB6  — All migration patches applied
+#   DB5  — databasechangelog (Liquibase) tracking table exists
+#   DB6  — Every changeset in packages/persistence/liquibase/changesets is applied
 #   DB7  — Core tables present
 #   DB8  — Required indexes and constraints present
 #   DB9  — Transactional DDL/DML/procedure sweep (BEGIN…ROLLBACK)
@@ -294,63 +294,57 @@ ensure_postgres_running() {
 
 check_schema_migration_table() {
   local exists
-  exists="$(run_psql_query "SELECT to_regclass('public.schema_migrations') IS NOT NULL;")"
+  exists="$(run_psql_query "SELECT to_regclass('public.databasechangelog') IS NOT NULL;")"
   if [[ "$exists" == "t" ]]; then
-    record_check "DB5" "Migration tracking table" "PASS" "schema_migrations exists"
+    record_check "DB5" "Migration tracking table" "PASS" "databasechangelog exists"
     return 0
   fi
 
-  record_check "DB5" "Migration tracking table" "FAIL" "schema_migrations is missing"
+  record_check "DB5" "Migration tracking table" "FAIL" "databasechangelog is missing"
   return 1
 }
 
+# Compares --changeset ids declared in packages/persistence/liquibase/changesets/*.sql against
+# databasechangelog.id (Liquibase's own tracking table). Only checks for missing ids, not extras:
+# databasechangelog can legitimately carry rows with no current file behind them (e.g.
+# 0009b-tag_v1_v9_baseline, a one-time <tagDatabase> cutover marker) -- that is expected Liquibase
+# history, not drift. This replaced a schema_migrations/schema.ts-based check that predated this
+# project's move to Liquibase; packages/persistence/src/schema.ts no longer exists.
 check_patch_versions() {
-  local -a expected_versions=()
-  local -a applied_versions=()
-  local -a missing_versions=()
-  local -a extra_versions=()
-  local version
+  local -a expected_ids=()
+  local -a applied_ids=()
+  local -a missing_ids=()
+  local changeset_id
 
-  while IFS= read -r version; do
-    [[ -n "$version" ]] && expected_versions+=("$version")
+  while IFS= read -r changeset_id; do
+    [[ -n "$changeset_id" ]] && expected_ids+=("$changeset_id")
   done < <(
-    grep -E '^[[:space:]]*version:[[:space:]]*[0-9]+,' "$ROOT_DIR/packages/persistence/src/schema.ts" \
-      | sed -E 's/.*version:[[:space:]]*([0-9]+),/\1/' \
-      | sort -n -u
+    grep -h '^--changeset recon:' "$ROOT_DIR"/packages/persistence/liquibase/changesets/*.sql \
+      | sed -E 's/--changeset recon:([^ ]+).*/\1/' \
+      | sort -u
   )
 
-  while IFS= read -r version; do
-    [[ -n "$version" ]] && applied_versions+=("$version")
-  done < <(run_psql_query "SELECT version FROM schema_migrations ORDER BY version ASC;")
+  while IFS= read -r changeset_id; do
+    [[ -n "$changeset_id" ]] && applied_ids+=("$changeset_id")
+  done < <(run_psql_query "SELECT id FROM databasechangelog ORDER BY id;")
 
-  if (( ${#expected_versions[@]} == 0 )); then
-    record_check "DB6" "Patch version discovery" "FAIL" "No expected migration versions found in schema.ts"
+  if (( ${#expected_ids[@]} == 0 )); then
+    record_check "DB6" "Patch version discovery" "FAIL" "No expected changeset ids found in packages/persistence/liquibase/changesets"
     return 1
   fi
 
-  for version in "${expected_versions[@]}"; do
-    if ! printf '%s\n' "${applied_versions[@]}" | grep -Fxq "$version"; then
-      missing_versions+=("$version")
+  for changeset_id in "${expected_ids[@]}"; do
+    if ! printf '%s\n' "${applied_ids[@]}" | grep -Fxq "$changeset_id"; then
+      missing_ids+=("$changeset_id")
     fi
   done
 
-  for version in "${applied_versions[@]}"; do
-    if ! printf '%s\n' "${expected_versions[@]}" | grep -Fxq "$version"; then
-      extra_versions+=("$version")
-    fi
-  done
-
-  if (( ${#missing_versions[@]} > 0 )); then
-    record_check "DB6" "Patch coverage" "FAIL" "Missing migration versions: ${missing_versions[*]}"
+  if (( ${#missing_ids[@]} > 0 )); then
+    record_check "DB6" "Patch coverage" "FAIL" "Missing applied changesets: ${missing_ids[*]}"
     return 1
   fi
 
-  if (( ${#extra_versions[@]} > 0 )); then
-    record_check "DB6" "Patch coverage" "FAIL" "Unexpected migration versions in DB: ${extra_versions[*]}"
-    return 1
-  fi
-
-  record_check "DB6" "Patch coverage" "PASS" "All ${#expected_versions[@]} migration versions are installed"
+  record_check "DB6" "Patch coverage" "PASS" "All ${#expected_ids[@]} changesets from packages/persistence/liquibase/changesets are applied"
   return 0
 }
 

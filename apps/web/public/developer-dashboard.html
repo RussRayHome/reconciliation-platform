@@ -362,14 +362,33 @@
       const escapeRegExp = (value) =>
         String(value).replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
 
+      // Same localStorage key apps/web/src/lib/authToken.ts uses -- this page is a standalone
+      // static file outside the SPA bundle, so it can't import that module, but it shares the
+      // same origin and therefore the same localStorage as the main app. Reusing the key (rather
+      // than requiring a separate login here) means logging in once, in any tab, unlocks this
+      // page too on next refresh.
+      const AUTH_TOKEN_STORAGE_KEY = 'reconciliation-platform:auth-token';
+
+      const getAuthToken = () => {
+        try {
+          return globalThis.localStorage?.getItem(AUTH_TOKEN_STORAGE_KEY) ?? null;
+        } catch {
+          return null;
+        }
+      };
+
       const fetchWithTimeout = async (url, timeoutMs) => {
         const controller = new AbortController();
         const timeoutHandle = globalThis.setTimeout(() => {
           controller.abort();
         }, timeoutMs);
+        const token = getAuthToken();
 
         try {
-          return await fetch(url, { signal: controller.signal });
+          return await fetch(url, {
+            signal: controller.signal,
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') {
             throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s.`);
@@ -431,6 +450,78 @@
             return colored.join('|');
           })
           .join('\n');
+      };
+
+      const coveragePctClass = (value) => {
+        if (!Number.isFinite(value)) {
+          return 'cov-bad';
+        }
+        if (value >= 80) {
+          return 'cov-good';
+        }
+        if (value >= 50) {
+          return 'cov-warn';
+        }
+        return 'cov-bad';
+      };
+
+      const buildCoverageFilesMarkup = (check) => {
+        if (check?.name !== 'Coverage') {
+          return '';
+        }
+
+        if (!Array.isArray(check?.coverageFiles) || check.coverageFiles.length === 0) {
+          return '<p class="coverage-files-empty">No per-file coverage data was reported by this scan.</p>';
+        }
+
+        const pctCell = (value) =>
+          `<td class="coverage-pct ${coveragePctClass(value)}">${escapeHtml(Number.isFinite(value) ? `${value}%` : '-')}</td>`;
+
+        const rows = check.coverageFiles
+          .map(
+            (file) => `<tr>
+              <td class="coverage-file-path">${escapeHtml(file.filePath)}</td>
+              ${pctCell(file.statements)}
+              ${pctCell(file.branches)}
+              ${pctCell(file.functions)}
+              ${pctCell(file.lines)}
+            </tr>`,
+          )
+          .join('');
+
+        return `<div class="coverage-files-table-wrap">
+          <table class="coverage-files-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Statements</th>
+                <th>Branches</th>
+                <th>Functions</th>
+                <th>Lines</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+      };
+
+      const buildTestItemsMarkup = (check) => {
+        if (!Array.isArray(check?.testItems) || check.testItems.length === 0) {
+          return '';
+        }
+
+        const rows = check.testItems
+          .map((item) => {
+            const status = String(item?.status || '').toLowerCase();
+            const label = status === 'passed' ? 'PASS' : status === 'failed' ? 'FAIL' : 'SKIP';
+            return `<div class="test-item-row">
+              <span class="test-item-status ${escapeHtml(status)}">${escapeHtml(label)}</span>
+              <span class="test-item-name">${escapeHtml(item.name)}<span class="test-item-suite"> — ${escapeHtml(item.suite || '')}</span></span>
+            </div>`;
+          })
+          .join('');
+
+        return `<div class="test-item-list">${rows}</div>`;
       };
 
       const getPostgresPreflightDisplayText = (value) => {
@@ -1086,9 +1177,12 @@
             const metricBoxes = getSecurityComponentMetricBoxes(componentScore);
 
             const componentKey = rawComponentName.toLowerCase();
-            const componentFindings = (findingsByComponent.get(componentKey) || []).filter(
-              (finding) => finding.severity === 'CRITICAL' || finding.severity === 'HIGH',
-            );
+            const componentFindings = (findingsByComponent.get(componentKey) || [])
+              .filter((finding) => finding.severity === 'CRITICAL' || finding.severity === 'HIGH')
+              .map((finding) => ({
+                ...finding,
+                reportedYear: String(finding.id || '').match(/^CVE-(\d{4})-/u)?.[1] || '-',
+              }));
 
             const hasCriticalOrHighCounts =
               toSecurityCount(componentScore?.critical) + toSecurityCount(componentScore?.high) > 0;
@@ -1108,6 +1202,10 @@
                           <th>Component</th>
                           <th>Scanner</th>
                           <th>Description</th>
+                          <th>Package</th>
+                          <th>Installed</th>
+                          <th>Fixed</th>
+                          <th>Reported</th>
                         </tr>
                       </thead>
                       <tbody>${componentFindings
@@ -1118,6 +1216,10 @@
                             <td>${escapeHtml(finding.component)}</td>
                             <td>${escapeHtml(finding.scanner)}</td>
                             <td>${escapeHtml(finding.description)}</td>
+                            <td>${escapeHtml(finding.packageName || '-')}</td>
+                            <td>${escapeHtml(finding.installedVersion || '-')}</td>
+                            <td>${escapeHtml(finding.fixedVersion || '-')}</td>
+                            <td>${escapeHtml(finding.reportedYear)}</td>
                           </tr>`,
                         )
                         .join('')}</tbody>
@@ -1999,31 +2101,42 @@
         const isSecurityCheck = check?.name === 'Security vulnerabilities';
         const isCoverageCheck = check?.name === 'Coverage';
         const isPostgresCheck = check?.name === 'Postgres DB tests';
+        const isUnitCheck = check?.name === 'Unit tests';
+        const isIntegrationCheck = check?.name === 'Integration tests';
         const statusClass = check.ok ? 'ok' : 'bad';
         const statusText = check.ok ? 'PASS' : 'FAIL';
         const metricBoxes = resolveCheckMetricBoxes(check);
         const securityComponentRowsHtml = buildSecurityComponentRowsMarkup(check);
         const summaryHtml = buildCheckSummaryHtml(check, metricBoxes);
+        const coverageFilesHtml = isCoverageCheck ? buildCoverageFilesMarkup(check) : '';
+        const testItemsHtml =
+          isUnitCheck || isIntegrationCheck ? buildTestItemsMarkup(check) : '';
         let checkDetails = stripAnsiCodes(check.details || 'No additional output');
-        if (isCoverageCheck) {
-          checkDetails = getCoverageDisplayText(check.details);
-        } else if (isPostgresCheck) {
+        if (isPostgresCheck) {
           checkDetails = getPostgresPreflightDisplayText(check.details);
         }
         let outputMarkup = '';
-        if (!isSecurityCheck) {
-          if (isCoverageCheck) {
-            outputMarkup = `<pre>${colorizeV8Coverage(checkDetails)}</pre>`;
-          } else {
-            outputMarkup = `<pre>${escapeHtml(checkDetails)}</pre>`;
-          }
+        if (!isSecurityCheck && !isCoverageCheck && !testItemsHtml) {
+          outputMarkup = `<pre>${escapeHtml(checkDetails)}</pre>`;
         }
-        const detailsMarkup = `<div class="details">
-            ${summaryHtml}
-            <div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>
-            <div><strong>Duration:</strong> ${escapeHtml(formatDuration(check.durationMs))}</div>
-            <div><strong>Command:</strong> ${escapeHtml(check.command)}</div>
-          </div>`;
+        const exitCodeLine = `<div><strong>Exit code:</strong> ${escapeHtml(check.exitCode)}</div>`;
+        const durationLine = `<div><strong>Duration:</strong> ${escapeHtml(formatDuration(check.durationMs))}</div>`;
+        const commandLine = `<div><strong>Command:</strong> ${escapeHtml(check.command)}</div>`;
+        // Unit tests: nothing may render after Duration, so Command and the test list move above it.
+        const detailsMarkup = isUnitCheck
+          ? `<div class="details">
+              ${summaryHtml}
+              ${exitCodeLine}
+              ${commandLine}
+              ${testItemsHtml}
+              ${durationLine}
+            </div>`
+          : `<div class="details">
+              ${summaryHtml}
+              ${exitCodeLine}
+              ${durationLine}
+              ${commandLine}
+            </div>`;
 
         card.innerHTML = `
           <div class="card-top">
@@ -2031,7 +2144,9 @@
             <span class="pill ${statusClass}">${statusText}</span>
           </div>
           ${detailsMarkup}
+          ${coverageFilesHtml}
           ${securityComponentRowsHtml}
+          ${isUnitCheck ? '' : testItemsHtml}
           ${outputMarkup}
         `;
 

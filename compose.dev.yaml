@@ -26,9 +26,24 @@ services:
         VITE_ENABLE_DEVELOPER_DASHBOARD: 'true'
         VITE_ENVIRONMENT_PATH_SEGMENT: 'dev'
     volumes:
+      # Shadows the image's baked-in throwaway cert (apps/web/Dockerfile) with a persistent
+      # host-generated one, so interactive dev doesn't get a new untrusted cert on every rebuild.
+      # No `ports:` override needed here -- compose.yaml already publishes the HTTPS port by
+      # default; see its own comment.
       - ./certs/dev:/etc/nginx/certs:ro
-    ports:
-      - '${PUBLIC_WEB_HTTPS_PORT:-4174}:8443'
+    # Overrides (not merges with) compose.yaml's healthcheck -- checks the actual HTTPS listener
+    # dev publishes, not the unpublished plain-HTTP one, so this validates what's really reachable
+    # from outside the container. --no-check-certificate is required for the self-signed dev cert.
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --no-check-certificate -qO- https://127.0.0.1:8443/healthz >/dev/null || exit 1',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   tools:
     image: reconciliation-platform-tools:latest
@@ -51,6 +66,12 @@ services:
       NODE_ENV: test
       DEPLOY_ENV: dev
       PORT: '4001'
+      # tools runs its own copy of the API server (see scripts/pre-flight/tools-startup-guard.sh)
+      # to serve /api/developer/* -- it must share the main api service's JWT_SECRET, or bearer
+      # tokens issued by api's /api/auth/login never validate here (each process would otherwise
+      # mint its own random ephemeral secret, since NODE_ENV=test doesn't hit the
+      # production-requires-JWT_SECRET check in authService.ts's resolveJwtSecret).
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
       RECON_PERSISTENCE_BACKEND: ${RECON_PERSISTENCE_BACKEND:-postgres}
@@ -63,7 +84,9 @@ services:
       RATE_LIMIT_REDIS_PREFIX: ${RATE_LIMIT_REDIS_PREFIX:-recon:rate-limit:}
       ENABLE_DEVELOPER_DIAGNOSTICS: 'true'
       RECONCILIATION_RUN_STORE_PATH: /var/lib/reconciliation/latest-reconciliation-run.json
-      PLAYWRIGHT_BASE_URL: http://web:8080
+      # https, matching dev's HTTPS-only publish -- playwright.config.ts sets ignoreHTTPSErrors
+      # for the self-signed dev cert.
+      PLAYWRIGHT_BASE_URL: https://web:8443
       PLAYWRIGHT_API_URL: http://api:4000
     command:
       - sh

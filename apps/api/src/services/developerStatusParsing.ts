@@ -121,10 +121,17 @@ export const parseTestMetrics = (output: string): ParsedTestMetrics | null => {
     };
   }
 
-  const playwrightLine = [...lines]
-    .reverse()
-    .find((line) => /^\d+\s+(?:passed|failed)\b/i.test(line));
-  const playwrightCounts = playwrightLine ? parseSummaryCounts(playwrightLine) : null;
+  // Playwright puts "N passed" and "N failed" on the SAME line only when a run has just one
+  // outcome. Once there's a mix, it prints "N failed" (followed by the list of failing tests),
+  // then later "N passed" as a separate trailing line -- so the two counts must be searched for
+  // independently rather than requiring one line to contain both, or a run with real failures
+  // silently reports "Failed: 0" (the reversed single-line search finds the trailing "N passed"
+  // line first and never reaches the earlier "N failed" line above the failure list).
+  const playwrightPassedLine = [...lines].reverse().find((line) => /^\d+\s+passed\b/i.test(line));
+  const playwrightFailedLine = [...lines].reverse().find((line) => /^\d+\s+failed\b/i.test(line));
+  const playwrightCounts = playwrightPassedLine || playwrightFailedLine
+    ? parseSummaryCounts([playwrightFailedLine, playwrightPassedLine].filter(Boolean).join('\n'))
+    : null;
   if (playwrightCounts) {
     return {
       ...playwrightCounts,
@@ -966,6 +973,7 @@ export const parseCoverageSummaryJson = (
 
     entries.push({
       filePath: relativizeFilePath(filePath, repoRoot),
+      statements: pctOf('statements'),
       lines,
       branches: pctOf('branches'),
       functions: pctOf('functions'),

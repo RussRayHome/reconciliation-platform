@@ -13,8 +13,9 @@
   "overrides": {
     "esbuild": "0.28.1",
     "uuid": "11.1.1",
-    "brace-expansion": "5.0.8",
-    "@opentelemetry/propagator-jaeger": "2.9.0"
+    "brace-expansion": "5.0.9",
+    "@opentelemetry/propagator-jaeger": "2.9.0",
+    "@types/pg": "8.20.3"
   },
   "scripts": {
     "dev": "concurrently -k -n API,WEB \"npm run dev:api\" \"npm run dev:web\"",
@@ -89,7 +90,8 @@
     "analyze:complexity": "NODE_OPTIONS=--no-deprecation tsx scripts/escomplex-analysis.ts",
     "format": "prettier --write .",
     "typecheck": "tsc -p tsconfig.typecheck.json --pretty false",
-    "coverage": "vitest run --coverage --project unit-core --project unit-web --project unit-data --project integration --exclude apps/api/tests/deploy-cleanup.test.ts",
+    "coverage": "vitest run --coverage --no-file-parallelism --project unit-core --project unit-web --project unit-data --project integration --exclude apps/api/tests/deploy-cleanup.test.ts",
+    "coverage:docker-fallback": "vitest run --coverage --no-file-parallelism --project unit-core --project unit-web --project integration --exclude apps/api/tests/deploy-cleanup.test.ts",
     "security:scan": "npm audit --audit-level=high",
     "security:scan:component:api": "node scripts/security-scan-api.mjs",
     "security:scan:component:database": "node scripts/security-scan-database.mjs",
@@ -130,7 +132,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

@@ -60,15 +60,19 @@ const runtimeDockerUnavailableRegex =
 // filesystem, so the host daemon rejects it. Both tests fail this exact way every time here.
 const dockerSiblingMountPathDeniedRegex =
   /mounts denied|is not shared from the host and is not known to Docker/i;
-const coverageDockerIncompatibleTestExcludes = [
-  'packages/persistence/tests/liquibase-migrations.test.ts',
-  'packages/persistence/tests/postgresLifecycleStore.test.ts',
-];
-// Dropping the tests above without also dropping the sources they exercise leaves those files in
-// the coverage denominator with nothing driving them, so the dashboard reports a near-zero number
-// for code that is in fact well covered — just not from this runtime. Only list sources whose
-// *sole* coverage comes from the excluded suites: postgres.ts and readModelStore.ts keep their own
-// src-level unit tests and must stay measured.
+// `unit-data`'s globalSetup (packages/persistence/tests/globalSetup.ts) starts a Testcontainers
+// Postgres and runs Liquibase against it via a *sibling* `docker run` with a bind mount -- and
+// that setup runs once per project, unconditionally, as long as ANY file in the project is
+// selected. Excluding just the two Testcontainers-heavy test files (the original approach here)
+// does not help: every other unit-data file still matches, so the same globalSetup still runs and
+// still fails the same way. The only fix is dropping the whole project, which is what
+// `coverage:docker-fallback` (package.json) does relative to `coverage`.
+//
+// Only list sources whose *sole* coverage comes from unit-data: postgres.ts, readModelStore.ts,
+// and stateMachine.ts keep their own src-level unit tests (verified: they report real non-zero
+// numbers even with unit-data entirely absent) and must stay measured. reconciliationLifecycleStore.ts
+// does not -- it reports ~8% from other projects alone, which would unfairly drag down the overall
+// score for code that unit-data actually covers well.
 //
 // Passed via env rather than `--coverage.exclude`: that CLI flag REPLACES coverage.exclude from
 // vitest.config.ts instead of merging with it, which would silently pull dist/, scripts/,
@@ -1260,10 +1264,11 @@ export const createDeveloperStatusService = ({
 
     mkdirSync(devStatusTempPath, { recursive: true });
 
-    const failedAndSkippedTestItems = (path: string): TestItem[] =>
-      readJsonReportFile(path, (raw) => parseVitestJsonTestItems(raw, repoRoot)).filter(
-        (item) => item.status !== 'passed',
-      );
+    // Every test item, not just failures -- the dashboard renders a full per-test pass/fail
+    // listing (TestItem is small: name/suite/status/reason?/durationMs?, so this doesn't bloat
+    // the payload even for hundreds of tests).
+    const allTestItems = (path: string): TestItem[] =>
+      readJsonReportFile(path, (raw) => parseVitestJsonTestItems(raw, repoRoot));
 
     const unitTests = await runDeveloperCheck(
       'Unit tests',
@@ -1280,7 +1285,7 @@ export const createDeveloperStatusService = ({
       240000,
       parseTestMetadata('unit', 'Unit'),
     );
-    unitTests.testItems = failedAndSkippedTestItems(unitJsonReportPath);
+    unitTests.testItems = allTestItems(unitJsonReportPath);
 
     const integrationTests = await runDeveloperCheck(
       'Integration tests',
@@ -1297,7 +1302,7 @@ export const createDeveloperStatusService = ({
       240000,
       parseTestMetadata('integration', 'Integration'),
     );
-    integrationTests.testItems = failedAndSkippedTestItems(integrationJsonReportPath);
+    integrationTests.testItems = allTestItems(integrationJsonReportPath);
 
     const postgresTests = await runDeveloperCheck(
       'Postgres DB tests',
@@ -1397,23 +1402,20 @@ export const createDeveloperStatusService = ({
       let coverage = await runCoverageCheck(['run', 'coverage']);
 
       if (!coverage.ok && dockerSiblingMountPathDeniedRegex.test(coverage.details)) {
-        coverage = await runCoverageCheck(
-          [
-            'run',
-            'coverage',
-            '--',
-            ...coverageDockerIncompatibleTestExcludes.flatMap((path) => ['--exclude', path]),
-          ],
-          { [coverageExtraExcludesEnvVar]: coverageDockerIncompatibleSourceExcludes.join(',') },
+        coverage = await runCoverageCheck(['run', 'coverage:docker-fallback'], {
+          [coverageExtraExcludesEnvVar]: coverageDockerIncompatibleSourceExcludes.join(','),
+        });
+        coverage.highlights = appendUniqueHighlight(
+          coverage.highlights,
+          'Dropped the unit-data project entirely: its globalSetup spawns a sibling Docker ' +
+            'container (Testcontainers Postgres) and runs Liquibase against it via a bind mount ' +
+            'that needs a real host Docker CLI, unavailable from this runtime. Excluding ' +
+            'individual test files does not help — the same globalSetup still runs for any other ' +
+            'file left in the project.',
         );
         coverage.highlights = appendUniqueHighlight(
           coverage.highlights,
-          'Excluded Liquibase/Testcontainers persistence tests: they spawn sibling Docker ' +
-            'containers that need a real host Docker CLI, unavailable from this runtime.',
-        );
-        coverage.highlights = appendUniqueHighlight(
-          coverage.highlights,
-          'Also dropped the sources those suites solely cover ' +
+          'Also dropped the sources unit-data solely covers ' +
             `(${coverageDockerIncompatibleSourceExcludes.join(', ')}) from the coverage ` +
             'denominator — measuring them here understates them. Run `npm run coverage` from a ' +
             'Docker-enabled host for a complete figure.',

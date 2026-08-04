@@ -342,17 +342,17 @@ test.describe('stage navigation', () => {
     );
   });
 
-  test('Probable matches view is reachable from the navigation rail', async ({ page }) => {
+  // Probable matches was dropped from the nav rail in the v3 nav restructure (commit 5f08130,
+  // "no longer nav-linked, per confirmed decision") -- the route itself stays reachable directly,
+  // which is what this now verifies, rather than a rail link that no longer exists.
+  test('Probable matches view is reachable via direct navigation', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
       createSampleBankWorkbook(),
       createSampleGlWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
-    await page.getByRole('link', { name: 'Probable matches' }).click();
-    await expect(page.getByRole('link', { name: 'Probable matches' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    await page.goto('/probable-matches');
+    await expect(page.getByText(/Showing \d+ probable matches\./)).toBeVisible();
   });
 
   test('Export stage exposes the export artifacts', async ({ page }) => {
@@ -363,7 +363,10 @@ test.describe('stage navigation', () => {
     await runReconciliation(page, bankBuffer, glBuffer);
     // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
     await page.getByRole('link', { name: 'Reports' }).click();
-    await expect(page.getByRole('link', { name: 'Download workbook' })).toBeVisible();
+    // Download workbook is a button, not a link -- see AppWorkspacePanels.tsx's own comment: a
+    // plain <a href> can't carry the bearer token now that this route requires auth, so it
+    // fetches the bytes and triggers the save via a blob URL instead of top-level navigation.
+    await expect(page.getByRole('button', { name: 'Download workbook' })).toBeVisible();
   });
 });
 
@@ -376,20 +379,27 @@ test.describe('export artifacts', () => {
       createSampleGlWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
-    await page.getByRole('link', { name: 'Export' }).click();
+    // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
+    await page.getByRole('link', { name: 'Reports' }).click();
   });
 
-  test('Download workbook link is present in Export', async ({ page }) => {
-    await expect(page.getByRole('link', { name: 'Download workbook' })).toBeVisible();
+  test('Download workbook button is present in Export', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Download workbook' })).toBeVisible();
   });
 
   test('Export JSON button is present in Export', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Export JSON' })).toBeVisible();
   });
 
-  test('Download workbook link resolves to the correct API export URL', async ({ page }) => {
-    const href = await page.getByRole('link', { name: 'Download workbook' }).getAttribute('href');
-    expect(href).toMatch(/\/api\/reconciliation\/.+\/export\/workbook/);
+  test('Download workbook button requests the correct API export URL', async ({ page }) => {
+    // No href to read -- it's a button, not a link (see the beforeEach above). Verify the
+    // underlying fetch request instead.
+    const responsePromise = page.waitForResponse((response) =>
+      /\/api\/reconciliation\/.+\/export\/workbook/.test(response.url()),
+    );
+    await page.getByRole('button', { name: 'Download workbook' }).click();
+    const response = await responsePromise;
+    expect(response.ok()).toBe(true);
   });
 });
 

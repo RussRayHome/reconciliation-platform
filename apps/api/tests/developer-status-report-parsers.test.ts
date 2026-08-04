@@ -462,6 +462,7 @@ describe('report parsers', () => {
     const coverageReport = JSON.stringify({
       total: { lines: { pct: 90 } },
       '/repo/reconciliation-platform/packages/core/src/engine.ts': {
+        statements: { pct: 84 },
         lines: { total: 100, covered: 82, pct: 82 },
         branches: { pct: 71 },
         functions: { pct: 95 },
@@ -472,6 +473,7 @@ describe('report parsers', () => {
       expect(parseCoverageSummaryJson(coverageReport)).toEqual([
         {
           filePath: 'packages/core/src/engine.ts',
+          statements: 84,
           lines: 82,
           branches: 71,
           functions: 95,
@@ -500,6 +502,7 @@ describe('report parsers', () => {
       const report = JSON.stringify({ 'a.ts': { lines: { pct: 'lots' }, branches: 'nope' } });
 
       expect(parseCoverageSummaryJson(report)[0]).toMatchObject({
+        statements: 0,
         lines: 0,
         branches: 0,
         functions: 0,

@@ -40,11 +40,11 @@ describe('Liquibase rollback', () => {
     return result.rows[0]?.exists === true;
   };
 
-  const appUserCanSelectJob = async (pool: Pool): Promise<boolean> => {
-    const result = await pool.query<{ can_select: boolean }>(
-      "SELECT has_table_privilege('app_user', 'public.reconciliation_job', 'SELECT') AS can_select",
+  const userTableHasRlsEnabled = async (pool: Pool): Promise<boolean> => {
+    const result = await pool.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_user'",
     );
-    return result.rows[0]?.can_select === true;
+    return result.rows[0]?.relrowsecurity === true;
   };
 
   describe('rolling back the most recent changeset', () => {
@@ -52,9 +52,9 @@ describe('Liquibase rollback', () => {
     let migratedSchema: string;
     let rolledBackSchema: string;
     let reappliedSchema: string;
-    let migratedCanSelect: boolean;
-    let rolledBackCanSelect: boolean;
-    let reappliedCanSelect: boolean;
+    let migratedRlsEnabled: boolean;
+    let rolledBackRlsEnabled: boolean;
+    let reappliedRlsEnabled: boolean;
 
     beforeAll(async () => {
       database = await createEmptyDatabase('recon_rollback_one');
@@ -62,15 +62,15 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
-      migratedCanSelect = await appUserCanSelectJob(database.pool);
+      migratedRlsEnabled = await userTableHasRlsEnabled(database.pool);
 
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
-      rolledBackCanSelect = await appUserCanSelectJob(database.pool);
+      rolledBackRlsEnabled = await userTableHasRlsEnabled(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
-      reappliedCanSelect = await appUserCanSelectJob(database.pool);
+      reappliedRlsEnabled = await userTableHasRlsEnabled(database.pool);
     }, 180000);
 
     afterAll(async () => {
@@ -87,23 +87,22 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0031 by revoking app_user table grants', () => {
-      // 0031 (the most recent changeset as of this test) grants app_user SELECT/etc on every
-      // application table; its rollback revokes those grants (see 0031's own rollback comment
-      // for why it stops short of also dropping the role). Table/column shape is unaffected by
-      // 0031 either way, so migratedSchema/rolledBackSchema are asserted equal here rather than
-      // diffing -- the signal for this changeset lives in privileges, not schema shape. When a
-      // future changeset lands on top of 0031, update this test to describe that changeset
-      // instead -- it is intentionally pinned to "whatever is currently the most recent
-      // changeset", not to 0031 forever.
-      expect(migratedCanSelect).toBe(true);
-      expect(rolledBackCanSelect).toBe(false);
-      expect(reappliedCanSelect).toBe(true);
+    it('reverses changeset 0032 by re-enabling row-level security on reconciliation_user', () => {
+      // 0032 (the most recent changeset as of this test) disables RLS on reconciliation_user
+      // (login must look up a row before any tenant is known -- see 0032's own comment); its
+      // rollback re-enables RLS and recreates the tenant-isolation policy 0030 originally added.
+      // Table/column shape is unaffected by 0032 either way, so migratedSchema/rolledBackSchema
+      // are asserted equal here rather than diffing. When a future changeset lands on top of
+      // 0032, update this test to describe that changeset instead -- it is intentionally pinned
+      // to "whatever is currently the most recent changeset", not to 0032 forever.
+      expect(migratedRlsEnabled).toBe(false);
+      expect(rolledBackRlsEnabled).toBe(true);
+      expect(reappliedRlsEnabled).toBe(false);
       expect(rolledBackSchema).toEqual(migratedSchema);
     });
   });
 
-  describe('rolling back six changesets (0031, 0030, 0029, 0028, 0027 verify-only, then 0026 schema-changing)', () => {
+  describe('rolling back seven changesets (0032, 0031, 0030, 0029, 0028, 0027 verify-only, then 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -115,11 +114,12 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now six changesets back from HEAD (0031), not two -- 0027 (verify-only), 0028
-      // (adds organization_id elsewhere, doesn't touch reconciliation_user), 0029 (grants only),
-      // 0030 (RLS policies only), and 0031 (app_user role, grants only) all sit on top of it
-      // without reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=6');
+      // 0026 is now seven changesets back from HEAD (0032), not two -- 0027 (verify-only), 0028
+      // (adds organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
+      // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), and 0032
+      // (disables RLS on reconciliation_user only) all sit on top of it without reversing
+      // anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=7');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

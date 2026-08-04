@@ -319,7 +319,7 @@
 
   .security-component-vuln-table {
     width: 100%;
-    min-width: 700px;
+    min-width: 1020px;
     border-collapse: collapse;
     font-size: 0.78rem;
   }
@@ -363,6 +363,130 @@
   }
 
   .security-component-vuln-empty {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .coverage-files-table-wrap {
+    margin: 10px 0 0;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #ffffff;
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  .coverage-files-table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+  }
+
+  .coverage-files-table th,
+  .coverage-files-table td {
+    text-align: left;
+    vertical-align: top;
+    padding: 6px 8px;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  .coverage-files-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f7fbff;
+    color: #486581;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 0.68rem;
+  }
+
+  .coverage-files-table td.coverage-file-path {
+    font-family: var(--mono-font, monospace);
+    color: #102a43;
+    word-break: break-all;
+  }
+
+  .coverage-files-table td.coverage-pct {
+    white-space: nowrap;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .coverage-pct.cov-good {
+    color: #18794e;
+  }
+
+  .coverage-pct.cov-warn {
+    color: #92600a;
+  }
+
+  .coverage-pct.cov-bad {
+    color: #b42318;
+  }
+
+  .coverage-files-empty {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .test-item-list {
+    margin: 10px 0 0;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #ffffff;
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  .test-item-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 8px;
+    border-bottom: 1px solid #eef2f7;
+    font-size: 0.78rem;
+  }
+
+  .test-item-row:last-child {
+    border-bottom: none;
+  }
+
+  .test-item-status {
+    flex-shrink: 0;
+    width: 58px;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+    letter-spacing: 0.03em;
+  }
+
+  .test-item-status.passed {
+    color: #18794e;
+  }
+
+  .test-item-status.failed {
+    color: #b42318;
+  }
+
+  .test-item-status.skipped {
+    color: #92600a;
+  }
+
+  .test-item-name {
+    color: #102a43;
+    overflow-wrap: anywhere;
+  }
+
+  .test-item-suite {
+    color: var(--muted);
+    font-size: 0.72rem;
+  }
+
+  .test-item-list-empty {
     margin: 8px 0 0;
     color: var(--muted);
     font-size: 0.8rem;

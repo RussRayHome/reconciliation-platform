@@ -73,6 +73,7 @@ export type LintIssue = {
 /** Per-file coverage row extracted from coverage/coverage-summary.json (Istanbul json-summary format). */
 export type CoverageFileEntry = {
   filePath: string;
+  statements: number;
   lines: number;
   branches: number;
   functions: number;

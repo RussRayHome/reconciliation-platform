@@ -6,6 +6,10 @@ x-default-logging: &default-logging
 
 x-api-environment: &api-environment
   NODE_ENV: production
+  # Required because NODE_ENV is always "production" here (see resolveJwtSecret in
+  # apps/api/src/services/authService.ts) -- without it the API refuses to start signing tokens at
+  # all, in every environment this compose file targets (dev, stage, and real production alike).
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
   PORT: ${PORT:-4000}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   DEBUG_RECONCILIATION: ${DEBUG_RECONCILIATION:-false}
@@ -93,12 +97,17 @@ services:
       context: packages/persistence/liquibase
       dockerfile: Dockerfile
       args:
-        LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.31}
+        LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.33.0}
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${API_DATABASE_URL:-postgresql://recon_app:change-local-password@postgres:5432/reconciliation_platform}
+      # Migrations must run as the admin/owner role (POSTGRES_USER), not the least-privilege
+      # runtime role API_DATABASE_URL now points at (app_user, changeset 0031) -- app_user doesn't
+      # exist until this very migration run creates it, and even once it exists it has no DDL
+      # rights by design (see changeset 0029's comment). Composed the same way pgweb's connection
+      # string already is below, not reusing API_DATABASE_URL.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-recon_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-reconciliation_platform}
     # Default command is "update" (see Dockerfile CMD). For the one-time cutover on an
     # already-migrated environment, override with:
     #   command: ["changelog-sync", "--to-tag=v1-v9-baseline"]
@@ -162,8 +171,13 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    # HTTPS by default -- the image now bakes in a throwaway self-signed cert (see
+    # apps/web/Dockerfile) precisely so a bare `-f compose.yaml` invocation (CI's smoke test,
+    # docker-smoke-test.ts) is reachable without any environment overlay. compose.dev.yaml's bind
+    # mount shadows this cert with a persistent one; compose.stage.yaml separately republishes
+    # plain HTTP alongside this, unaffected.
     ports:
-      - '${PUBLIC_WEB_PORT:-4173}:8080'
+      - '${PUBLIC_WEB_HTTPS_PORT:-4174}:8443'
     networks:
       - edge
       - app

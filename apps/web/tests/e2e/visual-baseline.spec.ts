@@ -19,6 +19,12 @@ const widths = [1440, 1100, 900] as const;
 const screenshotOptions = {
   fullPage: true,
   animations: 'disabled',
+  // Text-heavy pages (dozens of small stat labels/numbers) accumulate enough sub-pixel
+  // font-rendering variance between runs -- observed ~1% of pixels on review-summary -- to fail
+  // with zero tolerance, even after Playwright's own internal stability retries. Real UI
+  // regressions caught earlier during development were 2-26% of pixels, so this stays well clear
+  // of masking an actual defect while absorbing rendering noise.
+  maxDiffPixelRatio: 0.015,
 } as const;
 
 // loginToApplication waits for the Import Files link, which only superuser/admin roles see;
@@ -119,14 +125,18 @@ for (const width of widths) {
       await expect(page.getByText('Total reviewed')).toBeVisible();
       await expect(page).toHaveScreenshot(`review-summary-${width}.png`, screenshotOptions);
 
-      await page.getByRole('link', { name: 'Probable matches' }).click();
+      // Probable matches was dropped from the nav rail in the v3 nav restructure (commit
+      // 5f08130, "no longer nav-linked, per confirmed decision") -- the route itself stays
+      // reachable directly.
+      await page.goto('/probable-matches');
       await expect(page).toHaveScreenshot(`probable-matches-${width}.png`, screenshotOptions);
 
       await page.getByRole('link', { name: 'Exceptions' }).click();
       await expect(page.getByPlaceholder('Search file, message, or tokens')).toBeVisible();
       await expect(page).toHaveScreenshot(`exceptions-triage-${width}.png`, screenshotOptions);
 
-      await page.getByRole('link', { name: 'Export', exact: true }).click();
+      // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
+      await page.getByRole('link', { name: 'Reports', exact: true }).click();
       // Artifact filenames embed the run id; mask them so baselines stay deterministic.
       await expect(page).toHaveScreenshot(`close-${width}.png`, {
         ...screenshotOptions,

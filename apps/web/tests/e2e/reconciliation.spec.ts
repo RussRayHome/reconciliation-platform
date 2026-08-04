@@ -40,8 +40,9 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Total reviewed')).toBeVisible();
 
-  // The Review segmented control swaps between Summary, Probable matches, and Exceptions.
-  await page.getByRole('link', { name: 'Probable matches' }).click();
+  // The nav rail swaps between Summary and Exceptions. Probable matches was dropped from the
+  // rail in the v3 nav restructure (commit 5f08130) -- its route stays reachable directly (see
+  // reconciliation-edge-cases.spec.ts), but it's no longer part of this rail-driven flow.
   await page.getByRole('link', { name: 'Exceptions' }).click();
   await expect(page.getByPlaceholder('Search file, message, or tokens')).toBeVisible();
 });
