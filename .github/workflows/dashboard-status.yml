@@ -13,16 +13,19 @@ jobs:
   generate-status:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        branch: [dev, stage]
+    # One environment at a time while this workflow itself is still being proven out -- stage
+    # currently lags dev by a few commits, and running both concurrently just produces a
+    # predictable, noisy failure on whichever branch doesn't have this workflow's own files yet.
+    # Re-add a `strategy: matrix: branch: [dev, stage]` (and swap TARGET_BRANCH below back to
+    # `${{ env.TARGET_BRANCH }}`) once stage is caught up and dev has run cleanly a few times.
+    env:
+      TARGET_BRANCH: dev
 
     steps:
-      - name: Check out ${{ matrix.branch }}
+      - name: Check out ${{ env.TARGET_BRANCH }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ matrix.branch }}
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0 # full history -- commitsThisWeek/branch-compare/tag lookups need it
 
       - name: Set up Node.js
@@ -53,13 +56,13 @@ jobs:
         continue-on-error: true # a failing check should still get published, not vanish
         env:
           COMPOSE_PROJECT_NAME: reconciliation-platform-dev
-        run: npx tsx scripts/ci/generate-dashboard-status.ts --env ${{ matrix.branch }} --out dashboard-status/${{ matrix.branch }}.json
+        run: npx tsx scripts/ci/generate-dashboard-status.ts --env ${{ env.TARGET_BRANCH }} --out dashboard-status/${{ env.TARGET_BRANCH }}.json
 
       - name: Upload status JSON as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dashboard-status-${{ matrix.branch }}
-          path: dashboard-status/${{ matrix.branch }}.json
+          name: dashboard-status-${{ env.TARGET_BRANCH }}
+          path: dashboard-status/${{ env.TARGET_BRANCH }}.json
           retention-days: 14
 
       - name: Publish to status-data branch
@@ -68,22 +71,21 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ ! -f "dashboard-status/${{ matrix.branch }}.json" ]; then
+          if [ ! -f "dashboard-status/${{ env.TARGET_BRANCH }}.json" ]; then
             echo "No status file produced -- generate-dashboard-status.ts crashed before writing output. Not publishing." >&2
             exit 1
           fi
 
-          RESULT_FILE="$(pwd)/dashboard-status/${{ matrix.branch }}.json"
-          TARGET_PATH="dashboard-status/${{ matrix.branch }}.json"
+          RESULT_FILE="$(pwd)/dashboard-status/${{ env.TARGET_BRANCH }}.json"
+          TARGET_PATH="dashboard-status/${{ env.TARGET_BRANCH }}.json"
 
           git config user.name "dashboard-status-bot"
           git config user.email "dashboard-status-bot@users.noreply.github.com"
 
           PUBLISH_DIR="$(mktemp -d)"
-          # The dev and stage matrix jobs run in parallel and both publish to this same branch --
-          # each only ever touches its OWN file (dashboard-status/<branch>.json), never the whole
-          # tree, and retries its own push on conflict. That keeps the two jobs from racing each
-          # other into a lost update.
+          # Only one environment runs today (see the job-level comment above), but this only ever
+          # touches its OWN file (dashboard-status/<branch>.json) and retries its own push on
+          # conflict, so re-adding the dev/stage matrix later is a safe, non-racing change.
           git clone --branch status-data "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR" 2>/dev/null \
             || git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR"
 
@@ -101,7 +103,7 @@ jobs:
               break
             fi
 
-            git commit -m "dashboard-status(${{ matrix.branch }}): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git commit -m "dashboard-status(${{ env.TARGET_BRANCH }}): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
             if git push origin status-data; then
               break
