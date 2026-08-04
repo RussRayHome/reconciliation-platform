@@ -22,4 +22,6 @@ playwright-browsers/
 apps/api/Dockerfile.bak
 reviews/
 .dev-status-tmp/
+.dashboard-status-tmp/
+dashboard-status/
 certs/

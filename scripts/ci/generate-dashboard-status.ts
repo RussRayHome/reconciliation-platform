@@ -36,7 +36,9 @@ import type {
 } from '../../apps/api/src/services/developerStatusTypes';
 
 const execFileAsync = promisify(execFile);
-const repoRoot = resolve(__dirname, '..', '..');
+// Always invoked as `tsx scripts/ci/generate-dashboard-status.ts` from the repo root -- both
+// locally and in the workflow's `run:` step, whose default working directory is the checkout root.
+const repoRoot = resolve(process.cwd());
 const npmExecutable = 'npm';
 const tempPath = join(repoRoot, '.dashboard-status-tmp');
 const coverageSummaryPath = join(repoRoot, 'coverage', 'coverage-summary.json');
