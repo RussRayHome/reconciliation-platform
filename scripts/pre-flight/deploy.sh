@@ -112,8 +112,8 @@ if [[ "${DOCKER_COMPOSE_EXTRA_FILE:-}" == *"stage"* ]] || [[ "$ENV_FILE" == *"st
   DEPLOY_ENV="stage"
 fi
 
-if [[ "$DEPLOY_ENV" == "dev" ]]; then
-  bash "$ROOT_DIR/scripts/pre-flight/generate-dev-cert.sh"
+if [[ "$DEPLOY_ENV" == "dev" || "$DEPLOY_ENV" == "stage" ]]; then
+  bash "$ROOT_DIR/scripts/pre-flight/generate-tls-cert.sh" "$DEPLOY_ENV"
 fi
 
 if [[ "$DEPLOY_ENV" == "dev" || "$DEPLOY_ENV" == "stage" ]]; then

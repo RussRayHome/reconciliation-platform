@@ -83,8 +83,9 @@ wait_for_http() {
 
   while (( attempt <= retries )); do
     # --insecure is a no-op against a plain http:// URL, so this is safe to pass unconditionally
-    # rather than branching on scheme -- only the dev gateway check below is ever https, against
-    # the self-signed cert from generate-dev-cert.sh.
+    # rather than branching on scheme -- the dev/stage gateway checks below are https, against the
+    # cert generate-tls-cert.sh produces (mkcert-trusted when available, self-signed otherwise;
+    # --insecure skips verification either way so this check works regardless).
     if curl --fail --silent --show-error --insecure "$url" >/dev/null; then
       return 0
     fi
@@ -156,8 +157,9 @@ source "$SOURCE_FILE"
 set +a
 
 # Same DEPLOY_ENV derivation as deploy.sh. Dev publishes HTTPS only (compose.yaml no longer
-# publishes a host port for plain HTTP -- see compose.yaml's `web` service); stage still publishes
-# plain HTTP (compose.stage.yaml), since it has no cert mounted yet.
+# publishes a host port for plain HTTP -- see compose.yaml's `web` service). Stage now also has a
+# trusted cert mounted (compose.stage.yaml, certs/stage -- see generate-tls-cert.sh), but keeps
+# republishing plain HTTP alongside it, so both get checked there.
 DEPLOY_ENV="dev"
 if [[ "${DOCKER_COMPOSE_EXTRA_FILE:-}" == *"stage"* ]] || [[ "$ENV_FILE" == *"stage"* ]]; then
   DEPLOY_ENV="stage"
@@ -166,11 +168,16 @@ fi
 if [[ "$DEPLOY_ENV" == "dev" ]]; then
   gateway_base_url="https://127.0.0.1:${PUBLIC_WEB_HTTPS_PORT:-4174}"
 else
-  gateway_base_url="http://127.0.0.1:${PUBLIC_WEB_PORT}"
+  gateway_base_url="https://127.0.0.1:${PUBLIC_WEB_HTTPS_PORT:-4274}"
 fi
 
 wait_for_http "Gateway" "${gateway_base_url}/healthz"
 wait_for_http "API" "${gateway_base_url}/api/health"
+
+if [[ "$DEPLOY_ENV" == "stage" ]]; then
+  wait_for_http "Gateway (plain HTTP)" "http://127.0.0.1:${PUBLIC_WEB_PORT}/healthz"
+fi
+
 wait_for_postgres
 
 pgweb_enabled=false

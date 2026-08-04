@@ -26,6 +26,8 @@ type DeveloperStatusResponseBody = {
   checks: Array<{
     name: string;
     testType?: string;
+    ok?: boolean;
+    running?: boolean;
     passedFileCount?: number;
     failedFileCount?: number;
     totalFileCount?: number;
@@ -125,7 +127,27 @@ type ExecFileMatcher = {
   matches: (joined: string) => boolean;
   result: ExecFileResult;
   sideEffect?: (args: string[], options: { env?: Record<string, string> }) => void;
+  /** Overrides `globalExecFileDelayMs` for this matcher specifically, e.g. to keep the detached
+   *  E2E run artificially in-flight without slowing down every other check. */
+  delayMs?: () => number;
+  /** When set and truthy, the call rejects (mimicking a real non-zero exit) with this
+   *  stdout/stderr instead of resolving with `result` -- lets a single test flip one command to
+   *  the failure path without a bespoke mock for the whole file. */
+  failure?: () => ExecFileResult | null;
 };
+
+/** Slows down every mocked execFile call that doesn't set its own `delayMs` -- used to keep a
+ *  force-refresh request in flight long enough to reliably observe overlap with a second request,
+ *  since the mocked commands otherwise resolve near-instantly and the request completes before a
+ *  concurrent one can be fired. Reset to 0 in `afterEach`. */
+let globalExecFileDelayMs = 0;
+/** When set, the `npm run test:unit` mock fails instead of succeeding -- see `failure` on
+ *  ExecFileMatcher. Reset to false in `afterEach`. */
+let unitTestShouldFail = false;
+/** Slows down only the `npm run test:e2e` mock, since it runs detached from the rest of the
+ *  request (the response doesn't await it) -- delaying it is what makes the "running in the
+ *  background" placeholder state observable in a single request instead of racing timing. */
+let e2eExecFileDelayMs = 0;
 
 /** Writes `content` to the path from an inline `flag=value` style arg (e.g. `--outputFile.json=`). */
 const writeFixtureFromInlineArg = (args: string[], flagPrefix: string, content: string): void => {
@@ -216,11 +238,17 @@ const execFileMatchers: ExecFileMatcher[] = [
       stdout: 'Test Files  9 passed (9)\nTests  114 passed (114)\n',
       stderr: '',
     },
+    failure: () =>
+      unitTestShouldFail
+        ? { stdout: 'Test Files  1 failed | 8 passed (9)\nTests  1 failed | 113 passed (114)\n', stderr: '' }
+        : null,
     sideEffect: (args) =>
       writeFixtureFromInlineArg(
         args,
         '--outputFile.json=',
-        vitestJsonFixture('a skipped unit test', 'passed', 'apps/web/src/App.test.tsx'),
+        unitTestShouldFail
+          ? vitestJsonFixture('a broken unit test', 'failed', 'apps/web/src/App.test.tsx')
+          : vitestJsonFixture('a skipped unit test', 'passed', 'apps/web/src/App.test.tsx'),
       ),
   },
   {
@@ -242,6 +270,7 @@ const execFileMatchers: ExecFileMatcher[] = [
       stdout: 'Running 1 test using 1 worker\n\n  1 passed (7.0s)\n',
       stderr: '',
     },
+    delayMs: () => e2eExecFileDelayMs,
     sideEffect: (_args, options) => {
       const target = options.env?.PLAYWRIGHT_JSON_OUTPUT_NAME;
       if (!target) return;
@@ -434,8 +463,28 @@ const mockExecFile = vi.fn(
     const matched = execFileMatchers.find((matcher) => matcher.matches(joined));
 
     if (matched) {
-      matched.sideEffect?.(args, options);
-      callback(null, matched.result);
+      const delay = matched.delayMs ? matched.delayMs() : globalExecFileDelayMs;
+      const failureResult = matched.failure?.() ?? null;
+      const fire = () => {
+        matched.sideEffect?.(args, options);
+        if (failureResult) {
+          // Mimics what Node's real execFile passes to its callback on a non-zero exit: an Error
+          // with `code`/`stdout`/`stderr` attached, which runDeveloperCheck's catch branch reads.
+          const error = Object.assign(new Error('Command failed'), {
+            code: 1,
+            stdout: failureResult.stdout,
+            stderr: failureResult.stderr,
+          });
+          callback(error as Error & { code: number; stdout: string; stderr: string });
+        } else {
+          callback(null, matched.result);
+        }
+      };
+      if (delay > 0) {
+        setTimeout(fire, delay);
+      } else {
+        fire();
+      }
       return;
     }
 
@@ -478,6 +527,9 @@ describe('developer endpoints', () => {
     // Some checks write real JSON-reporter fixtures under the repo's own .dev-status-tmp
     // (mirroring what the real npm scripts would produce) — clean those up between tests.
     rmSync(join(process.cwd(), '.dev-status-tmp'), { recursive: true, force: true });
+    globalExecFileDelayMs = 0;
+    e2eExecFileDelayMs = 0;
+    unitTestShouldFail = false;
   });
 
   it('returns health status', async () => {
@@ -667,7 +719,12 @@ describe('developer endpoints', () => {
     });
 
     const unitCheck = body.checks.find((check) => check.name === 'Unit tests');
-    expect(unitCheck?.testItems).toEqual([]);
+    // developerStatusService.ts intentionally reports every test item, not just failures, so the
+    // dashboard can render a full per-test pass/fail listing -- this fixture's one passing item
+    // included.
+    expect(unitCheck?.testItems).toEqual([
+      expect.objectContaining({ name: 'a skipped unit test', status: 'passed' }),
+    ]);
 
     const postgresCheck = body.checks.find((check) => check.name === 'Postgres DB tests');
     expect(postgresCheck?.dbTestItems).toEqual([
@@ -779,6 +836,288 @@ describe('developer endpoints', () => {
     expect(body.checks).toHaveLength(1);
     expect(body.checks[0]?.name).toBe('Unit tests');
     expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  it('serves a stale cached snapshot and kicks off a background refresh once it ages past the TTL', async () => {
+    const cachePath = process.env.DEV_STATUS_CACHE_PATH as string;
+    const persisted = {
+      payload: {
+        generatedAt: new Date().toISOString(),
+        repositoryPath: '/app',
+        overallStatus: 'healthy',
+        failedChecks: 0,
+        passedChecks: 1,
+        totalChecks: 1,
+        totalDurationMs: 1234,
+        checks: [
+          {
+            name: 'Unit tests',
+            command: 'npm run test:unit',
+            ok: true,
+            exitCode: 0,
+            durationMs: 1234,
+            summary: 'Passed: 10, Failed: 0',
+            details: '',
+          },
+        ],
+        history: [],
+        repoHealth: {
+          overallStatus: 'healthy',
+          failedChecks: 0,
+          lastCiRun: { status: 'healthy', durationMs: 1234, at: new Date().toISOString() },
+          commitsThisWeek: 5,
+          branchFreshness: {
+            remoteRef: 'origin/stage vs origin/dev',
+            aheadCount: 0,
+            behindCount: 0,
+          },
+          openPrCount: 1,
+        },
+      },
+      // Older than the default 10-minute cache TTL (DEV_STATUS_CACHE_TTL_MS), so getStatus treats
+      // this as stale rather than fresh and serves it while refreshing in the background instead
+      // of blocking the response on a full re-run.
+      cachedAt: Date.now() - 700_000,
+      history: [],
+    };
+    writeFileSync(cachePath, JSON.stringify(persisted), 'utf8');
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    const response = await authedApp(app).get('/api/developer/status').expect(200);
+    const body = response.body as DeveloperStatusResponseBody;
+
+    expect(body.cache).toMatchObject({
+      fromCache: true,
+      stale: true,
+      refreshInProgress: true,
+    });
+    expect(body.checks).toHaveLength(1);
+    expect(body.checks[0]?.name).toBe('Unit tests');
+
+    // Wait for the background refresh triggered above to actually land in the cache, then read
+    // it back. The persisted fixture never had a Coverage/Security/E2E check to defer from, so
+    // resolveDeferredHeavyChecks returns null and this light refresh runs everything except E2E
+    // itself (which only starts on a heavy/force refresh) -- exercising the "E2E not run yet"
+    // placeholder rather than the "running" or completed states the other tests cover.
+    await vi.waitFor(
+      () => {
+        const invocations = mockExecFile.mock.calls.filter(([command, args]) =>
+          [command as string, ...(args as string[])].join(' ').includes('run coverage'),
+        );
+        expect(invocations).toHaveLength(1);
+      },
+      { timeout: 2000 },
+    );
+
+    const refreshedResponse = await authedApp(app).get('/api/developer/status').expect(200);
+    const refreshedBody = refreshedResponse.body as DeveloperStatusResponseBody;
+
+    expect(refreshedBody.cache).toMatchObject({ fromCache: true, stale: false });
+    const e2eCheck = refreshedBody.checks.find((check) => check.name === 'E2E tests');
+    expect(e2eCheck?.ok).toBe(true);
+    expect(e2eCheck?.running).not.toBe(true);
+    expect(e2eCheck?.e2eSpecs).toEqual([]);
+  });
+
+  it('deduplicates concurrent force-refresh requests instead of running checks twice', async () => {
+    // The mocked checks otherwise resolve near-instantly, so the first request would complete
+    // (and clear developerStatusInFlight) before a second request could ever be fired -- slow
+    // every check down enough that both requests are reliably in flight together.
+    globalExecFileDelayMs = 30;
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    // supertest/superagent requests are lazy until `.then()`/`.end()` is called, so wrapping in
+    // `Promise.resolve()` is what actually sends this one -- otherwise it would just sit
+    // unsent while `vi.waitFor` below spins.
+    const firstRequest = Promise.resolve(authedApp(app).get('/api/developer/status?force=1'));
+    // The first request sets `developerStatusInFlight` synchronously, before it issues its first
+    // execFile call -- so waiting for that first call guarantees the in-flight marker is already
+    // set before the second request is fired.
+    await vi.waitFor(() => expect(mockExecFile).toHaveBeenCalled());
+
+    const [first, second] = await Promise.all([
+      firstRequest,
+      authedApp(app).get('/api/developer/status?force=1'),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+
+    const unitTestInvocations = mockExecFile.mock.calls.filter(([command, args]) =>
+      [command as string, ...(args as string[])].join(' ').includes('run test:unit'),
+    );
+    expect(unitTestInvocations).toHaveLength(1);
+
+    expect((first.body as DeveloperStatusResponseBody).overallStatus).toBe('healthy');
+    expect((second.body as DeveloperStatusResponseBody).overallStatus).toBe('healthy');
+  });
+
+  it('reports E2E as running in the background while its detached run is still in flight', async () => {
+    // Keeps the E2E mock unresolved well past the point the rest of the force-refresh request
+    // finishes, so the response is assembled while e2eBackgroundRun is still non-null.
+    e2eExecFileDelayMs = 500;
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    const response = await authedApp(app).get('/api/developer/status?force=1').expect(200);
+    const body = response.body as DeveloperStatusResponseBody;
+
+    const e2eCheck = body.checks.find((check) => check.name === 'E2E tests');
+    expect(e2eCheck).toMatchObject({
+      testType: 'e2e',
+      ok: true,
+      running: true,
+    });
+    expect(e2eCheck?.e2eSpecs).toEqual([]);
+
+    // Poll until the detached run actually finishes so the delayed execFile call (and its
+    // setTimeout) doesn't leak into the next test.
+    await vi.waitFor(
+      () => {
+        const invocations = mockExecFile.mock.calls.filter(([command, args]) =>
+          [command as string, ...(args as string[])].join(' ').includes('run test:e2e'),
+        );
+        expect(invocations).toHaveLength(1);
+      },
+      { timeout: 2000 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, e2eExecFileDelayMs + 50));
+  });
+
+  it('upgrades to a full heavy run instead of reusing a lighter in-flight background refresh', async () => {
+    // Slow enough that the light background refresh triggered by the stale-cache read below is
+    // still running when the force-refresh request arrives immediately after it.
+    globalExecFileDelayMs = 40;
+
+    const cachePath = process.env.DEV_STATUS_CACHE_PATH as string;
+    const persisted = {
+      payload: {
+        generatedAt: new Date().toISOString(),
+        repositoryPath: '/app',
+        overallStatus: 'healthy',
+        failedChecks: 0,
+        passedChecks: 1,
+        totalChecks: 1,
+        totalDurationMs: 1234,
+        checks: [
+          {
+            name: 'Unit tests',
+            command: 'npm run test:unit',
+            ok: true,
+            exitCode: 0,
+            durationMs: 1234,
+            summary: 'Passed: 10, Failed: 0',
+            details: '',
+          },
+          // resolveDeferredHeavyChecks only defers Coverage/Security/E2E when the cached payload
+          // already has all three -- without them a "light" background refresh falls back to
+          // running everything anyway, defeating the point of this test.
+          {
+            name: 'Coverage',
+            command: 'npm run coverage',
+            ok: true,
+            exitCode: 0,
+            durationMs: 1234,
+            summary: 'Coverage S/B/F/L: S 90% | B 90% | F 90% | L 90%',
+            details: '',
+          },
+          {
+            name: 'Security vulnerabilities',
+            command: 'npm run security:scan:components --silent',
+            ok: true,
+            exitCode: 0,
+            durationMs: 1234,
+            summary: 'Vulnerabilities across 4 components: total 0',
+            details: '',
+          },
+          {
+            name: 'E2E tests',
+            command: 'npm run test:e2e -- --reporter=list,json',
+            ok: true,
+            exitCode: 0,
+            durationMs: 1234,
+            summary: 'Passed: 1, Failed: 0',
+            details: '',
+          },
+        ],
+        history: [],
+        repoHealth: {
+          overallStatus: 'healthy',
+          failedChecks: 0,
+          lastCiRun: { status: 'healthy', durationMs: 1234, at: new Date().toISOString() },
+          commitsThisWeek: 5,
+          branchFreshness: {
+            remoteRef: 'origin/stage vs origin/dev',
+            aheadCount: 0,
+            behindCount: 0,
+          },
+          openPrCount: 1,
+        },
+      },
+      cachedAt: Date.now() - 700_000,
+      history: [],
+    };
+    writeFileSync(cachePath, JSON.stringify(persisted), 'utf8');
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    // Reads the stale cache and fires a background (non-heavy) refresh without waiting for it.
+    const staleResponse = await authedApp(app).get('/api/developer/status').expect(200);
+    expect((staleResponse.body as DeveloperStatusResponseBody).cache).toMatchObject({
+      fromCache: true,
+      stale: true,
+      refreshInProgress: true,
+    });
+
+    // Arrives while that background refresh is still in flight (includeHeavyChecks: false), so
+    // runRefresh must await it and then run its own heavy refresh rather than reusing its result.
+    const forceResponse = await authedApp(app).get('/api/developer/status?force=1').expect(200);
+    expect(forceResponse.status).toBe(200);
+
+    const coverageInvocations = mockExecFile.mock.calls.filter(([command, args]) =>
+      [command as string, ...(args as string[])].join(' ').includes('run coverage'),
+    );
+    // Coverage is deferred on a light refresh and only ever run as part of a heavy one -- exactly
+    // one invocation proves the force request performed its own full run rather than short-
+    // circuiting to the lighter in-flight refresh's (coverage-less) result.
+    expect(coverageInvocations).toHaveLength(1);
+
+    const unitTestInvocations = mockExecFile.mock.calls.filter(([command, args]) =>
+      [command as string, ...(args as string[])].join(' ').includes('run test:unit'),
+    );
+    // Once for the light background refresh, once more for the force refresh's own heavy run.
+    expect(unitTestInvocations).toHaveLength(2);
+  });
+
+  it('reports a failed check as attention-needed instead of masking it as healthy', async () => {
+    // Every other test in this file mocks fully-successful commands, so runDeveloperCheck's
+    // failure branch (a non-zero exit) and the overallStatus/failedChecks rollup it feeds are
+    // otherwise never exercised.
+    unitTestShouldFail = true;
+
+    const createApp = await importCreateApp();
+    const app = createApp();
+
+    const response = await authedApp(app).get('/api/developer/status?force=1').expect(200);
+    const body = response.body as DeveloperStatusResponseBody;
+
+    expect(body.overallStatus).toBe('attention-needed');
+
+    const unitCheck = body.checks.find((check) => check.name === 'Unit tests');
+    expect(unitCheck?.ok).toBe(false);
+    expect(unitCheck?.testItems).toEqual(
+      expect.arrayContaining([expect.objectContaining({ status: 'failed' })]),
+    );
+
+    expect(body.history[0]).toMatchObject({
+      failingAreas: expect.arrayContaining([expect.any(String)]),
+    });
   });
 
   it('returns runtime diagnostics and recent developer activity', async () => {
