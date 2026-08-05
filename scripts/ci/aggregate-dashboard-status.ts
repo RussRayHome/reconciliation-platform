@@ -35,6 +35,16 @@ import type {
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(process.cwd());
 
+const describeError = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'unknown error';
+  }
+};
+
 const args = process.argv.slice(2);
 const readFlag = (name: string, fallback: string): string => {
   const index = args.indexOf(`--${name}`);
@@ -104,7 +114,10 @@ const collectRepoHealthKpis = async (
       timeout: 8000,
     })
       .then((r) => r.stdout?.toString().trim() ?? null)
-      .catch(() => null),
+      .catch((error: unknown) => {
+        console.log(`[aggregate-dashboard-status] gh pr list (openPrCount) failed: ${describeError(error)}`);
+        return null;
+      }),
   ]);
 
   const commitsThisWeek = commitsThisWeekRaw ? Number.parseInt(commitsThisWeekRaw, 10) : null;
@@ -214,7 +227,10 @@ const collectBranchesPanel = async (): Promise<BranchStatus[]> => {
           headRefName: string;
         }>,
     )
-    .catch(() => []);
+    .catch((error: unknown) => {
+      console.log(`[aggregate-dashboard-status] gh pr list (branches panel) failed: ${describeError(error)}`);
+      return [];
+    });
   const prByBranch = new Map(openPrs.map((pr) => [pr.headRefName, pr]));
 
   const branches = await Promise.all(

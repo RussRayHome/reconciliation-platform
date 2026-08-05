@@ -280,8 +280,15 @@ jobs:
     # fails with "Write access to repository not granted" (403) on `git push`, regardless of
     # whether the commit itself succeeds. Scoped to just this job, not the whole workflow: the
     # other 7 jobs never touch the repo's contents and don't need write access.
+    #
+    # Listing ANY permission here switches this job from "inherit repo default" to an allowlist --
+    # everything not named drops to `none`, not the repo default. That silently broke `gh pr list`
+    # (used for openPrCount and the branches panel's PR lookup) the moment `contents: write` was
+    # added: pull-requests had no explicit grant, so it dropped to none right along with it. Both
+    # calls were failing silently (empty .catch()), which is why this went unnoticed until now.
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
