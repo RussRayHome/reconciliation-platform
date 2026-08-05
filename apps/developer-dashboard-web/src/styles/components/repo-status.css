@@ -1,0 +1,509 @@
+/* Repository status screen (/repo). Colors reuse the app's existing design tokens rather than the
+   mockup's hardcoded hex values -- they happen to already match (--accent/--negative/--severity-high
+   are the mockup's emerald/crimson/amber, --bank is its blue), which also gets light-theme support
+   the static mockup never had to handle. */
+@layer components {
+  .repo-status {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 1.375rem 1.75rem 2.5rem;
+    display: grid;
+    gap: 1.25rem;
+    align-content: start;
+  }
+
+  .repo-status__back {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .repo-status__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .repo-status__title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+  }
+
+  .repo-status__title-row h1 {
+    margin: 0;
+    font-size: 1.3125rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+  }
+
+  .repo-status__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.4375rem;
+  }
+
+  .repo-status__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .repo-status__section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .repo-status__kicker {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .repo-status__hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  /* -- Promotion track -- */
+  .repo-status__track {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.875rem;
+  }
+
+  .repo-status__env {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem 1.125rem;
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+    border: 1px solid var(--line);
+  }
+
+  .repo-status__env--current {
+    border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+
+  .repo-status__env-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.625rem;
+  }
+
+  .repo-status__env-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .repo-status__state {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    font-size: 0.6875rem;
+  }
+
+  .repo-status__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex: none;
+  }
+
+  .repo-status__drift {
+    font-size: 1.625rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repo-status__drift-note {
+    font-size: 0.71875rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+    display: block;
+  }
+
+  .repo-status__rule {
+    height: 1px;
+    background: var(--line);
+  }
+
+  .repo-status__pairs {
+    display: grid;
+    gap: 0.3125rem;
+    font-size: 0.71875rem;
+  }
+
+  .repo-status__pairs > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .repo-status__pairs > div > span:first-child {
+    color: var(--text-secondary);
+  }
+
+  /* -- Changes in flight -- */
+  .repo-status__chips {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+
+  .repo-status__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
+    min-height: 1.875rem;
+    padding: 0 0.6875rem;
+    border-radius: 7px;
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .repo-status__chip:hover {
+    border-color: var(--line-strong);
+    color: var(--text-primary);
+  }
+
+  .repo-status__chip[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    color: var(--accent);
+  }
+
+  .repo-status__chip-count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6875rem;
+    color: inherit;
+    opacity: 0.75;
+  }
+
+  .repo-status__table-wrap {
+    background: var(--bg-surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+    overflow-x: auto;
+  }
+
+  .repo-status__table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    table-layout: fixed;
+  }
+
+  .repo-status__table th {
+    text-align: left;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid var(--line-strong);
+    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  }
+
+  .repo-status__table th.num {
+    text-align: right;
+  }
+
+  .repo-status__table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  .repo-status__table td.num {
+    text-align: right;
+    font-family: 'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repo-status__branch-cell {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .repo-status__branch-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .repo-status__branch-name,
+  .repo-status__branch-subject {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .repo-status__branch-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+  }
+
+  .repo-status__branch-subject {
+    font-size: 0.71875rem;
+    color: var(--text-secondary);
+    padding-left: 0.875rem;
+  }
+
+  .repo-status__divergence {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repo-status__checks {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+  }
+
+  .repo-status__action {
+    display: grid;
+    gap: 0.1875rem;
+  }
+
+  .repo-status__action-sub {
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+  }
+
+  .repo-status__legend {
+    display: flex;
+    align-items: center;
+    gap: 1.125rem;
+    flex-wrap: wrap;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+  }
+
+  .repo-status__legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  /* -- Bottom: activity + decisions -- */
+  .repo-status__bottom {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr;
+    gap: 1rem;
+  }
+
+  .repo-status__panel {
+    display: grid;
+    gap: 0.75rem;
+    align-content: start;
+    padding: 1.125rem 1.25rem;
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+    border: 1px solid var(--line);
+  }
+
+  .repo-status__panel-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .repo-status__bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 5px;
+    height: 68px;
+  }
+
+  .repo-status__bar {
+    flex: 1;
+    display: grid;
+    gap: 0.375rem;
+    justify-items: center;
+    align-content: end;
+  }
+
+  .repo-status__bar-fill {
+    width: 100%;
+    border-radius: 3px 3px 0 0;
+  }
+
+  .repo-status__bar-day {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.5625rem;
+    color: var(--text-secondary);
+  }
+
+  .repo-status__commit {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .repo-status__commit-sha {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.71875rem;
+    color: var(--bank);
+    flex: none;
+    padding-top: 1px;
+  }
+
+  .repo-status__commit-text {
+    display: grid;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+
+  .repo-status__commit-subject {
+    font-size: 0.78125rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .repo-status__commit-meta {
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+  }
+
+  .repo-status__decision {
+    display: grid;
+    gap: 0.3125rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: 9px;
+    background: var(--bg-base);
+    border: 1px solid var(--line);
+  }
+
+  .repo-status__decision-kind {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.59375rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  .repo-status__decision-title {
+    font-size: 0.78125rem;
+    color: var(--text-primary);
+    line-height: 1.4;
+  }
+
+  .repo-status__decision-detail {
+    font-size: 0.71875rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+
+  /* -- Tone modifiers: shared across dots, state text, drift figures, decision cards -- */
+  .repo-status__dot--pass,
+  .repo-status__state--pass,
+  .repo-status__drift--pass {
+    color: var(--accent);
+  }
+  .repo-status__dot--pass {
+    background: var(--accent);
+  }
+
+  .repo-status__dot--warn,
+  .repo-status__state--warn,
+  .repo-status__drift--warn {
+    color: var(--severity-high);
+  }
+  .repo-status__dot--warn {
+    background: var(--severity-high);
+  }
+
+  .repo-status__dot--fail,
+  .repo-status__state--fail,
+  .repo-status__drift--fail {
+    color: var(--negative);
+  }
+  .repo-status__dot--fail {
+    background: var(--negative);
+  }
+
+  .repo-status__dot--info,
+  .repo-status__state--info {
+    color: var(--bank);
+  }
+  .repo-status__dot--info {
+    background: var(--bank);
+  }
+
+  .repo-status__dot--neutral,
+  .repo-status__state--neutral {
+    color: var(--text-secondary);
+  }
+  .repo-status__dot--neutral {
+    background: var(--text-secondary);
+  }
+
+  .repo-status__decision--amber {
+    border-color: color-mix(in srgb, var(--severity-high) 30%, transparent);
+  }
+  .repo-status__decision--amber .repo-status__decision-kind {
+    color: var(--severity-high);
+  }
+
+  .repo-status__decision--crimson {
+    border-color: color-mix(in srgb, var(--negative) 30%, transparent);
+  }
+  .repo-status__decision--crimson .repo-status__decision-kind {
+    color: var(--negative);
+  }
+
+  .repo-status__decision--blue {
+    border-color: color-mix(in srgb, var(--bank) 28%, transparent);
+  }
+  .repo-status__decision--blue .repo-status__decision-kind {
+    color: var(--bank);
+  }
+
+  @media (max-width: 960px) {
+    .repo-status__track {
+      grid-template-columns: 1fr;
+    }
+
+    .repo-status__bottom {
+      grid-template-columns: 1fr;
+    }
+  }
+}

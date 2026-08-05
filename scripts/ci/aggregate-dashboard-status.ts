@@ -277,6 +277,420 @@ const collectBranchesPanel = async (): Promise<BranchStatus[]> => {
   return outstanding.slice(0, BRANCH_PANEL_CAP);
 };
 
+// --- Repository Status screen (/repo) ---
+// Per the design handoff (2026-08-05): repo/branch health is a genuinely different question from
+// "did the quality-gate checks pass," and computing a verdict for it independently in the UI is
+// exactly how the old RepoHealthBand ended up contradicting the checks-suite verdict (header pill
+// said Failing, the Overall tile said Healthy -- two independent computations of the same idea).
+// This verdict is about promotion/branch hygiene, computed once, here, server-side.
+
+const STALE_BRANCH_DAYS = 14;
+const STAGE_ATTENTION_THRESHOLD = 10;
+
+type RepoStatusEnvironment = {
+  name: 'dev' | 'stage' | 'prod';
+  branch: string;
+  isCurrent: boolean;
+  sha: string | null;
+  deployedAt: string | null;
+  behindCount: number | null;
+  driftLabel: string;
+  driftNote: string;
+  ci: { status: 'pass' | 'fail' | 'not-run'; durationMs: number | null } | null;
+};
+
+const resolveRepoSlug = async (): Promise<string> => {
+  const envSlug = process.env.GITHUB_REPOSITORY?.trim();
+  if (envSlug) return envSlug;
+
+  const remote = await readGitCommandOutput(['remote', 'get-url', 'origin']);
+  if (!remote) return 'unknown/unknown';
+
+  const match = /[:/]([^/]+\/[^/]+?)(\.git)?$/u.exec(remote);
+  return match?.[1] ?? 'unknown/unknown';
+};
+
+/** dev always shows its real CI result (this very pipeline run). stage/prod don't get faked data --
+ *  dashboard-status.yml only runs against dev today (see the workflow's own TARGET_BRANCH comment),
+ *  so their `ci` is honestly null until that's extended, per the design doc's "never hand-authored"
+ *  and "degrade per section" rules. */
+const collectEnvironments = async (
+  devCiOk: boolean,
+  devCiDurationMs: number,
+): Promise<RepoStatusEnvironment[]> => {
+  const defs: Array<{ name: RepoStatusEnvironment['name']; branch: string }> = [
+    { name: 'dev', branch: 'dev' },
+    { name: 'stage', branch: 'stage' },
+    { name: 'prod', branch: 'main' },
+  ];
+
+  return Promise.all(
+    defs.map(async ({ name, branch }): Promise<RepoStatusEnvironment> => {
+      const isCurrent = name === 'dev';
+      const [sha, deployedAt, behindRaw] = await Promise.all([
+        readGitCommandOutput(['rev-parse', '--short', `origin/${branch}`]),
+        readGitCommandOutput(['log', '-1', '--format=%cI', `origin/${branch}`]),
+        isCurrent
+          ? Promise.resolve('0')
+          : readGitCommandOutput(['rev-list', '--count', `origin/${branch}..origin/dev`]),
+      ]);
+      const behindCount = behindRaw !== null ? Number.parseInt(behindRaw, 10) : null;
+      const behindKnown = behindCount !== null && Number.isFinite(behindCount);
+
+      const driftLabel = isCurrent || (behindKnown && behindCount === 0) ? 'In sync' : behindKnown ? `${behindCount} behind` : 'Unknown';
+      const driftNote = isCurrent
+        ? 'Integration target'
+        : behindKnown && behindCount > 0
+          ? `${behindCount} commit${behindCount === 1 ? '' : 's'} on dev not yet promoted`
+          : behindKnown
+            ? 'Up to date with dev'
+            : 'Unable to compare with dev';
+
+      return {
+        name,
+        branch,
+        isCurrent,
+        sha,
+        deployedAt,
+        behindCount,
+        driftLabel,
+        driftNote,
+        ci: isCurrent ? { status: devCiOk ? 'pass' : 'fail', durationMs: devCiDurationMs } : null,
+      };
+    }),
+  );
+};
+
+type RepoStatusBranch = {
+  name: string;
+  subject: string;
+  author: string;
+  isBot: boolean;
+  aheadOfDev: number;
+  behindDev: number;
+  checksStatus: 'passing' | 'failing' | 'not-run';
+  failingChecks: string[];
+  state: 'review' | 'ready' | 'blocked' | 'stale';
+  lastCommitAt: string | null;
+  nextAction: string;
+  actionDetail: string;
+  pullRequest: { number: number; title: string; url: string } | null;
+};
+
+type OpenPrDetail = {
+  number: number;
+  title: string;
+  url: string;
+  headRefName: string;
+  author?: { login?: string; is_bot?: boolean };
+  reviewDecision?: string;
+  reviewRequests?: Array<{ login?: string; name?: string }>;
+  statusCheckRollup?: Array<{ name?: string; conclusion?: string }>;
+};
+
+const deriveBranchState = (params: {
+  hasPr: boolean;
+  checksStatus: RepoStatusBranch['checksStatus'];
+  failingChecks: string[];
+  reviewDecision: string;
+  reviewRequests: string[];
+  behindDev: number;
+  lastCommitAt: string | null;
+  now: number;
+}): Pick<RepoStatusBranch, 'state' | 'nextAction' | 'actionDetail'> => {
+  const ageDays = params.lastCommitAt
+    ? (params.now - new Date(params.lastCommitAt).valueOf()) / 86_400_000
+    : Number.POSITIVE_INFINITY;
+
+  if (!params.hasPr) {
+    return ageDays >= STALE_BRANCH_DAYS
+      ? { state: 'stale', nextAction: 'Rebase or close', actionDetail: 'no pull request opened' }
+      : { state: 'stale', nextAction: 'Open a pull request', actionDetail: 'no pull request opened yet' };
+  }
+
+  if (params.checksStatus === 'failing') {
+    return {
+      state: 'blocked',
+      nextAction: 'Fix failing checks',
+      actionDetail: params.failingChecks.join(' · ') || 'checks failing',
+    };
+  }
+
+  if (params.reviewDecision === 'APPROVED') {
+    return {
+      state: 'ready',
+      nextAction: 'Ready to merge',
+      actionDetail: params.behindDev > 0 ? 'approved · rebase first' : 'approved',
+    };
+  }
+
+  if (ageDays >= STALE_BRANCH_DAYS) {
+    return {
+      state: 'stale',
+      nextAction: 'Decide: keep or drop',
+      actionDetail: `no activity in ${Math.floor(ageDays)} days`,
+    };
+  }
+
+  return {
+    state: 'review',
+    nextAction: 'Awaiting review',
+    actionDetail:
+      params.reviewRequests.length > 0
+        ? `requested from ${params.reviewRequests.join(', ')}`
+        : 'no reviewer requested yet',
+  };
+};
+
+const BRANCH_STATE_RANK: Record<RepoStatusBranch['state'], number> = {
+  blocked: 0,
+  review: 1,
+  ready: 2,
+  stale: 3,
+};
+
+/** Every remote branch with commits dev doesn't have yet, with state/nextAction derived server-side
+ *  (per the design doc: this is policy, and belongs in the payload, not the component) from a
+ *  single `gh pr list` call carrying review decision + check rollup -- no N+1 `gh pr view` calls. */
+const collectRepoStatusBranches = async (): Promise<RepoStatusBranch[]> => {
+  const branchListRaw = await readGitCommandOutput([
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/remotes/origin',
+  ]);
+  const branchNames = (branchListRaw ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('origin/'))
+    .map((line) => line.slice('origin/'.length))
+    .filter((name) => name.length > 0 && !NON_FEATURE_BRANCHES.has(name));
+
+  const openPrs = await execFileAsync('gh', [
+    'pr',
+    'list',
+    '--state',
+    'open',
+    '--json',
+    'number,title,url,headRefName,author,reviewDecision,statusCheckRollup,reviewRequests',
+  ], { cwd: repoRoot, timeout: 8000 })
+    .then((result) => JSON.parse(result.stdout?.toString() ?? '[]') as OpenPrDetail[])
+    .catch((error: unknown) => {
+      console.log(`[aggregate-dashboard-status] gh pr list (repo status branches) failed: ${describeError(error)}`);
+      return [];
+    });
+  const prByBranch = new Map(openPrs.map((pr) => [pr.headRefName, pr]));
+
+  const now = Date.now();
+
+  const branches = await Promise.all(
+    branchNames.map(async (name): Promise<RepoStatusBranch | null> => {
+      const counts = await readGitCommandOutput([
+        'rev-list',
+        '--left-right',
+        '--count',
+        `origin/dev...origin/${name}`,
+      ]);
+      const [behindRaw, aheadRaw] = (counts ?? '').split(/\s+/u);
+      const aheadOfDev = Number.parseInt(aheadRaw ?? '', 10);
+      const behindDev = Number.parseInt(behindRaw ?? '', 10);
+
+      if (!Number.isFinite(aheadOfDev) || aheadOfDev === 0) {
+        return null;
+      }
+
+      const headInfo = await readGitCommandOutput(['log', '-1', '--format=%an%x1f%cI%x1f%s', `origin/${name}`]);
+      const [author, lastCommitAt, ...subjectParts] = (headInfo ?? '').split('\x1f');
+
+      const pr = prByBranch.get(name);
+      const isBot = pr ? Boolean(pr.author?.is_bot) : /(^|[/-])bot([/-]|$)|dependabot/i.test(name);
+
+      const checkRuns = pr?.statusCheckRollup ?? [];
+      const failingChecks = checkRuns
+        .filter((c) => c.conclusion === 'FAILURE')
+        .map((c) => c.name)
+        .filter((n): n is string => Boolean(n));
+      const checksStatus: RepoStatusBranch['checksStatus'] =
+        checkRuns.length === 0 ? 'not-run' : failingChecks.length > 0 ? 'failing' : 'passing';
+
+      const derived = deriveBranchState({
+        hasPr: Boolean(pr),
+        checksStatus,
+        failingChecks,
+        reviewDecision: pr?.reviewDecision ?? '',
+        reviewRequests: (pr?.reviewRequests ?? []).map((r) => r.login ?? r.name ?? '').filter(Boolean),
+        behindDev: Number.isFinite(behindDev) ? behindDev : 0,
+        lastCommitAt: lastCommitAt || null,
+        now,
+      });
+
+      return {
+        name,
+        subject: subjectParts.join('\x1f') || '(no subject)',
+        author: author || 'unknown',
+        isBot,
+        aheadOfDev,
+        behindDev: Number.isFinite(behindDev) ? behindDev : 0,
+        checksStatus,
+        failingChecks,
+        lastCommitAt: lastCommitAt || null,
+        pullRequest: pr ? { number: pr.number, title: pr.title, url: pr.url } : null,
+        ...derived,
+      };
+    }),
+  );
+
+  return branches
+    .filter((branch): branch is RepoStatusBranch => branch !== null)
+    .sort((a, b) => BRANCH_STATE_RANK[a.state] - BRANCH_STATE_RANK[b.state]);
+};
+
+type RepoStatusCommit = { sha: string; author: string; committedAt: string; subject: string };
+
+const collectRecentDevCommits = async (limit: number): Promise<RepoStatusCommit[]> => {
+  const raw = await readGitCommandOutput(['log', `-${limit}`, '--format=%h%x1f%an%x1f%cI%x1f%s', 'origin/dev']);
+  if (!raw) return [];
+
+  return raw.split('\n').map((line) => {
+    const [sha, author, committedAt, ...subjectParts] = line.split('\x1f');
+    return {
+      sha: sha ?? '',
+      author: author ?? '',
+      committedAt: committedAt ?? '',
+      subject: subjectParts.join('\x1f'),
+    };
+  });
+};
+
+const COMMIT_ACTIVITY_WINDOW_DAYS = 14;
+
+/** One bucket per UTC day, oldest first, zero-filled -- the design doc calls out that gaps
+ *  (weekends, stalls) are themselves signal, so a missing day must render as a visible 0, not
+ *  disappear from the array. */
+const collectCommitActivity = async (): Promise<Array<{ date: string; count: number }>> => {
+  const raw = await readGitCommandOutput([
+    'log',
+    `--since=${COMMIT_ACTIVITY_WINDOW_DAYS} days ago`,
+    '--format=%cI',
+    'origin/dev',
+  ]);
+  const counts = new Map<string, number>();
+  for (const line of (raw ?? '').split('\n')) {
+    const date = line.slice(0, 10);
+    if (!date) continue;
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+  }
+
+  const days: Array<{ date: string; count: number }> = [];
+  const today = new Date();
+  for (let i = COMMIT_ACTIVITY_WINDOW_DAYS - 1; i >= 0; i -= 1) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    days.push({ date: key, count: counts.get(key) ?? 0 });
+  }
+
+  return days;
+};
+
+const formatDaysAgo = (iso: string | null): string => {
+  if (!iso) return 'at an unknown time';
+  const days = Math.floor((Date.now() - new Date(iso).valueOf()) / 86_400_000);
+  if (days <= 0) return 'today';
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+};
+
+type RepoStatusDecision = { kind: string; tone: 'amber' | 'crimson' | 'blue'; title: string; detail: string };
+
+const DECISION_CAP = 4;
+
+/** Every card here is generated from the same branches/environments data the rest of the screen
+ *  renders -- never hand-authored, per the design doc. */
+const buildDecisions = async (
+  branches: RepoStatusBranch[],
+  stageEnv: RepoStatusEnvironment | undefined,
+): Promise<RepoStatusDecision[]> => {
+  const decisions: RepoStatusDecision[] = [];
+
+  if (stageEnv && (stageEnv.behindCount ?? 0) > STAGE_ATTENTION_THRESHOLD) {
+    const mergeBase = await readGitCommandOutput(['merge-base', 'origin/dev', 'origin/stage']);
+    const mergeBaseDate = mergeBase ? await readGitCommandOutput(['log', '-1', '--format=%cI', mergeBase]) : null;
+    const days = mergeBaseDate
+      ? Math.max(0, Math.floor((Date.now() - new Date(mergeBaseDate).valueOf()) / 86_400_000))
+      : null;
+
+    decisions.push({
+      kind: 'Promotion overdue',
+      tone: 'amber',
+      title: `stage has been ${stageEnv.behindCount} commits behind dev${days ? ` for ${days} day${days === 1 ? '' : 's'}` : ''}`,
+      detail: 'Work is merged to dev but untested on stage. Promote, or say why not.',
+    });
+  }
+
+  for (const branch of branches.filter((b) => b.state === 'blocked')) {
+    decisions.push({
+      kind: 'Blocked branch',
+      tone: 'crimson',
+      title: `${branch.name} has ${branch.failingChecks.length} failing check${branch.failingChecks.length === 1 ? '' : 's'}`,
+      detail: `${branch.failingChecks.join(' and ') || 'Checks'} fail${branch.failingChecks.length === 1 ? 's' : ''}. This can't merge until they pass.`,
+    });
+  }
+
+  for (const branch of branches.filter((b) => b.state === 'stale' && !b.pullRequest)) {
+    decisions.push({
+      kind: branch.isBot ? 'Stale bot branch' : 'Stale branch',
+      tone: 'blue',
+      title: `${branch.name} is ${branch.behindDev} behind with no PR`,
+      detail: `Last commit ${formatDaysAgo(branch.lastCommitAt)}. Rebase and open a PR, or close it.`,
+    });
+  }
+
+  return decisions.slice(0, DECISION_CAP);
+};
+
+type RepoStatusPayload = {
+  verdict: 'healthy' | 'attention' | 'blocked';
+  repo: { slug: string; defaultBranch: string; refreshedAt: string };
+  environments: RepoStatusEnvironment[];
+  branches: RepoStatusBranch[];
+  commits: RepoStatusCommit[];
+  commitActivity: Array<{ date: string; count: number }>;
+  decisions: RepoStatusDecision[];
+};
+
+/** Per the design doc's verdict table: Blocked if any open branch has failing checks or dev's own
+ *  CI run failed; Attention if no failures but a stale branch exists or stage is more than
+ *  STAGE_ATTENTION_THRESHOLD commits behind dev; Healthy otherwise. Computed exactly once, here --
+ *  the component must never re-derive it. */
+const collectRepoStatus = async (devCiOk: boolean, devCiDurationMs: number): Promise<RepoStatusPayload> => {
+  const [environments, branches, commits, commitActivity, repoSlug] = await Promise.all([
+    collectEnvironments(devCiOk, devCiDurationMs),
+    collectRepoStatusBranches(),
+    collectRecentDevCommits(4),
+    collectCommitActivity(),
+    resolveRepoSlug(),
+  ]);
+
+  const anyBlocked = branches.some((b) => b.state === 'blocked');
+  const anyStale = branches.some((b) => b.state === 'stale');
+  const stageEnv = environments.find((e) => e.name === 'stage');
+  const stageOverdue = (stageEnv?.behindCount ?? 0) > STAGE_ATTENTION_THRESHOLD;
+
+  const verdict: RepoStatusPayload['verdict'] =
+    anyBlocked || !devCiOk ? 'blocked' : anyStale || stageOverdue ? 'attention' : 'healthy';
+
+  const decisions = await buildDecisions(branches, stageEnv);
+
+  return {
+    verdict,
+    repo: { slug: repoSlug, defaultBranch: 'dev', refreshedAt: new Date().toISOString() },
+    environments,
+    branches,
+    commits,
+    commitActivity,
+    decisions,
+  };
+};
+
 const run = async (): Promise<void> => {
   const generatedAt = new Date().toISOString();
   console.log(`[aggregate-dashboard-status] env=${envName} artifacts=${artifactsDir}`);
@@ -477,11 +891,12 @@ const run = async (): Promise<void> => {
     console.log(`[aggregate-dashboard-status] ${check.name}: ok=${check.ok} (${check.durationMs}ms)`);
   }
 
-  const [repoHealth, promotionReadiness, lastDevCommit, branches] = await Promise.all([
+  const [repoHealth, promotionReadiness, lastDevCommit, branches, repoStatus] = await Promise.all([
     collectRepoHealthKpis(overallStatus, failedChecks, totalDurationMs, generatedAt),
     collectPromotionReadiness(),
     collectLastDevCommit(),
     collectBranchesPanel(),
+    collectRepoStatus(failedChecks === 0, totalDurationMs),
   ]);
 
   const testTotals = checks.reduce(
@@ -498,6 +913,7 @@ const run = async (): Promise<void> => {
     promotionReadiness: unknown;
     lastDevCommit: LastDevCommit | null;
     branches: BranchStatus[];
+    repoStatus: RepoStatusPayload;
   } = {
     generatedAt,
     repositoryPath: repoRoot,
@@ -525,6 +941,7 @@ const run = async (): Promise<void> => {
     promotionReadiness,
     lastDevCommit,
     branches,
+    repoStatus,
   };
 
   writeFileSync(outPath, JSON.stringify(payload, null, 2), 'utf8');

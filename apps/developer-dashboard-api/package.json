@@ -1,0 +1,22 @@
+{
+  "name": "@recon/developer-dashboard-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_OPTIONS=--no-deprecation tsx watch --env-file-if-exists=.env src/index.ts",
+    "dev:test": "NODE_OPTIONS=--no-deprecation tsx --env-file-if-exists=.env src/index.ts",
+    "build": "tsup --config tsup.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10"
+  }
+}

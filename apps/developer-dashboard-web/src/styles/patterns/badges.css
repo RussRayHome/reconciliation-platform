@@ -1,0 +1,25 @@
+@layer patterns {
+  .eyebrow {
+    display: inline-flex;
+    margin-bottom: 0.75rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 999px;
+    background: var(--bg-raised);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .summary-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .summary-badges span {
+    padding: 0.45rem 0.75rem;
+    border-radius: 999px;
+    background: var(--bg-raised);
+    font-size: 0.84rem;
+  }
+}

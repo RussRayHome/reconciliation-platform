@@ -1,0 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/*
+ * Copied from apps/web/src/styles (tokens.css, base.css, patterns/badges.css, patterns/tables.css,
+ * patterns/skeleton.css, components/developer.css) rather than imported across the workspace
+ * boundary -- this app has no shared runtime with the product by design. A product design-token
+ * change won't propagate here automatically; re-copy if the two should stay visually in sync.
+ */
+@import './tokens.css';
+@import './base.css';
+
+@import './patterns/badges.css';
+@import './patterns/buttons.css';
+@import './patterns/tables.css';
+@import './patterns/skeleton.css';
+
+@import './components/developer.css';
+@import './components/repo-status.css';
+
+@layer components {
+  .developer-dashboard-login {
+    display: grid;
+    place-items: center;
+    gap: 1rem;
+    min-height: 100vh;
+    text-align: center;
+    padding: 2rem;
+  }
+}
