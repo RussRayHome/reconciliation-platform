@@ -24,4 +24,7 @@ reviews/
 .dev-status-tmp/
 .dashboard-status-tmp/
 dashboard-status/
+.ci-meta/
+.ci-out/
+.ci-artifacts/
 certs/

@@ -1,65 +1,283 @@
 name: Dashboard Status
 
-# Runs the full quality-gate suite nightly and publishes one JSON result per environment to the
-# status-data branch. This is the only place these checks execute -- see issue_tracker for the
-# incident (a wedged local `tools` container silently took the whole Developer Dashboard down for
-# hours) that motivated moving execution out of any long-lived server process entirely.
+# Runs the quality-gate suite nightly and publishes one JSON result to the status-data branch.
+# This is the only place these checks execute -- see issue_tracker for the incident (a wedged
+# local `tools` container silently took the whole Developer Dashboard down for hours) that
+# motivated moving execution out of any long-lived server process entirely.
+#
+# Each check is its OWN job, running in parallel on its own runner, with its own timeout. An
+# earlier version ran all 8 checks sequentially inside one script in one job: E2E hung with zero
+# output for 35+ minutes on its first real run, and the 45-minute job timeout killed the whole
+# thing -- discarding the 7 other checks that had already succeeded. Splitting into separate jobs
+# means a hung check only costs that one check's result; `aggregate` runs with `if: always()` and
+# publishes whatever the other jobs produced regardless.
+#
+# Each job writes its outputs (meta.json + whatever report file it produces) into its own
+# .ci-out/<key>/ directory and uploads that directory AS-IS. Uploading a directory path makes its
+# *contents* the artifact root, so downloading it back into .ci-artifacts/<key>/ lands the files
+# exactly where aggregate-dashboard-status.ts expects them -- no extra flattening step needed.
 on:
   schedule:
     - cron: '0 8 * * *' # 03:00 America/New_York (04:00 during DST) -- nightly, off business hours
   workflow_dispatch: {} # manual trigger from GitHub's UI, for testing this workflow itself
 
-jobs:
-  generate-status:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    # One environment at a time while this workflow itself is still being proven out -- stage
-    # currently lags dev by a few commits, and running both concurrently just produces a
-    # predictable, noisy failure on whichever branch doesn't have this workflow's own files yet.
-    # Re-add a `strategy: matrix: branch: [dev, stage]` (and swap TARGET_BRANCH below back to
-    # `${{ env.TARGET_BRANCH }}`) once stage is caught up and dev has run cleanly a few times.
-    env:
-      TARGET_BRANCH: dev
+env:
+  TARGET_BRANCH: dev # single environment while this workflow is still being proven out -- see
+  # the note in the `checkout` step of each job. Re-add stage as a second value once dev has run
+  # cleanly a few times and stage is caught up.
 
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Check out ${{ env.TARGET_BRANCH }}
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_BRANCH }}
-          fetch-depth: 0 # full history -- commitsThisWeek/branch-compare/tag lookups need it
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: >
+          npx tsx scripts/ci/run-check.ts --name "Unit tests" --meta .ci-out/unit/meta.json --
+          npm run test:unit -- --reporter=default --reporter=json
+          --outputFile.json=.ci-out/unit/unit-results.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit
+          path: .ci-out/unit
+          if-no-files-found: warn
 
-      - name: Set up Node.js
-        run: |
-          set -euo pipefail
-          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: >
+          npx tsx scripts/ci/run-check.ts --name "Integration tests" --meta .ci-out/integration/meta.json --
+          npm run test:integration:dashboard -- --reporter=default --reporter=json
+          --outputFile.json=.ci-out/integration/integration-results.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration
+          path: .ci-out/integration
+          if-no-files-found: warn
 
-      - name: Install dependencies
-        run: npm ci
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: >
+          npx tsx scripts/ci/run-check.ts --name "Postgres DB tests" --meta .ci-out/postgres/meta.json --
+          npm run test:postgres -- --reporter=json --outputFile.json=.ci-out/postgres/postgres-results.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres
+          path: .ci-out/postgres
+          if-no-files-found: warn
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsx scripts/ci/run-check.ts --name "Static analysis (lint)" --meta .ci-out/lint/meta.json -- npm run lint
+      - name: Best-effort structured issue list
+        if: always()
+        run: npm run lint -- --format json --output-file .ci-out/lint/lint-results.json || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint
+          path: .ci-out/lint
+          if-no-files-found: warn
 
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsx scripts/ci/run-check.ts --name "Static analysis (typecheck)" --meta .ci-out/typecheck/meta.json -- npm run typecheck
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck
+          path: .ci-out/typecheck
+          if-no-files-found: warn
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsx scripts/ci/run-check.ts --name "Coverage" --meta .ci-out/coverage/meta.json -- npm run coverage
+      - if: always()
+        run: mkdir -p .ci-out/coverage && cp coverage/coverage-summary.json .ci-out/coverage/coverage-summary.json || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: .ci-out/coverage
+          if-no-files-found: warn
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
       - name: Install Trivy
         run: |
           set -euo pipefail
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-          trivy --version
-
       - name: Build container images
         run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml build
-
-      - name: Generate dashboard status
-        id: generate
-        continue-on-error: true # a failing check should still get published, not vanish
-        env:
-          COMPOSE_PROJECT_NAME: reconciliation-platform-dev
-        run: npx tsx scripts/ci/generate-dashboard-status.ts --env ${{ env.TARGET_BRANCH }} --out dashboard-status/${{ env.TARGET_BRANCH }}.json
-
-      - name: Upload status JSON as a build artifact
+      - name: Run security scan
+        # security-component-scan.mjs's structured payload comes over stdout, not a report file --
+        # `tee` both streams it live to the job log and captures it to a file for the aggregator.
+        run: |
+          set -o pipefail
+          mkdir -p .ci-out/security
+          started=$(date +%s%3N)
+          npm run security:scan:components --silent 2>&1 | tee .ci-out/security/security-output.txt
+          exit_code=${PIPESTATUS[0]}
+          ended=$(date +%s%3N)
+          printf '{"name":"Security vulnerabilities","command":"npm run security:scan:components","exitCode":%d,"ok":%s,"durationMs":%d}' \
+            "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/security/meta.json
+          exit "$exit_code"
+      - if: always()
         uses: actions/upload-artifact@v4
+        with:
+          name: security
+          path: .ci-out/security
+          if-no-files-found: warn
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: >
+          npx tsx scripts/ci/run-check.ts --name "E2E tests" --meta .ci-out/e2e/meta.json --
+          npm run test:e2e -- --reporter=list,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e
+          path: .ci-out/e2e
+          if-no-files-found: warn
+
+  aggregate:
+    needs: [unit, integration, postgres, lint, typecheck, coverage, security, e2e]
+    if: always() # publish whatever succeeded even if one or more check jobs failed or timed out
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0 # full history -- commitsThisWeek/branch-compare/tag lookups need it
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: unit
+          path: .ci-artifacts/unit
+      - uses: actions/download-artifact@v4
+        with:
+          name: integration
+          path: .ci-artifacts/integration
+      - uses: actions/download-artifact@v4
+        with:
+          name: postgres
+          path: .ci-artifacts/postgres
+      - uses: actions/download-artifact@v4
+        with:
+          name: lint
+          path: .ci-artifacts/lint
+      - uses: actions/download-artifact@v4
+        with:
+          name: typecheck
+          path: .ci-artifacts/typecheck
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: .ci-artifacts/coverage
+      - uses: actions/download-artifact@v4
+        with:
+          name: security
+          path: .ci-artifacts/security
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e
+          path: .ci-artifacts/e2e
+
+      - name: Aggregate results
+        run: npx tsx scripts/ci/aggregate-dashboard-status.ts --env ${{ env.TARGET_BRANCH }} --artifacts .ci-artifacts --out dashboard-status/${{ env.TARGET_BRANCH }}.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v4
         with:
           name: dashboard-status-${{ env.TARGET_BRANCH }}
           path: dashboard-status/${{ env.TARGET_BRANCH }}.json
@@ -72,7 +290,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ ! -f "dashboard-status/${{ env.TARGET_BRANCH }}.json" ]; then
-            echo "No status file produced -- generate-dashboard-status.ts crashed before writing output. Not publishing." >&2
+            echo "No status file produced -- aggregate-dashboard-status.ts crashed before writing output. Not publishing." >&2
             exit 1
           fi
 
@@ -83,9 +301,6 @@ jobs:
           git config user.email "dashboard-status-bot@users.noreply.github.com"
 
           PUBLISH_DIR="$(mktemp -d)"
-          # Only one environment runs today (see the job-level comment above), but this only ever
-          # touches its OWN file (dashboard-status/<branch>.json) and retries its own push on
-          # conflict, so re-adding the dev/stage matrix later is a safe, non-racing change.
           git clone --branch status-data "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR" 2>/dev/null \
             || git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR"
 
@@ -119,7 +334,3 @@ jobs:
             git reset --soft origin/status-data
             attempt=$((attempt + 1))
           done
-
-      - name: Fail the job if any check failed
-        if: steps.generate.outcome == 'failure'
-        run: exit 1
