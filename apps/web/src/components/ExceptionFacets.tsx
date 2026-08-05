@@ -111,7 +111,9 @@ export function ExceptionFacets({
             onToggle={(event) =>
               setOpenGroups((current) => ({
                 ...current,
-                [group.key]: event.currentTarget.open,
+                // currentTarget can be null here (native, non-bubbling `toggle` event) --
+                // target is the same <details> element in that case since toggle never bubbles.
+                [group.key]: (event.target as HTMLDetailsElement).open,
               }))
             }
           >
