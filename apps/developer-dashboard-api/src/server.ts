@@ -2,7 +2,7 @@ import pino from 'pino';
 
 import { createApp } from './app';
 
-export const startServer = async (): Promise<void> => {
+export const startServer = (): void => {
   const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
   const port = Number(process.env.PORT ?? '4500');
   const app = createApp(logger);
