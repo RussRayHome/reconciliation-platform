@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-
-import { dashboardApiFetch } from '../lib/api';
+import { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 /*
- * Repository status screen (/repo) -- per the 2026-08-05 design handoff. Replaces the old
+ * Repository status section -- per the 2026-08-05 design handoff, and folded into the single
+ * merged dashboard page (was its own /repo route) per the follow-up instruction that Repository
+ * status sits at the top of one page, with the testing/results cards below. Replaces the old
  * RepoHealthBand + "Branches ahead of dev" table on the checks dashboard, which computed its own
  * "Overall" verdict independently of the header pill (two contradicting answers to the same
  * question) and rendered raw signed integers ("-15") with no subject. Everything here is derived
  * server-side (scripts/ci/aggregate-dashboard-status.ts's collectRepoStatus) and rendered as-is --
- * this component does not recompute verdict, branch state, or next actions.
+ * this component does not recompute verdict, branch state, or next actions. It also no longer
+ * fetches its own data or owns a loading/error state -- the parent dashboard fetches the combined
+ * /api/status payload once and passes this section its slice.
  */
 
 type Tone = 'pass' | 'warn' | 'fail' | 'info' | 'neutral';
@@ -46,7 +48,7 @@ type RepoStatusCommit = { sha: string; author: string; committedAt: string; subj
 
 type RepoStatusDecision = { kind: string; tone: 'amber' | 'crimson' | 'blue'; title: string; detail: string };
 
-type RepoStatusPayload = {
+export type RepoStatusPayload = {
   verdict: 'healthy' | 'attention' | 'blocked';
   repo: { slug: string; defaultBranch: string; refreshedAt: string };
   environments: RepoStatusEnvironment[];
@@ -54,15 +56,6 @@ type RepoStatusPayload = {
   commits: RepoStatusCommit[];
   commitActivity: Array<{ date: string; count: number }>;
   decisions: RepoStatusDecision[];
-};
-
-type StatusResponse = { repoStatus: RepoStatusPayload };
-
-const parseJsonResponse = async <T,>(response: Response): Promise<T> => {
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}.`);
-  }
-  return (await response.json()) as T;
 };
 
 const formatDuration = (ms: number | null): string => {
@@ -272,59 +265,26 @@ function CommitActivityBars({ activity }: Readonly<{ activity: RepoStatusPayload
   );
 }
 
-export function RepoStatus() {
-  const [status, setStatus] = useState<RepoStatusPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+export function RepoStatusSection({ status }: Readonly<{ status: RepoStatusPayload }>) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeFilter: FilterId = (searchParams.get('state') as FilterId | null) ?? 'all';
-
-  const load = useCallback(async (): Promise<void> => {
-    setRefreshing(true);
-    try {
-      const response = await dashboardApiFetch('/api/status');
-      const payload = await parseJsonResponse<StatusResponse>(response);
-      setStatus(payload.repoStatus);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to load repository status.');
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const setFilter = (id: FilterId): void => {
     setSearchParams(id === 'all' ? {} : { state: id });
   };
 
-  const filteredBranches = useMemo(() => {
-    if (!status) return [];
-    return activeFilter === 'all' ? status.branches : status.branches.filter((b) => b.state === activeFilter);
-  }, [status, activeFilter]);
+  const filteredBranches = useMemo(
+    () => (activeFilter === 'all' ? status.branches : status.branches.filter((b) => b.state === activeFilter)),
+    [status, activeFilter],
+  );
 
   const filterCounts = useMemo(() => {
     const counts: Record<FilterId, number> = { all: 0, review: 0, ready: 0, blocked: 0, stale: 0 };
-    if (!status) return counts;
     counts.all = status.branches.length;
     for (const branch of status.branches) counts[branch.state] += 1;
     return counts;
   }, [status]);
-
-  if (!status) {
-    return (
-      <div className="repo-status">
-        <Link to="/" className="repo-status__back">
-          ← Developer dashboard
-        </Link>
-        {error ? <p className="developer-dashboard__error">{error}</p> : <p>Loading repository status…</p>}
-      </div>
-    );
-  }
 
   const orderedEnvs = ENV_ORDER.map((name) => status.environments.find((e) => e.name === name)).filter(
     (e): e is RepoStatusEnvironment => Boolean(e),
@@ -344,14 +304,10 @@ export function RepoStatus() {
 
   return (
     <div className="repo-status">
-      <Link to="/" className="repo-status__back">
-        ← Developer dashboard
-      </Link>
-
       <header className="repo-status__header">
         <div>
           <div className="repo-status__title-row">
-            <h1>Repository status</h1>
+            <h2>Repository status</h2>
             <span className={`status-pill status-pill--${verdictMeta.tone}`}>{verdictMeta.label}</span>
           </div>
           <div className="repo-status__meta">
@@ -362,22 +318,7 @@ export function RepoStatus() {
             <span>Refreshed {formatClock(status.repo.refreshedAt)}</span>
           </div>
         </div>
-        <div className="repo-status__actions">
-          <button type="button" className="secondary-button" onClick={() => void load()} disabled={refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
-          <a
-            className="accent-button"
-            href={`https://github.com/${status.repo.slug}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open in GitHub
-          </a>
-        </div>
       </header>
-
-      {error ? <p className="developer-dashboard__error">{error}</p> : null}
 
       <section>
         <div className="repo-status__section-head">

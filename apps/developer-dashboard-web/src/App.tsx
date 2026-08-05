@@ -3,7 +3,6 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { dashboardApiFetch, githubLoginUrl } from './lib/api';
 import { DeveloperDashboard } from './components/DeveloperDashboard';
-import { RepoStatus } from './components/RepoStatus';
 
 type Session = { login: string; name: string | null; avatarUrl: string | null };
 type AuthState = { status: 'loading' } | { status: 'signed-out' } | { status: 'signed-in'; session: Session };
@@ -40,7 +39,6 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<DeveloperDashboard session={auth.session} />} />
-        <Route path="/repo" element={<RepoStatus />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

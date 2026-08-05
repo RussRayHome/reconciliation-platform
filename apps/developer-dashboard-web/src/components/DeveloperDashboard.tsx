@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 
 import { dashboardApiFetch } from '../lib/api';
 import { SkeletonPanel, KpiWellsSkeleton, SkeletonLines, TableSkeleton } from './Skeleton';
+import { RepoStatusSection, type RepoStatusPayload } from './RepoStatus';
 
 /*
  * Ported from apps/web/src/components/DeveloperDashboard.tsx (the product's in-app "Developer
@@ -16,6 +16,11 @@ import { SkeletonPanel, KpiWellsSkeleton, SkeletonLines, TableSkeleton } from '.
  *     revision already present in the published payload's own promotionReadiness data.
  *   - No `cache` field (fromCache/stale) -- the payload is a static publish, not a live cache.
  *   - Adds the signed-in GitHub user + a sign-out action in the header.
+ *
+ * Repository status used to be a separate /repo route reachable via a card link; per the
+ * follow-up design instruction it's now rendered inline at the top of this same page (below the
+ * shared header, above "Testing & verification"), sharing this component's single /api/status
+ * fetch rather than each screen fetching it independently.
  */
 
 type Verdict = 'pass' | 'fail' | 'warn' | 'neutral';
@@ -131,6 +136,7 @@ type DeveloperStatusResponse = {
   totalDurationMs: number;
   checks: DeveloperCheckResponse[];
   promotionReadiness: PromotionReadiness;
+  repoStatus: RepoStatusPayload;
 };
 
 type Session = { login: string; name: string | null; avatarUrl: string | null };
@@ -779,12 +785,20 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
           <span className="developer-dashboard__meta">Signed in as {session.login}</span>
           <button
             type="button"
-            className="accent-button"
+            className="secondary-button"
             onClick={() => void loadDashboard()}
             disabled={refreshing}
           >
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
+          <a
+            className="secondary-button"
+            href={`https://github.com/${status.repoStatus.repo.slug}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in GitHub
+          </a>
           <button type="button" className="secondary-button" onClick={() => void signOut()}>
             Sign out
           </button>
@@ -793,12 +807,7 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
 
       {statusError ? <p className="developer-dashboard__error">{statusError}</p> : null}
 
-      <Link to="/repo" className="overview-card developer-dashboard__repo-link">
-        <div className="overview-card__head">
-          <h3>Repository status</h3>
-        </div>
-        <span className="overview-card__hint">Promotion track, changes in flight, and what needs a decision →</span>
-      </Link>
+      <RepoStatusSection status={status.repoStatus} />
 
       <div className="developer-dashboard__section-head">
         <h2>Testing &amp; verification</h2>
