@@ -153,6 +153,114 @@ const collectPromotionReadiness = async () => {
   };
 };
 
+type LastDevCommit = { sha: string; author: string; at: string; message: string };
+
+/** Answers "when did dev last move, and by whom." Field separator (\x1f) rather than a delimiter
+ *  character, since commit subjects can contain anything including pipes/colons/quotes. */
+const collectLastDevCommit = async (): Promise<LastDevCommit | null> => {
+  const raw = await readGitCommandOutput(['log', '-1', '--format=%H%x1f%an%x1f%cI%x1f%s', 'origin/dev']);
+  if (!raw) return null;
+
+  const [sha, author, at, ...messageParts] = raw.split('\x1f');
+  if (!sha || !author || !at) return null;
+
+  return { sha, author, at, message: messageParts.join('\x1f') };
+};
+
+type BranchStatus = {
+  name: string;
+  /** Commits this branch has that dev doesn't -- i.e. genuinely outstanding, not yet merged. */
+  aheadOfDev: number;
+  /** Commits dev has that this branch doesn't -- how stale the branch is relative to dev. */
+  behindDev: number;
+  lastCommitAt: string | null;
+  pullRequest: { number: number; title: string; url: string } | null;
+};
+
+/** These aren't "branches with outstanding work" -- dev/stage/main are the trunk lines being
+ *  compared against, status-data is the publish target for this very pipeline, not application code. */
+const NON_FEATURE_BRANCHES = new Set(['dev', 'stage', 'main', 'status-data', 'HEAD']);
+
+/** Every remote branch with commits dev doesn't have yet, each cross-referenced against open PRs --
+ *  this is the closest honest answer to "what's outstanding and not checked into dev," since a
+ *  CI checkout can only ever see what reached GitHub, never truly-local uncommitted work. */
+const collectBranchesPanel = async (): Promise<BranchStatus[]> => {
+  const branchListRaw = await readGitCommandOutput([
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/remotes/origin',
+  ]);
+  const branchNames = (branchListRaw ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('origin/'))
+    .map((line) => line.slice('origin/'.length))
+    .filter((name) => name.length > 0 && !NON_FEATURE_BRANCHES.has(name));
+
+  const openPrs = await execFileAsync('gh', [
+    'pr',
+    'list',
+    '--state',
+    'open',
+    '--json',
+    'number,title,url,headRefName',
+  ], { cwd: repoRoot, timeout: 8000 })
+    .then(
+      (result) =>
+        JSON.parse(result.stdout?.toString() ?? '[]') as Array<{
+          number: number;
+          title: string;
+          url: string;
+          headRefName: string;
+        }>,
+    )
+    .catch(() => []);
+  const prByBranch = new Map(openPrs.map((pr) => [pr.headRefName, pr]));
+
+  const branches = await Promise.all(
+    branchNames.map(async (name): Promise<BranchStatus | null> => {
+      const counts = await readGitCommandOutput([
+        'rev-list',
+        '--left-right',
+        '--count',
+        `origin/dev...origin/${name}`,
+      ]);
+      const [behindRaw, aheadRaw] = (counts ?? '').split(/\s+/u);
+      const aheadOfDev = Number.parseInt(aheadRaw ?? '', 10);
+      const behindDev = Number.parseInt(behindRaw ?? '', 10);
+
+      // Fully merged into dev already (0 unique commits) -- nothing outstanding, skip it.
+      if (!Number.isFinite(aheadOfDev) || aheadOfDev === 0) {
+        return null;
+      }
+
+      const lastCommitAt = await readGitCommandOutput(['log', '-1', '--format=%cI', `origin/${name}`]);
+      const pr = prByBranch.get(name);
+
+      return {
+        name,
+        aheadOfDev,
+        behindDev: Number.isFinite(behindDev) ? behindDev : 0,
+        lastCommitAt,
+        pullRequest: pr ? { number: pr.number, title: pr.title, url: pr.url } : null,
+      };
+    }),
+  );
+
+  const outstanding = branches.filter((branch): branch is BranchStatus => branch !== null);
+  outstanding.sort((a, b) => b.aheadOfDev - a.aheadOfDev);
+
+  // No silent truncation: log what's dropped rather than let a long tail quietly disappear.
+  const BRANCH_PANEL_CAP = 20;
+  if (outstanding.length > BRANCH_PANEL_CAP) {
+    console.log(
+      `[aggregate-dashboard-status] branches panel: showing top ${BRANCH_PANEL_CAP} of ${outstanding.length} branches with outstanding commits`,
+    );
+  }
+
+  return outstanding.slice(0, BRANCH_PANEL_CAP);
+};
+
 const run = async (): Promise<void> => {
   const generatedAt = new Date().toISOString();
   console.log(`[aggregate-dashboard-status] env=${envName} artifacts=${artifactsDir}`);
@@ -353,8 +461,12 @@ const run = async (): Promise<void> => {
     console.log(`[aggregate-dashboard-status] ${check.name}: ok=${check.ok} (${check.durationMs}ms)`);
   }
 
-  const repoHealth = await collectRepoHealthKpis(overallStatus, failedChecks, totalDurationMs, generatedAt);
-  const promotionReadiness = await collectPromotionReadiness();
+  const [repoHealth, promotionReadiness, lastDevCommit, branches] = await Promise.all([
+    collectRepoHealthKpis(overallStatus, failedChecks, totalDurationMs, generatedAt),
+    collectPromotionReadiness(),
+    collectLastDevCommit(),
+    collectBranchesPanel(),
+  ]);
 
   const testTotals = checks.reduce(
     (totals, check) => ({
@@ -365,7 +477,12 @@ const run = async (): Promise<void> => {
     { passed: 0, failed: 0, total: 0 },
   );
 
-  const payload: DeveloperStatusPayload & { environment: string; promotionReadiness: unknown } = {
+  const payload: DeveloperStatusPayload & {
+    environment: string;
+    promotionReadiness: unknown;
+    lastDevCommit: LastDevCommit | null;
+    branches: BranchStatus[];
+  } = {
     generatedAt,
     repositoryPath: repoRoot,
     overallStatus,
@@ -390,6 +507,8 @@ const run = async (): Promise<void> => {
     repoHealth,
     environment: envName,
     promotionReadiness,
+    lastDevCommit,
+    branches,
   };
 
   writeFileSync(outPath, JSON.stringify(payload, null, 2), 'utf8');
