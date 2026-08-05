@@ -18,7 +18,14 @@ name: Dashboard Status
 # exactly where aggregate-dashboard-status.ts expects them -- no extra flattening step needed.
 on:
   schedule:
-    - cron: '0 8 * * *' # 03:00 America/New_York (04:00 during DST) -- nightly, off business hours
+    # 07:17 UTC = ~03:17 America/New_York during DST (~02:17 in standard time). Deliberately NOT
+    # on the hour: GitHub explicitly documents that scheduled workflows queue behind everyone
+    # else's runs and get delayed under load, worst at popular round-hour times like :00 -- the
+    # first real overnight run, scheduled for 0 8 * * *, actually fired at 10:30 UTC, 2.5 hours
+    # late. Also moved earlier (was 08:00) to build in real buffer: even a ~1 hour scheduling
+    # delay plus the full ~30-minute worst-case run (E2E timing out at its 20-minute cap) should
+    # still finish well before a normal morning check-in, not run into it.
+    - cron: '17 7 * * *'
   workflow_dispatch: {} # manual trigger from GitHub's UI, for testing this workflow itself
 
 env:
