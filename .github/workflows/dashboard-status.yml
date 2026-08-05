@@ -312,14 +312,17 @@ jobs:
           RESULT_FILE="$(pwd)/dashboard-status/${{ env.TARGET_BRANCH }}.json"
           TARGET_PATH="dashboard-status/${{ env.TARGET_BRANCH }}.json"
 
-          git config user.name "dashboard-status-bot"
-          git config user.email "dashboard-status-bot@users.noreply.github.com"
-
           PUBLISH_DIR="$(mktemp -d)"
           git clone --branch status-data "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR" 2>/dev/null \
             || git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PUBLISH_DIR"
 
           cd "$PUBLISH_DIR"
+          # Must run after `cd` -- git config without --global only applies to the repo in the
+          # current working directory, and this repo (the fresh status-data clone) is a different
+          # one from the checkout root these commands used to run in. That mismatch is exactly
+          # what caused "empty ident name" / "Author identity unknown" on the first real run.
+          git config user.name "dashboard-status-bot"
+          git config user.email "dashboard-status-bot@users.noreply.github.com"
           git checkout status-data 2>/dev/null || git checkout --orphan status-data
 
           attempt=1
