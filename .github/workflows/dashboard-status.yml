@@ -219,9 +219,15 @@ jobs:
       # runners don't share anything. Playwright's default shard granularity is per FILE, not per
       # test, so visual-baseline.spec.ts's forced-serial suite always lands wholly within one
       # shard and keeps its own internal ordering guarantee.
+      #
+      # Shard count matches the spec FILE count (3), not an arbitrary round number -- since
+      # sharding is per-file, a 4th shard would always come up empty (spin up a runner, npm ci,
+      # install Chromium, find 0 tests assigned, exit) which burns CI minutes for zero benefit.
+      # Going further than 3 would need splitting the spec files themselves, not just the shard
+      # count. Bump this back up if a new spec file is added.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -251,9 +257,9 @@ jobs:
       # into a ~15s round trip instead of burning minutes retrying a test we already expect to
       # fail for a known reason. Restore the normal flags once E2E is fully green.
       - run: >
-          npx tsx scripts/ci/run-check.ts --name "E2E tests (shard ${{ matrix.shard }}/4)" --meta .ci-out/e2e/meta.json --
+          npx tsx scripts/ci/run-check.ts --name "E2E tests (shard ${{ matrix.shard }}/3)" --meta .ci-out/e2e/meta.json --
           npm run test:e2e -- --reporter=list,json --max-failures=1 --retries=0
-          --shard=${{ matrix.shard }}/4
+          --shard=${{ matrix.shard }}/3
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
           ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
@@ -337,17 +343,12 @@ jobs:
         with:
           name: e2e-3
           path: .ci-artifacts/e2e-3
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: e2e-4
-          path: .ci-artifacts/e2e-4
 
       - name: Merge e2e shards
-        # Combines the 4 shard artifacts back into the single .ci-artifacts/e2e/ layout
+        # Combines the 3 shard artifacts back into the single .ci-artifacts/e2e/ layout
         # aggregate-dashboard-status.ts expects, so that script stays shard-count-agnostic.
         if: always()
-        run: npx tsx scripts/ci/merge-e2e-shards.ts --artifacts .ci-artifacts --shards 4 --out .ci-artifacts/e2e
+        run: npx tsx scripts/ci/merge-e2e-shards.ts --artifacts .ci-artifacts --shards 3 --out .ci-artifacts/e2e
 
       - name: Aggregate results
         # Belt-and-suspenders alongside continue-on-error above: a download that genuinely found

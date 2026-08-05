@@ -5,7 +5,7 @@
  * parsePlaywrightJsonSpecs only reads the top-level `suites` array, so merging is just
  * concatenating each shard's `suites` into one.
  *
- * Usage: tsx scripts/ci/merge-e2e-shards.ts --artifacts .ci-artifacts --shards 4 --out .ci-artifacts/e2e
+ * Usage: tsx scripts/ci/merge-e2e-shards.ts --artifacts .ci-artifacts --shards 3 --out .ci-artifacts/e2e
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -18,7 +18,7 @@ const readFlag = (name: string, fallback: string): string => {
 };
 
 const artifactsDir = resolve(repoRoot, readFlag('artifacts', '.ci-artifacts'));
-const shardCount = Number.parseInt(readFlag('shards', '4'), 10);
+const shardCount = Number.parseInt(readFlag('shards', '3'), 10);
 const outDir = resolve(repoRoot, readFlag('out', '.ci-artifacts/e2e'));
 
 type CheckMeta = { name: string; command: string; exitCode: number; ok: boolean; durationMs: number };
