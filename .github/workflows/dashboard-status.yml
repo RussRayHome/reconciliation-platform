@@ -228,9 +228,17 @@ jobs:
       # timeout on a different element -- confirming this was the login blocker, not a red herring).
       # Safe by design, not just by convention: app.ts refuses to start with this set in a
       # production runtime at all (ADR-0002 step 7).
+      #
+      # TEMPORARY, deliberate: --max-failures=1 --retries=0 while still working through E2E's
+      # remaining known-broken specs one at a time. A fully-clean run with the default
+      # retries: process.env.CI ? 2 : 0 found 34 passed / 2 failed / 13 didn't run (2026-08-05) --
+      # each failure now costs 2 retries before the next one even starts, and we already know
+      # there's more than one distinct root cause left. Fail-fast + no retries turns "find one bug"
+      # into a ~15s round trip instead of burning minutes retrying a test we already expect to
+      # fail for a known reason. Restore the normal flags once E2E is fully green.
       - run: >
           npx tsx scripts/ci/run-check.ts --name "E2E tests" --meta .ci-out/e2e/meta.json --
-          npm run test:e2e -- --reporter=list,json
+          npm run test:e2e -- --reporter=list,json --max-failures=1 --retries=0
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
           ALLOW_LOCAL_LOGIN_FALLBACK: 'true'

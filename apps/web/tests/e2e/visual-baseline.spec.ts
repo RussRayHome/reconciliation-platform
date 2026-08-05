@@ -29,13 +29,38 @@ const screenshotOptions = {
 
 // loginToApplication waits for the Import Files link, which only superuser/admin roles see;
 // this variant just submits credentials and lets each test wait for its own landmark.
-const loginAs = async (page: Page, username: string, password: string): Promise<void> => {
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+//
+// Tries `password` first (the real seeded-Postgres credential), then falls back to `username`
+// itself as the password -- app.ts's local-login-fallback path (ALLOW_LOCAL_LOGIN_FALLBACK) uses
+// username==password for every account, which is what this runtime's in-memory backend (no real
+// Postgres, so the real credential can never match) actually needs. auth.ts's
+// loginToApplication already does the equivalent multi-candidate retry for its own callers; this
+// mirrors that for the explicit (username, password) pairs this file's callers already pass, so
+// none of them need to change.
+const attemptLogin = async (page: Page, username: string, password: string): Promise<boolean> => {
   await page.getByLabel('Username').fill(username);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
-  await expect(page.getByRole('heading', { name: 'Log in' })).toBeHidden({ timeout: 10_000 });
+  try {
+    await expect(page.getByRole('heading', { name: 'Log in' })).toBeHidden({ timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const loginAs = async (page: Page, username: string, password: string): Promise<void> => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+
+  if (await attemptLogin(page, username, password)) {
+    return;
+  }
+
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+  if (!(await attemptLogin(page, username, username))) {
+    throw new Error(`Unable to authenticate as "${username}" with the real or fallback password.`);
+  }
 };
 
 // The docs pages embed a full document preview (including diagram images) whose
