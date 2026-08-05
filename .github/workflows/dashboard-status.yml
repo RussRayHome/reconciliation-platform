@@ -240,44 +240,59 @@ jobs:
       - run: npm ci
 
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: unit
           path: .ci-artifacts/unit
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: integration
           path: .ci-artifacts/integration
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: postgres
           path: .ci-artifacts/postgres
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: lint
           path: .ci-artifacts/lint
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: typecheck
           path: .ci-artifacts/typecheck
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: coverage
           path: .ci-artifacts/coverage
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: security
           path: .ci-artifacts/security
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: e2e
           path: .ci-artifacts/e2e
 
       - name: Aggregate results
+        # Belt-and-suspenders alongside continue-on-error above: a download that genuinely found
+        # nothing (a job that never uploaded anything, e.g. killed by its own timeout before
+        # reaching the upload step) must not skip this -- aggregate-dashboard-status.ts's
+        # readCheckMeta() already reports a missing meta.json as a clearly-labeled failure rather
+        # than crashing, so partial data always beats no data.
+        if: always()
         run: npx tsx scripts/ci/aggregate-dashboard-status.ts --env ${{ env.TARGET_BRANCH }} --artifacts .ci-artifacts --out dashboard-status/${{ env.TARGET_BRANCH }}.json
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: dashboard-status-${{ env.TARGET_BRANCH }}
           path: dashboard-status/${{ env.TARGET_BRANCH }}.json
