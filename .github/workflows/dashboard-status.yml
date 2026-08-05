@@ -218,20 +218,22 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # TEMPORARY diagnostic: --max-failures=1 stops after the first real failure instead of
-      # cascading through all 49 specs x 2 retries (~39 min of identical ~15s failures, cut off
-      # by the 20-min timeout with no error ever printed -- Playwright's `list` reporter only
-      # shows failure detail in its end-of-run summary, and the JSON reporter only writes on
-      # natural completion, so a run that never finishes naturally never reveals *why*). Every
-      # test was failing at a strikingly uniform ~15.4s regardless of what it tested, which
-      # points to one shared root cause (a setup/fixture step) rather than 49 independent flaky
-      # tests -- this should surface the real error in under a minute. Remove --max-failures=1
-      # once that's diagnosed and fixed.
+      # Root cause found via a --max-failures=1 diagnostic run: every spec failed identically at
+      # login, because apps/web/tests/e2e/auth.ts's fallback credentials (rray/rray, bray/bray,
+      # rray3/rray3) only work when the app's local-login-fallback path is enabled -- and nothing
+      # set ALLOW_LOCAL_LOGIN_FALLBACK, so app.ts rejected every attempt before the fallback logic
+      # ever ran. This runtime has no real Postgres (in-memory backend, via Playwright's own
+      # webServer), so this is the only login path available to it. Verified locally: with this
+      # set, auth succeeds and specs actually run (15 passed before hitting an unrelated, real UI
+      # timeout on a different element -- confirming this was the login blocker, not a red herring).
+      # Safe by design, not just by convention: app.ts refuses to start with this set in a
+      # production runtime at all (ADR-0002 step 7).
       - run: >
           npx tsx scripts/ci/run-check.ts --name "E2E tests" --meta .ci-out/e2e/meta.json --
-          npm run test:e2e -- --reporter=list,json --max-failures=1
+          npm run test:e2e -- --reporter=list,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
+          ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
       - if: always()
         uses: actions/upload-artifact@v4
         with:
