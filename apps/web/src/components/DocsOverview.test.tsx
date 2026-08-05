@@ -68,7 +68,7 @@ describe('DocsOverview', () => {
   it('filters the document list and falls back to the first visible document', async () => {
     const user = userEvent.setup();
 
-    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
+    render(<DocsOverview controls={null} />);
 
     expect(screen.getByRole('button', { name: /view project overview/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Project Overview' })).toBeInTheDocument();
@@ -83,7 +83,7 @@ describe('DocsOverview', () => {
   it('filters the navigation by audience track buttons', async () => {
     const user = userEvent.setup();
 
-    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
+    render(<DocsOverview controls={null} />);
 
     expect(screen.getByRole('button', { name: 'All Docs' })).toHaveAttribute(
       'aria-pressed',
@@ -114,15 +114,7 @@ describe('DocsOverview', () => {
     const user = userEvent.setup();
     globalThis.history.replaceState({}, '', '/dev/docs');
 
-    render(
-      <DocsOverview
-        appHref="/dev"
-        docsHref="/dev/docs"
-        showDeveloperDashboardLink={true}
-        developerDashboardHref="/dev/developer-dashboard.html"
-        controls={null}
-      />,
-    );
+    render(<DocsOverview appHref="/dev" docsHref="/dev/docs" controls={null} />);
 
     await user.click(screen.getByRole('button', { name: 'Intro' }));
 
@@ -131,17 +123,13 @@ describe('DocsOverview', () => {
     fireEvent(eventTargetWindow, new HashChangeEvent('hashchange'));
 
     expect(scrollIntoViewMock).toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toHaveAttribute(
-      'href',
-      '/dev/developer-dashboard.html',
-    );
     expect(globalThis.location.pathname).toBe('/dev/docs');
   });
 
   it('renders image and link markdown blocks for document content', async () => {
     const user = userEvent.setup();
 
-    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
+    render(<DocsOverview controls={null} />);
 
     await user.click(screen.getByRole('button', { name: /view architecture/i }));
 
@@ -165,7 +153,7 @@ describe('DocsOverview', () => {
   it('opens and closes an enlarged image modal from the docs diagram', async () => {
     const user = userEvent.setup();
 
-    render(<DocsOverview showDeveloperDashboardLink={false} controls={null} />);
+    render(<DocsOverview controls={null} />);
 
     await user.click(screen.getByRole('button', { name: /view architecture/i }));
     await user.click(

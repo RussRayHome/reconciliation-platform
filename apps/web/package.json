@@ -7,10 +7,7 @@
     "dev": "vite",
     "dev:test": "vite --host 127.0.0.1 --port 4173",
     "build": "vite build",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "sync:dashboard-tokens": "node scripts/sync-dashboard-tokens.mjs",
-    "prebuild": "npm run sync:dashboard-tokens",
-    "predev": "npm run sync:dashboard-tokens"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@recon/config": "0.1.0",

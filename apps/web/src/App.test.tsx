@@ -70,9 +70,11 @@ const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-us
 // Mirrors the role assignments migration 0026 backfilled server-side (and that
 // apps/web/src/App.tsx used to hardcode in a usersByUsername map before ADR-0002 moved role onto
 // the session itself). Tests seed localStorage directly to skip a real login round trip, so this
-// mapping has to live somewhere -- here, not in App.tsx.
+// mapping has to live somewhere -- here, not in App.tsx. rray2 moved to financial-analyst in
+// migration 0033 when the 'developer' role (which existed solely to gate the now-removed in-app
+// Developer Dashboard) was dropped.
 const testUserRoles: Record<string, UserRole> = {
-  rray2: 'developer',
+  rray2: 'financial-analyst',
   bray: 'financial-analyst',
   rray3: 'admin',
   rray: 'superuser',
@@ -505,14 +507,13 @@ describe('App', () => {
     expect(globalThis.location.pathname).toBe('/login');
   });
 
-  it('uses environment-prefixed docs links and an in-shell dashboard destination on an environment root route', () => {
+  it('uses environment-prefixed docs links on an environment root route', () => {
     setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/dev');
 
     renderApp();
 
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/dev/docs');
-    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toBeInTheDocument();
   });
 
   it('redirects root to /dev when the development environment path segment is configured', () => {
@@ -1143,28 +1144,13 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('enforces developer role access scope for rray2', () => {
-    setAuthenticatedUser('rray2');
-
-    renderApp();
-
-    expect(screen.getByText('Application access restricted')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs');
-    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toHaveAttribute(
-      'href',
-      '/developer-dashboard.html',
-    );
-    expect(screen.queryByRole('link', { name: 'Start Reconciliation' })).toBeNull();
-  });
-
-  it('enforces financial analyst scope for bray with app and docs but no developer dashboard', () => {
+  it('enforces financial analyst scope for bray with app and docs access', () => {
     setAuthenticatedUser('bray');
 
     renderApp();
 
     expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
-    expect(screen.queryByRole('link', { name: 'Developer Dashboard' })).toBeNull();
   });
 
   it('allows admin role to adjust variance thresholds in Rules', () => {
@@ -1193,7 +1179,6 @@ describe('App', () => {
 
     expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
-    expect(screen.getByRole('link', { name: 'Developer Dashboard' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 

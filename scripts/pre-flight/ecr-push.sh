@@ -18,7 +18,7 @@
 # What it does:
 #   1. Authenticates Docker with ECR (aws ecr get-login-password)
 #   2. Builds the API image using the 'runtime' Dockerfile target
-#   3. Builds the web image with VITE_ENABLE_DEVELOPER_DASHBOARD=false
+#   3. Builds the web image
 #   4. Tags and pushes both images to ECR
 #
 # Prerequisites: aws CLI configured with push permissions to the target ECR repositories.
@@ -50,7 +50,6 @@ docker build \
 
 printf 'Building web production image (%s)...\n' "$WEB_IMAGE"
 docker build \
-  --build-arg VITE_ENABLE_DEVELOPER_DASHBOARD=false \
   -f "$ROOT_DIR/apps/web/Dockerfile" \
   -t "$WEB_IMAGE" \
   "$ROOT_DIR"

@@ -30,7 +30,6 @@ import {
 } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
-import { DeveloperDashboard } from './components/DeveloperDashboard';
 import { ComingSoonPage } from './components/ComingSoonPage';
 import { CreateMappingScreen } from './components/CreateMappingScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
@@ -59,7 +58,7 @@ import {
   varianceMetricCatalog,
   type AppTab,
 } from './lib/appCatalog';
-import { readEnvString, resolveEnvironmentPaths } from './lib/environmentPath';
+import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
 import { useReconciliationRun } from './hooks/useReconciliationRun';
@@ -97,7 +96,6 @@ const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-
 const invalidLoginMessage = 'Invalid username or password. Try again.';
 
 const roleDisplayLabels: Record<UserRole, string> = {
-  developer: 'Developer',
   'financial-analyst': 'Financial Analyst',
   admin: 'Admin',
   superuser: 'SuperUser',
@@ -383,16 +381,12 @@ const useSuggestedPeriodLabel = (
 
 function App() {
   const env = import.meta.env as Record<string, unknown>;
-  const { docsHref, developerDashboardHref, appHref, isDocsRoute } = resolveEnvironmentPaths(env);
+  const { docsHref, appHref, isDocsRoute } = resolveEnvironmentPaths(env);
 
   const [authenticatedUserSession, setAuthenticatedUserSession] =
     useState<AuthenticatedUserSession | null>(() => loadAuthenticatedUserSession());
   const activeUser = authenticatedUserSession;
   const rolePermissions = activeUser ? rolePermissionsByRole[activeUser.role] : null;
-  const showDeveloperDashboardLink =
-    Boolean(activeUser) &&
-    (env.DEV === true || readEnvString(env.VITE_ENABLE_DEVELOPER_DASHBOARD) === 'true') &&
-    Boolean(rolePermissions?.canAccessDeveloperDashboard);
 
   useEffect(() => {
     persistAuthenticatedUserSession(authenticatedUserSession);
@@ -491,10 +485,8 @@ function App() {
     return (
       <AccessDeniedShell
         title="Application access restricted"
-        description="Your role does not include the reconciliation workspace. Use Documentation and Developer Dashboard links for your assigned scope."
+        description="Your role does not include the reconciliation workspace. Use the Documentation link for your assigned scope."
         docsHref={docsHref}
-        showDeveloperDashboardLink={showDeveloperDashboardLink}
-        developerDashboardHref={developerDashboardHref}
         controls={controls}
       />
     );
@@ -506,8 +498,6 @@ function App() {
         title="Documentation access restricted"
         description="Your role does not include the Documentation Hub in this environment."
         appHref={appHref}
-        showDeveloperDashboardLink={showDeveloperDashboardLink}
-        developerDashboardHref={developerDashboardHref}
         controls={controls}
       />
     );
@@ -515,13 +505,7 @@ function App() {
 
   if (isDocsRoute) {
     return (
-      <DocsOverview
-        appHref={appHref}
-        docsHref={docsHref}
-        showDeveloperDashboardLink={showDeveloperDashboardLink}
-        developerDashboardHref={developerDashboardHref}
-        controls={controls}
-      />
+      <DocsOverview appHref={appHref} docsHref={docsHref} controls={controls} />
     );
   }
 
@@ -532,7 +516,6 @@ function App() {
         rolePermissions={rolePermissions}
         roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
         controls={controls}
-        showDeveloperDashboardLink={showDeveloperDashboardLink}
         username={activeUser.username}
         profileLabel={displayName.length > 0 ? displayName : activeUser.username}
         roleLabel={roleDisplayLabels[activeUser.role]}
@@ -547,7 +530,6 @@ function ReconciliationApp({
   rolePermissions,
   roleDefaultTab,
   controls,
-  showDeveloperDashboardLink,
   username,
   profileLabel,
   roleLabel,
@@ -557,7 +539,6 @@ function ReconciliationApp({
   rolePermissions: RolePermissions;
   roleDefaultTab: AppTab;
   controls: ReactNode;
-  showDeveloperDashboardLink: boolean;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -703,13 +684,8 @@ function ReconciliationApp({
 
     if (legacyTab === 'close') {
       void navigate(routePaths.export, { replace: true });
-      return;
     }
-
-    if (legacyTab === 'developer' && showDeveloperDashboardLink) {
-      void navigate(routePaths.developer, { replace: true });
-    }
-  }, [location.pathname, location.search, navigate, showDeveloperDashboardLink]);
+  }, [location.pathname, location.search, navigate]);
 
   /**
    * Role-based default landing tab (analysts land on Review) — applies only to the very first
@@ -980,7 +956,6 @@ function ReconciliationApp({
         exceptions={reportRun?.exceptions ?? []}
         onApplySavedView={handleApplySavedView}
         docsHref={docsHref}
-        showDeveloperDashboardLink={showDeveloperDashboardLink}
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
         canAccessRunBook={rolePermissions.canAccessRunBook}
         username={username}
@@ -1102,10 +1077,6 @@ function ReconciliationApp({
                   />
                 }
               />
-
-              {showDeveloperDashboardLink ? (
-                <Route path={routePaths.developer} element={<DeveloperDashboard />} />
-              ) : null}
 
               <Route
                 path={routePaths.mappingProfiles}
@@ -1529,11 +1500,6 @@ function UserRoleControls({
             : 'Documentation access blocked'}
         </li>
         <li>
-          {rolePermissions.canAccessDeveloperDashboard
-            ? 'Developer Dashboard access enabled'
-            : 'Developer Dashboard access blocked'}
-        </li>
-        <li>
           {rolePermissions.canAdjustSliderDefaults
             ? 'Variance slider default adjustments enabled'
             : 'Variance slider default adjustments blocked'}
@@ -1558,16 +1524,12 @@ function AccessDeniedShell({
   description,
   appHref,
   docsHref,
-  showDeveloperDashboardLink,
-  developerDashboardHref,
   controls,
 }: Readonly<{
   title: string;
   description: string;
   appHref?: string;
   docsHref?: string;
-  showDeveloperDashboardLink: boolean;
-  developerDashboardHref: string;
   controls: ReactNode;
 }>) {
   return (
@@ -1585,11 +1547,6 @@ function AccessDeniedShell({
             {docsHref ? (
               <a className="hero-primary-cta" href={docsHref}>
                 Documentation
-              </a>
-            ) : null}
-            {showDeveloperDashboardLink ? (
-              <a className="hero-primary-cta" href={developerDashboardHref}>
-                Developer Dashboard
               </a>
             ) : null}
           </div>

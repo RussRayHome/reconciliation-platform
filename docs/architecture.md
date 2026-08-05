@@ -154,27 +154,18 @@ See `docs/api.md` for full contract details.
 
 ## 8. Diagnostics and quality architecture
 
-## Runtime diagnostics
-
-- request failure tracking
-- exception tracking
-- recent reconciliation run outcomes
-- git context for local runtime visibility
-
 ## Developer status diagnostics
 
-`GET /api/developer/status` executes and aggregates:
+Quality-gate checks (`test:unit`, `test:integration`, `test:e2e`, `test:postgres`, `lint`,
+`typecheck`, `coverage`, `security:scan`) run nightly via GitHub Actions
+(`.github/workflows/dashboard-status.yml`), never against a live product instance. Each check runs
+as its own parallel job; an `aggregate` job combines their results and publishes one JSON payload
+to the repo's `status-data` branch (`scripts/ci/aggregate-dashboard-status.ts`).
 
-- `test:unit`
-- `test:integration`
-- `test:e2e`
-- `test:postgres`
-- `lint`
-- `typecheck`
-- `coverage`
-- `security:scan`
-
-Results are cached with configurable TTL/history settings.
+A fully separate application -- `apps/developer-dashboard-api` (GitHub OAuth login, reads the
+published payload) and `apps/developer-dashboard-web` -- reads and displays that payload. It shares
+no runtime, login, or execution surface with the product; the product cannot trigger a check run or
+see live diagnostics about itself.
 
 ## 9. Deployment safety architecture
 

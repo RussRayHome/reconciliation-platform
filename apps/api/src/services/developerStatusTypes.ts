@@ -190,7 +190,8 @@ export type DeveloperStatusSnapshot = {
   checks: Array<Pick<DeveloperCheck, 'name' | 'ok' | 'durationMs' | 'summary'>>;
 };
 
-/** Full status payload returned by `GET /api/developer/status`. */
+/** Full status payload shape -- shared by scripts/ci/aggregate-dashboard-status.ts (the only
+ *  remaining producer, publishing to the status-data branch) and its parsing helpers below. */
 export type DeveloperStatusPayload = {
   generatedAt: string;
   repositoryPath: string;

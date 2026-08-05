@@ -45,13 +45,6 @@ describe('NGINX Configuration', () => {
     const config = fs.readFileSync('apps/web/nginx.conf', 'utf-8');
     expect(config).toContain('proxy_pass http://api:4000;');
     expect(config).toContain('location /api/');
-    expect(config).toContain('location ~ ^/(?<env_segment>[A-Za-z0-9_-]+)/dashboard/server$');
-    expect(config).toContain(
-      'return 302 $scheme://$http_host/$env_segment/developer-dashboard.html;',
-    );
-    expect(config).toContain(
-      'rewrite ^/[A-Za-z0-9_-]+/dashboard/server$ /api/developer/runtime break;',
-    );
     expect(config).toContain('location ~ ^/(?<env_segment>[A-Za-z0-9_-]+)/pgweb$');
     expect(config).toContain('return 302 $scheme://$http_host/$env_segment/pgweb/;');
     expect(config).toContain('location ~ ^/[A-Za-z0-9_-]+/pgweb(?:/.*)?$');

@@ -1,18 +1,18 @@
 # API Reference (Generated)
 
-Generated at 2026-06-18T18:59:19.198Z.
+Generated at 2026-08-05T19:36:35.674Z.
 
 ## Coverage Summary
 
 - Exported classes scanned: 6
-- Class members scanned: 33
+- Class members scanned: 35
 - Missing documentation items: 0
 
 ## Exported Classes
 
 ### FileBackedRunRepository
 
-- Source: `apps/api/src/services/runRepository.ts:177`
+- Source: `apps/api/src/services/runRepository.ts:209`
 - Summary: Stores reconciliation runs in memory while also persisting the latest completed run to disk so it survives API restarts.
 
 #### FileBackedRunRepository Constructors
@@ -31,7 +31,7 @@ Generated at 2026-06-18T18:59:19.198Z.
 
 ### InMemoryRunRepository
 
-- Source: `apps/api/src/services/runRepository.ts:86`
+- Source: `apps/api/src/services/runRepository.ts:91`
 - Summary: Stores completed reconciliation runs in process memory for local development and short-lived diagnostic workflows. This repository is intentionally simple and non-durable. It provides a narrow seam that can be replaced later with a persistent implementation.
 
 #### InMemoryRunRepository Constructors
@@ -45,6 +45,7 @@ Generated at 2026-06-18T18:59:19.198Z.
 - `findLatest(): any` — Returns the most recently saved reconciliation run.
 - `saveReviewerDecision(runId: string, decision: ReviewerDecision): ReviewerDecision` — Upserts a reviewer decision for a run and returns the persisted decision payload. Existing decisions for the same target are replaced while preserving original identity fields.
 - `listReviewerDecisions(runId: string): ReviewerDecision[]` — Lists reviewer decisions for a run, or an empty array when the run is not found.
+- `deleteReviewerDecision(runId: string, targetType: ReviewerDecision, targetId: string): boolean` — Removes the reviewer decision for a run/target, returning `true` when one was removed. Clearing a decision returns the target to an undecided state (idempotent).
 
 #### InMemoryRunRepository Properties
 
@@ -91,8 +92,8 @@ Generated at 2026-06-18T18:59:19.198Z.
 
 ### PostgresReconciliationReadModelStore
 
-- Source: `packages/persistence/src/readModelStore.ts:351`
-- Summary: PostgreSQL-backed read-model store for reconciliation runs, exceptions, exports, and reviewer decisions. Used by the API to serve report and dashboard queries.
+- Source: `packages/persistence/src/readModelStore.ts:573`
+- Summary: PostgreSQL-backed read-model store for reconciliation runs, exceptions, exports, and reviewer decisions. Used by the API to serve report and dashboard queries. ADR-0001 step 6: every method takes `organizationId` and runs through `runInTenantScope`, which sets `app.current_organization_id` for the transaction before issuing any query -- RLS policies (changeset 0030) key off that GUC, so a runId belonging to a different tenant than `organizationId` resolves as "not found" rather than leaking another customer's data.
 
 #### PostgresReconciliationReadModelStore Constructors
 
@@ -100,12 +101,12 @@ Generated at 2026-06-18T18:59:19.198Z.
 
 #### PostgresReconciliationReadModelStore Methods
 
-- `findLatestRunReport(): Promise<any>` — Returns the most recently completed reconciliation run report.
-- `findRunReportById(runId: string): Promise<any>` — Loads a full reconciliation report, including files, matches, exceptions, and summary.
-- `findRunSummaryById(runId: string): Promise<any>` — Loads summary metrics for a specific reconciliation run.
-- `listRunExceptions(runId: string): Promise<ExceptionItem[]>` — Lists all exceptions captured for the given run in deterministic line/id order.
-- `listRunExceptionsPage(runId: string, limit: number, offset: number): Promise<PaginatedExceptionsResult>` — Lists a paginated slice of exceptions and total count metadata.
-- `listReviewerDecisions(runId: string): Promise<ReviewerDecision[]>` — Lists reviewer decisions for the given run ordered by creation time.
+- `findLatestRunReport(organizationId: string): Promise<any>` — Returns the most recently completed reconciliation run report.
+- `findRunReportById(organizationId: string, runId: string): Promise<any>` — Loads a full reconciliation report, including files, matches, exceptions, and summary.
+- `findRunSummaryById(organizationId: string, runId: string): Promise<any>` — Loads summary metrics for a specific reconciliation run.
+- `listRunExceptions(organizationId: string, runId: string): Promise<ExceptionItem[]>` — Lists all exceptions captured for the given run in deterministic line/id order.
+- `listRunExceptionsPage(organizationId: string, runId: string, limit: number, offset: number, filters?: ExceptionPageFilters): Promise<PaginatedExceptionsResult>` — Lists a paginated slice of exceptions and total count metadata. Optional category/severity filters narrow both the page and the total count.
+- `listReviewerDecisions(organizationId: string, runId: string): Promise<ReviewerDecision[]>` — Lists reviewer decisions for the given run ordered by creation time.
 
 #### PostgresReconciliationReadModelStore Properties
 
@@ -113,7 +114,7 @@ Generated at 2026-06-18T18:59:19.198Z.
 
 ### PostgresReconciliationLifecycleStore
 
-- Source: `packages/persistence/src/reconciliationLifecycleStore.ts:320`
+- Source: `packages/persistence/src/reconciliationLifecycleStore.ts:415`
 - Summary: Writes all reconciliation artifacts to PostgreSQL, advancing the job state machine at each step. Every public method wraps its writes in a single transaction, acquires an advisory lock on the job row, validates the state transition, performs the inserts/updates, and records an audit event. This ensures the job can never skip a state and that partial writes are rolled back on error. Typical call sequence: 1. `createJob` — insert job + source file registrations → CREATED → FILE_REGISTERED 2. `persistParsedRows` — bulk-insert raw rows → IMPORTING → IMPORTED 3. `persistNormalizedRows` — bulk-insert canonical rows → NORMALIZING → NORMALIZED 4. `persistMatchingArtifacts` — insert match results + rule evaluations → MATCHING → MATCHED 5. `persistReviewArtifacts` — insert exceptions, observations, summary → EXCEPTIONS_IDENTIFIED → REVIEW_READY 6. `persistExportAndFinalize` — insert export record + audit events → FINALIZED
 
 #### PostgresReconciliationLifecycleStore Constructors
@@ -123,13 +124,14 @@ Generated at 2026-06-18T18:59:19.198Z.
 #### PostgresReconciliationLifecycleStore Methods
 
 - `createJob(input: CreateReconciliationJobInput): Promise<void>` — Persists a new reconciliation job and its registered source files.
-- `persistParsedRows(jobId: string, sourceFiles: SourceFile[], rawRows: RawTransactionRow[]): Promise<void>` — Persists parsed raw spreadsheet rows and source-file import batch metadata.
-- `persistNormalizedRows(jobId: string, normalizedTransactions: NormalizedTransaction[]): Promise<void>` — Persists normalized canonical transactions derived from raw imported rows.
-- `persistMatchingArtifacts(input: PersistMatchingArtifactsInput): Promise<void>` — Persists grouped and pairwise match artifacts plus derived rule-evaluation records.
-- `persistReviewArtifacts(input: PersistReviewArtifactsInput): Promise<void>` — Persists exception/review artifacts and upserts run summary metrics.
-- `persistExportAndFinalize(input: PersistExportArtifactsInput): Promise<void>` — Persists export metadata, appends audit events, and finalizes the reconciliation job.
-- `persistReviewerDecision(decision: ReviewerDecision): Promise<void>` — Persists or updates a reviewer decision for a run target and records an audit event.
-- `markFailed(input: MarkJobFailedInput): Promise<void>` — Marks a reconciliation job as failed (or retry-pending) with failure diagnostics.
+- `persistParsedRows(organizationId: string, jobId: string, sourceFiles: SourceFile[], rawRows: RawTransactionRow[]): Promise<void>` — Persists parsed raw spreadsheet rows and source-file import batch metadata.
+- `persistNormalizedRows(organizationId: string, jobId: string, normalizedTransactions: NormalizedTransaction[]): Promise<void>` — Persists normalized canonical transactions derived from raw imported rows.
+- `persistMatchingArtifacts(organizationId: string, input: PersistMatchingArtifactsInput): Promise<void>` — Persists grouped and pairwise match artifacts plus derived rule-evaluation records.
+- `persistReviewArtifacts(organizationId: string, input: PersistReviewArtifactsInput): Promise<void>` — Persists exception/review artifacts and upserts run summary metrics.
+- `persistExportAndFinalize(organizationId: string, input: PersistExportArtifactsInput): Promise<void>` — Persists export metadata, appends audit events, and finalizes the reconciliation job.
+- `persistReviewerDecision(organizationId: string, decision: ReviewerDecision): Promise<void>` — Persists or updates a reviewer decision for a run target and records an audit event.
+- `deleteReviewerDecision(organizationId: string, runId: string, targetType: ReviewerDecision, targetId: string): Promise<void>` — Removes a reviewer decision for a run/target, returning the target to an undecided state. Idempotent: a no-op when no matching decision exists.
+- `markFailed(organizationId: string, input: MarkJobFailedInput): Promise<void>` — Marks a reconciliation job as failed (or retry-pending) with failure diagnostics.
 
 #### PostgresReconciliationLifecycleStore Properties
 

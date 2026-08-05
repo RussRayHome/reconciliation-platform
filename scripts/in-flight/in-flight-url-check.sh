@@ -107,30 +107,13 @@ check_url() {
   echo "In-flight URL check passed: ${label} (${url})"
 }
 
-check_json_url() {
-  local label="$1"
-  local url="$2"
-
-  local payload
-  payload="$(curl --fail --silent --show-error --location "$url")"
-  if ! grep -Eq '"startedAt"|"uptimeMs"|"exceptionsLast10Minutes"' <<<"$payload"; then
-    echo "In-flight URL check failed: ${label} (${url}) returned an unexpected payload." >&2
-    exit 1
-  fi
-
-  echo "In-flight URL check passed: ${label} (${url})"
-}
-
 check_url "Nginx health (unproxied)" "${gateway_base}/healthz"
 check_url "Application" "${gateway_base}/"
 check_url "API proxy health" "${gateway_base}/api/health"
 check_url "Docs" "$(resolve_gateway_url "docs")"
-check_url "Developer Dashboard" "$(resolve_gateway_url "developer-dashboard.html")"
 
 if docker compose "${compose_args[@]}" config --services 2>/dev/null | grep -q '^pgweb$'; then
   check_url "pgweb" "$(resolve_gateway_url "pgweb")"
 fi
-
-check_json_url "Dashboard server" "$(resolve_gateway_url "dashboard/server")"
 
 echo "All in-flight URL checks passed."

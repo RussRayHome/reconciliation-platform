@@ -17,7 +17,6 @@ describe('auth: unauthenticated access', () => {
     ['get', '/api/aliases'],
     ['get', '/api/mapping/canonical-fields'],
     ['get', '/api/reconciliation/latest'],
-    ['get', '/api/developer/runtime'],
   ] as const)('%s %s returns 401 with no bearer token', async (method, route) => {
     const { createApp } = await import('../src/app');
     const app = createApp();
@@ -98,34 +97,6 @@ describe('auth: unauthenticated access', () => {
 });
 
 describe('auth: role-based authorization', () => {
-  it('403s a developer on the application surface (canAccessApplication: false)', async () => {
-    const { createApp } = await import('../src/app');
-    const app = createApp();
-
-    const response = await authedApp(app, { role: 'developer' }).get('/api/aliases');
-
-    expect(response.status).toBe(403);
-  });
-
-  it('403s a financial-analyst on the developer dashboard surface', async () => {
-    const { createApp } = await import('../src/app');
-    const app = createApp();
-
-    const response = await authedApp(app, { role: 'financial-analyst' }).get('/api/developer/runtime');
-
-    expect(response.status).toBe(403);
-  });
-
-  it('allows a developer onto the developer dashboard surface', async () => {
-    const { createApp } = await import('../src/app');
-    const app = createApp();
-
-    const response = await authedApp(app, { role: 'developer' }).get('/api/developer/runtime');
-
-    expect(response.status).not.toBe(403);
-    expect(response.status).not.toBe(401);
-  });
-
   it('allows a financial-analyst onto the application surface', async () => {
     const { createApp } = await import('../src/app');
     const app = createApp();
@@ -247,9 +218,8 @@ describe('auth: logout denylist', () => {
     vi.doMock('redis', () => ({ createClient: () => fakeRedisClient }));
     vi.stubEnv('RATE_LIMIT_USE_REDIS', 'true');
     vi.stubEnv('RATE_LIMIT_REDIS_URL', 'redis://fake-host:6379');
-    // Same reasoning as developer-endpoints.test.ts: resetModules() gives the freshly-imported
-    // app.ts its own authService instance (and thus its own ephemeral JWT secret) unless both
-    // sides read from process.env instead.
+    // resetModules() gives the freshly-imported app.ts its own authService instance (and thus
+    // its own ephemeral JWT secret) unless both sides read from process.env instead.
     vi.stubEnv('JWT_SECRET', 'test-secret-logout-denylist');
 
     const { createApp } = await import('../src/app');

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import type { UserRole } from '@recon/domain';
+import type { RolePermissions, UserRole } from '@recon/domain';
 import { rolePermissionsByRole } from '@recon/domain';
 import type pino from 'pino';
 import type { DenylistRedisClient } from './authService';
@@ -42,7 +42,7 @@ const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
 
 /**
  * Verifies the bearer token on every non-public request and attaches `request.auth`. Does not
- * enforce role; see `requireApplicationAccess` / `requireDeveloperDashboardAccess` for that.
+ * enforce role; see `requireApplicationAccess` for that.
  */
 export const createAuthMiddleware = (
   logger: pino.Logger,
@@ -93,7 +93,7 @@ export const createAuthMiddleware = (
 };
 
 const requireRolePermission =
-  (permission: keyof (typeof rolePermissionsByRole)['developer']): RequestHandler =>
+  (permission: keyof RolePermissions): RequestHandler =>
   (request, response, next) => {
     if (!request.auth || !rolePermissionsByRole[request.auth.role][permission]) {
       response.status(403).json({ message: 'Your role does not have access to this resource.' });
@@ -105,6 +105,3 @@ const requireRolePermission =
 
 /** Gates the reconciliation/aliases/mapping surface -- everything `canAccessApplication` covers. */
 export const requireApplicationAccess = requireRolePermission('canAccessApplication');
-
-/** Gates `/api/developer/*`, stacked on top of the existing diagnostics-flag gate. */
-export const requireDeveloperDashboardAccess = requireRolePermission('canAccessDeveloperDashboard');

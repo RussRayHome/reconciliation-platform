@@ -160,19 +160,19 @@ npm run docker:cleanup
 | `api`      | Express API                          | internal        | dev, stage      |
 | `postgres` | PostgreSQL data store                | `5432`          | dev, stage      |
 | `migrate`  | One-shot migration runner            | none            | dev, stage      |
-| `tools`    | Test runner / quality gate container | `4001`          | dev, stage      |
 | `pgweb`    | Postgres web admin                   | `8081`          | dev, stage only |
 | `nginx-ui` | NGINX admin UI                       | `8082` / `8182` | dev, stage only |
 
-The `tools` container runs the full test and quality gate suite (unit, integration, E2E, lint, typecheck, coverage, security scans) against the live stack. It has access to the Docker socket for container-level operations and Trivy for CVE scanning, and joins `default`, `app`, and `data` networks so it can reach both internal services and external registries.
+The full test and quality gate suite (unit, integration, E2E, lint, typecheck, coverage, security
+scans) runs nightly via GitHub Actions (`.github/workflows/dashboard-status.yml`), not against this
+local stack -- see the separate Developer Dashboard (`apps/developer-dashboard-api`/
+`apps/developer-dashboard-web`) for results.
 
 Access points after deploy:
 
 - Application: `http://127.0.0.1:4173`
 - Documentation Hub: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
-- Developer Dashboard: `http://127.0.0.1:4173/<environment>/developer-dashboard.html` (for example `dev/developer-dashboard.html`)
 - Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
-- Dashboard Server runtime payload: `http://127.0.0.1:4173/<environment>/dashboard/server` (for example `dev/dashboard/server`)
 - Postgres Admin (direct port): `http://127.0.0.1:8081`
 - NGINX UI (direct port): `http://127.0.0.1:8082`
 
@@ -229,8 +229,6 @@ Common flags:
 
 - `RECON_PERSISTENCE_BACKEND=postgres`
 - `DATABASE_URL=postgresql://...`
-- `ENABLE_DEVELOPER_DIAGNOSTICS=false`
-- `VITE_ENABLE_DEVELOPER_DASHBOARD=false`
 
 ### Docker env (`.env.docker`)
 
@@ -239,24 +237,9 @@ Common flags:
 - `API_DATABASE_URL=postgresql://...@postgres:5432/...`
 - `ENABLE_PGAUDIT=true` (dev/stage), `false` (production/default)
 - `RUN_DB_MIGRATIONS_ON_BOOT=false`
-- `ENABLE_DEVELOPER_DIAGNOSTICS=false`
 - `RECONCILIATION_RUN_STORE_PATH=/var/lib/reconciliation/latest-reconciliation-run.json`
 
-## 9. Developer diagnostics and dashboard
-
-Developer endpoints are grouped under `/api/developer/*`.
-
-Access policy:
-
-- Enabled by default outside production.
-- In production, controlled by `ENABLE_DEVELOPER_DIAGNOSTICS=true|false`.
-
-Web dashboard visibility:
-
-- Enabled in dev mode automatically.
-- In non-dev builds, set `VITE_ENABLE_DEVELOPER_DASHBOARD=true`.
-
-## 10. Troubleshooting
+## 9. Troubleshooting
 
 ### Port conflict failures
 
@@ -311,23 +294,10 @@ npx playwright install
 npm run test:e2e
 ```
 
-If E2E tests pass but complete in 3–4 ms (all skipped), the Playwright browser version does not match the installed binary. The tools image uses pre-downloaded Linux binaries from `playwright-browsers/`. Check that the revision in the image and the revision in the volume agree:
+If E2E tests pass but complete in 3–4 ms (all skipped), the Playwright browser version does not
+match the installed binary -- reinstall with `npx playwright install --with-deps chromium`.
 
-```bash
-# check which revision the installed playwright expects
-docker exec <tools-container> node -e "const { chromium } = require('@playwright/test'); console.log(chromium.executablePath())"
-```
-
-If the paths show different revision numbers (e.g. `chromium-1217` vs `chromium-1178`), rebuild the tools image after confirming `PLAYWRIGHT_VERSION` in the Dockerfile matches the version in `package.json`, then update `playwright-browsers/` with the correct Linux binaries using:
-
-```bash
-docker run --rm -v "$PWD/playwright-browsers:/ms-playwright" \
-  -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-  node:26.1.0-bookworm-slim \
-  bash -c "npm install -g @playwright/test@<version> && playwright install chromium"
-```
-
-## 11. Pull request quality baseline
+## 10. Pull request quality baseline
 
 Before merge:
 
@@ -337,7 +307,7 @@ Before merge:
 
 See `docs/branch-protection.md` for recommended required checks.
 
-## 12. Complete root script catalog
+## 11. Complete root script catalog
 
 Source of truth: `package.json` scripts at the repository root.
 
@@ -422,7 +392,7 @@ Source of truth: `package.json` scripts at the repository root.
 - `analyze:reconciliation`: runs reconciliation sensitivity analysis across amount/date/similarity windows.
 - `compare:workbooks`: runs workbook comparison CLI (`parity`, `row`, `second-pass`) for reconciliation outputs.
 
-## 13. Related docs
+## 12. Related docs
 
 - `docs/architecture.md`
 - `docs/api.md`

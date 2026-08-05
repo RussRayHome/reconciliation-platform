@@ -41,11 +41,6 @@ Most errors return:
 | Method | Path                                         | Purpose                                    |
 | ------ | -------------------------------------------- | ------------------------------------------ |
 | GET    | `/api/health`                                | Liveness check                             |
-| GET    | `/api/developer/status`                      | Aggregate quality gate status              |
-| GET    | `/api/developer/runtime`                     | Runtime diagnostics overview               |
-| GET    | `/api/developer/runtime/requests`            | Recent failed requests                     |
-| GET    | `/api/developer/runtime/exceptions`          | Recent runtime exceptions                  |
-| GET    | `/api/developer/runtime/runs`                | Recent reconciliation run outcomes         |
 | POST   | `/api/reconciliation/run`                    | Execute reconciliation from uploaded files |
 | GET    | `/api/reconciliation/latest`                 | Latest completed run report                |
 | GET    | `/api/reconciliation/:id`                    | Run report by ID                           |
@@ -65,110 +60,6 @@ Response `200`:
 {
   "status": "ok",
   "timestamp": "2026-05-09T12:34:56.789Z"
-}
-```
-
-## Developer diagnostics endpoints
-
-Developer diagnostics are guarded by environment policy.
-
-- If disabled, all `/api/developer/*` endpoints return `403`.
-- Enable explicitly with `ENABLE_DEVELOPER_DIAGNOSTICS=true`.
-
-### GET `/api/developer/status`
-
-Query parameters:
-
-- `force=1|true` to bypass cached snapshot.
-
-Returns:
-
-- Quality checks (unit, integration, e2e, postgres, lint, typecheck, coverage, security audit)
-- Aggregate pass/fail status
-- Recent status history
-- Cache metadata (`ttlMs`, `ageMs`, `fromCache`)
-
-### GET `/api/developer/runtime`
-
-Returns runtime overview including:
-
-- API reachability and uptime
-- failed request and exception counts within recent window
-- last reconciliation run snapshot
-- git context (branch, commit, latest message, dirty flag)
-- recent failed requests, exceptions, and run outcomes
-
-### GET `/api/developer/runtime/requests`
-
-Query parameters:
-
-- `limit` (default `10`, max `100`)
-
-Response shape:
-
-```json
-{
-  "items": [
-    {
-      "timestamp": "...",
-      "method": "POST",
-      "path": "/api/reconciliation/run",
-      "statusCode": 500,
-      "durationMs": 312,
-      "correlationId": "..."
-    }
-  ]
-}
-```
-
-### GET `/api/developer/runtime/exceptions`
-
-Query parameters:
-
-- `limit` (default `10`, max `100`)
-
-Response shape:
-
-```json
-{
-  "items": [
-    {
-      "timestamp": "...",
-      "method": "POST",
-      "path": "/api/reconciliation/run",
-      "statusCode": 500,
-      "correlationId": "...",
-      "errorName": "Error",
-      "message": "...",
-      "stackPreview": ["..."]
-    }
-  ]
-}
-```
-
-### GET `/api/developer/runtime/runs`
-
-Query parameters:
-
-- `limit` (default `10`, max `50`)
-
-Response shape:
-
-```json
-{
-  "items": [
-    {
-      "timestamp": "...",
-      "status": "Succeeded",
-      "correlationId": "...",
-      "runId": "...",
-      "accountIdentifier": "...",
-      "reconciliationFrequency": "Monthly",
-      "periodLabel": "...",
-      "durationMs": 1200,
-      "exceptionCount": 7
-    }
-  ]
 }
 ```
 

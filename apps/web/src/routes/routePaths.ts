@@ -9,7 +9,6 @@ export const routePaths = {
   probableMatches: '/probable-matches',
   exceptions: '/exceptions',
   export: '/export',
-  developer: '/developer',
   mappingProfiles: '/mapping/profiles',
   mappingCreate: '/mapping/create',
   mappingHistory: '/mapping/history',

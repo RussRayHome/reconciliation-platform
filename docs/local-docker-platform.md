@@ -11,12 +11,11 @@ Browser -> web (NGINX gateway) -> api (Express) -> postgres
                                -> pgweb (dev and stage only)
 
 Browser -> nginx-ui (dev and stage only, direct admin access)
-
-tools (test runner) -> api (integration + E2E)
-                    -> postgres (integration via DATABASE_URL)
-                    -> Docker daemon socket (container-level Trivy scans, nginx-config validation)
-                    -> external (npm audit registry, Trivy CVE database)
 ```
+
+Quality-gate checks (unit/integration/e2e/lint/typecheck/coverage/security) run nightly via
+GitHub Actions (`.github/workflows/dashboard-status.yml`), not as part of this stack -- see the
+separate Developer Dashboard (`apps/developer-dashboard-api`/`apps/developer-dashboard-web`).
 
 Key design goals:
 
@@ -34,7 +33,6 @@ Key design goals:
 | `api`      | Reconciliation API           | none (internal) | dev, stage      | Exposed only to compose networks; `.git` mounted ro |
 | `postgres` | Primary data store           | `5432`          | dev, stage      | Uses `Dockerfile.postgres`                          |
 | `migrate`  | One-shot migration runner    | none            | dev, stage      | Runs `node apps/api/dist/migrate.cjs`               |
-| `tools`    | Test runner / quality gate   | `4001`          | dev, stage      | Trivy + Docker CLI + git; waits for `api` healthy   |
 | `pgweb`    | Postgres web admin           | `8081`          | dev, stage only | Not deployed to production                          |
 | `nginx-ui` | NGINX admin UI               | `8082` / `8182` | dev, stage only | Not deployed to production                          |
 
@@ -47,11 +45,9 @@ Networks:
 - `edge`: gateway ingress
 - `app` (internal): web-to-api only
 - `data` (internal): api/migrate/pgweb-to-postgres only
-- `default` (bridge): external internet access; joined by `tools` for npm audit registry and Trivy CVE database downloads
+- `default` (bridge): external internet access
 
 `nginx-ui` joins the `edge` network directly for local admin access on its host port.
-
-`tools` joins `default`, `app`, and `data` so it can reach internal services and make outbound HTTPS connections to external registries.
 
 Persistent volumes:
 
@@ -101,9 +97,7 @@ Access points after deploy:
 - Documentation Hub: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
 - API health through gateway: `http://127.0.0.1:4173/api/health`
 - NGINX health: `http://127.0.0.1:4173/healthz`
-- Developer Dashboard: `http://127.0.0.1:4173/<environment>/developer-dashboard.html` (for example `dev/developer-dashboard.html`)
 - Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
-- Dashboard Server runtime payload: `http://127.0.0.1:4173/<environment>/dashboard/server` (for example `dev/dashboard/server`)
 - Postgres Admin (direct port): `http://127.0.0.1:8081` (dev and stage only)
 - NGINX UI (direct port): `http://127.0.0.1:8082` (dev default, stage typically `8182`)
 
@@ -271,9 +265,9 @@ Behavior:
 - non-expired allowlisted CVEs are reported but excluded from blocking counts
 - for stage usage, temporary allowlist entries should be removed after upstream fixes; validate with `npm run docker:db:preflight:stage` and confirm `ALLOWLISTED=0`
 
-### Security scan components (Developer Dashboard)
+### Security scan components
 
-The `tools` container runs Trivy scans for all four security components visible in the Developer Dashboard:
+`npm run security:scan:components` (`scripts/security-component-scan.mjs`) runs Trivy scans for four security components, executed nightly by the `security` job in `.github/workflows/dashboard-status.yml` and published to the separate Developer Dashboard (`apps/developer-dashboard-api`/`apps/developer-dashboard-web`), not run locally:
 
 | Component  | Trivy scan target          | Blocking severity |
 | ---------- | -------------------------- | ----------------- |
@@ -282,7 +276,7 @@ The `tools` container runs Trivy scans for all four security components visible 
 | Container  | base OS layer of api image | informational     |
 | Web Server | `apps/web/nginx.conf`      | HIGH+             |
 
-Each component produces an independent CVE count. The dashboard summary row totals across all components. The presence of CVEs does not fail the quality gate unless the component's blocking threshold is exceeded. The tools container must have external internet access (via the `default` network) to download the Trivy vulnerability database on first scan.
+Each component produces an independent CVE count. The dashboard summary row totals across all components. The presence of CVEs does not fail the quality gate unless the component's blocking threshold is exceeded. The CI runner must have external internet access to download the Trivy vulnerability database on first scan.
 
 ## 9. Environment configuration
 
@@ -301,7 +295,6 @@ Important keys in `.env.docker`:
 - `API_DATABASE_URL`
 - `RECON_PERSISTENCE_BACKEND`
 - `RUN_DB_MIGRATIONS_ON_BOOT`
-- `ENABLE_DEVELOPER_DIAGNOSTICS`
 
 Always validate env before deploy:
 

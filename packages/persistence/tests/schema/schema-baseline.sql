@@ -1071,7 +1071,7 @@ SELECT is(
      FROM pg_constraint con
     WHERE con.conrelid = 'public.reconciliation_user'::regclass AND con.contype IN ('c', 'u', 'x')),
   $chk$reconciliation_user_id_key => UNIQUE (id)
-reconciliation_user_role_check => CHECK ((role = ANY (ARRAY['developer'::text, 'financial-analyst'::text, 'admin'::text, 'superuser'::text])))$chk$,
+reconciliation_user_role_check => CHECK ((role = ANY (ARRAY['financial-analyst'::text, 'admin'::text, 'superuser'::text])))$chk$,
   'reconciliation_user check/unique/exclusion constraints'
 );
 SELECT columns_are('public', 'reconciliation_validation_result', ARRAY['id', 'staged_transaction_id', 'source_file_id', 'rule_version_id', 'severity', 'passed', 'message', 'created_at', 'organization_id']::name[], 'reconciliation_validation_result has exactly the expected columns');

@@ -38,13 +38,7 @@ import {
   verifyPassword,
   type DenylistRedisClient,
 } from './services/authService';
-import {
-  createAuthMiddleware,
-  requireApplicationAccess,
-  requireDeveloperDashboardAccess,
-} from './services/authMiddleware';
-import { createDeveloperStatusService } from './services/developerStatusService';
-import { createDeveloperRuntimeService } from './services/developerRuntimeService';
+import { createAuthMiddleware, requireApplicationAccess } from './services/authMiddleware';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 import {
   createReconciliationQueue,
@@ -73,87 +67,13 @@ import cors from 'cors';
 import { executeReconciliation } from './services/reconciliationService';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
-import { existsSync, readFileSync } from 'node:fs';
 import helmet from 'helmet';
 import multer from 'multer';
-import { dirname, join, resolve } from 'node:path';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
 import { RedisStore } from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { createApiMetrics } from './services/apiMetrics';
-
-const readPackageJson = (
-  directory: string,
-): { scripts?: Record<string, unknown>; workspaces?: unknown } | null => {
-  const packageJsonPath = join(directory, 'package.json');
-  if (!existsSync(packageJsonPath)) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
-      scripts?: Record<string, unknown>;
-      workspaces?: unknown;
-    };
-  } catch {
-    return null;
-  }
-};
-
-const isRepoRootCandidate = (directory: string): boolean => {
-  const packageJson = readPackageJson(directory);
-  if (!packageJson) {
-    return false;
-  }
-
-  const scripts = packageJson.scripts;
-  const requiredDashboardScriptNames = [
-    'test:unit',
-    'test:integration',
-    'test:e2e',
-    'lint',
-    'coverage',
-  ] as const;
-  const hasDashboardScripts = requiredDashboardScriptNames.every(
-    (scriptName) => typeof scripts?.[scriptName] === 'string',
-  );
-
-  return hasDashboardScripts || Array.isArray(packageJson.workspaces);
-};
-
-const findRepoRoot = (startDirectory: string): string | null => {
-  let currentDirectory = resolve(startDirectory);
-
-  while (true) {
-    if (isRepoRootCandidate(currentDirectory)) {
-      return currentDirectory;
-    }
-
-    const parentDirectory = dirname(currentDirectory);
-    if (parentDirectory === currentDirectory) {
-      return null;
-    }
-
-    currentDirectory = parentDirectory;
-  }
-};
-
-const moduleDirectory = typeof __dirname === 'string' ? __dirname : process.cwd();
-const repoRoot = findRepoRoot(moduleDirectory) ?? findRepoRoot(process.cwd()) ?? process.cwd();
-const gitExecutable = 'git';
-const defaultDatabaseUrl =
-  process.env.DATABASE_URL ??
-  process.env.API_DATABASE_URL ??
-  'postgresql://recon_app:change-local-password@localhost:5432/reconciliation_platform';
-const developerStatusService = createDeveloperStatusService({
-  repoRoot,
-  defaultDatabaseUrl,
-});
-const developerRuntimeService = createDeveloperRuntimeService({
-  repoRoot,
-  gitExecutable,
-});
 
 const acceptedMimeTypes = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -220,7 +140,7 @@ const localLoginUsers: Record<
     password: 'rray2',
     firstName: 'rray2',
     lastName: '',
-    role: 'developer',
+    role: 'financial-analyst',
   },
   rray3: {
     password: 'rray3',
@@ -1058,15 +978,6 @@ export const buildOpenApiSpec = () => ({
   },
 });
 
-const isDeveloperDiagnosticsEnabled = (): boolean => {
-  const override = parseBooleanFlag(process.env.ENABLE_DEVELOPER_DIAGNOSTICS);
-  if (override !== null) {
-    return override;
-  }
-
-  return process.env.NODE_ENV !== 'production';
-};
-
 /**
  * Creates the HTTP application for reconciliation, diagnostics, health checks,
  * and workbook export endpoints.
@@ -1083,7 +994,6 @@ export const createApp = (
 ) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
-  const developerDiagnosticsEnabled = isDeveloperDiagnosticsEnabled();
   const httpLogger = pino({ level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL) });
   const apiMetricsFlag = parseBooleanFlag(process.env.ENABLE_API_METRICS);
   const apiMetrics = apiMetricsFlag === true || apiMetricsFlag === null ? createApiMetrics() : null;
@@ -1208,36 +1118,13 @@ export const createApp = (
     next();
   });
 
-  app.use((request, response, next) => {
-    const started = Date.now();
-
-    developerRuntimeService.noteRequestSeenForPath(request.originalUrl);
-
-    response.on('finish', () => {
-      if (response.statusCode < 400) {
-        return;
-      }
-
-      developerRuntimeService.recordFailedRequest({
-        timestamp: new Date().toISOString(),
-        method: request.method,
-        path: request.originalUrl,
-        statusCode: response.statusCode,
-        durationMs: Date.now() - started,
-        correlationId: resolveCorrelationId(request.id),
-      });
-    });
-
-    next();
-  });
-
   // ADR-0002 step 4: deny-by-default across /api from this point on. See PUBLIC_ROUTES in
   // authMiddleware.ts for the (short, justified) allowlist. Everything registered below this
   // line requires a valid bearer token; a forgotten route 401s instead of silently staying open.
   app.use(createAuthMiddleware(httpLogger, () => apiRateLimiter.redisClient));
 
   // ADR-0002 step 5: the reconciliation/aliases/mapping surface additionally requires
-  // canAccessApplication -- the 'developer' role can authenticate but has no business here.
+  // canAccessApplication.
   app.use(['/api/reconciliation', '/api/aliases', '/api/mapping'], requireApplicationAccess);
 
   const loadFromReadModelOrRepository = async <T>(
@@ -1501,54 +1388,6 @@ export const createApp = (
       firstName: request.auth.firstName,
       lastName: request.auth.lastName,
     });
-  });
-
-  app.use('/api/developer', requireDeveloperDashboardAccess, (_request, response, next) => {
-    if (developerDiagnosticsEnabled) {
-      next();
-      return;
-    }
-
-    response.status(403).json({
-      message: 'Developer diagnostics are disabled in this environment.',
-    });
-  });
-
-  app.get('/api/developer/status', async (request, response, next) => {
-    try {
-      const forceRefresh = request.query.force === '1' || request.query.force === 'true';
-      request.log.info({ action: 'developer.status.requested', forceRefresh });
-      const { payload, cache } = await developerStatusService.getStatus(forceRefresh);
-      response.json({
-        ...payload,
-        cache,
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get('/api/developer/runtime', async (_request, response, next) => {
-    try {
-      response.json(await developerRuntimeService.getRuntimeOverview());
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get('/api/developer/runtime/requests', (request, response) => {
-    const limit = parseLimit(request.query.limit, 10, 100);
-    response.json({ items: developerRuntimeService.listFailedRequests(limit) });
-  });
-
-  app.get('/api/developer/runtime/exceptions', (request, response) => {
-    const limit = parseLimit(request.query.limit, 10, 100);
-    response.json({ items: developerRuntimeService.listExceptions(limit) });
-  });
-
-  app.get('/api/developer/runtime/runs', (request, response) => {
-    const limit = parseLimit(request.query.limit, 10, 50);
-    response.json({ items: developerRuntimeService.listReconciliationRuns(limit) });
   });
 
   app.post(
@@ -2039,7 +1878,6 @@ export const createApp = (
       const message = error instanceof Error ? error.message : 'Unexpected server error.';
       const stack = error instanceof Error ? error.stack : undefined;
       const statusCode = resolveUploadErrorStatus(error);
-      const errorName = error instanceof Error ? error.name : 'UnknownError';
 
       request.log.error({ action: 'api.unhandled.error', statusCode, err: { message, stack } });
       captureApiException(error, {
@@ -2052,16 +1890,6 @@ export const createApp = (
           path: request.originalUrl,
           correlationId: resolveCorrelationId(request.id),
         },
-      });
-      developerRuntimeService.recordException({
-        timestamp: new Date().toISOString(),
-        method: request.method,
-        path: request.originalUrl,
-        statusCode,
-        correlationId: resolveCorrelationId(request.id),
-        errorName,
-        message,
-        stack,
       });
       response.status(statusCode).json({ message });
     },

@@ -7,8 +7,6 @@ import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 type DocsOverviewProps = {
   appHref?: string;
   docsHref?: string;
-  showDeveloperDashboardLink: boolean;
-  developerDashboardHref?: string;
   controls?: ReactNode;
 };
 
@@ -83,8 +81,6 @@ const writeDocsLocation = (
 export function DocsOverview({
   appHref = '/',
   docsHref = '/docs',
-  showDeveloperDashboardLink,
-  developerDashboardHref = '/developer-dashboard.html',
   controls,
 }: Readonly<DocsOverviewProps>) {
   const initialLocationState = resolveInitialLocationState();
@@ -294,11 +290,6 @@ export function DocsOverview({
               <a className="hero-primary-cta" href={appHref}>
                 Back to reconciliation app
               </a>
-              {showDeveloperDashboardLink ? (
-                <a className="hero-primary-cta" href={developerDashboardHref}>
-                  Developer Dashboard
-                </a>
-              ) : null}
             </div>
           </div>
 

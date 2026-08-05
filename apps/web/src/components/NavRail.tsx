@@ -74,7 +74,6 @@ export function NavRail({
   exceptions,
   onApplySavedView,
   docsHref,
-  showDeveloperDashboardLink,
   canAccessDocumentation,
   canAccessRunBook,
   username,
@@ -88,7 +87,6 @@ export function NavRail({
   exceptions: ExceptionItem[];
   onApplySavedView: (view: SavedTriageView) => void;
   docsHref: string;
-  showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
   canAccessRunBook: boolean;
   username: string;
@@ -301,7 +299,6 @@ export function NavRail({
 
         <NavRailSystemLinks
           docsHref={docsHref}
-          showDeveloperDashboardLink={showDeveloperDashboardLink}
           canAccessDocumentation={canAccessDocumentation}
           canAccessRunBook={canAccessRunBook}
           isCollapsed={isCollapsed}
@@ -479,7 +476,6 @@ function useSavedViewCounts(
 /** Permission-gated system links; unpermitted items are never rendered. */
 function NavRailSystemLinks({
   docsHref,
-  showDeveloperDashboardLink,
   canAccessDocumentation,
   canAccessRunBook,
   isCollapsed,
@@ -487,35 +483,19 @@ function NavRailSystemLinks({
   onNavigate,
 }: Readonly<{
   docsHref: string;
-  showDeveloperDashboardLink: boolean;
   canAccessDocumentation: boolean;
   canAccessRunBook: boolean;
   isCollapsed: boolean;
   username: string;
   onNavigate: () => void;
 }>) {
-  if (!canAccessDocumentation && !showDeveloperDashboardLink) {
+  if (!canAccessDocumentation) {
     return null;
   }
 
   return (
     <div className="nav-rail__section nav-rail__section--system" aria-label="System">
       <p className="nav-rail__section-title">System</p>
-      {showDeveloperDashboardLink ? (
-        <NavLink
-          to={routePaths.developer}
-          className={({ isActive }) =>
-            isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'
-          }
-          title={isCollapsed ? 'Developer Dashboard' : undefined}
-          onClick={onNavigate}
-        >
-          <span className="nav-rail__item-icon" aria-hidden="true">
-            <SemanticIcon name="operations" />
-          </span>
-          <span className="nav-rail__item-label">Developer Dashboard</span>
-        </NavLink>
-      ) : null}
       {canAccessDocumentation ? (
         <CollapsibleNavSection sectionId="documentation" label="Documentation" username={username}>
           <div className="nav-rail__indent">

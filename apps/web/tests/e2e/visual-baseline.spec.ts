@@ -185,15 +185,6 @@ for (const width of widths) {
       }
     });
 
-    test(`developer access denied @${width}`, async ({ page }) => {
-      await loginAs(page, 'rray2', 'P@ssw0rd');
-      await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot(
-        `developer-access-denied-${width}.png`,
-        screenshotOptions,
-      );
-    });
-
     test(`analyst workspace @${width}`, async ({ page }) => {
       await loginAs(page, 'bray', 'bray123');
       await page.waitForLoadState('networkidle');

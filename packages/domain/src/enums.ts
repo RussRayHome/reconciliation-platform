@@ -182,8 +182,11 @@ export const sourceFileApprovalStatuses = [
 /** Union of valid source-file approval statuses. */
 export type SourceFileApprovalStatus = (typeof sourceFileApprovalStatuses)[number];
 
-/** The four application user roles (ADR-0002, DECIDE 2 = a single role column). */
-export const userRoles = ['developer', 'financial-analyst', 'admin', 'superuser'] as const;
+/** The three application user roles (ADR-0002, DECIDE 2 = a single role column). 'developer' was
+ *  removed once the in-app Developer Dashboard it existed solely to gate was replaced by a fully
+ *  separate application (apps/developer-dashboard-api/web) with its own GitHub-OAuth login,
+ *  unreachable from and unaware of this product's own auth. See changeset 0033. */
+export const userRoles = ['financial-analyst', 'admin', 'superuser'] as const;
 /** Union of valid user roles. */
 export type UserRole = (typeof userRoles)[number];
 
@@ -191,7 +194,6 @@ export type UserRole = (typeof userRoles)[number];
 export interface RolePermissions {
   canAccessApplication: boolean;
   canAccessDocumentation: boolean;
-  canAccessDeveloperDashboard: boolean;
   canAdjustSliderDefaults: boolean;
   canAccessRunBook: boolean;
 }
@@ -203,31 +205,21 @@ export interface RolePermissions {
  * two can no longer drift out of sync with each other.
  */
 export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
-  developer: {
-    canAccessApplication: false,
-    canAccessDocumentation: true,
-    canAccessDeveloperDashboard: true,
-    canAdjustSliderDefaults: false,
-    canAccessRunBook: false,
-  },
   'financial-analyst': {
     canAccessApplication: true,
     canAccessDocumentation: true,
-    canAccessDeveloperDashboard: false,
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
   },
   admin: {
     canAccessApplication: true,
     canAccessDocumentation: true,
-    canAccessDeveloperDashboard: false,
     canAdjustSliderDefaults: true,
     canAccessRunBook: true,
   },
   superuser: {
     canAccessApplication: true,
     canAccessDocumentation: true,
-    canAccessDeveloperDashboard: true,
     canAdjustSliderDefaults: true,
     canAccessRunBook: true,
   },

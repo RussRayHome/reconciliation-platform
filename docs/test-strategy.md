@@ -159,14 +159,16 @@ The current suite verifies key reconciliation behavior including:
 - summary category counts and exposure alignment
 - workbook export generation and API retrieval
 
-## 7. Developer diagnostics endpoint as quality dashboard
+## 7. Developer Dashboard as quality dashboard
 
-`GET /api/developer/status` aggregates test and quality checks into one payload.
+GitHub Actions runs the full quality-gate suite nightly and publishes one aggregated payload to
+the `status-data` branch (see `docs/architecture.md`, "Developer status diagnostics"). The separate
+Developer Dashboard app reads and displays it.
 
 It is useful for:
 
 - quick health snapshots
-- trend visibility through cached history
+- trend visibility across nightly runs
 
 It is not a replacement for direct command execution when debugging a failing check.
 

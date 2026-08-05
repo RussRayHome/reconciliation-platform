@@ -40,11 +40,11 @@ describe('Liquibase rollback', () => {
     return result.rows[0]?.exists === true;
   };
 
-  const userTableHasRlsEnabled = async (pool: Pool): Promise<boolean> => {
-    const result = await pool.query<{ relrowsecurity: boolean }>(
-      "SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_user'",
+  const roleCheckAllowsDeveloper = async (pool: Pool): Promise<boolean> => {
+    const result = await pool.query<{ definition: string }>(
+      "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'reconciliation_user_role_check'",
     );
-    return result.rows[0]?.relrowsecurity === true;
+    return (result.rows[0]?.definition ?? '').includes("'developer'");
   };
 
   describe('rolling back the most recent changeset', () => {
@@ -52,9 +52,9 @@ describe('Liquibase rollback', () => {
     let migratedSchema: string;
     let rolledBackSchema: string;
     let reappliedSchema: string;
-    let migratedRlsEnabled: boolean;
-    let rolledBackRlsEnabled: boolean;
-    let reappliedRlsEnabled: boolean;
+    let migratedRoleCheckAllowsDeveloper: boolean;
+    let rolledBackRoleCheckAllowsDeveloper: boolean;
+    let reappliedRoleCheckAllowsDeveloper: boolean;
 
     beforeAll(async () => {
       database = await createEmptyDatabase('recon_rollback_one');
@@ -62,15 +62,15 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
-      migratedRlsEnabled = await userTableHasRlsEnabled(database.pool);
+      migratedRoleCheckAllowsDeveloper = await roleCheckAllowsDeveloper(database.pool);
 
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
-      rolledBackRlsEnabled = await userTableHasRlsEnabled(database.pool);
+      rolledBackRoleCheckAllowsDeveloper = await roleCheckAllowsDeveloper(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
-      reappliedRlsEnabled = await userTableHasRlsEnabled(database.pool);
+      reappliedRoleCheckAllowsDeveloper = await roleCheckAllowsDeveloper(database.pool);
     }, 180000);
 
     afterAll(async () => {
@@ -87,22 +87,22 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0032 by re-enabling row-level security on reconciliation_user', () => {
-      // 0032 (the most recent changeset as of this test) disables RLS on reconciliation_user
-      // (login must look up a row before any tenant is known -- see 0032's own comment); its
-      // rollback re-enables RLS and recreates the tenant-isolation policy 0030 originally added.
-      // Table/column shape is unaffected by 0032 either way, so migratedSchema/rolledBackSchema
-      // are asserted equal here rather than diffing. When a future changeset lands on top of
-      // 0032, update this test to describe that changeset instead -- it is intentionally pinned
-      // to "whatever is currently the most recent changeset", not to 0032 forever.
-      expect(migratedRlsEnabled).toBe(false);
-      expect(rolledBackRlsEnabled).toBe(true);
-      expect(reappliedRlsEnabled).toBe(false);
-      expect(rolledBackSchema).toEqual(migratedSchema);
+    it('reverses changeset 0033 by re-adding developer to the role check constraint', () => {
+      // 0033 (the most recent changeset as of this test) drops 'developer' from
+      // reconciliation_user_role_check; its rollback puts the value back (though not the specific
+      // rows that held it -- see 0033's own rollback comment). schema-baseline.sql's constraint
+      // listing captures the CHECK definition text, so migratedSchema/rolledBackSchema genuinely
+      // differ here, unlike a rollback that only flips a flag. When a future changeset lands on
+      // top of 0033, update this test to describe that changeset instead -- it is intentionally
+      // pinned to "whatever is currently the most recent changeset", not to 0033 forever.
+      expect(migratedRoleCheckAllowsDeveloper).toBe(false);
+      expect(rolledBackRoleCheckAllowsDeveloper).toBe(true);
+      expect(reappliedRoleCheckAllowsDeveloper).toBe(false);
+      expect(rolledBackSchema).not.toEqual(migratedSchema);
     });
   });
 
-  describe('rolling back seven changesets (0032, 0031, 0030, 0029, 0028, 0027 verify-only, then 0026 schema-changing)', () => {
+  describe('rolling back eight changesets (0033, 0032, 0031, 0030, 0029, 0028, 0027 verify-only, then 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -114,12 +114,12 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now seven changesets back from HEAD (0032), not two -- 0027 (verify-only), 0028
+      // 0026 is now eight changesets back from HEAD (0033), not seven -- 0027 (verify-only), 0028
       // (adds organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
-      // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), and 0032
-      // (disables RLS on reconciliation_user only) all sit on top of it without reversing
-      // anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=7');
+      // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032 (disables
+      // RLS on reconciliation_user only), and 0033 (role check constraint only, no column changes)
+      // all sit on top of it without reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=8');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 
