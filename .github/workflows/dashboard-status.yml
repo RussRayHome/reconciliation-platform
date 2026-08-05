@@ -218,9 +218,18 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # TEMPORARY diagnostic: --max-failures=1 stops after the first real failure instead of
+      # cascading through all 49 specs x 2 retries (~39 min of identical ~15s failures, cut off
+      # by the 20-min timeout with no error ever printed -- Playwright's `list` reporter only
+      # shows failure detail in its end-of-run summary, and the JSON reporter only writes on
+      # natural completion, so a run that never finishes naturally never reveals *why*). Every
+      # test was failing at a strikingly uniform ~15.4s regardless of what it tested, which
+      # points to one shared root cause (a setup/fixture step) rather than 49 independent flaky
+      # tests -- this should surface the real error in under a minute. Remove --max-failures=1
+      # once that's diagnosed and fixed.
       - run: >
           npx tsx scripts/ci/run-check.ts --name "E2E tests" --meta .ci-out/e2e/meta.json --
-          npm run test:e2e -- --reporter=list,json
+          npm run test:e2e -- --reporter=list,json --max-failures=1
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
       - if: always()
@@ -235,6 +244,13 @@ jobs:
     if: always() # publish whatever succeeded even if one or more check jobs failed or timed out
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # GITHUB_TOKEN defaults to read-only in this org (confirmed via the job log's own
+    # "GITHUB_TOKEN Permissions: Contents: read" banner) -- without this, every publish attempt
+    # fails with "Write access to repository not granted" (403) on `git push`, regardless of
+    # whether the commit itself succeeds. Scoped to just this job, not the whole workflow: the
+    # other 7 jobs never touch the repo's contents and don't need write access.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
