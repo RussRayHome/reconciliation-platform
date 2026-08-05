@@ -208,6 +208,20 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # fail-fast: false, not the GH Actions default (true) -- cancelling sibling shards on the
+      # first failure would contradict this whole pipeline's "always publish whatever the other
+      # jobs produced" design (see the header comment and `aggregate`'s if: always()). Each shard
+      # gets its own runner and its own fresh webServer instance (API + web, both
+      # reuseExistingServer: true but nothing is already listening on a clean runner), so this is
+      # safe alongside playwright.config.ts's workers: 1 -- that setting exists because concurrent
+      # *workers sharing one backend* race on shared run state; separate shards on separate
+      # runners don't share anything. Playwright's default shard granularity is per FILE, not per
+      # test, so visual-baseline.spec.ts's forced-serial suite always lands wholly within one
+      # shard and keeps its own internal ordering guarantee.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -237,15 +251,16 @@ jobs:
       # into a ~15s round trip instead of burning minutes retrying a test we already expect to
       # fail for a known reason. Restore the normal flags once E2E is fully green.
       - run: >
-          npx tsx scripts/ci/run-check.ts --name "E2E tests" --meta .ci-out/e2e/meta.json --
+          npx tsx scripts/ci/run-check.ts --name "E2E tests (shard ${{ matrix.shard }}/4)" --meta .ci-out/e2e/meta.json --
           npm run test:e2e -- --reporter=list,json --max-failures=1 --retries=0
+          --shard=${{ matrix.shard }}/4
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
           ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e
+          name: e2e-${{ matrix.shard }}
           path: .ci-out/e2e
           if-no-files-found: warn
 
@@ -310,8 +325,29 @@ jobs:
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: e2e
-          path: .ci-artifacts/e2e
+          name: e2e-1
+          path: .ci-artifacts/e2e-1
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-2
+          path: .ci-artifacts/e2e-2
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-3
+          path: .ci-artifacts/e2e-3
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-4
+          path: .ci-artifacts/e2e-4
+
+      - name: Merge e2e shards
+        # Combines the 4 shard artifacts back into the single .ci-artifacts/e2e/ layout
+        # aggregate-dashboard-status.ts expects, so that script stays shard-count-agnostic.
+        if: always()
+        run: npx tsx scripts/ci/merge-e2e-shards.ts --artifacts .ci-artifacts --shards 4 --out .ci-artifacts/e2e
 
       - name: Aggregate results
         # Belt-and-suspenders alongside continue-on-error above: a download that genuinely found
