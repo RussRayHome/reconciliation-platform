@@ -182,11 +182,22 @@ export const sourceFileApprovalStatuses = [
 /** Union of valid source-file approval statuses. */
 export type SourceFileApprovalStatus = (typeof sourceFileApprovalStatuses)[number];
 
-/** The three application user roles (ADR-0002, DECIDE 2 = a single role column). 'developer' was
+/** The application user roles (ADR-0002, DECIDE 2 = a single role column). 'developer' was
  *  removed once the in-app Developer Dashboard it existed solely to gate was replaced by a fully
  *  separate application (apps/developer-dashboard-api/web) with its own GitHub-OAuth login,
- *  unreachable from and unaware of this product's own auth. See changeset 0033. */
-export const userRoles = ['financial-analyst', 'admin', 'superuser'] as const;
+ *  unreachable from and unaware of this product's own auth. See changeset 0033. The six business
+ *  roles (financial-analyst through cfo) are the self-serve-selectable roles offered at signup;
+ *  admin/superuser are not choosable there. See changeset 0034. */
+export const userRoles = [
+  'financial-analyst',
+  'senior-analyst',
+  'staff-accountant',
+  'controller',
+  'vp-finance',
+  'cfo',
+  'admin',
+  'superuser',
+] as const;
 /** Union of valid user roles. */
 export type UserRole = (typeof userRoles)[number];
 
@@ -211,6 +222,36 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
   },
+  'senior-analyst': {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+  },
+  'staff-accountant': {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+  },
+  controller: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+  },
+  'vp-finance': {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+  },
+  cfo: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+  },
   admin: {
     canAccessApplication: true,
     canAccessDocumentation: true,
@@ -224,3 +265,15 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: true,
   },
 };
+
+/** Status of the outside-source Secretary of State entity/filing-number check, tracked per
+ *  organization. 'pending' until the check resolves; 'failed' is retryable, not terminal. */
+export const entityVerificationStatuses = ['pending', 'verified', 'failed'] as const;
+/** Union of valid entity-verification statuses. */
+export type EntityVerificationStatus = (typeof entityVerificationStatuses)[number];
+
+/** Status of a signup user's email/SMS code confirmation. A wrong code doesn't move this to a
+ *  terminal 'failed' state -- the user just resends and retries. */
+export const identityVerificationStatuses = ['pending', 'verified'] as const;
+/** Union of valid identity-verification statuses. */
+export type IdentityVerificationStatus = (typeof identityVerificationStatuses)[number];

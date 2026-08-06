@@ -96,15 +96,21 @@ ALTER DEFAULT PRIVILEGES FOR ROLE recon_app IN SCHEMA public
 -- resolves organization_id by name against 'Default Organization', which changeset 0026 itself
 -- seeds. Roles mirror apps/api/src/app.ts's localLoginUsers fallback table, so DB-backed and
 -- local-fallback login behave the same for these four accounts.
+--
+-- Changeset 0034 added identity/entity verification gates (POST /api/mapping/profiles requires
+-- both 'verified'). These three accounts are pre-provisioned, not signed up through the real
+-- flow, so they're seeded already-verified -- otherwise every fresh dev/stage deploy would need a
+-- manual identity-code confirm and entity-verification retry just to unblock mapping creation for
+-- its own seeded users.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'reconciliation_user') THEN
-    INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+    INSERT INTO reconciliation_user
+      (user_name, first_name, last_name, password_hash, role, organization_id, identity_verification_status)
     SELECT
-      v.user_name, v.first_name, v.last_name, crypt(v.plain_password, gen_salt('bf')), v.role, org.id
+      v.user_name, v.first_name, v.last_name, crypt(v.plain_password, gen_salt('bf')), v.role, org.id, 'verified'
     FROM (VALUES
       ('rray', 'R', 'Ray', 'P@ssw0rd', 'superuser'),
-      ('rray2', 'R', 'Ray2', 'P@ssw0rd', 'developer'),
       ('rray3', 'R', 'Ray3', 'P@ssw0rd', 'admin'),
       ('bray', 'B', 'Ray', 'bray123', 'financial-analyst')
     ) AS v(user_name, first_name, last_name, plain_password, role)
@@ -114,8 +120,16 @@ BEGIN
           last_name = EXCLUDED.last_name,
           password_hash = EXCLUDED.password_hash,
           role = EXCLUDED.role,
-          organization_id = EXCLUDED.organization_id;
-    RAISE NOTICE 'Application login accounts (rray, rray2, rray3, bray) seeded in reconciliation_user.';
+          organization_id = EXCLUDED.organization_id,
+          identity_verification_status = 'verified';
+
+    DELETE FROM reconciliation_user WHERE user_name = 'rray2';
+
+    UPDATE reconciliation_organization
+    SET entity_verification_status = 'verified'
+    WHERE name = 'Default Organization';
+
+    RAISE NOTICE 'Application login accounts (rray, rray3, bray) seeded in reconciliation_user.';
   ELSE
     RAISE NOTICE 'reconciliation_user does not exist yet — skipping application login seed (re-run after migrations).';
   END IF;

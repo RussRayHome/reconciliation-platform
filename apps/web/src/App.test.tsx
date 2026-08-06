@@ -70,11 +70,8 @@ const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-us
 // Mirrors the role assignments migration 0026 backfilled server-side (and that
 // apps/web/src/App.tsx used to hardcode in a usersByUsername map before ADR-0002 moved role onto
 // the session itself). Tests seed localStorage directly to skip a real login round trip, so this
-// mapping has to live somewhere -- here, not in App.tsx. rray2 moved to financial-analyst in
-// migration 0033 when the 'developer' role (which existed solely to gate the now-removed in-app
-// Developer Dashboard) was dropped.
+// mapping has to live somewhere -- here, not in App.tsx.
 const testUserRoles: Record<string, UserRole> = {
-  rray2: 'financial-analyst',
   bray: 'financial-analyst',
   rray3: 'admin',
   rray: 'superuser',
@@ -88,7 +85,16 @@ const setAuthenticatedUser = (username: string): void => {
 
   globalThis.localStorage.setItem(
     AUTHENTICATED_USER_STORAGE_KEY,
-    JSON.stringify({ username, role, organizationId: 'test-org' }),
+    JSON.stringify({
+      username,
+      role,
+      organizationId: 'test-org',
+      // These test/dev accounts are pre-provisioned, not signed up through the real flow -- treat
+      // them as already past both post-signup gates, matching how create-users.psql seeds them.
+      identityVerificationStatus: 'verified',
+      entityVerificationStatus: 'verified',
+      isFullyVerified: true,
+    }),
   );
 };
 
@@ -479,13 +485,13 @@ describe('App', () => {
     expect(globalThis.location.pathname).toBe('/login');
   });
 
-  it('navigates from login to the New Account placeholder via Create an account', async () => {
+  it('navigates from login to the signup screen via Create an account', async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(screen.getByRole('link', { name: 'Create an account' }));
 
-    expect(screen.getByRole('heading', { name: 'New Account' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Create an account' })).toBeInTheDocument();
     expect(globalThis.location.pathname).toBe('/signup');
   });
 

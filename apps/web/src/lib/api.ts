@@ -1,6 +1,8 @@
 import type {
   CanonicalField,
+  EntityVerificationStatus,
   ErrorCategory,
+  IdentityVerificationStatus,
   MappingProfileSavePayload,
   MappingProfileSaveResult,
   ReconciliationRunReport,
@@ -40,15 +42,46 @@ interface LoginResponse {
   organizationId: string;
 }
 
+/** The self-serve-selectable roles offered on the signup form -- admin/superuser are not
+ * choosable there, matching the comment on `userRoles` in @recon/domain. */
+export type SignupRole = Exclude<UserRole, 'admin' | 'superuser'>;
+
+/** Payload for `POST /api/auth/signup`, matching `signupBodySchema` on the API. */
+export interface SignupPayload {
+  email: string;
+  fullName: string;
+  username: string;
+  password: string;
+  phone: string;
+  companyName: string;
+  headcount: string;
+  industry: string;
+  role: SignupRole;
+  fiscalYearEnd: string;
+  entityState: string;
+  entityFilingNumber: string;
+  entityType: 'domestic' | 'foreign';
+  verificationChannel: 'email' | 'sms';
+}
+
+/** Signup returns the same shape as login -- the account is created (and the caller signed in)
+ * before either verification gate resolves; both start 'pending'. */
+type SignupResponse = LoginResponse;
+
 /** The authenticated principal as reported by the server -- ADR-0002 step 6: the frontend stops
  * trusting a cached identity and instead asks the server (via /api/auth/me) or trusts the just-
- * issued login response, not a locally reconstructed role. */
+ * issued login response, not a locally reconstructed role. `identityVerificationStatus` and
+ * `entityVerificationStatus` are read live on every /api/auth/me call, not carried on the JWT --
+ * see authMiddleware.ts's createRequireFullyVerified for why. */
 export interface AuthenticatedPrincipal {
   username: string;
   role: UserRole;
   organizationId: string;
   firstName: string;
   lastName: string;
+  identityVerificationStatus: IdentityVerificationStatus;
+  entityVerificationStatus: EntityVerificationStatus;
+  isFullyVerified: boolean;
 }
 
 /** Form payload sent to `POST /api/reconciliation/run`. */
@@ -239,6 +272,48 @@ export const logoutRequest = async (): Promise<void> => {
 export const meRequest = async (): Promise<AuthenticatedPrincipal> => {
   const response = await apiFetch('/api/auth/me');
   return parseResponse<AuthenticatedPrincipal>(response);
+};
+
+/** Creates the account and organization, then signs the caller in immediately -- account creation
+ * does not wait on entity or identity verification, both of which start 'pending'. */
+export const signupRequest = async (payload: SignupPayload): Promise<SignupResponse> => {
+  const response = await fetch('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await parseResponse<SignupResponse>(response);
+  setAuthToken(result.token);
+  return result;
+};
+
+/** Confirms the six-digit code sent to the signup email/phone, moving identityVerificationStatus
+ * to 'verified'. */
+export const identityConfirmRequest = async (code: string): Promise<void> => {
+  const response = await apiFetch('/api/auth/identity/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  await parseResponse<void>(response);
+};
+
+/** Requests a fresh six-digit code (the previous one, if any, expired or was never received). */
+export const identityResendRequest = async (): Promise<void> => {
+  const response = await apiFetch('/api/auth/identity/resend', { method: 'POST' });
+  await parseResponse<void>(response);
+};
+
+/** Re-runs the Secretary of State entity check for the caller's organization -- the mockup's
+ * "Re-run verification" affordance for a 'failed' result. */
+export const entityVerificationRetryRequest = async (): Promise<{
+  status: EntityVerificationStatus;
+}> => {
+  const response = await apiFetch('/api/organizations/entity-verification/retry', {
+    method: 'POST',
+  });
+  return parseResponse<{ status: EntityVerificationStatus }>(response);
 };
 
 /** Downloads the output workbook for a run. A plain `<a href>` can't carry the bearer token, so

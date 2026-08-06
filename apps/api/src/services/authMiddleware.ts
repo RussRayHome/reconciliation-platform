@@ -1,6 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { RolePermissions, UserRole } from '@recon/domain';
 import { rolePermissionsByRole } from '@recon/domain';
+import type { Pool } from 'pg';
 import type pino from 'pino';
 import type { DenylistRedisClient } from './authService';
 import { isTokenDenylisted, verifyAuthToken } from './authService';
@@ -32,12 +33,14 @@ declare global {
  *   /api/metrics        - operational scrape endpoint (Prometheus-style), not customer data
  *   /api/openapi.json   - API shape description, not data
  *   /api/auth/login     - cannot require a token to obtain a token
+ *   /api/auth/signup    - cannot require a token to sign up for one
  */
 const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
   '/api/health',
   '/api/metrics',
   '/api/openapi.json',
   '/api/auth/login',
+  '/api/auth/signup',
 ]);
 
 /**
@@ -105,3 +108,55 @@ const requireRolePermission =
 
 /** Gates the reconciliation/aliases/mapping surface -- everything `canAccessApplication` covers. */
 export const requireApplicationAccess = requireRolePermission('canAccessApplication');
+
+/**
+ * Gates mapping *creation* specifically (not the whole /api/mapping surface -- read routes like
+ * canonical-fields stay reachable). Always reads live from the database rather than trusting
+ * anything on the JWT: identity/entity verification status can flip from 'pending' to 'verified'
+ * (or 'failed') well after the token was issued, so a cached claim would go stale mid-session.
+ * `pool === null` is local-fallback mode (no DB-backed reconciliation_user row exists for those
+ * users at all) -- treated as verified so local dev isn't blocked by a gate it structurally can't
+ * satisfy.
+ */
+export const createRequireFullyVerified = (pool: Pool | undefined): RequestHandler => {
+  return (request: Request, response: Response, next: NextFunction): void => {
+    if (!request.auth) {
+      response.status(401).json({ message: 'Authentication required.' });
+      return;
+    }
+
+    if (!pool) {
+      next();
+      return;
+    }
+
+    pool
+      .query<{ identity_verification_status: string; entity_verification_status: string }>(
+        `
+          SELECT u.identity_verification_status, o.entity_verification_status
+          FROM reconciliation_user u
+          JOIN reconciliation_organization o ON o.id = u.organization_id
+          WHERE u.user_name = $1
+          LIMIT 1
+        `,
+        [request.auth.username],
+      )
+      .then((result) => {
+        const row = result.rows[0];
+        const verified =
+          row?.identity_verification_status === 'verified' &&
+          row?.entity_verification_status === 'verified';
+
+        if (!verified) {
+          response.status(403).json({
+            message:
+              'Your account must complete entity and identity verification before creating mappings.',
+          });
+          return;
+        }
+
+        next();
+      })
+      .catch(next);
+  };
+};

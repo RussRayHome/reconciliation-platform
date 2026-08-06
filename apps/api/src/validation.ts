@@ -62,6 +62,92 @@ export const loginBodySchema = z.object({
   password: z.preprocess((value) => (typeof value === 'string' ? value : ''), z.string()).catch(''),
 });
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Self-serve-selectable at signup only -- admin/superuser are not offered here, matching the
+ * comment on `userRoles` in @recon/domain. */
+const signupRoles = [
+  'financial-analyst',
+  'senior-analyst',
+  'staff-accountant',
+  'controller',
+  'vp-finance',
+  'cfo',
+] as const;
+
+const signupEntityTypes = ['domestic', 'foreign'] as const;
+const signupVerificationChannels = ['email', 'sms'] as const;
+
+/** The design doc's five password rules. Checked in order so the first unmet rule is what
+ * surfaces via `respondWithValidationError`, which only ever reports the first issue. */
+const passwordRules: Array<{ test: (value: string) => boolean; message: string }> = [
+  { test: (value) => value.length >= 10, message: 'Password must be at least 10 characters.' },
+  { test: (value) => /[A-Z]/.test(value), message: 'Password must include an uppercase letter.' },
+  { test: (value) => /[a-z]/.test(value), message: 'Password must include a lowercase letter.' },
+  { test: (value) => /[0-9]/.test(value), message: 'Password must include a number.' },
+  { test: (value) => /[^A-Za-z0-9]/.test(value), message: 'Password must include a symbol.' },
+];
+
+export const signupBodySchema = z
+  .object({
+    email: requiredTrimmedString('A work email is required.'),
+    fullName: requiredTrimmedString('Full name is required.'),
+    username: requiredTrimmedString('Username is required.'),
+    password: z.preprocess((value) => (typeof value === 'string' ? value : ''), z.string()),
+    phone: trimmedString().catch(''),
+    companyName: requiredTrimmedString('Legal entity name is required.'),
+    headcount: requiredTrimmedString('Headcount is required.'),
+    industry: requiredTrimmedString('Industry is required.'),
+    role: z.enum(signupRoles),
+    fiscalYearEnd: requiredTrimmedString('Fiscal year end is required.'),
+    entityState: requiredTrimmedString('State of record is required.'),
+    entityFilingNumber: requiredTrimmedString('Filing or registration number is required.'),
+    entityType: z.enum(signupEntityTypes),
+    verificationChannel: z.enum(signupVerificationChannels).catch('email'),
+  })
+  .superRefine((body, ctx) => {
+    if (!EMAIL_PATTERN.test(body.email)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['email'],
+        message: 'Enter a valid work email address.',
+      });
+    }
+
+    if (body.username.includes('@')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['username'],
+        message: 'Username cannot be an email address.',
+      });
+    } else if (body.username.length < 4) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['username'],
+        message: 'Username must be at least 4 characters.',
+      });
+    }
+
+    const failedRule = passwordRules.find((rule) => !rule.test(body.password));
+    if (failedRule) {
+      ctx.addIssue({ code: 'custom', path: ['password'], message: failedRule.message });
+    }
+
+    if (body.verificationChannel === 'sms' && body.phone.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['phone'],
+        message: 'A mobile phone number is required to verify by text.',
+      });
+    }
+  });
+
+export type SignupBody = z.infer<typeof signupBodySchema>;
+
+export const identityConfirmBodySchema = z.object({
+  code: requiredTrimmedString('Enter the six-digit code.'),
+});
+
 export const reconciliationRunBodySchema = z.object({
   accountIdentifier: z.string().optional().catch(undefined),
   periodLabel: z.string().optional().catch(undefined),
