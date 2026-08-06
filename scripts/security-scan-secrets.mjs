@@ -258,9 +258,14 @@ const mergeFindings = (gitleaksEntries, trufflehogEntries) => {
   for (const entry of gitleaksEntries) addEntry(entry);
   for (const entry of trufflehogEntries) addEntry(entry);
 
-  return [...byFingerprint.values()].map(({ occurrenceKeys: _occurrenceKeys, sources, ...finding }) => ({
-    ...finding,
-    sources: [...sources],
+  return [...byFingerprint.values()].map((entry) => ({
+    fingerprint: entry.fingerprint,
+    maskedSecret: entry.maskedSecret,
+    ruleId: entry.ruleId,
+    description: entry.description,
+    verified: entry.verified,
+    occurrences: entry.occurrences,
+    sources: [...entry.sources],
   }));
 };
 
