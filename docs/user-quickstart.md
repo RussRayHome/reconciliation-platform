@@ -24,7 +24,7 @@ Use the URL provided by your team.
 Common local URLs:
 
 - local development web app: `http://localhost:5173`
-- docker gateway web app: `http://127.0.0.1:4173`
+- docker gateway web app: `https://127.0.0.1:4174` (locally-trusted mkcert cert)
 
 If the page does not load, ask a maintainer to start or verify the environment.
 

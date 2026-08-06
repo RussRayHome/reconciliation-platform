@@ -27,14 +27,14 @@ Key design goals:
 
 ## 2. Services and ports
 
-| Service    | Role                         | Host port       | Environments    | Notes                                               |
-| ---------- | ---------------------------- | --------------- | --------------- | --------------------------------------------------- |
-| `web`      | Public gateway and static UI | `4173`          | dev, stage      | Proxies `/api/*` to internal API                    |
-| `api`      | Reconciliation API           | none (internal) | dev, stage      | Exposed only to compose networks; `.git` mounted ro |
-| `postgres` | Primary data store           | `5432`          | dev, stage      | Uses `Dockerfile.postgres`                          |
-| `migrate`  | One-shot migration runner    | none            | dev, stage      | Runs `node apps/api/dist/migrate.cjs`               |
-| `pgweb`    | Postgres web admin           | `8081`          | dev, stage only | Not deployed to production                          |
-| `nginx-ui` | NGINX admin UI               | `8082` / `8182` | dev, stage only | Not deployed to production                          |
+| Service    | Role                         | Host port                                                          | Environments    | Notes                                               |
+| ---------- | ---------------------------- | ------------------------------------------------------------------ | --------------- | --------------------------------------------------- |
+| `web`      | Public gateway and static UI | `4174` (dev, HTTPS) / `4273` (stage, HTTP) / `4274` (stage, HTTPS) | dev, stage      | Proxies `/api/*` to internal API                    |
+| `api`      | Reconciliation API           | none (internal)                                                    | dev, stage      | Exposed only to compose networks; `.git` mounted ro |
+| `postgres` | Primary data store           | `5432`                                                             | dev, stage      | Uses `Dockerfile.postgres`                          |
+| `migrate`  | One-shot migration runner    | none                                                               | dev, stage      | Runs `node apps/api/dist/migrate.cjs`               |
+| `pgweb`    | Postgres web admin           | `8081`                                                             | dev, stage only | Not deployed to production                          |
+| `nginx-ui` | NGINX admin UI               | `8082` / `8182`                                                    | dev, stage only | Not deployed to production                          |
 
 Default values come from `.env.docker` / `.env.docker.dev.fallback`.
 
@@ -79,7 +79,7 @@ Volumes follow the same prefix: `reconciliation-platform-dev_recon-postgres-data
 From repository root:
 
 ```bash
-cp .env.docker.dev.fallback .env.docker
+cp .env.docker.dev.fallback .env.docker.dev
 npm run docker:validate-env
 npm run docker:preflight
 npm run docker:deploy          # builds images, runs migrations, creates users, starts all services
@@ -91,13 +91,13 @@ npm run docker:predeploy
 `docker:deploy` automates the full startup sequence including database user creation. No manual user creation step is required.
 For dev/stage deploys, auxiliary admin health checks (`pgweb`, `nginx-ui`) are enforced by default.
 
-Access points after deploy:
+Access points after deploy (dev is HTTPS-only, using a locally-trusted mkcert cert; stage publishes both HTTP and HTTPS):
 
-- Application: `http://127.0.0.1:4173`
-- Documentation Hub: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
-- API health through gateway: `http://127.0.0.1:4173/api/health`
-- NGINX health: `http://127.0.0.1:4173/healthz`
-- Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
+- Application: `https://127.0.0.1:4174` (dev) / `https://127.0.0.1:4274` or `http://127.0.0.1:4273` (stage)
+- Documentation Hub: `https://127.0.0.1:4174/<environment>/docs` (for example `dev/docs`)
+- API health through gateway: `https://127.0.0.1:4174/api/health`
+- NGINX health: `https://127.0.0.1:4174/healthz`
+- Postgres Admin (gateway route): `https://127.0.0.1:4174/<environment>/pgweb` (for example `dev/pgweb`)
 - Postgres Admin (direct port): `http://127.0.0.1:8081` (dev and stage only)
 - NGINX UI (direct port): `http://127.0.0.1:8082` (dev default, stage typically `8182`)
 

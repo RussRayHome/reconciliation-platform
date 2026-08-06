@@ -24,6 +24,8 @@ import { SectionCard } from '@recon/ui';
 import {
   rolePermissionsByRole,
   userRoles,
+  type EntityVerificationStatus,
+  type IdentityVerificationStatus,
   type ReviewerDecision,
   type RolePermissions,
   type UserRole,
@@ -32,6 +34,7 @@ import {
 import { DocsOverview } from './components/DocsOverview';
 import { ComingSoonPage } from './components/ComingSoonPage';
 import { CreateMappingScreen } from './components/CreateMappingScreen';
+import { SignupScreen } from './components/SignupScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
 import { SourceDropZone } from './components/SourceDropZone';
@@ -72,12 +75,17 @@ type RunData = NonNullable<ReconciliationModel['data']>;
 /** The authenticated principal, as reported by the server (login response or /api/auth/me) --
  * ADR-0002 step 6: role travels with the session instead of being looked up from a hardcoded
  * client-side username map. */
-type AuthenticatedUserSession = {
+export type AuthenticatedUserSession = {
   username: string;
   role: UserRole;
   organizationId: string;
   firstName?: string;
   lastName?: string;
+  // Login/signup don't return these -- both start out 'pending'/'pending'/false and are corrected
+  // moments later by the /api/auth/me effect below, which reads them live from the database.
+  identityVerificationStatus: IdentityVerificationStatus;
+  entityVerificationStatus: EntityVerificationStatus;
+  isFullyVerified: boolean;
 };
 
 type SelectOption = {
@@ -97,13 +105,25 @@ const invalidLoginMessage = 'Invalid username or password. Try again.';
 
 const roleDisplayLabels: Record<UserRole, string> = {
   'financial-analyst': 'Financial Analyst',
+  'senior-analyst': 'Senior Analyst',
+  'staff-accountant': 'Staff Accountant',
+  controller: 'Controller',
+  'vp-finance': 'VP Finance',
+  cfo: 'CFO',
   admin: 'Admin',
   superuser: 'SuperUser',
 };
 
-/** Role-aware landing tab: analysts land on Review, everyone else on Setup. */
+/** Role-aware landing tab (design doc: "Role sets the default landing view"). The two other
+ * individual-contributor analyst roles land on Review like financial-analyst; the management-tier
+ * roles (controller/vp-finance/cfo) land on Setup alongside admin/superuser. */
+const analystTierLandingRoles = new Set<UserRole>([
+  'financial-analyst',
+  'senior-analyst',
+  'staff-accountant',
+]);
 const resolveRoleLandingTab = (role: UserRole): AppTab =>
-  role === 'financial-analyst' ? 'review' : 'setup';
+  analystTierLandingRoles.has(role) ? 'review' : 'setup';
 
 const monthsWithinYear = [
   'January',
@@ -173,6 +193,17 @@ const loadAuthenticatedUserSession = (): AuthenticatedUserSession | null => {
           firstName:
             typeof parsedSession.firstName === 'string' ? parsedSession.firstName : undefined,
           lastName: typeof parsedSession.lastName === 'string' ? parsedSession.lastName : undefined,
+          // A session cached before this field existed (or a stale value) defaults to
+          // pending/unverified -- harmless, since the mount-time /api/auth/me effect corrects it
+          // against the live database within moments.
+          identityVerificationStatus:
+            parsedSession.identityVerificationStatus === 'verified' ? 'verified' : 'pending',
+          entityVerificationStatus:
+            parsedSession.entityVerificationStatus === 'verified' ||
+            parsedSession.entityVerificationStatus === 'failed'
+              ? parsedSession.entityVerificationStatus
+              : 'pending',
+          isFullyVerified: parsedSession.isFullyVerified === true,
         };
       }
     }
@@ -414,6 +445,9 @@ function App() {
           organizationId: principal.organizationId,
           firstName: principal.firstName || previous?.firstName,
           lastName: principal.lastName || previous?.lastName,
+          identityVerificationStatus: principal.identityVerificationStatus,
+          entityVerificationStatus: principal.entityVerificationStatus,
+          isFullyVerified: principal.isFullyVerified,
         }));
       })
       .catch(() => {
@@ -451,7 +485,17 @@ function App() {
             path={routePaths.forgotPassword}
             element={<PlaceholderScreen title="Forgot Password" />}
           />
-          <Route path={routePaths.signup} element={<PlaceholderScreen title="New Account" />} />
+          <Route
+            path={routePaths.signup}
+            element={
+              <SignupScreen
+                onAuthenticated={(session) => {
+                  globalThis.history.replaceState(globalThis.history.state, '', appHref);
+                  setAuthenticatedUserSession(session);
+                }}
+              />
+            }
+          />
           <Route
             path={routePaths.support}
             element={<PlaceholderScreen title="Contact Support" />}
@@ -520,6 +564,9 @@ function App() {
         profileLabel={displayName.length > 0 ? displayName : activeUser.username}
         roleLabel={roleDisplayLabels[activeUser.role]}
         onSignOut={handleSignOut}
+        isFullyVerified={activeUser.isFullyVerified}
+        identityVerificationStatus={activeUser.identityVerificationStatus}
+        entityVerificationStatus={activeUser.entityVerificationStatus}
       />
     </BrowserRouter>
   );
@@ -534,6 +581,9 @@ function ReconciliationApp({
   profileLabel,
   roleLabel,
   onSignOut,
+  isFullyVerified,
+  identityVerificationStatus,
+  entityVerificationStatus,
 }: Readonly<{
   docsHref: string;
   rolePermissions: RolePermissions;
@@ -543,6 +593,9 @@ function ReconciliationApp({
   profileLabel: string;
   roleLabel: string;
   onSignOut: () => void;
+  isFullyVerified: boolean;
+  identityVerificationStatus: IdentityVerificationStatus;
+  entityVerificationStatus: EntityVerificationStatus;
 }>) {
   const currentYear = new Date().getFullYear();
   const previousSevenYears = Array.from({ length: 7 }, (_, index) =>
@@ -1087,7 +1140,19 @@ function ReconciliationApp({
                   />
                 }
               />
-              <Route path={routePaths.mappingCreate} element={<CreateMappingScreen />} />
+              <Route
+                path={routePaths.mappingCreate}
+                element={
+                  isFullyVerified ? (
+                    <CreateMappingScreen />
+                  ) : (
+                    <MappingVerificationRequiredNotice
+                      identityVerificationStatus={identityVerificationStatus}
+                      entityVerificationStatus={entityVerificationStatus}
+                    />
+                  )
+                }
+              />
               <Route
                 path={routePaths.mappingHistory}
                 element={
@@ -1365,6 +1430,11 @@ function LoginShell({
           organizationId: result.organizationId,
           firstName: result.firstName,
           lastName: result.lastName,
+          // Login doesn't report verification status -- the mount-time /api/auth/me effect
+          // fills these in against the live database within moments of landing in the app.
+          identityVerificationStatus: 'pending',
+          entityVerificationStatus: 'pending',
+          isFullyVerified: false,
         });
       })
       .catch(() => {
@@ -1553,6 +1623,42 @@ function AccessDeniedShell({
         </SectionCard>
       </main>
     </div>
+  );
+}
+
+/** Shown in place of CreateMappingScreen when the account hasn't cleared both post-signup gates
+ * yet. Unlike AccessDeniedShell (a whole-app swap), this renders inside the normal app shell --
+ * nav rail and controls stay visible, only the route's own content area changes -- since the rest
+ * of the app is usable on an unverified account; only mapping creation is blocked. */
+function MappingVerificationRequiredNotice({
+  identityVerificationStatus,
+  entityVerificationStatus,
+}: Readonly<{
+  identityVerificationStatus: IdentityVerificationStatus;
+  entityVerificationStatus: EntityVerificationStatus;
+}>) {
+  const entityStatusLabel =
+    entityVerificationStatus === 'verified'
+      ? 'Verified'
+      : entityVerificationStatus === 'failed'
+        ? 'Failed -- contact support or retry from Account settings'
+        : 'Pending';
+
+  return (
+    <SectionCard
+      title="Verification required"
+      description="Creating a mapping requires both your identity and your organization's entity to be verified first. The rest of the application remains available in the meantime."
+    >
+      <ul className="verification-required-list">
+        <li>
+          Identity confirmation:{' '}
+          <strong>{identityVerificationStatus === 'verified' ? 'Verified' : 'Pending'}</strong>
+        </li>
+        <li>
+          Entity verification: <strong>{entityStatusLabel}</strong>
+        </li>
+      </ul>
+    </SectionCard>
   );
 }
 

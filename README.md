@@ -120,19 +120,19 @@ Default local endpoints:
 ### Run production-like Docker stack
 
 ```bash
-cp .env.docker.dev.fallback .env.docker
+cp .env.docker.dev.fallback .env.docker.dev
 npm run docker:validate-env
 npm run docker:deploy
 npm run docker:health
 ```
 
-Default containerized endpoints:
+Default containerized endpoints (dev is HTTPS-only, using a locally-trusted mkcert cert):
 
-- Gateway: `http://127.0.0.1:4173`
-- Environment docs: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
-- Environment pgweb: `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
-- API health via gateway: `http://127.0.0.1:4173/api/health`
-- NGINX health: `http://127.0.0.1:4173/healthz`
+- Gateway: `https://127.0.0.1:4174`
+- Environment docs: `https://127.0.0.1:4174/<environment>/docs` (for example `dev/docs`)
+- Environment pgweb: `https://127.0.0.1:4174/<environment>/pgweb` (for example `dev/pgweb`)
+- API health via gateway: `https://127.0.0.1:4174/api/health`
+- NGINX health: `https://127.0.0.1:4174/healthz`
 - pgweb (database viewer): `http://127.0.0.1:8081`
 
 ## Daily developer commands

@@ -33,12 +33,23 @@ import {
   AUTH_TOKEN_TTL_SECONDS,
   DUMMY_PASSWORD_HASH,
   denylistToken,
+  hashPassword,
   isProductionRuntime,
   signAuthToken,
   verifyPassword,
   type DenylistRedisClient,
 } from './services/authService';
-import { createAuthMiddleware, requireApplicationAccess } from './services/authMiddleware';
+import {
+  createAuthMiddleware,
+  createRequireFullyVerified,
+  requireApplicationAccess,
+} from './services/authMiddleware';
+import { resolveEntityVerificationProvider } from './services/entityVerificationService';
+import {
+  generateIdentityCode,
+  resolveNotificationChannel,
+  verifyIdentityCode,
+} from './services/identityVerificationService';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 import {
   createReconciliationQueue,
@@ -51,6 +62,7 @@ import {
   aliasesQuerySchema,
   createAliasBodySchema,
   exceptionsQuerySchema,
+  identityConfirmBodySchema,
   isErrorCategory,
   loginBodySchema,
   reconciliationRunBodySchema,
@@ -59,6 +71,7 @@ import {
   reviewerDecisionDeleteParamsSchema,
   reviewerDecisionDeleteQuerySchema,
   saveMappingProfileBodySchema,
+  signupBodySchema,
   updateAliasBodySchema,
 } from './validation';
 
@@ -135,12 +148,6 @@ const localLoginUsers: Record<
     firstName: 'rray',
     lastName: '',
     role: 'superuser',
-  },
-  rray2: {
-    password: 'rray2',
-    firstName: 'rray2',
-    lastName: '',
-    role: 'financial-analyst',
   },
   rray3: {
     password: 'rray3',
@@ -1127,6 +1134,11 @@ export const createApp = (
   // canAccessApplication.
   app.use(['/api/reconciliation', '/api/aliases', '/api/mapping'], requireApplicationAccess);
 
+  // Mapping *creation* specifically additionally requires both verification gates -- see
+  // createRequireFullyVerified. Instantiated once here (not per-request) and mounted inline on
+  // that one route below, so read-only mapping routes stay reachable on an unverified account.
+  const requireFullyVerified = createRequireFullyVerified(pool);
+
   const loadFromReadModelOrRepository = async <T>(
     loadFromReadModel: (() => Promise<T | undefined>) | undefined,
     loadFromRepository: () => T | undefined,
@@ -1375,19 +1387,350 @@ export const createApp = (
     }
   });
 
-  app.get('/api/auth/me', (request, response) => {
+  app.get('/api/auth/me', async (request, response, next) => {
     if (!request.auth) {
       response.status(401).json({ message: 'Authentication required.' });
       return;
     }
 
-    response.json({
-      username: request.auth.username,
-      role: request.auth.role,
-      organizationId: request.auth.organizationId,
-      firstName: request.auth.firstName,
-      lastName: request.auth.lastName,
+    if (!pool) {
+      // Local-fallback users (ALLOW_LOCAL_LOGIN_FALLBACK) have no reconciliation_user row to read
+      // verification state from -- treat that mode as fully verified rather than gating it on
+      // state it structurally can't have.
+      response.json({
+        username: request.auth.username,
+        role: request.auth.role,
+        organizationId: request.auth.organizationId,
+        firstName: request.auth.firstName,
+        lastName: request.auth.lastName,
+        identityVerificationStatus: 'verified',
+        entityVerificationStatus: 'verified',
+        isFullyVerified: true,
+      });
+      return;
+    }
+
+    try {
+      // Verification status is read live, not carried on the JWT: both statuses can flip well
+      // after the token was issued, so a cached claim would go stale mid-session.
+      const result = await pool.query<{
+        identity_verification_status: string;
+        entity_verification_status: string;
+      }>(
+        `
+          SELECT u.identity_verification_status, o.entity_verification_status
+          FROM reconciliation_user u
+          JOIN reconciliation_organization o ON o.id = u.organization_id
+          WHERE u.user_name = $1
+          LIMIT 1
+        `,
+        [request.auth.username],
+      );
+
+      const row = result.rows[0];
+      const identityVerificationStatus = row?.identity_verification_status ?? 'pending';
+      const entityVerificationStatus = row?.entity_verification_status ?? 'pending';
+
+      response.json({
+        username: request.auth.username,
+        role: request.auth.role,
+        organizationId: request.auth.organizationId,
+        firstName: request.auth.firstName,
+        lastName: request.auth.lastName,
+        identityVerificationStatus,
+        entityVerificationStatus,
+        isFullyVerified:
+          identityVerificationStatus === 'verified' && entityVerificationStatus === 'verified',
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/auth/signup', async (request, response, next) => {
+    if (!pool) {
+      response.status(501).json({ message: 'Signup requires a database connection.' });
+      return;
+    }
+
+    const bodyResult = signupBodySchema.safeParse(request.body ?? {});
+    if (!bodyResult.success) {
+      respondWithValidationError(response, bodyResult.error);
+      return;
+    }
+
+    const body = bodyResult.data;
+    const [firstName = '', ...lastNameParts] = body.fullName.trim().split(/\s+/);
+    const lastName = lastNameParts.join(' ') || firstName;
+    const organizationId = randomUUID();
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `
+          INSERT INTO reconciliation_organization
+            (id, name, entity_state, entity_filing_number, entity_type, entity_verification_status)
+          VALUES ($1, $2, $3, $4, $5, 'pending')
+        `,
+        [organizationId, body.companyName, body.entityState, body.entityFilingNumber, body.entityType],
+      );
+
+      const passwordHash = await hashPassword(body.password);
+
+      await client.query(
+        `
+          INSERT INTO reconciliation_user
+            (user_name, first_name, last_name, email, phone, password_hash, role, organization_id,
+             identity_verification_status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+        `,
+        [
+          body.username,
+          firstName,
+          lastName,
+          body.email,
+          body.phone.length > 0 ? body.phone : null,
+          passwordHash,
+          body.role,
+          organizationId,
+        ],
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+
+      if ((error as { code?: string }).code === '23505') {
+        response
+          .status(409)
+          .json({ message: 'That username, email, or company name is already registered.' });
+        return;
+      }
+
+      next(error);
+      return;
+    }
+
+    client.release();
+
+    // Account creation is already committed at this point -- nothing below should be able to roll
+    // it back on failure, it should only degrade (a stuck entity check can be retried via
+    // /api/organizations/entity-verification/retry, a missing code via /api/auth/identity/resend).
+    void resolveEntityVerificationProvider()
+      .verify({
+        legalName: body.companyName,
+        state: body.entityState,
+        filingNumber: body.entityFilingNumber,
+        entityType: body.entityType,
+      })
+      .then((result) =>
+        pool!.query(
+          'UPDATE reconciliation_organization SET entity_verification_status = $1 WHERE id = $2',
+          [result.status, organizationId],
+        ),
+      )
+      .catch((error: unknown) => {
+        httpLogger.warn(
+          { action: 'signup.entity_verification.failed', organizationId, err: error },
+          'Entity verification provider call failed.',
+        );
+      });
+
+    try {
+      const { code, codeHash, expiresAt } = await generateIdentityCode();
+      await pool.query(
+        `
+          UPDATE reconciliation_user
+          SET identity_verification_code_hash = $1, identity_verification_code_expires_at = $2
+          WHERE user_name = $3
+        `,
+        [codeHash, expiresAt, body.username],
+      );
+
+      const notificationTarget = body.verificationChannel === 'sms' ? body.phone : body.email;
+      void resolveNotificationChannel(httpLogger)
+        .send(notificationTarget, code)
+        .catch((error: unknown) => {
+          httpLogger.warn(
+            { action: 'signup.identity_code.send_failed', err: error },
+            'Failed to send identity verification code.',
+          );
+        });
+    } catch (error) {
+      httpLogger.warn(
+        { action: 'signup.identity_code.generate_failed', username: body.username, err: error },
+        'Failed to generate the initial identity verification code; the user can request one via /api/auth/identity/resend.',
+      );
+    }
+
+    const { token } = signAuthToken(
+      { sub: body.username, role: body.role, organizationId, firstName, lastName },
+      httpLogger,
+    );
+
+    response.status(201).json({
+      token,
+      username: body.username,
+      firstName,
+      lastName,
+      role: body.role,
+      organizationId,
     });
+  });
+
+  app.post('/api/auth/identity/confirm', async (request, response, next) => {
+    if (!request.auth) {
+      response.status(401).json({ message: 'Authentication required.' });
+      return;
+    }
+
+    if (!pool) {
+      response.status(501).json({ message: 'Identity verification requires a database connection.' });
+      return;
+    }
+
+    const bodyResult = identityConfirmBodySchema.safeParse(request.body ?? {});
+    if (!bodyResult.success) {
+      respondWithValidationError(response, bodyResult.error);
+      return;
+    }
+
+    try {
+      const result = await pool.query<{
+        identity_verification_code_hash: string | null;
+        identity_verification_code_expires_at: Date | null;
+      }>(
+        `
+          SELECT identity_verification_code_hash, identity_verification_code_expires_at
+          FROM reconciliation_user
+          WHERE user_name = $1
+          LIMIT 1
+        `,
+        [request.auth.username],
+      );
+
+      const row = result.rows[0];
+      const valid = await verifyIdentityCode(
+        bodyResult.data.code,
+        row?.identity_verification_code_hash ?? null,
+        row?.identity_verification_code_expires_at ?? null,
+      );
+
+      if (!valid) {
+        response.status(400).json({ message: 'That code is invalid or has expired.' });
+        return;
+      }
+
+      await pool.query(
+        `
+          UPDATE reconciliation_user
+          SET identity_verification_status = 'verified',
+              identity_verification_code_hash = NULL,
+              identity_verification_code_expires_at = NULL
+          WHERE user_name = $1
+        `,
+        [request.auth.username],
+      );
+
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/auth/identity/resend', async (request, response, next) => {
+    if (!request.auth) {
+      response.status(401).json({ message: 'Authentication required.' });
+      return;
+    }
+
+    if (!pool) {
+      response.status(501).json({ message: 'Identity verification requires a database connection.' });
+      return;
+    }
+
+    try {
+      const userResult = await pool.query<{ email: string | null; phone: string | null }>(
+        'SELECT email, phone FROM reconciliation_user WHERE user_name = $1 LIMIT 1',
+        [request.auth.username],
+      );
+      const user = userResult.rows[0];
+      const target = user?.email ?? user?.phone ?? null;
+
+      if (!target) {
+        response.status(409).json({ message: 'No email or phone is on file for this account.' });
+        return;
+      }
+
+      const { code, codeHash, expiresAt } = await generateIdentityCode();
+      await pool.query(
+        `
+          UPDATE reconciliation_user
+          SET identity_verification_code_hash = $1, identity_verification_code_expires_at = $2
+          WHERE user_name = $3
+        `,
+        [codeHash, expiresAt, request.auth.username],
+      );
+
+      await resolveNotificationChannel(httpLogger).send(target, code);
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/organizations/entity-verification/retry', async (request, response, next) => {
+    if (!request.auth) {
+      response.status(401).json({ message: 'Authentication required.' });
+      return;
+    }
+
+    if (!pool) {
+      response.status(501).json({ message: 'Entity verification requires a database connection.' });
+      return;
+    }
+
+    try {
+      const orgResult = await pool.query<{
+        name: string;
+        entity_state: string | null;
+        entity_filing_number: string | null;
+        entity_type: 'domestic' | 'foreign' | null;
+      }>(
+        `
+          SELECT name, entity_state, entity_filing_number, entity_type
+          FROM reconciliation_organization
+          WHERE id = $1
+          LIMIT 1
+        `,
+        [request.auth.organizationId],
+      );
+      const org = orgResult.rows[0];
+
+      if (!org || !org.entity_state || !org.entity_filing_number || !org.entity_type) {
+        response.status(409).json({ message: 'Entity details are incomplete for this organization.' });
+        return;
+      }
+
+      const result = await resolveEntityVerificationProvider().verify({
+        legalName: org.name,
+        state: org.entity_state,
+        filingNumber: org.entity_filing_number,
+        entityType: org.entity_type,
+      });
+
+      await pool.query(
+        'UPDATE reconciliation_organization SET entity_verification_status = $1 WHERE id = $2',
+        [result.status, request.auth.organizationId],
+      );
+
+      response.json({ status: result.status });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post(
@@ -1785,7 +2128,7 @@ export const createApp = (
     response.json(CANONICAL_FIELDS);
   });
 
-  app.post('/api/mapping/profiles', async (request, response, next) => {
+  app.post('/api/mapping/profiles', requireFullyVerified, async (request, response, next) => {
     if (!requirePool(response)) return;
     try {
       const bodyResult = saveMappingProfileBodySchema.safeParse(request.body ?? {});
