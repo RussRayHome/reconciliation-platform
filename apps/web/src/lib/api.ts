@@ -102,6 +102,12 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
     throw new Error(payload.message ?? 'Request failed.');
   }
 
+  // 204 No Content (identity confirm/resend) has no body -- .json() would throw on the empty
+  // string rather than return anything meaningful.
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return (await response.json()) as T;
 };
 
@@ -272,6 +278,33 @@ export const logoutRequest = async (): Promise<void> => {
 export const meRequest = async (): Promise<AuthenticatedPrincipal> => {
   const response = await apiFetch('/api/auth/me');
   return parseResponse<AuthenticatedPrincipal>(response);
+};
+
+/** Payload for the pre-signup entity precheck -- a subset of {@link SignupPayload}'s entity fields. */
+export interface EntityVerificationCheckPayload {
+  companyName: string;
+  entityState: string;
+  entityFilingNumber: string;
+  entityType: 'domestic' | 'foreign';
+}
+
+export interface EntityVerificationCheckResponse {
+  status: Extract<EntityVerificationStatus, 'verified' | 'failed'>;
+  registeredName?: string;
+  standing?: string;
+}
+
+/** Advisory Secretary of State check the signup form runs inline, before the account (and its
+ * token) exist -- unauthenticated, writes nothing. See entityVerificationCheckBodySchema. */
+export const entityVerificationCheckRequest = async (
+  payload: EntityVerificationCheckPayload,
+): Promise<EntityVerificationCheckResponse> => {
+  const response = await fetch('/api/entity-verification/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseResponse<EntityVerificationCheckResponse>(response);
 };
 
 /** Creates the account and organization, then signs the caller in immediately -- account creation

@@ -148,6 +148,17 @@ export const identityConfirmBodySchema = z.object({
   code: requiredTrimmedString('Enter the six-digit code.'),
 });
 
+/** Lets the signup form show a live Secretary of State result before the account exists (no
+ * organization to check yet) -- purely advisory. `POST /api/auth/signup` re-verifies
+ * fire-and-forget against the same provider once the org row exists, which is what actually sets
+ * `entity_verification_status`; this endpoint never writes anything. */
+export const entityVerificationCheckBodySchema = z.object({
+  companyName: requiredTrimmedString('Legal entity name is required.'),
+  entityState: requiredTrimmedString('State of record is required.'),
+  entityFilingNumber: requiredTrimmedString('Filing or registration number is required.'),
+  entityType: z.enum(signupEntityTypes),
+});
+
 export const reconciliationRunBodySchema = z.object({
   accountIdentifier: z.string().optional().catch(undefined),
   periodLabel: z.string().optional().catch(undefined),

@@ -1,0 +1,1098 @@
+@layer components {
+  .signup-page {
+    background: radial-gradient(1000px 600px at 50% -10%, rgba(31, 209, 161, 0.08), transparent 60%),
+      var(--bg-base);
+    min-height: 100vh;
+    padding: 32px 24px 64px;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: center;
+  }
+
+  .signup-shell {
+    width: 100%;
+    max-width: 1120px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .signup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .signup-header__brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+
+  .signup-header__logo {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: block;
+  }
+
+  .signup-header__company {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .signup-header__product {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-strong);
+    padding-left: 6px;
+  }
+
+  .signup-header__login {
+    font-size: 13px;
+    color: var(--text-tertiary);
+  }
+
+  .signup-track {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+  }
+
+  .signup-track__step {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .signup-track__step:last-child {
+    flex: 0 0 auto;
+  }
+
+  .signup-track__mark {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    border: 1px solid var(--line-strong);
+    color: var(--text-tertiary);
+  }
+
+  .signup-track__mark--done {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .signup-track__mark--current {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .signup-track__label {
+    margin-left: 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+  }
+
+  .signup-track__label--current {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .signup-track__line {
+    flex: 1;
+    height: 1px;
+    margin: 0 10px;
+    background: var(--line);
+  }
+
+  .signup-track__line--done {
+    background: var(--accent-soft-border);
+  }
+
+  .signup-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 28px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .signup-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .signup-intro h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-strong);
+  }
+
+  .signup-intro p {
+    margin: 8px 0 0;
+    max-width: 560px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  .signup-error-box {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: var(--radius-control);
+    background: var(--negative-soft);
+    border: 1px solid var(--negative-soft-border);
+  }
+
+  .signup-error-box__title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--negative);
+  }
+
+  .signup-error-box ul {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .signup-error-box li {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--negative);
+  }
+
+  .signup-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 26px;
+  }
+
+  .signup-section:first-of-type {
+    margin-top: 22px;
+  }
+
+  .signup-section__label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+
+  .signup-section__line {
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+
+  .signup-grid {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  @media (max-width: 640px) {
+    .signup-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .signup-grid--span2 {
+    grid-column: span 2;
+  }
+
+  @media (max-width: 640px) {
+    .signup-grid--span2 {
+      grid-column: span 1;
+    }
+  }
+
+  .signup-field {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .signup-field label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+  }
+
+  .signup-field input,
+  .signup-field select {
+    box-sizing: border-box;
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+  }
+
+  .signup-field input:focus,
+  .signup-field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(31, 209, 161, 0.16);
+  }
+
+  .signup-field input[data-invalid='true'],
+  .signup-field select[data-invalid='true'] {
+    border-color: var(--negative-soft-border);
+  }
+
+  .signup-note {
+    margin-top: 7px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .signup-note--ok {
+    color: var(--accent);
+  }
+
+  .signup-note--error {
+    color: var(--negative);
+  }
+
+  .signup-note--muted {
+    color: var(--text-tertiary);
+  }
+
+  .signup-pw-meter {
+    margin-top: 10px;
+    display: flex;
+    gap: 6px;
+  }
+
+  .signup-pw-meter__bar {
+    height: 3px;
+    flex: 1;
+    border-radius: 2px;
+    background: var(--line-strong);
+  }
+
+  .signup-pw-meter__bar--filled {
+    background: var(--accent);
+  }
+
+  .signup-pw-rules {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 20px;
+  }
+
+  @media (max-width: 640px) {
+    .signup-pw-rules {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .signup-pw-rule {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+  }
+
+  .signup-pw-rule--met {
+    color: var(--text-primary);
+  }
+
+  .signup-pw-rule__mark {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    font-size: 9px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--on-accent);
+  }
+
+  .signup-pw-rule--met .signup-pw-rule__mark {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .signup-panel {
+    margin-top: 16px;
+    padding: 17px 18px;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--line);
+    background: var(--bg-surface);
+  }
+
+  .signup-panel--ok {
+    border-color: var(--accent-soft-border);
+    background: var(--accent-soft);
+  }
+
+  .signup-panel--error {
+    border-color: var(--negative-soft-border);
+    background: var(--negative-soft);
+  }
+
+  .signup-panel__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  .signup-panel__title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .signup-panel__badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .signup-panel__badge--ok {
+    color: var(--accent);
+  }
+
+  .signup-panel__badge--error {
+    color: var(--negative);
+  }
+
+  .signup-panel__badge--muted {
+    color: var(--text-tertiary);
+  }
+
+  .signup-panel p {
+    margin: 7px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .signup-choice-grid {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  @media (max-width: 640px) {
+    .signup-choice-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .signup-choice {
+    text-align: left;
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    padding: 13px 14px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: var(--bg-base);
+    cursor: pointer;
+  }
+
+  .signup-choice:hover {
+    border-color: var(--accent-soft-border);
+  }
+
+  .signup-choice--active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .signup-choice__dot {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    margin-top: 2px;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .signup-choice--active .signup-choice__dot {
+    border-color: var(--accent);
+  }
+
+  .signup-choice__dot-inner {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  .signup-choice--active .signup-choice__dot-inner {
+    background: var(--accent);
+  }
+
+  .signup-choice__label {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .signup-choice__desc {
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-tertiary);
+  }
+
+  .signup-sos-details {
+    margin-top: 11px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px 18px;
+  }
+
+  .signup-sos-details__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12.5px;
+  }
+
+  .signup-sos-details__k {
+    color: var(--text-tertiary);
+  }
+
+  .signup-sos-details__v {
+    color: var(--text-primary);
+    text-align: right;
+  }
+
+  .signup-btn-outline {
+    margin-top: 14px;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--accent-soft-border);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .signup-btn-outline:hover:not(:disabled) {
+    background: rgba(31, 209, 161, 0.18);
+  }
+
+  .signup-btn-outline:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .signup-toggle-row {
+    margin-top: 12px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 15px 16px;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--line);
+    background: var(--bg-surface);
+  }
+
+  .signup-toggle {
+    width: 42px;
+    height: 24px;
+    flex: none;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-base);
+    padding: 2px;
+    cursor: pointer;
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .signup-toggle--on {
+    justify-content: flex-end;
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .signup-toggle__knob {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+  }
+
+  .signup-toggle--on .signup-toggle__knob {
+    background: var(--accent);
+  }
+
+  .signup-toggle-row__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .signup-toggle-row__note {
+    margin-top: 4px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+  }
+
+  .signup-plans {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  @media (max-width: 640px) {
+    .signup-plans {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .signup-plan {
+    text-align: left;
+    padding: 15px;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--line-strong);
+    background: var(--bg-base);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .signup-plan:hover {
+    border-color: var(--accent-soft-border);
+  }
+
+  .signup-plan--active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .signup-plan__tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .signup-plan--active .signup-plan__tag {
+    color: var(--accent);
+  }
+
+  .signup-plan__price {
+    margin-top: 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-strong);
+  }
+
+  .signup-plan__unit {
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+  }
+
+  .signup-ts {
+    margin-top: 18px;
+    max-width: 440px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 13px 15px;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--line);
+    background: var(--bg-surface);
+  }
+
+  .signup-ts__mark {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    border: 2px solid var(--line-strong);
+  }
+
+  .signup-ts__mark--checking {
+    border-top-color: var(--accent);
+    animation: signupSpin 700ms linear infinite;
+  }
+
+  .signup-ts__mark--ok {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .signup-ts__mark--error {
+    background: var(--negative);
+    border-color: var(--negative);
+    color: #2a0e0e;
+  }
+
+  .signup-ts__label {
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  .signup-ts__label--ok {
+    color: var(--accent);
+  }
+
+  .signup-ts__label--error {
+    color: var(--negative);
+  }
+
+  .signup-ts__sub {
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--text-tertiary);
+  }
+
+  @keyframes signupSpin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .signup-terms {
+    margin-top: 18px;
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    cursor: pointer;
+  }
+
+  .signup-terms__box {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    margin-top: 2px;
+    border-radius: 4px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-base);
+    color: var(--on-accent);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .signup-terms__box--checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .signup-terms__text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .signup-submit {
+    margin-top: 22px;
+    height: 46px;
+    max-width: 420px;
+    width: 100%;
+    border: none;
+    border-radius: var(--radius-control);
+    background: linear-gradient(160deg, var(--accent), #0e8f6e);
+    color: var(--on-accent);
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .signup-submit:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+
+  .signup-submit:disabled {
+    opacity: 0.65;
+    cursor: default;
+  }
+
+  .signup-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: sticky;
+    top: 16px;
+  }
+
+  .signup-rail__card {
+    padding: 18px;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--line);
+    background: var(--bg-surface);
+  }
+
+  .signup-rail__eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .signup-rail__row {
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+  }
+
+  .signup-rail__row-key {
+    color: var(--text-tertiary);
+  }
+
+  .signup-rail__row-val {
+    font-weight: 500;
+    text-align: right;
+    color: var(--text-primary);
+  }
+
+  .signup-rail__due {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .signup-rail__due-amount {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .signup-rail__note {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+  }
+
+  .signup-rail__included {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .signup-rail__included-item {
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .signup-rail__included-item::before {
+    content: '\2713';
+    color: var(--accent);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* Modal overlay: post-submit code confirmation / mock MFA pairing / done screen. */
+  .signup-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 6, 8, 0.78);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 40;
+  }
+
+  .signup-modal {
+    width: 480px;
+    max-width: 100%;
+    padding: 28px;
+    border-radius: 14px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-elevated);
+    animation: riseIn 220ms ease both;
+  }
+
+  @keyframes riseIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .signup-modal__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .signup-modal__step {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .signup-modal__close {
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 17px;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+
+  .signup-modal__close:hover {
+    color: var(--text-primary);
+  }
+
+  .signup-modal h3 {
+    margin: 12px 0 0;
+    font-size: 21px;
+    font-weight: 700;
+    color: var(--text-strong);
+  }
+
+  .signup-modal p {
+    margin: 9px 0 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  .signup-code-cells {
+    margin-top: 20px;
+    display: flex;
+    gap: 9px;
+  }
+
+  .signup-code-cells input {
+    width: 100%;
+    height: 56px;
+    text-align: center;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: var(--bg-base);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .signup-code-cells input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(31, 209, 161, 0.16);
+  }
+
+  .signup-otp-row {
+    margin-top: 20px;
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+  }
+
+  .signup-otp-qr {
+    width: 120px;
+    height: 120px;
+    flex: none;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: repeating-linear-gradient(
+      135deg,
+      var(--bg-base) 0 7px,
+      var(--bg-surface) 7px 14px
+    );
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .signup-otp-key {
+    margin-top: 7px;
+    padding: 9px 11px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line);
+    background: var(--bg-base);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+
+  .signup-otp-input {
+    margin-top: 13px;
+    height: 44px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 14px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: var(--bg-base);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 15px;
+    letter-spacing: 0.24em;
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .signup-next-steps {
+    margin-top: 18px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+
+  .signup-next-steps__row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 15px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .signup-next-steps__row:last-child {
+    border-bottom: none;
+  }
+
+  .signup-next-steps__num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+  .signup-next-steps__label {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+
+  .signup-next-steps__meta {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .signup-modal-error {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border-radius: var(--radius-control);
+    background: var(--negative-soft);
+    border: 1px solid var(--negative-soft-border);
+    color: var(--negative);
+    font-size: 12.5px;
+  }
+
+  .signup-modal__cta {
+    margin-top: 22px;
+    width: 100%;
+    height: 46px;
+    border: none;
+    border-radius: var(--radius-control);
+    background: linear-gradient(160deg, var(--accent), #0e8f6e);
+    color: var(--on-accent);
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .signup-modal__cta:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+
+  .signup-modal__cta:disabled {
+    opacity: 0.65;
+    cursor: default;
+  }
+
+  .signup-modal__skip {
+    margin-top: 10px;
+    width: 100%;
+    height: 40px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .signup-modal__skip:hover {
+    background: var(--bg-surface);
+  }
+}

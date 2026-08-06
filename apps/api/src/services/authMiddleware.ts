@@ -32,8 +32,11 @@ declare global {
  *   /api/health         - infra/orchestration health probes, run before any session exists
  *   /api/metrics        - operational scrape endpoint (Prometheus-style), not customer data
  *   /api/openapi.json   - API shape description, not data
- *   /api/auth/login     - cannot require a token to obtain a token
- *   /api/auth/signup    - cannot require a token to sign up for one
+ *   /api/auth/login                    - cannot require a token to obtain a token
+ *   /api/auth/signup                   - cannot require a token to sign up for one
+ *   /api/entity-verification/check     - advisory pre-check the signup form calls before an
+ *                                         account (and its token) exists; writes nothing, see
+ *                                         entityVerificationCheckBodySchema
  */
 const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
   '/api/health',
@@ -41,6 +44,7 @@ const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
   '/api/openapi.json',
   '/api/auth/login',
   '/api/auth/signup',
+  '/api/entity-verification/check',
 ]);
 
 /**

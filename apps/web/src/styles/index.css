@@ -14,6 +14,7 @@
 @import './patterns/skeleton.css';
 
 @import './components/login.css';
+@import './components/signup.css';
 @import './components/user-role.css';
 @import './components/nav-rail.css';
 @import './components/hero.css';

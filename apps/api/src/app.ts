@@ -61,6 +61,7 @@ import { captureApiException, flushApiSentry, initializeApiSentry } from './serv
 import {
   aliasesQuerySchema,
   createAliasBodySchema,
+  entityVerificationCheckBodySchema,
   exceptionsQuerySchema,
   identityConfirmBodySchema,
   isErrorCategory,
@@ -1579,6 +1580,32 @@ export const createApp = (
       role: body.role,
       organizationId,
     });
+  });
+
+  // Public (PUBLIC_ROUTES): the signup form calls this while filling out the entity section,
+  // before an account -- and therefore a token -- exists. Advisory only; it writes nothing. The
+  // account's real entity_verification_status is set by the fire-and-forget call inside
+  // POST /api/auth/signup and can be re-run post-signup via
+  // POST /api/organizations/entity-verification/retry.
+  app.post('/api/entity-verification/check', async (request, response, next) => {
+    const bodyResult = entityVerificationCheckBodySchema.safeParse(request.body ?? {});
+    if (!bodyResult.success) {
+      respondWithValidationError(response, bodyResult.error);
+      return;
+    }
+
+    try {
+      const result = await resolveEntityVerificationProvider().verify({
+        legalName: bodyResult.data.companyName,
+        state: bodyResult.data.entityState,
+        filingNumber: bodyResult.data.entityFilingNumber,
+        entityType: bodyResult.data.entityType,
+      });
+
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post('/api/auth/identity/confirm', async (request, response, next) => {
