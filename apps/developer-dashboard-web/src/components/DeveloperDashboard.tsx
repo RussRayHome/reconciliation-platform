@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 
 import { dashboardApiFetch } from '../lib/api';
 import { SkeletonPanel, KpiWellsSkeleton, SkeletonLines, TableSkeleton } from './Skeleton';
@@ -16,6 +16,13 @@ import { RepoStatusSection, type RepoStatusPayload } from './RepoStatus';
  *     revision already present in the published payload's own promotionReadiness data.
  *   - No `cache` field (fromCache/stale) -- the payload is a static publish, not a live cache.
  *   - Adds the signed-in GitHub user + a sign-out action in the header.
+ *
+ * Secret Integrity (below) is the one deliberate exception to "deliberately passive": its findings
+ * are still read-only from the published payload, but its runbook actions (Rotate now / Triage /
+ * Dismiss / Verify purge) really do write, via POST /api/secret-actions, to a
+ * dashboard_secret_change_log table in the product's own Postgres (see secretActionsStore.ts and
+ * changesets 0035/0036) -- reusing its backup/pgaudit coverage for this SOX-relevant audit trail,
+ * via a least-privilege role scoped to that one table and nothing else in the schema.
  *
  * Repository status used to be a separate /repo route reachable via a card link; per the
  * follow-up design instruction it's now rendered inline at the top of this same page (below the
@@ -92,6 +99,61 @@ type SecurityComponentScore = {
   cveFindings?: SecurityCveFinding[];
 };
 
+type SecretFindingOccurrence = {
+  file: string;
+  startLine?: number;
+  commit?: string;
+  author?: string;
+  date?: string;
+  presentAtHead: boolean;
+};
+
+type SecretFinding = {
+  fingerprint: string;
+  maskedSecret: string;
+  ruleId: string;
+  description: string;
+  sources: string[];
+  verified: boolean | null;
+  occurrences: SecretFindingOccurrence[];
+};
+
+const SECRET_ACTION_TYPES = ['rotate', 'triage', 'dismiss', 'verify_purge'] as const;
+type SecretActionType = (typeof SECRET_ACTION_TYPES)[number];
+
+type SecretChangeLogEntry = {
+  id: number;
+  fingerprint: string;
+  action: SecretActionType;
+  actor: string;
+  ticket: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+type SecretActionsResponse = {
+  changeLog: SecretChangeLogEntry[];
+  latestByFingerprint: Record<string, SecretChangeLogEntry>;
+};
+
+const EMPTY_SECRET_ACTIONS: SecretActionsResponse = { changeLog: [], latestByFingerprint: {} };
+
+type SecretScanRunRecord = {
+  id: number;
+  generatedAt: string;
+  status: string;
+  gitleaksAvailable: boolean;
+  trufflehogAvailable: boolean;
+  aggregate: { critical: number; high: number; moderate: number; low: number; info: number };
+};
+
+type SecretFindingHistoryEntry = {
+  runId: number;
+  generatedAt: string;
+  presentAtHead: boolean;
+  verified: boolean | null;
+};
+
 type DeveloperCheckResponse = {
   name: string;
   ok: boolean;
@@ -120,6 +182,15 @@ type DeveloperCheckResponse = {
     low: number;
     info: number;
   };
+  secretFindings?: SecretFinding[];
+  secretFindingsAggregate?: {
+    critical: number;
+    high: number;
+    moderate: number;
+    low: number;
+    info: number;
+  };
+  secretScanTools?: { gitleaks: boolean; trufflehog: boolean };
 };
 
 type PromotionReadiness = {
@@ -209,6 +280,33 @@ const securityVerdict = (check: DeveloperCheckResponse | undefined): Verdict => 
   return 'pass';
 };
 
+const isResolvingAction = (entry: SecretChangeLogEntry | undefined): boolean =>
+  entry?.action === 'rotate' || entry?.action === 'dismiss' || entry?.action === 'verify_purge';
+
+type SecretBand = 'verified-live' | 'unverified' | 'resolved';
+
+const bandForFinding = (
+  finding: SecretFinding,
+  latest: SecretChangeLogEntry | undefined,
+): SecretBand => {
+  if (isResolvingAction(latest)) return 'resolved';
+  return finding.verified === true ? 'verified-live' : 'unverified';
+};
+
+const secretVerdict = (
+  check: DeveloperCheckResponse | undefined,
+  latestByFingerprint: Record<string, SecretChangeLogEntry>,
+): Verdict => {
+  if (!check) return 'neutral';
+  const findings = check.secretFindings ?? [];
+  const unresolved = findings.filter(
+    (finding) => bandForFinding(finding, latestByFingerprint[finding.fingerprint]) !== 'resolved',
+  );
+  if (!check.ok || unresolved.some((finding) => finding.verified === true)) return 'fail';
+  if (unresolved.some((finding) => finding.occurrences.some((occurrence) => occurrence.presentAtHead))) return 'warn';
+  return unresolved.length > 0 ? 'warn' : 'pass';
+};
+
 const e2eVerdict = (check: DeveloperCheckResponse | undefined): Verdict => {
   if (!check) return 'neutral';
   if (!check.ok) return 'fail';
@@ -280,17 +378,76 @@ function OverviewCard({
   );
 }
 
+/** Shared shell for every "Testing & verification" section below the overview cards: a header
+ *  (title + subtitle) and a collapse arrow on the right, so the whole section's body can be
+ *  closed without losing its place -- useful once several sections are open at once and the page
+ *  gets long. Collapsing unmounts the body rather than hiding it with CSS, so a collapsed
+ *  section's own internal state (e.g. CoveragePanel's "show remaining files") resets on
+ *  re-expand; deliberate, keeps this wrapper simple, and matches how the per-band
+ *  Show/Hide toggles inside SecretIntegrityPanel already behave. */
+function DetailPanel({
+  id,
+  title,
+  subtitle,
+  children,
+}: Readonly<{
+  id: string;
+  title: string;
+  subtitle: ReactNode;
+  children: ReactNode;
+}>) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div className="detail-panel" id={id}>
+      <div className="detail-panel__head">
+        <h3>{title}</h3>
+        <div className="detail-panel__head-right">
+          <span className="detail-panel__sub">{subtitle}</span>
+          <button
+            type="button"
+            className="detail-panel__collapse-toggle"
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
+            onClick={() => setCollapsed((current) => !current)}
+          >
+            <svg
+              className={`detail-panel__collapse-icon${collapsed ? ' detail-panel__collapse-icon--collapsed' : ''}`}
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 6L8 10L12 6"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      {collapsed ? null : children}
+    </div>
+  );
+}
+
 function UnitTestsPanel({ check }: Readonly<{ check: DeveloperCheckResponse | undefined }>) {
   const items = (check?.testItems ?? []).filter((item) => item.status !== 'passed');
 
   return (
-    <div className="detail-panel" id="unit-tests">
-      <div className="detail-panel__head">
-        <h3>Unit tests — failed &amp; skipped</h3>
-        <span className="detail-panel__sub">
+    <DetailPanel
+      id="unit-tests"
+      title="Unit tests — failed & skipped"
+      subtitle={
+        <>
           {check?.passedCount ?? 0} passed hidden · {formatDuration(check?.durationMs ?? 0)}
-        </span>
-      </div>
+        </>
+      }
+    >
       {items.length === 0 ? (
         <p className="detail-panel__empty">All unit tests passed.</p>
       ) : (
@@ -320,7 +477,7 @@ function UnitTestsPanel({ check }: Readonly<{ check: DeveloperCheckResponse | un
           </tbody>
         </table>
       )}
-    </div>
+    </DetailPanel>
   );
 }
 
@@ -328,11 +485,7 @@ function StaticAnalysisPanel({ lint }: Readonly<{ lint: DeveloperCheckResponse |
   const issues = lint?.lintIssues ?? [];
 
   return (
-    <div className="detail-panel" id="static">
-      <div className="detail-panel__head">
-        <h3>Static code analysis — issue listing</h3>
-        <span className="detail-panel__sub">{lint?.summary ?? 'ESLint'}</span>
-      </div>
+    <DetailPanel id="static" title="Static code analysis — issue listing" subtitle={lint?.summary ?? 'ESLint'}>
       {issues.length === 0 ? (
         <p className="detail-panel__empty">No lint issues.</p>
       ) : (
@@ -370,7 +523,7 @@ function StaticAnalysisPanel({ lint }: Readonly<{ lint: DeveloperCheckResponse |
           </tbody>
         </table>
       )}
-    </div>
+    </DetailPanel>
   );
 }
 
@@ -378,11 +531,7 @@ function DatabaseTestsPanel({ check }: Readonly<{ check: DeveloperCheckResponse 
   const items = check?.dbTestItems ?? [];
 
   return (
-    <div className="detail-panel" id="db-tests">
-      <div className="detail-panel__head">
-        <h3>Database tests — full listing</h3>
-        <span className="detail-panel__sub">{check?.summary ?? 'Postgres'}</span>
-      </div>
+    <DetailPanel id="db-tests" title="Database tests — full listing" subtitle={check?.summary ?? 'Postgres'}>
       {items.length === 0 ? (
         <p className="detail-panel__empty">
           No per-test detail available in this runtime — see the check summary above.
@@ -416,7 +565,7 @@ function DatabaseTestsPanel({ check }: Readonly<{ check: DeveloperCheckResponse 
           </tbody>
         </table>
       )}
-    </div>
+    </DetailPanel>
   );
 }
 
@@ -441,17 +590,19 @@ function CoveragePanel({ check }: Readonly<{ check: DeveloperCheckResponse | und
   const remaining = files.length - visible.length;
 
   return (
-    <div className="detail-panel" id="coverage">
-      <div className="detail-panel__head">
-        <h3>Coverage by file — entire application</h3>
-        <span className="detail-panel__sub">
+    <DetailPanel
+      id="coverage"
+      title="Coverage by file — entire application"
+      subtitle={
+        <>
           All {files.length} files, lowest first ·{' '}
           <strong className={belowMinimum > 0 ? 'detail-panel__warning-text' : undefined}>
             minimum 75% lines per file
             {belowMinimum > 0 ? ` — ${belowMinimum} files below minimum` : ''}
           </strong>
-        </span>
-      </div>
+        </>
+      }
+    >
       {files.length === 0 ? (
         <p className="detail-panel__empty">No coverage report available for this run.</p>
       ) : (
@@ -495,7 +646,7 @@ function CoveragePanel({ check }: Readonly<{ check: DeveloperCheckResponse | und
           ) : null}
         </>
       )}
-    </div>
+    </DetailPanel>
   );
 }
 
@@ -510,14 +661,16 @@ function SecurityPanel({ check }: Readonly<{ check: DeveloperCheckResponse | und
   const aggregate = check?.securityAggregateScore;
 
   return (
-    <div className="detail-panel" id="security">
-      <div className="detail-panel__head">
-        <h3>Security — vulnerabilities by major component</h3>
-        <span className="detail-panel__sub">
+    <DetailPanel
+      id="security"
+      title="Security — vulnerabilities by major component"
+      subtitle={
+        <>
           Trivy + npm audit · {aggregate?.critical ?? 0} critical · {aggregate?.high ?? 0} high ·{' '}
           {aggregate?.moderate ?? 0} moderate and {aggregate?.low ?? 0} low
-        </span>
-      </div>
+        </>
+      }
+    >
       {ordered.length === 0 ? (
         <p className="detail-panel__empty">No security scan data available for this run.</p>
       ) : (
@@ -599,7 +752,416 @@ function SecurityPanel({ check }: Readonly<{ check: DeveloperCheckResponse | und
           );
         })
       )}
-    </div>
+    </DetailPanel>
+  );
+}
+
+const SECRET_ACTION_LABELS: Record<SecretActionType, string> = {
+  rotate: 'Rotate now',
+  triage: 'Triage',
+  dismiss: 'Dismiss',
+  verify_purge: 'Verify purge',
+};
+
+const SECRET_BAND_LABELS: Record<SecretBand, string> = {
+  'verified-live': 'Verified live',
+  unverified: 'Unverified',
+  resolved: 'Resolved',
+};
+
+const SECRET_BAND_ORDER: SecretBand[] = ['verified-live', 'unverified', 'resolved'];
+
+function SecretIntegrityPanel({
+  check,
+  actions,
+  onActionRecorded,
+}: Readonly<{
+  check: DeveloperCheckResponse | undefined;
+  actions: SecretActionsResponse;
+  onActionRecorded: () => void;
+}>) {
+  const [expandedFingerprint, setExpandedFingerprint] = useState<string | null>(null);
+  const [draftTicket, setDraftTicket] = useState('');
+  const [draftNote, setDraftNote] = useState('');
+  const [submittingAction, setSubmittingAction] = useState<SecretActionType | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [collapsedBands, setCollapsedBands] = useState<Record<SecretBand, boolean>>({
+    'verified-live': false,
+    unverified: false,
+    resolved: true,
+  });
+  const [runHistory, setRunHistory] = useState<SecretScanRunRecord[]>([]);
+  const [findingHistoryByFingerprint, setFindingHistoryByFingerprint] = useState<
+    Record<string, SecretFindingHistoryEntry[]>
+  >({});
+  const [loadingFindingHistory, setLoadingFindingHistory] = useState<string | null>(null);
+
+  useEffect(() => {
+    dashboardApiFetch('/api/secret-scan-history')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { runs: SecretScanRunRecord[] } | null) => {
+        if (payload) setRunHistory(payload.runs);
+      })
+      .catch(() => {
+        // Non-fatal: the panel still works with only the latest run's findings.
+      });
+  }, []);
+
+  const loadFindingHistory = async (fingerprint: string): Promise<void> => {
+    if (findingHistoryByFingerprint[fingerprint]) return;
+    setLoadingFindingHistory(fingerprint);
+    try {
+      const response = await dashboardApiFetch(
+        `/api/secret-scan-history?fingerprint=${encodeURIComponent(fingerprint)}`,
+      );
+      if (response.ok) {
+        const payload = (await response.json()) as { findingHistory: SecretFindingHistoryEntry[] };
+        setFindingHistoryByFingerprint((current) => ({ ...current, [fingerprint]: payload.findingHistory }));
+      }
+    } catch {
+      // Non-fatal: the runbook still works without historical context.
+    } finally {
+      setLoadingFindingHistory(null);
+    }
+  };
+
+  const findings = check?.secretFindings ?? [];
+  const grouped: Record<SecretBand, SecretFinding[]> = {
+    'verified-live': [],
+    unverified: [],
+    resolved: [],
+  };
+  for (const finding of findings) {
+    grouped[bandForFinding(finding, actions.latestByFingerprint[finding.fingerprint])].push(finding);
+  }
+
+  const toggleFinding = (fingerprint: string): void => {
+    const opening = expandedFingerprint !== fingerprint;
+    setExpandedFingerprint(opening ? fingerprint : null);
+    if (opening) {
+      void loadFindingHistory(fingerprint);
+    }
+    setDraftTicket('');
+    setDraftNote('');
+    setSubmitError(null);
+  };
+
+  const submitAction = async (fingerprint: string, action: SecretActionType): Promise<void> => {
+    setSubmittingAction(action);
+    setSubmitError(null);
+    try {
+      const response = await dashboardApiFetch('/api/secret-actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fingerprint,
+          action,
+          ticket: draftTicket.trim() || undefined,
+          note: draftNote.trim() || undefined,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}.`);
+      }
+      setExpandedFingerprint(null);
+      setDraftTicket('');
+      setDraftNote('');
+      onActionRecorded();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to record this action.');
+    } finally {
+      setSubmittingAction(null);
+    }
+  };
+
+  const renderFindingRow = (finding: SecretFinding) => {
+    const latest = actions.latestByFingerprint[finding.fingerprint];
+    const isExpanded = expandedFingerprint === finding.fingerprint;
+    const history = actions.changeLog.filter((entry) => entry.fingerprint === finding.fingerprint);
+    const scanHistory = findingHistoryByFingerprint[finding.fingerprint];
+    const presentAtHead = finding.occurrences.some((occurrence) => occurrence.presentAtHead);
+    const [firstOccurrence, ...restOccurrences] = finding.occurrences;
+    if (!firstOccurrence) {
+      // A finding always has at least one occurrence (enforced when the payload is parsed) --
+      // this is just satisfying the type checker's inability to see that invariant.
+      return null;
+    }
+
+    return (
+      <Fragment key={finding.fingerprint}>
+        <tr>
+          <td className="mono">{finding.maskedSecret}</td>
+          <td className="mono">{finding.ruleId}</td>
+          <td className="mono">
+            {firstOccurrence.file}
+            {firstOccurrence.startLine ? `:${firstOccurrence.startLine}` : ''}
+            {restOccurrences.length > 0 ? ` +${restOccurrences.length} more` : ''}
+          </td>
+          <td>
+            {finding.verified === true ? (
+              <StatusPill verdict="fail" label="Verified live" />
+            ) : finding.verified === false ? (
+              <StatusPill verdict="neutral" label="Confirmed inactive" />
+            ) : (
+              <StatusPill verdict="warn" label="Unverified" />
+            )}
+          </td>
+          <td>
+            <StatusPill
+              verdict={presentAtHead ? 'warn' : 'neutral'}
+              label={presentAtHead ? 'In current tree' : 'History only'}
+            />
+          </td>
+          <td>{latest ? `${SECRET_ACTION_LABELS[latest.action]} · ${latest.actor}` : '—'}</td>
+          <td>
+            <button
+              type="button"
+              className="detail-panel__expand"
+              onClick={() => toggleFinding(finding.fingerprint)}
+            >
+              {isExpanded ? 'Close' : 'Runbook'}
+            </button>
+          </td>
+        </tr>
+        {isExpanded ? (
+          <tr className="detail-panel__desc-row">
+            <td colSpan={7}>
+              <div className="secret-runbook">
+                <p>
+                  {finding.description} · value withheld, fingerprint {finding.fingerprint} · sources:{' '}
+                  {finding.sources.join(', ')}
+                </p>
+                <table className="secret-runbook__history">
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>Commit</th>
+                      <th>Author</th>
+                      <th>Presence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {finding.occurrences.map((occurrence) => (
+                      <tr key={`${occurrence.file}:${occurrence.startLine ?? ''}:${occurrence.commit ?? ''}`}>
+                        <td className="mono">
+                          {occurrence.file}
+                          {occurrence.startLine ? `:${occurrence.startLine}` : ''}
+                        </td>
+                        <td className="mono">{occurrence.commit ?? '—'}</td>
+                        <td>{occurrence.author ?? '—'}</td>
+                        <td>{occurrence.presentAtHead ? 'In current tree' : 'History only'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="secret-runbook__form">
+                  <input
+                    type="text"
+                    placeholder="Ticket (optional)"
+                    value={draftTicket}
+                    onChange={(event) => setDraftTicket(event.target.value)}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Note (optional)"
+                    value={draftNote}
+                    onChange={(event) => setDraftNote(event.target.value)}
+                  />
+                </div>
+                {submitError ? <p className="developer-dashboard__error">{submitError}</p> : null}
+                <div className="secret-runbook__actions">
+                  {SECRET_ACTION_TYPES.map((action) => (
+                    <button
+                      key={action}
+                      type="button"
+                      className="secondary-button"
+                      disabled={submittingAction !== null}
+                      onClick={() => void submitAction(finding.fingerprint, action)}
+                    >
+                      {submittingAction === action ? 'Recording…' : SECRET_ACTION_LABELS[action]}
+                    </button>
+                  ))}
+                </div>
+                {history.length > 0 ? (
+                  <table className="secret-runbook__history">
+                    <thead>
+                      <tr>
+                        <th>When</th>
+                        <th>Action</th>
+                        <th>Actor</th>
+                        <th>Ticket</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((entry) => (
+                        <tr key={entry.id}>
+                          <td className="mono">{formatClock(entry.createdAt)}</td>
+                          <td>{SECRET_ACTION_LABELS[entry.action]}</td>
+                          <td>{entry.actor}</td>
+                          <td>{entry.ticket ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : null}
+                {scanHistory && scanHistory.length > 0 ? (
+                  <table className="secret-runbook__history">
+                    <thead>
+                      <tr>
+                        <th>Scan date</th>
+                        <th>Verification</th>
+                        <th>Presence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scanHistory.map((entry) => (
+                        <tr key={entry.runId}>
+                          <td className="mono">{formatClock(entry.generatedAt)}</td>
+                          <td>
+                            {entry.verified === true
+                              ? 'Verified live'
+                              : entry.verified === false
+                                ? 'Confirmed inactive'
+                                : 'Unverified'}
+                          </td>
+                          <td>{entry.presentAtHead ? 'In current tree' : 'History only'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : loadingFindingHistory === finding.fingerprint ? (
+                  <p className="detail-panel__empty">Loading scan history…</p>
+                ) : null}
+              </div>
+            </td>
+          </tr>
+        ) : null}
+      </Fragment>
+    );
+  };
+
+  return (
+    <DetailPanel
+      id="secret-integrity"
+      title="Secret integrity — gitleaks + trufflehog"
+      subtitle={
+        <>
+          {check?.secretScanTools?.gitleaks ? 'gitleaks' : 'gitleaks unavailable'} ·{' '}
+          {check?.secretScanTools?.trufflehog ? 'trufflehog verification' : 'trufflehog unavailable'} ·{' '}
+          {findings.length} finding{findings.length === 1 ? '' : 's'}
+        </>
+      }
+    >
+      {findings.length === 0 ? (
+        <p className="detail-panel__empty">No secrets detected in the latest scan.</p>
+      ) : (
+        SECRET_BAND_ORDER.map((band) => {
+          const bandFindings = grouped[band];
+          if (bandFindings.length === 0) return null;
+          const collapsed = collapsedBands[band];
+
+          return (
+            <div className="vuln-group" key={band}>
+              <div className="vuln-group__head">
+                <h4>
+                  {SECRET_BAND_LABELS[band]} ({bandFindings.length})
+                </h4>
+                <button
+                  type="button"
+                  className="detail-panel__expand"
+                  onClick={() =>
+                    setCollapsedBands((current) => ({ ...current, [band]: !current[band] }))
+                  }
+                >
+                  {collapsed ? 'Show' : 'Hide'}
+                </button>
+              </div>
+              {collapsed ? null : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Secret</th>
+                      <th>Rule</th>
+                      <th>Location</th>
+                      <th>Verification</th>
+                      <th>Presence</th>
+                      <th>Latest action</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>{bandFindings.map(renderFindingRow)}</tbody>
+                </table>
+              )}
+            </div>
+          );
+        })
+      )}
+      <div className="secret-changelog">
+        <h4>Secret change log</h4>
+        {actions.changeLog.length === 0 ? (
+          <p className="detail-panel__empty">No actions recorded yet.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Action</th>
+                <th>Secret</th>
+                <th>Actor</th>
+                <th>Ticket</th>
+              </tr>
+            </thead>
+            <tbody>
+              {actions.changeLog.map((entry) => {
+                const finding = findings.find((item) => item.fingerprint === entry.fingerprint);
+                return (
+                  <tr key={entry.id}>
+                    <td className="mono">{formatClock(entry.createdAt)}</td>
+                    <td>{SECRET_ACTION_LABELS[entry.action]}</td>
+                    <td className="mono">{finding?.maskedSecret ?? `fp:${entry.fingerprint.slice(0, 8)}`}</td>
+                    <td>{entry.actor}</td>
+                    <td>{entry.ticket ?? '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div className="secret-changelog">
+        <h4>Scan history</h4>
+        {runHistory.length === 0 ? (
+          <p className="detail-panel__empty">No prior scan runs recorded yet.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Scan date</th>
+                <th className="num">Verified live</th>
+                <th className="num">In current tree</th>
+                <th className="num">Historical</th>
+                <th>Tools</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runHistory.map((run) => (
+                <tr key={run.id}>
+                  <td className="mono">{formatClock(run.generatedAt)}</td>
+                  <td className="num">{run.aggregate.critical}</td>
+                  <td className="num">{run.aggregate.high}</td>
+                  <td className="num">{run.aggregate.moderate}</td>
+                  <td>
+                    {[run.gitleaksAvailable ? 'gitleaks' : null, run.trufflehogAvailable ? 'trufflehog' : null]
+                      .filter(Boolean)
+                      .join(' + ') || '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </DetailPanel>
   );
 }
 
@@ -611,13 +1173,15 @@ function E2ePanel({ check }: Readonly<{ check: DeveloperCheckResponse | undefine
   });
 
   return (
-    <div className="detail-panel" id="e2e">
-      <div className="detail-panel__head">
-        <h3>E2E test results</h3>
-        <span className="detail-panel__sub">
+    <DetailPanel
+      id="e2e"
+      title="E2E test results"
+      subtitle={
+        <>
           Playwright · {specs.length} specs · {formatDuration(check?.durationMs ?? 0)}
-        </span>
-      </div>
+        </>
+      }
+    >
       {specs.length === 0 ? (
         <p className="detail-panel__empty">No per-spec detail available for this run.</p>
       ) : (
@@ -663,7 +1227,7 @@ function E2ePanel({ check }: Readonly<{ check: DeveloperCheckResponse | undefine
           </tbody>
         </table>
       )}
-    </div>
+    </DetailPanel>
   );
 }
 
@@ -682,6 +1246,7 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
   const [status, setStatus] = useState<DeveloperStatusResponse | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [secretActions, setSecretActions] = useState<SecretActionsResponse>(EMPTY_SECRET_ACTIONS);
 
   const loadDashboard = useCallback(async (): Promise<void> => {
     setRefreshing(true);
@@ -697,9 +1262,25 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
     }
   }, []);
 
+  // Independent of loadDashboard/its 60s status cache: this reads live, mutable action state, not
+  // the passive nightly-published payload, and needs to refresh right after a runbook action posts.
+  const loadSecretActions = useCallback(async (): Promise<void> => {
+    try {
+      const response = await dashboardApiFetch('/api/secret-actions');
+      const payload = await parseJsonResponse<SecretActionsResponse>(response);
+      setSecretActions(payload);
+    } catch {
+      // Non-fatal: the panel still renders scan findings without action history.
+    }
+  }, []);
+
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    void loadSecretActions();
+  }, [loadSecretActions]);
 
   if (!status) {
     return (
@@ -730,6 +1311,7 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
   const dbCheck = findCheck(status.checks, 'Postgres DB tests');
   const coverageCheck = findCheck(status.checks, 'Coverage');
   const securityCheck = findCheck(status.checks, 'Security vulnerabilities');
+  const secretCheck = findCheck(status.checks, 'Secret integrity');
   const e2eCheck = findCheck(status.checks, 'E2E tests');
 
   const verdicts = {
@@ -738,6 +1320,7 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
     db: dbVerdict(dbCheck),
     coverage: coverageVerdict(coverageCheck),
     security: securityVerdict(securityCheck),
+    secrets: secretVerdict(secretCheck, secretActions.latestByFingerprint),
     e2e: e2eVerdict(e2eCheck),
   };
   const verdict = overallVerdict(Object.values(verdicts));
@@ -759,6 +1342,15 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
   );
   const securityAggregate = securityCheck?.securityAggregateScore;
   const e2eFlakyCount = (e2eCheck?.e2eSpecs ?? []).filter((spec) => spec.status === 'flaky').length;
+
+  const secretFindings = secretCheck?.secretFindings ?? [];
+  const secretBandCounts = secretFindings.reduce(
+    (counts, finding) => {
+      counts[bandForFinding(finding, secretActions.latestByFingerprint[finding.fingerprint])] += 1;
+      return counts;
+    },
+    { 'verified-live': 0, unverified: 0, resolved: 0 } as Record<SecretBand, number>,
+  );
 
   const revision = status.promotionReadiness.environments.find(
     (env) => env.name === status.environment,
@@ -891,6 +1483,25 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
           hint="CVEs by component"
         />
         <OverviewCard
+          href="#secret-integrity"
+          title="Secret integrity"
+          verdict={verdicts.secrets}
+          verdictLabel={
+            secretBandCounts['verified-live'] > 0
+              ? `${secretBandCounts['verified-live']} verified live`
+              : secretBandCounts.unverified > 0
+                ? `${secretBandCounts.unverified} unverified`
+                : 'Clear'
+          }
+          headline={String(secretFindings.length)}
+          stats={[
+            `${secretBandCounts['verified-live']} verified live`,
+            `${secretBandCounts.unverified} unverified`,
+            `${secretBandCounts.resolved} resolved`,
+          ]}
+          hint="Findings & runbook"
+        />
+        <OverviewCard
           href="#e2e"
           title="E2E tests"
           verdict={verdicts.e2e}
@@ -917,6 +1528,11 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
       <DatabaseTestsPanel check={dbCheck} />
       <CoveragePanel check={coverageCheck} />
       <SecurityPanel check={securityCheck} />
+      <SecretIntegrityPanel
+        check={secretCheck}
+        actions={secretActions}
+        onActionRecorded={() => void loadSecretActions()}
+      />
       <E2ePanel check={e2eCheck} />
 
       <footer className="developer-dashboard__footer">

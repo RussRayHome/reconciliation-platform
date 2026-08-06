@@ -7,6 +7,8 @@ import type {
   DeveloperCheck,
   E2eSpecItem,
   LintIssue,
+  SecretFinding,
+  SecretFindingOccurrence,
   SecurityComponentScore,
   SecurityCveFinding,
   SecuritySeverityScore,
@@ -583,6 +585,90 @@ export const parseSecurityMetadata = (output: string): Partial<DeveloperCheck> =
     securityComponentScores: componentScores,
     securityAggregateScore: aggregate,
     securityCveFindings: securityCveFindings.length > 0 ? securityCveFindings : undefined,
+  };
+};
+
+const normalizeSecretFindingOccurrence = (value: unknown): SecretFindingOccurrence | null => {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  const file = readOptionalText(source.file);
+  if (!file) {
+    return null;
+  }
+
+  return {
+    file,
+    startLine: typeof source.startLine === 'number' ? source.startLine : undefined,
+    commit: readOptionalText(source.commit) ?? undefined,
+    author: readOptionalText(source.author) ?? undefined,
+    date: readOptionalText(source.date) ?? undefined,
+    presentAtHead: source.presentAtHead === true,
+  };
+};
+
+const normalizeSecretFinding = (value: unknown): SecretFinding | null => {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  const fingerprint = readOptionalText(source.fingerprint);
+  if (!fingerprint) {
+    return null;
+  }
+
+  const rawVerified = source.verified;
+  const verified = rawVerified === true ? true : rawVerified === false ? false : null;
+  const sources = Array.isArray(source.sources)
+    ? source.sources.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const occurrences = Array.isArray(source.occurrences)
+    ? source.occurrences
+        .map(normalizeSecretFindingOccurrence)
+        .filter((entry): entry is SecretFindingOccurrence => entry !== null)
+    : [];
+  if (occurrences.length === 0) {
+    return null;
+  }
+
+  return {
+    fingerprint,
+    maskedSecret: readOptionalText(source.maskedSecret) ?? '********',
+    ruleId: readOptionalText(source.ruleId) ?? 'unknown-rule',
+    description: readOptionalText(source.description) ?? 'Potential secret detected.',
+    sources,
+    verified,
+    occurrences,
+  };
+};
+
+/** Parses security-scan-secrets.mjs's JSON payload into typed findings + aggregate severity
+ *  counts. Mirrors parseSecurityMetadata's shape/conventions for the sibling CVE pipeline. */
+export const parseSecretMetadata = (output: string): Partial<DeveloperCheck> => {
+  const payload = parseJsonPayloadFromMixedOutput(output) as
+    | { findings?: unknown; aggregate?: unknown; tools?: unknown }
+    | null;
+
+  if (!payload) {
+    return {};
+  }
+
+  const findings = Array.isArray(payload.findings)
+    ? payload.findings.map(normalizeSecretFinding).filter((entry): entry is SecretFinding => entry !== null)
+    : [];
+  const aggregate = normalizeSecurityScore(payload.aggregate);
+  const toolsSource = (payload.tools ?? {}) as Record<string, unknown>;
+
+  return {
+    secretFindings: findings,
+    secretFindingsAggregate: aggregate,
+    secretScanTools: {
+      gitleaks: toolsSource.gitleaks === true,
+      trufflehog: toolsSource.trufflehog === true,
+    },
   };
 };
 

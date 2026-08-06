@@ -20,6 +20,13 @@ import {
   signSession,
   verifySession,
 } from './services/session';
+import {
+  SECRET_ACTION_TYPES,
+  createSecretActionsStore,
+  type SecretActionType,
+} from './services/secretActionsStore';
+import { createSecretScanHistoryStore } from './services/secretScanHistoryStore';
+import { syncSecretScanHistory } from './services/secretScanHistorySync';
 import { fetchLatestStatus, resolveStatusStoreConfig } from './services/statusStore';
 
 const STATE_COOKIE_NAME = 'dashboard_oauth_state';
@@ -44,8 +51,11 @@ export const createApp = (logger: pino.Logger) => {
     throw new Error('DASHBOARD_WEB_ORIGIN must be set (the web app\'s own origin, for CORS + the post-login redirect).');
   }
   app.use(cors({ origin: webOrigin, credentials: true }));
+  app.use(express.json());
 
   const sessionSecret = resolveSessionSecret(logger);
+  const secretActionsStore = createSecretActionsStore(logger);
+  const secretScanHistoryStore = createSecretScanHistoryStore(logger);
 
   app.get('/api/auth/github/login', (_request: Request, response: Response) => {
     const config = resolveGitHubOAuthConfig();
@@ -121,9 +131,94 @@ export const createApp = (logger: pino.Logger) => {
       const payload = await fetchLatestStatus(config);
       statusCache = { fetchedAt: now, payload };
       response.json(payload);
+
+      // Fire-and-forget: never delays the response the browser is waiting on. Walks status-data's
+      // own commit history rather than just this one payload, so a quiet dashboard doesn't lose
+      // nights nobody happened to load -- see secretScanHistorySync.ts.
+      syncSecretScanHistory(config, secretScanHistoryStore, logger).catch((error: unknown) => {
+        logger.warn({ action: 'dashboard.secret_scan_history_sync.failed', err: error }, 'Secret scan history sync failed');
+      });
     } catch (error) {
       request.log.error({ action: 'dashboard.status.fetch_failed', err: error }, 'Failed to read published status');
       response.status(502).json({ error: error instanceof Error ? error.message : 'Failed to read published status.' });
+    }
+  });
+
+  app.get('/api/secret-scan-history', requireAuth, async (request: Request, response: Response) => {
+    try {
+      const fingerprint = typeof request.query.fingerprint === 'string' ? request.query.fingerprint : null;
+      if (fingerprint) {
+        response.json({ findingHistory: await secretScanHistoryStore.findingHistory(fingerprint) });
+        return;
+      }
+
+      const config = resolveStatusStoreConfig();
+      response.json({ runs: await secretScanHistoryStore.listRuns(config.env) });
+    } catch (error) {
+      request.log.error(
+        { action: 'dashboard.secret_scan_history.read_failed', err: error },
+        'Failed to read secret scan history',
+      );
+      response.status(502).json({ error: 'Failed to read secret scan history.' });
+    }
+  });
+
+  // Secret Integrity's runbook actions (Rotate now / Triage / Dismiss / Verify purge) are the one
+  // part of this dashboard that writes rather than just reads -- everything else is a read-through
+  // cache over what dashboard-status.yml already published. `actor` is always the signed-in
+  // session's GitHub login, never a client-supplied field, for the same reason the product's own
+  // mapping-profile `createdBy` should be (see ISSUE-008/ISSUE-050): an audit trail whose actor the
+  // client controls isn't one.
+  app.get('/api/secret-actions', requireAuth, async (request: Request, response: Response) => {
+    try {
+      const [changeLog, latestByFingerprint] = await Promise.all([
+        secretActionsStore.listChangeLog(),
+        secretActionsStore.latestActionsByFingerprint(),
+      ]);
+      response.json({ changeLog, latestByFingerprint: Object.fromEntries(latestByFingerprint) });
+    } catch (error) {
+      request.log.error(
+        { action: 'dashboard.secret_actions.list_failed', err: error },
+        'Failed to read secret action history',
+      );
+      response.status(502).json({ error: 'Failed to read secret action history.' });
+    }
+  });
+
+  app.post('/api/secret-actions', requireAuth, async (request: Request, response: Response) => {
+    const body = request.body as { fingerprint?: unknown; action?: unknown; ticket?: unknown; note?: unknown };
+    const fingerprint = typeof body.fingerprint === 'string' ? body.fingerprint.trim() : '';
+    const action = typeof body.action === 'string' ? (body.action as SecretActionType) : null;
+    const ticket = typeof body.ticket === 'string' && body.ticket.trim().length > 0 ? body.ticket.trim() : null;
+    const note = typeof body.note === 'string' && body.note.trim().length > 0 ? body.note.trim() : null;
+
+    if (!fingerprint || !action || !SECRET_ACTION_TYPES.includes(action)) {
+      response.status(400).json({
+        error: `fingerprint (non-empty string) and action (one of ${SECRET_ACTION_TYPES.join(', ')}) are required.`,
+      });
+      return;
+    }
+
+    const session = response.locals.session as { login: string };
+    try {
+      const entry = await secretActionsStore.recordAction({
+        fingerprint,
+        action,
+        actor: session.login,
+        ticket,
+        note,
+      });
+      request.log.info(
+        { action: 'dashboard.secret_action.recorded', fingerprint, secretAction: action, actor: session.login },
+        'Secret integrity action recorded',
+      );
+      response.status(201).json(entry);
+    } catch (error) {
+      request.log.error(
+        { action: 'dashboard.secret_action.record_failed', err: error },
+        'Failed to record secret integrity action',
+      );
+      response.status(502).json({ error: 'Failed to record this action.' });
     }
   });
 

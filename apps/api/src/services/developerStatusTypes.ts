@@ -43,6 +43,36 @@ export type SecurityCveFinding = {
   status?: 'open' | 'patch-available' | 'mitigated';
 };
 
+/** One place a secret-scan finding's value was seen -- a single file/line/commit. A secret
+ *  copy-pasted into multiple files (e.g. an env file and the incident doc describing it, per
+ *  ISSUE-049) is one SecretFinding with multiple occurrences, not multiple findings. */
+export type SecretFindingOccurrence = {
+  file: string;
+  startLine?: number;
+  commit?: string;
+  author?: string;
+  date?: string;
+  presentAtHead: boolean;
+};
+
+/** One secret-scan finding merged from gitleaks (breadth) and trufflehog (live verification),
+ *  keyed by a sha256 fingerprint of the secret value. The value itself is never carried past the
+ *  scanner script -- only the fingerprint and a partial display mask reach this type. */
+export type SecretFinding = {
+  fingerprint: string;
+  maskedSecret: string;
+  ruleId: string;
+  description: string;
+  sources: string[];
+  verified: boolean | null;
+  occurrences: SecretFindingOccurrence[];
+};
+
+/** Severity counts for the secret-scan check -- critical=verified live, high=present at HEAD but
+ *  unverified, moderate=historical-only and unverified. low/info are unused but kept for shape
+ *  parity with SecuritySeverityScore. */
+export type SecretFindingsScore = SecuritySeverityScore;
+
 /** Status record for one penetration-test suite shown under Security Vulnerabilities. */
 export type PenetrationTestStatus = {
   testName: string;
@@ -146,6 +176,9 @@ export type DeveloperCheck = {
   securityComponentScores?: SecurityComponentScore[];
   securityAggregateScore?: SecuritySeverityScore;
   securityCveFindings?: SecurityCveFinding[];
+  secretFindings?: SecretFinding[];
+  secretFindingsAggregate?: SecretFindingsScore;
+  secretScanTools?: { gitleaks: boolean; trufflehog: boolean };
   penetrationTestStatuses?: PenetrationTestStatus[];
   testItems?: TestItem[];
   lintIssues?: LintIssue[];

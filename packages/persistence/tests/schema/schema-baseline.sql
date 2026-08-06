@@ -6,9 +6,107 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(911);
+SELECT plan(1010);
 
-SELECT tables_are('public', ARRAY['databasechangelog', 'databasechangeloglock', 'reconciliation_approval_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version']::name[], 'public schema contains exactly the expected tables');
+SELECT tables_are('public', ARRAY['dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'reconciliation_approval_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version']::name[], 'public schema contains exactly the expected tables');
+SELECT columns_are('public', 'dashboard_secret_change_log', ARRAY['id', 'fingerprint', 'action', 'actor', 'ticket', 'note', 'created_at']::name[], 'dashboard_secret_change_log has exactly the expected columns');
+SELECT col_is_pk('public', 'dashboard_secret_change_log', ARRAY['id']::name[], 'dashboard_secret_change_log primary key');
+SELECT indexes_are('public', 'dashboard_secret_change_log', ARRAY['dashboard_secret_change_log_pkey', 'idx_dashboard_secret_change_log_fingerprint']::name[], 'dashboard_secret_change_log has exactly the expected indexes');
+SELECT col_type_is('public', 'dashboard_secret_change_log', 'id', 'bigint', 'dashboard_secret_change_log.id is bigint');
+SELECT col_not_null('public', 'dashboard_secret_change_log', 'id', 'dashboard_secret_change_log.id is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_change_log', 'fingerprint', 'text', 'dashboard_secret_change_log.fingerprint is text');
+SELECT col_not_null('public', 'dashboard_secret_change_log', 'fingerprint', 'dashboard_secret_change_log.fingerprint is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_change_log', 'action', 'text', 'dashboard_secret_change_log.action is text');
+SELECT col_not_null('public', 'dashboard_secret_change_log', 'action', 'dashboard_secret_change_log.action is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_change_log', 'actor', 'text', 'dashboard_secret_change_log.actor is text');
+SELECT col_not_null('public', 'dashboard_secret_change_log', 'actor', 'dashboard_secret_change_log.actor is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_change_log', 'ticket', 'text', 'dashboard_secret_change_log.ticket is text');
+SELECT col_is_null('public', 'dashboard_secret_change_log', 'ticket', 'dashboard_secret_change_log.ticket is nullable');
+SELECT col_type_is('public', 'dashboard_secret_change_log', 'note', 'text', 'dashboard_secret_change_log.note is text');
+SELECT col_is_null('public', 'dashboard_secret_change_log', 'note', 'dashboard_secret_change_log.note is nullable');
+SELECT col_type_is('public', 'dashboard_secret_change_log', 'created_at', 'timestamp with time zone', 'dashboard_secret_change_log.created_at is timestamp with time zone');
+SELECT col_not_null('public', 'dashboard_secret_change_log', 'created_at', 'dashboard_secret_change_log.created_at is NOT NULL');
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.dashboard_secret_change_log'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$dashboard_secret_change_log_action_check => CHECK ((action = ANY (ARRAY['rotate'::text, 'triage'::text, 'dismiss'::text, 'verify_purge'::text])))$chk$,
+  'dashboard_secret_change_log check/unique/exclusion constraints'
+);
+SELECT columns_are('public', 'dashboard_secret_finding_snapshot', ARRAY['id', 'scan_run_id', 'fingerprint', 'masked_secret', 'rule_id', 'description', 'file', 'start_line', 'commit_sha', 'author', 'secret_committed_at', 'present_at_head', 'sources', 'verified']::name[], 'dashboard_secret_finding_snapshot has exactly the expected columns');
+SELECT col_is_pk('public', 'dashboard_secret_finding_snapshot', ARRAY['id']::name[], 'dashboard_secret_finding_snapshot primary key');
+SELECT indexes_are('public', 'dashboard_secret_finding_snapshot', ARRAY['dashboard_secret_finding_snapshot_pkey', 'idx_dashboard_secret_finding_snapshot_fingerprint', 'idx_dashboard_secret_finding_snapshot_scan_run']::name[], 'dashboard_secret_finding_snapshot has exactly the expected indexes');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'id', 'bigint', 'dashboard_secret_finding_snapshot.id is bigint');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'id', 'dashboard_secret_finding_snapshot.id is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'scan_run_id', 'bigint', 'dashboard_secret_finding_snapshot.scan_run_id is bigint');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'scan_run_id', 'dashboard_secret_finding_snapshot.scan_run_id is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'fingerprint', 'text', 'dashboard_secret_finding_snapshot.fingerprint is text');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'fingerprint', 'dashboard_secret_finding_snapshot.fingerprint is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'masked_secret', 'text', 'dashboard_secret_finding_snapshot.masked_secret is text');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'masked_secret', 'dashboard_secret_finding_snapshot.masked_secret is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'rule_id', 'text', 'dashboard_secret_finding_snapshot.rule_id is text');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'rule_id', 'dashboard_secret_finding_snapshot.rule_id is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'description', 'text', 'dashboard_secret_finding_snapshot.description is text');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'description', 'dashboard_secret_finding_snapshot.description is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'file', 'text', 'dashboard_secret_finding_snapshot.file is text');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'file', 'dashboard_secret_finding_snapshot.file is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'start_line', 'integer', 'dashboard_secret_finding_snapshot.start_line is integer');
+SELECT col_is_null('public', 'dashboard_secret_finding_snapshot', 'start_line', 'dashboard_secret_finding_snapshot.start_line is nullable');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'commit_sha', 'text', 'dashboard_secret_finding_snapshot.commit_sha is text');
+SELECT col_is_null('public', 'dashboard_secret_finding_snapshot', 'commit_sha', 'dashboard_secret_finding_snapshot.commit_sha is nullable');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'author', 'text', 'dashboard_secret_finding_snapshot.author is text');
+SELECT col_is_null('public', 'dashboard_secret_finding_snapshot', 'author', 'dashboard_secret_finding_snapshot.author is nullable');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'secret_committed_at', 'timestamp with time zone', 'dashboard_secret_finding_snapshot.secret_committed_at is timestamp with time zone');
+SELECT col_is_null('public', 'dashboard_secret_finding_snapshot', 'secret_committed_at', 'dashboard_secret_finding_snapshot.secret_committed_at is nullable');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'present_at_head', 'boolean', 'dashboard_secret_finding_snapshot.present_at_head is boolean');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'present_at_head', 'dashboard_secret_finding_snapshot.present_at_head is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'sources', 'text[]', 'dashboard_secret_finding_snapshot.sources is text[]');
+SELECT col_not_null('public', 'dashboard_secret_finding_snapshot', 'sources', 'dashboard_secret_finding_snapshot.sources is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_finding_snapshot', 'verified', 'boolean', 'dashboard_secret_finding_snapshot.verified is boolean');
+SELECT col_is_null('public', 'dashboard_secret_finding_snapshot', 'verified', 'dashboard_secret_finding_snapshot.verified is nullable');
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.dashboard_secret_finding_snapshot'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$$chk$,
+  'dashboard_secret_finding_snapshot check/unique/exclusion constraints'
+);
+SELECT columns_are('public', 'dashboard_secret_scan_run', ARRAY['id', 'environment', 'status_commit_sha', 'generated_at', 'status', 'gitleaks_available', 'trufflehog_available', 'critical_count', 'high_count', 'moderate_count', 'low_count', 'info_count', 'recorded_at']::name[], 'dashboard_secret_scan_run has exactly the expected columns');
+SELECT col_is_pk('public', 'dashboard_secret_scan_run', ARRAY['id']::name[], 'dashboard_secret_scan_run primary key');
+SELECT indexes_are('public', 'dashboard_secret_scan_run', ARRAY['dashboard_secret_scan_run_environment_status_commit_sha_key', 'dashboard_secret_scan_run_pkey']::name[], 'dashboard_secret_scan_run has exactly the expected indexes');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'id', 'bigint', 'dashboard_secret_scan_run.id is bigint');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'id', 'dashboard_secret_scan_run.id is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'environment', 'text', 'dashboard_secret_scan_run.environment is text');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'environment', 'dashboard_secret_scan_run.environment is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'status_commit_sha', 'text', 'dashboard_secret_scan_run.status_commit_sha is text');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'status_commit_sha', 'dashboard_secret_scan_run.status_commit_sha is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'generated_at', 'timestamp with time zone', 'dashboard_secret_scan_run.generated_at is timestamp with time zone');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'generated_at', 'dashboard_secret_scan_run.generated_at is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'status', 'text', 'dashboard_secret_scan_run.status is text');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'status', 'dashboard_secret_scan_run.status is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'gitleaks_available', 'boolean', 'dashboard_secret_scan_run.gitleaks_available is boolean');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'gitleaks_available', 'dashboard_secret_scan_run.gitleaks_available is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'trufflehog_available', 'boolean', 'dashboard_secret_scan_run.trufflehog_available is boolean');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'trufflehog_available', 'dashboard_secret_scan_run.trufflehog_available is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'critical_count', 'integer', 'dashboard_secret_scan_run.critical_count is integer');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'critical_count', 'dashboard_secret_scan_run.critical_count is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'high_count', 'integer', 'dashboard_secret_scan_run.high_count is integer');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'high_count', 'dashboard_secret_scan_run.high_count is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'moderate_count', 'integer', 'dashboard_secret_scan_run.moderate_count is integer');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'moderate_count', 'dashboard_secret_scan_run.moderate_count is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'low_count', 'integer', 'dashboard_secret_scan_run.low_count is integer');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'low_count', 'dashboard_secret_scan_run.low_count is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'info_count', 'integer', 'dashboard_secret_scan_run.info_count is integer');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'info_count', 'dashboard_secret_scan_run.info_count is NOT NULL');
+SELECT col_type_is('public', 'dashboard_secret_scan_run', 'recorded_at', 'timestamp with time zone', 'dashboard_secret_scan_run.recorded_at is timestamp with time zone');
+SELECT col_not_null('public', 'dashboard_secret_scan_run', 'recorded_at', 'dashboard_secret_scan_run.recorded_at is NOT NULL');
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.dashboard_secret_scan_run'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$dashboard_secret_scan_run_environment_status_commit_sha_key => UNIQUE (environment, status_commit_sha)$chk$,
+  'dashboard_secret_scan_run check/unique/exclusion constraints'
+);
 SELECT columns_are('public', 'reconciliation_approval_history', ARRAY['id', 'approval_id', 'from_status', 'to_status', 'actor', 'note', 'created_at', 'organization_id']::name[], 'reconciliation_approval_history has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_approval_history', ARRAY['id']::name[], 'reconciliation_approval_history primary key');
 SELECT indexes_are('public', 'reconciliation_approval_history', ARRAY['reconciliation_approval_history_approval_idx', 'reconciliation_approval_history_organization_idx', 'reconciliation_approval_history_pkey']::name[], 'reconciliation_approval_history has exactly the expected indexes');
@@ -628,7 +726,7 @@ SELECT is(
 reconciliation_match_result_result_bucket_check => CHECK ((result_bucket = ANY (ARRAY['MATCH'::text, 'PROBABLE'::text])))$chk$,
   'reconciliation_match_result check/unique/exclusion constraints'
 );
-SELECT columns_are('public', 'reconciliation_organization', ARRAY['id', 'name', 'status', 'created_at']::name[], 'reconciliation_organization has exactly the expected columns');
+SELECT columns_are('public', 'reconciliation_organization', ARRAY['id', 'name', 'status', 'created_at', 'entity_state', 'entity_filing_number', 'entity_type', 'entity_verification_status']::name[], 'reconciliation_organization has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_organization', ARRAY['id']::name[], 'reconciliation_organization primary key');
 SELECT indexes_are('public', 'reconciliation_organization', ARRAY['reconciliation_organization_name_key', 'reconciliation_organization_pkey']::name[], 'reconciliation_organization has exactly the expected indexes');
 SELECT col_type_is('public', 'reconciliation_organization', 'id', 'uuid', 'reconciliation_organization.id is uuid');
@@ -639,11 +737,21 @@ SELECT col_type_is('public', 'reconciliation_organization', 'status', 'text', 'r
 SELECT col_not_null('public', 'reconciliation_organization', 'status', 'reconciliation_organization.status is NOT NULL');
 SELECT col_type_is('public', 'reconciliation_organization', 'created_at', 'timestamp with time zone', 'reconciliation_organization.created_at is timestamp with time zone');
 SELECT col_not_null('public', 'reconciliation_organization', 'created_at', 'reconciliation_organization.created_at is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_organization', 'entity_state', 'text', 'reconciliation_organization.entity_state is text');
+SELECT col_is_null('public', 'reconciliation_organization', 'entity_state', 'reconciliation_organization.entity_state is nullable');
+SELECT col_type_is('public', 'reconciliation_organization', 'entity_filing_number', 'text', 'reconciliation_organization.entity_filing_number is text');
+SELECT col_is_null('public', 'reconciliation_organization', 'entity_filing_number', 'reconciliation_organization.entity_filing_number is nullable');
+SELECT col_type_is('public', 'reconciliation_organization', 'entity_type', 'text', 'reconciliation_organization.entity_type is text');
+SELECT col_is_null('public', 'reconciliation_organization', 'entity_type', 'reconciliation_organization.entity_type is nullable');
+SELECT col_type_is('public', 'reconciliation_organization', 'entity_verification_status', 'text', 'reconciliation_organization.entity_verification_status is text');
+SELECT col_not_null('public', 'reconciliation_organization', 'entity_verification_status', 'reconciliation_organization.entity_verification_status is NOT NULL');
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
      FROM pg_constraint con
     WHERE con.conrelid = 'public.reconciliation_organization'::regclass AND con.contype IN ('c', 'u', 'x')),
-  $chk$reconciliation_organization_name_key => UNIQUE (name)
+  $chk$reconciliation_organization_entity_type_check => CHECK ((entity_type = ANY (ARRAY['domestic'::text, 'foreign'::text])))
+reconciliation_organization_entity_verification_status_check => CHECK ((entity_verification_status = ANY (ARRAY['pending'::text, 'verified'::text, 'failed'::text])))
+reconciliation_organization_name_key => UNIQUE (name)
 reconciliation_organization_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))$chk$,
   'reconciliation_organization check/unique/exclusion constraints'
 );
@@ -1045,9 +1153,9 @@ reconciliation_template_definition_type_version_key => UNIQUE (template_type, ve
 reconciliation_template_definition_version_check => CHECK ((version > 0))$chk$,
   'reconciliation_template_definition check/unique/exclusion constraints'
 );
-SELECT columns_are('public', 'reconciliation_user', ARRAY['user_name', 'first_name', 'last_name', 'last_changed', 'id', 'created_at', 'organization_id', 'role', 'password_hash']::name[], 'reconciliation_user has exactly the expected columns');
+SELECT columns_are('public', 'reconciliation_user', ARRAY['user_name', 'first_name', 'last_name', 'last_changed', 'id', 'created_at', 'organization_id', 'role', 'password_hash', 'email', 'phone', 'identity_verification_status', 'identity_verification_code_hash', 'identity_verification_code_expires_at']::name[], 'reconciliation_user has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_user', ARRAY['user_name']::name[], 'reconciliation_user primary key');
-SELECT indexes_are('public', 'reconciliation_user', ARRAY['reconciliation_user_id_key', 'reconciliation_user_pkey']::name[], 'reconciliation_user has exactly the expected indexes');
+SELECT indexes_are('public', 'reconciliation_user', ARRAY['reconciliation_user_email_key', 'reconciliation_user_id_key', 'reconciliation_user_pkey']::name[], 'reconciliation_user has exactly the expected indexes');
 SELECT col_type_is('public', 'reconciliation_user', 'user_name', 'text', 'reconciliation_user.user_name is text');
 SELECT col_not_null('public', 'reconciliation_user', 'user_name', 'reconciliation_user.user_name is NOT NULL');
 SELECT col_type_is('public', 'reconciliation_user', 'first_name', 'text', 'reconciliation_user.first_name is text');
@@ -1066,12 +1174,24 @@ SELECT col_type_is('public', 'reconciliation_user', 'role', 'text', 'reconciliat
 SELECT col_not_null('public', 'reconciliation_user', 'role', 'reconciliation_user.role is NOT NULL');
 SELECT col_type_is('public', 'reconciliation_user', 'password_hash', 'text', 'reconciliation_user.password_hash is text');
 SELECT col_not_null('public', 'reconciliation_user', 'password_hash', 'reconciliation_user.password_hash is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_user', 'email', 'text', 'reconciliation_user.email is text');
+SELECT col_is_null('public', 'reconciliation_user', 'email', 'reconciliation_user.email is nullable');
+SELECT col_type_is('public', 'reconciliation_user', 'phone', 'text', 'reconciliation_user.phone is text');
+SELECT col_is_null('public', 'reconciliation_user', 'phone', 'reconciliation_user.phone is nullable');
+SELECT col_type_is('public', 'reconciliation_user', 'identity_verification_status', 'text', 'reconciliation_user.identity_verification_status is text');
+SELECT col_not_null('public', 'reconciliation_user', 'identity_verification_status', 'reconciliation_user.identity_verification_status is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_user', 'identity_verification_code_hash', 'text', 'reconciliation_user.identity_verification_code_hash is text');
+SELECT col_is_null('public', 'reconciliation_user', 'identity_verification_code_hash', 'reconciliation_user.identity_verification_code_hash is nullable');
+SELECT col_type_is('public', 'reconciliation_user', 'identity_verification_code_expires_at', 'timestamp with time zone', 'reconciliation_user.identity_verification_code_expires_at is timestamp with time zone');
+SELECT col_is_null('public', 'reconciliation_user', 'identity_verification_code_expires_at', 'reconciliation_user.identity_verification_code_expires_at is nullable');
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
      FROM pg_constraint con
     WHERE con.conrelid = 'public.reconciliation_user'::regclass AND con.contype IN ('c', 'u', 'x')),
-  $chk$reconciliation_user_id_key => UNIQUE (id)
-reconciliation_user_role_check => CHECK ((role = ANY (ARRAY['financial-analyst'::text, 'admin'::text, 'superuser'::text])))$chk$,
+  $chk$reconciliation_user_email_key => UNIQUE (email)
+reconciliation_user_id_key => UNIQUE (id)
+reconciliation_user_identity_verification_status_check => CHECK ((identity_verification_status = ANY (ARRAY['pending'::text, 'verified'::text])))
+reconciliation_user_role_check => CHECK ((role = ANY (ARRAY['financial-analyst'::text, 'senior-analyst'::text, 'staff-accountant'::text, 'controller'::text, 'vp-finance'::text, 'cfo'::text, 'admin'::text, 'superuser'::text])))$chk$,
   'reconciliation_user check/unique/exclusion constraints'
 );
 SELECT columns_are('public', 'reconciliation_validation_result', ARRAY['id', 'staged_transaction_id', 'source_file_id', 'rule_version_id', 'severity', 'passed', 'message', 'created_at', 'organization_id']::name[], 'reconciliation_validation_result has exactly the expected columns');
@@ -1138,6 +1258,7 @@ reconciliation_validation_rule_version_status_check => CHECK ((status = ANY (ARR
 reconciliation_validation_rule_version_version_number_check => CHECK ((version_number > 0))$chk$,
   'reconciliation_validation_rule_version check/unique/exclusion constraints'
 );
+SELECT fk_ok('public', 'dashboard_secret_finding_snapshot', ARRAY['scan_run_id']::name[], 'public', 'dashboard_secret_scan_run', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_approval_history', ARRAY['actor']::name[], 'public', 'reconciliation_user', ARRAY['user_name']::name[]);
 SELECT fk_ok('public', 'reconciliation_approval_history', ARRAY['approval_id']::name[], 'public', 'reconciliation_import_approval', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_approval_history', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);

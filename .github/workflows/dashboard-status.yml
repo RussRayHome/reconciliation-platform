@@ -205,6 +205,57 @@ jobs:
           path: .ci-out/security
           if-no-files-found: warn
 
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0 # gitleaks/trufflehog scan full git history, not just the checked-out tree
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - name: Install gitleaks
+        # gitleaks has no install.sh (unlike Trivy/trufflehog below) -- pulling the pinned release
+        # tarball directly. Version pinned rather than "latest" so a new gitleaks release can't
+        # silently change findings/behavior on an unrelated commit; bump deliberately.
+        env:
+          GITLEAKS_VERSION: '8.30.1'
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          rm /tmp/gitleaks.tar.gz
+      - name: Install trufflehog
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sudo sh -s -- -b /usr/local/bin
+      - name: Run secret scan
+        # security-scan-secrets.mjs's structured payload comes over stdout, not a report file --
+        # `tee` both streams it live to the job log and captures it to a file for the aggregator.
+        # Never redirect gitleaks'/trufflehog's own raw output here: the scanner script consumes
+        # them as subprocesses and only ever prints its own sanitized (masked/fingerprinted)
+        # payload to stdout, so `tee`-ing this job's stdout cannot leak a raw secret into the log.
+        run: |
+          set -o pipefail
+          mkdir -p .ci-out/secrets
+          started=$(date +%s%3N)
+          npm run security:scan:secrets --silent 2>&1 | tee .ci-out/secrets/secret-scan-output.txt
+          exit_code=${PIPESTATUS[0]}
+          ended=$(date +%s%3N)
+          printf '{"name":"Secret integrity","command":"npm run security:scan:secrets","exitCode":%d,"ok":%s,"durationMs":%d}' \
+            "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/secrets/meta.json
+          exit "$exit_code"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secrets
+          path: .ci-out/secrets
+          if-no-files-found: warn
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -271,7 +322,7 @@ jobs:
           if-no-files-found: warn
 
   aggregate:
-    needs: [unit, integration, postgres, lint, typecheck, coverage, security, e2e]
+    needs: [unit, integration, postgres, lint, typecheck, coverage, security, secrets, e2e]
     if: always() # publish whatever succeeded even if one or more check jobs failed or timed out
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -335,6 +386,11 @@ jobs:
         with:
           name: security
           path: .ci-artifacts/security
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: secrets
+          path: .ci-artifacts/secrets
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:

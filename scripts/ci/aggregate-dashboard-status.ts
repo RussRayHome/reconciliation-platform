@@ -19,6 +19,7 @@ import {
   parseDbTestItems,
   parseEslintJsonIssues,
   parsePlaywrightJsonSpecs,
+  parseSecretMetadata,
   parseSecurityHighlights,
   parseSecurityMetadata,
   parseVitestJsonTestItems,
@@ -859,6 +860,24 @@ const run = async (): Promise<void> => {
     ...parseSecurityMetadata(securityOutput),
   };
 
+  // --- Secret integrity ---
+  const secretsMeta = readCheckMeta('secrets', 'Secret integrity');
+  const secretsOutput = readText(join(artifactsDir, 'secrets', 'secret-scan-output.txt')) ?? '';
+  const secretMetadata = parseSecretMetadata(secretsOutput);
+  const secrets: DeveloperCheck = {
+    name: secretsMeta.name,
+    command: secretsMeta.command,
+    ok: secretsMeta.ok,
+    exitCode: secretsMeta.exitCode,
+    durationMs: secretsMeta.durationMs,
+    summary: secretMetadata.secretFindingsAggregate
+      ? `Findings: ${secretMetadata.secretFindingsAggregate.total} (verified-live ${secretMetadata.secretFindingsAggregate.critical}, present-at-head ${secretMetadata.secretFindingsAggregate.high}, historical ${secretMetadata.secretFindingsAggregate.moderate})`
+      : 'Secret scan completed',
+    details: secretsMeta.ok ? 'See job log for full output.' : 'Check failed -- see job log for full output.',
+    areaLabel: 'Secret integrity',
+    ...secretMetadata,
+  };
+
   // --- E2E ---
   const e2eMeta = readCheckMeta('e2e', 'E2E tests');
   const e2eJsonRaw = readText(join(artifactsDir, 'e2e', 'e2e-results.json'));
@@ -881,7 +900,7 @@ const run = async (): Promise<void> => {
     e2eSpecs,
   };
 
-  const checks = [unitTests, integrationTests, postgresTests, lint, typecheck, coverage, security, e2e];
+  const checks = [unitTests, integrationTests, postgresTests, lint, typecheck, coverage, security, secrets, e2e];
   const failedChecks = checks.filter((c) => !c.ok).length;
   const passedChecks = checks.length - failedChecks;
   const totalDurationMs = checks.reduce((sum, c) => sum + c.durationMs, 0);

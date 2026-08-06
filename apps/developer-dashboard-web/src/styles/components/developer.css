@@ -230,6 +230,41 @@
     color: var(--text-tertiary);
   }
 
+  .detail-panel__head-right {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .detail-panel__collapse-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .detail-panel__collapse-toggle:hover {
+    border-color: var(--line-strong);
+    color: var(--text-primary);
+  }
+
+  .detail-panel__collapse-icon {
+    transition: transform 150ms ease-in-out;
+    transform: rotate(0deg);
+  }
+
+  .detail-panel__collapse-icon--collapsed {
+    transform: rotate(-90deg);
+  }
+
   .detail-panel__empty {
     margin: 0;
     font-size: 0.85rem;
@@ -379,6 +414,61 @@
 
   .vuln-group .detail-panel__empty {
     padding: 0.7rem 0.85rem;
+  }
+
+  /* Secret Integrity runbook drawer -- an inline expand row (like .detail-panel__desc-row) rather
+     than a modal, consistent with the rest of this dashboard's expand-in-place patterns. */
+  .secret-runbook {
+    display: grid;
+    gap: 0.6rem;
+    padding: 0.6rem 0;
+  }
+
+  .secret-runbook__form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .secret-runbook__form input {
+    flex: 1 1 220px;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-sunken);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+  }
+
+  .secret-runbook__form input::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .secret-runbook__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .secret-runbook__history {
+    margin-top: 0.2rem;
+  }
+
+  .secret-changelog {
+    display: grid;
+    gap: 0.6rem;
+    border-top: 1px solid var(--line);
+    padding-top: 0.85rem;
+  }
+
+  .secret-changelog h4 {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-strong);
   }
 
   @media (max-width: 960px) {
