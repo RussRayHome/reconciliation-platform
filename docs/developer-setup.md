@@ -33,7 +33,7 @@ cp .env.example .env
 For Docker workflows:
 
 ```bash
-cp .env.docker.dev.fallback .env.docker
+cp .env.docker.dev.fallback .env.docker.dev
 npm run docker:validate-env
 ```
 
@@ -154,14 +154,14 @@ npm run docker:cleanup
 
 ### Service topology
 
-| Service    | Role                                 | Host port       | Environments    |
-| ---------- | ------------------------------------ | --------------- | --------------- |
-| `web`      | NGINX public gateway                 | `4173`          | dev, stage      |
-| `api`      | Express API                          | internal        | dev, stage      |
-| `postgres` | PostgreSQL data store                | `5432`          | dev, stage      |
-| `migrate`  | One-shot migration runner            | none            | dev, stage      |
-| `pgweb`    | Postgres web admin                   | `8081`          | dev, stage only |
-| `nginx-ui` | NGINX admin UI                       | `8082` / `8182` | dev, stage only |
+| Service    | Role                      | Host port                                 | Environments    |
+| ---------- | ------------------------- | ----------------------------------------- | --------------- |
+| `web`      | NGINX public gateway      | `4174` dev (HTTPS) / `4273`\|`4274` stage | dev, stage      |
+| `api`      | Express API               | internal                                  | dev, stage      |
+| `postgres` | PostgreSQL data store     | `5432`                                    | dev, stage      |
+| `migrate`  | One-shot migration runner | none                                      | dev, stage      |
+| `pgweb`    | Postgres web admin        | `8081`                                    | dev, stage only |
+| `nginx-ui` | NGINX admin UI            | `8082` / `8182`                           | dev, stage only |
 
 The full test and quality gate suite (unit, integration, E2E, lint, typecheck, coverage, security
 scans) runs nightly via GitHub Actions (`.github/workflows/dashboard-status.yml`), not against this
@@ -170,9 +170,9 @@ local stack -- see the separate Developer Dashboard (`apps/developer-dashboard-a
 
 Access points after deploy:
 
-- Application: `http://127.0.0.1:4173`
-- Documentation Hub: `http://127.0.0.1:4173/<environment>/docs` (for example `dev/docs`)
-- Postgres Admin (gateway route): `http://127.0.0.1:4173/<environment>/pgweb` (for example `dev/pgweb`)
+- Application: `https://127.0.0.1:4174` (dev) / `https://127.0.0.1:4274` or `http://127.0.0.1:4273` (stage)
+- Documentation Hub: `https://127.0.0.1:4174/<environment>/docs` (for example `dev/docs`)
+- Postgres Admin (gateway route): `https://127.0.0.1:4174/<environment>/pgweb` (for example `dev/pgweb`)
 - Postgres Admin (direct port): `http://127.0.0.1:8081`
 - NGINX UI (direct port): `http://127.0.0.1:8082`
 

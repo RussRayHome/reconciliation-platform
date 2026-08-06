@@ -10,7 +10,7 @@ Local development:
 
 Docker gateway path:
 
-- `http://127.0.0.1:4173/api/*`
+- `https://127.0.0.1:4174/api/*` (dev, mkcert-trusted local cert)
 
 ## Common behavior
 
