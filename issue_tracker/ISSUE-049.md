@@ -1,6 +1,7 @@
 # ISSUE-049: Scope and execute JWT_SECRET rotation + history remediation for ISSUE-022
 
-**Status:** Open · **Severity:** Blocker · **Area:** Security / Secrets
+**Status:** Open — rotation done, history-rewrite decision still pending · **Severity:** Blocker ·
+**Area:** Security / Secrets
 **Location:** commit `7aafa45`; `.env.docker.dev.fallback`, `.env.docker.stage.fallback`,
 `issue_tracker/ISSUE-022.md`
 **Source:** History forensics for ISSUE-022, 2026-08-06.
@@ -39,17 +40,24 @@ an explicit `JWT_SECRET` in production and throws if unset, so no production dep
 running on a fallback-file value. The realistic risk is token forgery against a dev or stage
 deployment started from a fallback file.
 
-## Rotation — do this regardless of the history decision
+## Rotation — done 2026-08-06
 
-1. Replace the `JWT_SECRET` line in both `.fallback` files with an obvious placeholder, or delete it
-   so the app's ephemeral-secret path takes over (ISSUE-022's fix).
-2. Redact the values in `ISSUE-022.md`, leaving the description intact.
+1. ~~Replace the `JWT_SECRET` line in both `.fallback` files with an obvious placeholder, or delete
+   it so the app's ephemeral-secret path takes over (ISSUE-022's fix).~~ Done —
+   `change-dev-jwt-secret` / `change-stage-jwt-secret`.
+2. ~~Redact the values in `ISSUE-022.md`, leaving the description intact.~~ Done.
 3. Generate fresh secrets for any real `.env.docker.dev` / `.env.docker.stage` currently in use, and
    restart those stacks. Existing sessions signed with the old key become invalid — expected.
-4. Confirm no deployed environment is still reading a fallback file for `JWT_SECRET`.
+   **Checked on this machine:** both files already carry a `JWT_SECRET` with a different
+   fingerprint from the leaked value (confirmed by hashing, not by reading the value) — this
+   local dev/stage stack was never actually running on the committed fallback secret. Any other
+   clone/deployment should run the same check before assuming it's unaffected.
+4. Confirm no deployed environment is still reading a fallback file for `JWT_SECRET`. Not verified
+   beyond this machine — flag for whoever holds stage/prod credentials.
 
-After step 3 the leaked values are dead keys, and everything below is about hygiene and audit
-optics rather than live risk.
+The leaked values are dead keys as of the fallback-file fix (step 1) regardless of step 3/4's
+outcome elsewhere, since nothing reads them once they're gone from the file. Everything below is
+about hygiene and audit optics rather than live risk.
 
 ## History rewrite — decision needed
 

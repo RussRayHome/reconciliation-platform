@@ -11,6 +11,15 @@ import { authedApp } from './testHelpers/authToken';
  */
 const createFakeMappingPool = (): Pool => {
   const query = (text: string, params?: unknown[]): Promise<{ rows: unknown[] }> => {
+    // requireFullyVerified (authMiddleware.ts) and /api/auth/me both read verification status
+    // live from the DB before this route's own logic ever runs -- answered as fully verified so
+    // these tests exercise mapping-creation behavior, not the verification gate itself (which has
+    // its own dedicated tests).
+    if (text.includes('identity_verification_status') && text.includes('entity_verification_status')) {
+      return Promise.resolve({
+        rows: [{ identity_verification_status: 'verified', entity_verification_status: 'verified' }],
+      });
+    }
     if (text.includes('SELECT id FROM reconciliation_organization')) {
       return Promise.resolve({ rows: [{ id: 'org-1' }] });
     }

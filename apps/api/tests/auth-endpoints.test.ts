@@ -131,6 +131,11 @@ describe('auth: /api/auth/me', () => {
       organizationId: 'org-42',
       firstName: 'Ryan',
       lastName: 'Ray',
+      // createApp() with no pool is local-fallback mode -- app.ts's /api/auth/me treats that as
+      // fully verified, since there's no reconciliation_user row to read real status from.
+      identityVerificationStatus: 'verified',
+      entityVerificationStatus: 'verified',
+      isFullyVerified: true,
     });
   });
 

@@ -16,7 +16,13 @@ import { describe, expect, it } from 'vitest';
  */
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
-const ALLOWED_FILES = new Set(['apps/api/src/app.ts']);
+const ALLOWED_FILES = new Set([
+  'apps/api/src/app.ts',
+  // createRequireFullyVerified: same shape as the login handler's own exception -- a single-row
+  // lookup by the already-authenticated request's own username (from the verified JWT `sub`
+  // claim, not client-supplied), never a list/filter across users. See its own doc comment.
+  'apps/api/src/services/authMiddleware.ts',
+]);
 
 const SOURCE_ROOTS = ['apps/api/src', 'packages/persistence/src'];
 

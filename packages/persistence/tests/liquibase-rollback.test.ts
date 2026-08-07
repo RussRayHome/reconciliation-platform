@@ -40,11 +40,16 @@ describe('Liquibase rollback', () => {
     return result.rows[0]?.exists === true;
   };
 
-  const roleCheckAllowsDeveloper = async (pool: Pool): Promise<boolean> => {
-    const result = await pool.query<{ definition: string }>(
-      "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'reconciliation_user_role_check'",
+  // has_table_privilege rather than a constraint-text check: 0038 (the most recent changeset as
+  // of this test) only grants/revokes on dashboard_secret_scan_run, and schema-baseline.sql's
+  // pgTap assertions don't cover GRANTs at all -- so unlike 0033's CHECK-constraint rollback
+  // (which genuinely changed the baseline text), this rollback is invisible to
+  // generateSchemaBaseline and has to be observed by asking Postgres directly.
+  const dashboardAppRuntimeCanReadScanHistory = async (pool: Pool): Promise<boolean> => {
+    const result = await pool.query<{ has_privilege: boolean }>(
+      "SELECT has_table_privilege('dashboard_app_runtime', 'dashboard_secret_scan_run', 'SELECT') AS has_privilege",
     );
-    return (result.rows[0]?.definition ?? '').includes("'developer'");
+    return result.rows[0]?.has_privilege === true;
   };
 
   describe('rolling back the most recent changeset', () => {
@@ -52,9 +57,9 @@ describe('Liquibase rollback', () => {
     let migratedSchema: string;
     let rolledBackSchema: string;
     let reappliedSchema: string;
-    let migratedRoleCheckAllowsDeveloper: boolean;
-    let rolledBackRoleCheckAllowsDeveloper: boolean;
-    let reappliedRoleCheckAllowsDeveloper: boolean;
+    let migratedCanRead: boolean;
+    let rolledBackCanRead: boolean;
+    let reappliedCanRead: boolean;
 
     beforeAll(async () => {
       database = await createEmptyDatabase('recon_rollback_one');
@@ -62,15 +67,15 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
-      migratedRoleCheckAllowsDeveloper = await roleCheckAllowsDeveloper(database.pool);
+      migratedCanRead = await dashboardAppRuntimeCanReadScanHistory(database.pool);
 
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
-      rolledBackRoleCheckAllowsDeveloper = await roleCheckAllowsDeveloper(database.pool);
+      rolledBackCanRead = await dashboardAppRuntimeCanReadScanHistory(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
-      reappliedRoleCheckAllowsDeveloper = await roleCheckAllowsDeveloper(database.pool);
+      reappliedCanRead = await dashboardAppRuntimeCanReadScanHistory(database.pool);
     }, 180000);
 
     afterAll(async () => {
@@ -87,22 +92,20 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0033 by re-adding developer to the role check constraint', () => {
-      // 0033 (the most recent changeset as of this test) drops 'developer' from
-      // reconciliation_user_role_check; its rollback puts the value back (though not the specific
-      // rows that held it -- see 0033's own rollback comment). schema-baseline.sql's constraint
-      // listing captures the CHECK definition text, so migratedSchema/rolledBackSchema genuinely
-      // differ here, unlike a rollback that only flips a flag. When a future changeset lands on
-      // top of 0033, update this test to describe that changeset instead -- it is intentionally
-      // pinned to "whatever is currently the most recent changeset", not to 0033 forever.
-      expect(migratedRoleCheckAllowsDeveloper).toBe(false);
-      expect(rolledBackRoleCheckAllowsDeveloper).toBe(true);
-      expect(reappliedRoleCheckAllowsDeveloper).toBe(false);
-      expect(rolledBackSchema).not.toEqual(migratedSchema);
+    it('reverses changeset 0038 by revoking dashboard_app_runtime\'s grant on dashboard_secret_scan_run', () => {
+      // When a future changeset lands on top of 0038, update this test to describe that
+      // changeset instead -- it is intentionally pinned to "whatever is currently the most
+      // recent changeset", not to 0038 forever (see 0033's git history for the last time this
+      // moved).
+      expect(migratedCanRead).toBe(true);
+      expect(rolledBackCanRead).toBe(false);
+      expect(reappliedCanRead).toBe(true);
+      // Confirms the claim above: a grant-only rollback really is invisible to the baseline text.
+      expect(rolledBackSchema).toEqual(migratedSchema);
     });
   });
 
-  describe('rolling back eight changesets (0033, 0032, 0031, 0030, 0029, 0028, 0027 verify-only, then 0026 schema-changing)', () => {
+  describe('rolling back thirteen changesets (0038 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -114,12 +117,16 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now eight changesets back from HEAD (0033), not seven -- 0027 (verify-only), 0028
-      // (adds organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
-      // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032 (disables
-      // RLS on reconciliation_user only), and 0033 (role check constraint only, no column changes)
-      // all sit on top of it without reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=8');
+      // 0026 is now thirteen changesets back from HEAD (0038): 0027 (verify-only), 0028 (adds
+      // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
+      // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
+      // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
+      // its own reconciliation_user/reconciliation_organization columns -- rolled back along with
+      // everything else in this range, which is correct and untested by the assertions below
+      // since they only look at password/password_hash/role), 0035-0037 (new tables, no
+      // reconciliation_user changes), and 0038 (grants only) all sit on top of it without
+      // reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=13');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 
