@@ -27,11 +27,36 @@ on:
     # still finish well before a normal morning check-in, not run into it.
     - cron: '17 7 * * *'
   workflow_dispatch: {} # manual trigger from GitHub's UI, for testing this workflow itself
+  push:
+    branches: [dev]
+    # Docs-only commits can't change any check's outcome, and a full run costs ~24 job-minutes.
+    paths-ignore:
+      - 'issue_tracker/**'
+      - 'docs/**'
+      - '**.md'
+
+# Serialises runs per ref, which matters for two reasons. `aggregate` holds contents:write and
+# pushes to the status-data branch -- two overlapping runs would race there and one would die on
+# a non-fast-forward. And on a rapid push sequence, superseded runs are pointless: only the tip
+# commit's result gets published, so cancelling in-flight work saves minutes with no lost signal.
+concurrency:
+  group: dashboard-status-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   TARGET_BRANCH: dev # single environment while this workflow is still being proven out -- see
   # the note in the `checkout` step of each job. Re-add stage as a second value once dev has run
   # cleanly a few times and stage is caught up.
+  #
+  # Every job checks out `github.event_name == 'push' && github.sha || TARGET_BRANCH`, NOT
+  # TARGET_BRANCH unconditionally. That distinction only matters once a push trigger exists, and
+  # it matters a lot: checkout resolves independently in each of the 10 jobs, at whatever moment
+  # that job's runner starts. Pinned to the branch tip, two pushes in quick succession would have
+  # jobs within a single run checking out DIFFERENT commits, and `aggregate` would publish one
+  # status JSON attributing that mixture to the commit GitHub labelled the run with. A green
+  # result attributed to a commit that was never tested is worse than a red one -- it is silent,
+  # and the published artifact looks authoritative. Schedule and workflow_dispatch have no
+  # triggering SHA, so they keep the original tip-of-branch behaviour.
 
 jobs:
   unit:
@@ -40,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -63,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -86,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -108,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -131,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -151,7 +176,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -173,7 +198,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -211,7 +236,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
           fetch-depth: 0 # gitleaks/trufflehog scan full git history, not just the checked-out tree
       - uses: actions/setup-node@v4
         with:
@@ -282,7 +307,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -343,7 +368,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
           fetch-depth: 0 # full history -- commitsThisWeek/branch-compare/tag lookups need it
       - uses: actions/setup-node@v4
         with:
