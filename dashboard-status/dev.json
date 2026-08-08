@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-08T22:38:23.122Z",
+  "generatedAt": "2026-08-08T22:39:35.803Z",
   "repositoryPath": "/home/runner/work/reconciliation-platform/reconciliation-platform",
   "overallStatus": "attention-needed",
   "failedChecks": 9,
@@ -123,7 +123,7 @@
   ],
   "history": [
     {
-      "generatedAt": "2026-08-08T22:38:23.122Z",
+      "generatedAt": "2026-08-08T22:39:35.803Z",
       "overallStatus": "attention-needed",
       "failedChecks": 9,
       "totalChecks": 9,
@@ -219,19 +219,19 @@
     "lastCiRun": {
       "status": "attention-needed",
       "durationMs": 0,
-      "at": "2026-08-08T22:38:23.122Z"
+      "at": "2026-08-08T22:39:35.803Z"
     },
-    "commitsThisWeek": 86,
+    "commitsThisWeek": 92,
     "branchFreshness": {
       "remoteRef": "origin/stage vs origin/dev",
       "aheadCount": 0,
-      "behindCount": 36
+      "behindCount": 40
     },
-    "openPrCount": 3
+    "openPrCount": 0
   },
   "environment": "dev",
   "promotionReadiness": {
-    "checkedAt": "2026-08-08T22:38:23.263Z",
+    "checkedAt": "2026-08-08T22:39:35.892Z",
     "baseline": {
       "tagName": "stable-baseline-2026-05-14",
       "exists": true,
@@ -241,7 +241,7 @@
     "environments": [
       {
         "name": "dev",
-        "targetRevision": "1277d18"
+        "targetRevision": "1c8d480"
       },
       {
         "name": "stage",
@@ -254,44 +254,18 @@
     ]
   },
   "lastDevCommit": {
-    "sha": "1277d185bbc94e714d7ea976769303faaf8cf7ae",
+    "sha": "1c8d480b249e3ae0e3954564cb79b909d321e2a6",
     "author": "Russ Ray",
-    "at": "2026-08-08T18:37:14-04:00",
-    "message": "Merge fix/e2e-runtime-error-gate into dev: Playwright runtime-error gate (ISSUE-029)"
+    "at": "2026-08-08T18:38:41-04:00",
+    "message": "Merge test/signup-and-auth-links into dev: signup and login-link coverage (ISSUE-033)"
   },
   "branches": [
     {
       "name": "feat/dashboard-card-denominators",
-      "aheadOfDev": 3,
-      "behindDev": 7,
-      "lastCommitAt": "2026-08-08T17:53:51-04:00",
-      "pullRequest": {
-        "number": 77,
-        "title": "Show branch coverage on the dashboard's Code coverage card (ISSUE-034)",
-        "url": "https://github.com/RussRayHome/reconciliation-platform/pull/77"
-      }
-    },
-    {
-      "name": "test/signup-and-auth-links",
-      "aheadOfDev": 2,
-      "behindDev": 7,
-      "lastCommitAt": "2026-08-08T17:46:31-04:00",
-      "pullRequest": {
-        "number": 76,
-        "title": "Add signup and login-link coverage; fix stale-closure validation bug (ISSUE-033)",
-        "url": "https://github.com/RussRayHome/reconciliation-platform/pull/76"
-      }
-    },
-    {
-      "name": "test/e2e-route-sweep",
       "aheadOfDev": 1,
-      "behindDev": 7,
-      "lastCommitAt": "2026-08-08T16:03:00-04:00",
-      "pullRequest": {
-        "number": 75,
-        "title": "Add a data-driven E2E route sweep covering all 22 routePaths entries (ISSUE-026)",
-        "url": "https://github.com/RussRayHome/reconciliation-platform/pull/75"
-      }
+      "behindDev": 9,
+      "lastCommitAt": "2026-08-08T17:53:51-04:00",
+      "pullRequest": null
     }
   ],
   "repoStatus": {
@@ -299,15 +273,15 @@
     "repo": {
       "slug": "RussRayHome/reconciliation-platform",
       "defaultBranch": "dev",
-      "refreshedAt": "2026-08-08T22:38:23.943Z"
+      "refreshedAt": "2026-08-08T22:39:36.406Z"
     },
     "environments": [
       {
         "name": "dev",
         "branch": "dev",
         "isCurrent": true,
-        "sha": "1277d18",
-        "deployedAt": "2026-08-08T18:37:14-04:00",
+        "sha": "1c8d480",
+        "deployedAt": "2026-08-08T18:38:41-04:00",
         "behindCount": 0,
         "driftLabel": "In sync",
         "driftNote": "Integration target",
@@ -322,9 +296,9 @@
         "isCurrent": false,
         "sha": "fceab92",
         "deployedAt": "2026-08-05T14:16:00-04:00",
-        "behindCount": 36,
-        "driftLabel": "36 behind",
-        "driftNote": "36 commits on dev not yet promoted",
+        "behindCount": 40,
+        "driftLabel": "40 behind",
+        "driftNote": "40 commits on dev not yet promoted",
         "ci": null
       },
       {
@@ -333,9 +307,9 @@
         "isCurrent": false,
         "sha": "5f08130",
         "deployedAt": "2026-08-02T14:42:43-04:00",
-        "behindCount": 75,
-        "driftLabel": "75 behind",
-        "driftNote": "75 commits on dev not yet promoted",
+        "behindCount": 79,
+        "driftLabel": "79 behind",
+        "driftNote": "79 commits on dev not yet promoted",
         "ci": null
       }
     ],
@@ -345,8 +319,8 @@
         "subject": "Show branch coverage on the dashboard's Code coverage card (ISSUE-034)",
         "author": "Russell",
         "isBot": false,
-        "aheadOfDev": 3,
-        "behindDev": 7,
+        "aheadOfDev": 1,
+        "behindDev": 9,
         "checksStatus": "not-run",
         "failingChecks": [],
         "lastCommitAt": "2026-08-08T17:53:51-04:00",
@@ -354,39 +328,21 @@
         "state": "stale",
         "nextAction": "Open a pull request",
         "actionDetail": "no pull request opened yet"
-      },
-      {
-        "name": "test/e2e-route-sweep",
-        "subject": "Add a data-driven E2E route sweep covering all 22 routePaths entries (ISSUE-026)",
-        "author": "Russell",
-        "isBot": false,
-        "aheadOfDev": 1,
-        "behindDev": 7,
-        "checksStatus": "not-run",
-        "failingChecks": [],
-        "lastCommitAt": "2026-08-08T16:03:00-04:00",
-        "pullRequest": null,
-        "state": "stale",
-        "nextAction": "Open a pull request",
-        "actionDetail": "no pull request opened yet"
-      },
-      {
-        "name": "test/signup-and-auth-links",
-        "subject": "Add signup and login-link coverage; fix stale-closure validation bug (ISSUE-033)",
-        "author": "Russell",
-        "isBot": false,
-        "aheadOfDev": 2,
-        "behindDev": 7,
-        "checksStatus": "not-run",
-        "failingChecks": [],
-        "lastCommitAt": "2026-08-08T17:46:31-04:00",
-        "pullRequest": null,
-        "state": "stale",
-        "nextAction": "Open a pull request",
-        "actionDetail": "no pull request opened yet"
       }
     ],
     "commits": [
+      {
+        "sha": "1c8d480",
+        "author": "Russ Ray",
+        "committedAt": "2026-08-08T18:38:41-04:00",
+        "subject": "Merge test/signup-and-auth-links into dev: signup and login-link coverage (ISSUE-033)"
+      },
+      {
+        "sha": "7f13687",
+        "author": "Russ Ray",
+        "committedAt": "2026-08-08T18:38:23-04:00",
+        "subject": "Merge test/e2e-route-sweep into dev: data-driven E2E route sweep (ISSUE-026)"
+      },
       {
         "sha": "1277d18",
         "author": "Russ Ray",
@@ -398,18 +354,6 @@
         "author": "Russ Ray",
         "committedAt": "2026-08-08T18:36:57-04:00",
         "subject": "Merge test/navrail-inventory-guard into dev: NavRail rail-inventory guard (ISSUE-027, ISSUE-028)"
-      },
-      {
-        "sha": "cf6b29f",
-        "author": "Russ Ray",
-        "committedAt": "2026-08-08T18:36:38-04:00",
-        "subject": "Merge fix/react-router-v8-cve into dev: resolve CSRF-bypass CVE (ISSUE-024)"
-      },
-      {
-        "sha": "decf839",
-        "author": "Russ Ray",
-        "committedAt": "2026-08-08T18:28:55-04:00",
-        "subject": "Merge fix/docs-jsdoc-gap into dev: add missing JSDoc for verification-service mocks"
       }
     ],
     "commitActivity": [
@@ -467,32 +411,20 @@
       },
       {
         "date": "2026-08-08",
-        "count": 22
+        "count": 26
       }
     ],
     "decisions": [
       {
         "kind": "Promotion overdue",
         "tone": "amber",
-        "title": "stage has been 36 commits behind dev for 3 days",
+        "title": "stage has been 40 commits behind dev for 3 days",
         "detail": "Work is merged to dev but untested on stage. Promote, or say why not."
       },
       {
         "kind": "Stale branch",
         "tone": "blue",
-        "title": "feat/dashboard-card-denominators is 7 behind with no PR",
-        "detail": "Last commit today. Rebase and open a PR, or close it."
-      },
-      {
-        "kind": "Stale branch",
-        "tone": "blue",
-        "title": "test/e2e-route-sweep is 7 behind with no PR",
-        "detail": "Last commit today. Rebase and open a PR, or close it."
-      },
-      {
-        "kind": "Stale branch",
-        "tone": "blue",
-        "title": "test/signup-and-auth-links is 7 behind with no PR",
+        "title": "feat/dashboard-card-denominators is 9 behind with no PR",
         "detail": "Last commit today. Rebase and open a PR, or close it."
       }
     ]
