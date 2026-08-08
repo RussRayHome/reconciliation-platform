@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 /** Shared placeholder for menu destinations that don't have a built screen yet. */
 export function ComingSoonPage({
