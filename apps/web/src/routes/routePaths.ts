@@ -11,6 +11,7 @@ export const routePaths = {
   export: '/export',
   mappingProfiles: '/mapping/profiles',
   mappingCreate: '/mapping/create',
+  mappingRules: '/mapping/rules',
   mappingHistory: '/mapping/history',
   approvalsPending: '/approvals/pending',
   approvalsApproved: '/approvals/approved',

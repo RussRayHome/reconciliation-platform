@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { UserRole } from '@recon/domain';
+import type { RuleCatalogResponse, RuleVersionsResponse, UserRole } from '@recon/domain';
 import type * as ApiModule from './lib/api';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -9,16 +9,110 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 
 import App from './App';
 import userEvent from '@testing-library/user-event';
+import { formatCompactDate } from './lib/format';
 
+// vi.hoisted's callback runs before any other top-level code in this file (same hoisting
+// vi.mock factories get), so ACTIVE_RULE_VERSION_FIXTURE has to be built inside it rather than
+// referenced from a `const` declared elsewhere in the file -- that `const` wouldn't have run yet.
 const mockedApiState = vi.hoisted<{
   latestRunResponse: unknown;
   latestRunError: Error | null;
   latestRunPromise: Promise<unknown> | null;
-}>(() => ({
-  latestRunResponse: null,
-  latestRunError: null,
-  latestRunPromise: null,
-}));
+  ruleVersionsResponse: RuleVersionsResponse | null;
+  defaultRuleVersionsResponse: RuleVersionsResponse;
+  rulesCatalogResponse: RuleCatalogResponse;
+  mappingProfileNames: string[];
+}>(() => {
+  // Default GET /api/rules/versions fixture: an already-published ACTIVE version with
+  // overridesAppliedToEngine true, i.e. "Phase 0 engine wiring has shipped" -- most existing
+  // tests care about role-based editability (ADMIN·EDITABLE vs READ-ONLY), not the NOT APPLIED
+  // state specifically, so this keeps that scenario the default and lets tests that DO care
+  // about NOT APPLIED override `mockedApiState.ruleVersionsResponse` explicitly.
+  const activeVersion = {
+    id: 'mcv-active-7',
+    organizationId: 'test-org',
+    versionNumber: 7,
+    status: 'ACTIVE' as const,
+    varianceOverrides: {},
+    createdBy: 'mortega',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    publishedBy: 'M. Ortega',
+    publishedAt: '2026-08-04T00:00:00.000Z',
+    effectiveAt: '2026-08-01T00:00:00.000Z',
+    pendingApprovalOwner: null,
+  };
+  const defaultRuleVersionsResponse = {
+    active: activeVersion,
+    draft: null,
+    history: [activeVersion],
+    overridesAppliedToEngine: true,
+  };
+
+  // A small but representative GET /api/rules/catalog fixture -- not all 43 real rules (that
+  // completeness is packages/core's ruleCatalog.test.ts's job), just enough of each family plus
+  // one fixed (no-metric) rule to exercise search/family/tunable filtering and the variance
+  // threshold list.
+  const rulesCatalogResponse = {
+    rules: [
+      {
+        id: 'reference-amount-match',
+        name: 'Reference + Amount Match',
+        family: 'Matching' as const,
+        description: 'Pairs bank and GL transactions when amounts agree within tolerance.',
+        varianceMetricIds: ['amountTolerance' as const],
+        tunable: true,
+      },
+      {
+        id: 'wire-correspondent-fee-deduction',
+        name: 'Wire Correspondent Fee Deduction',
+        family: 'Matching' as const,
+        description: 'Flags a likely correspondent-bank fee deducted in transit.',
+        varianceMetricIds: ['wireFeeTolerance' as const],
+        tunable: true,
+        risk: 'elevated' as const,
+      },
+      {
+        id: 'fee-netting-reserved',
+        name: 'Fee Netting Candidate',
+        family: 'Grouped roll-up' as const,
+        description: 'Bank net receipt equals GL gross revenue minus one or more fee entries.',
+        varianceMetricIds: ['amountTolerance' as const, 'timingDifferenceDays' as const],
+        tunable: true,
+      },
+      {
+        id: 'LikelyMiscoding',
+        name: 'Likely Miscoding',
+        family: 'Classifier' as const,
+        description: 'Promotes same-amount, near-date pairs into a miscoding exception.',
+        varianceMetricIds: ['amountTolerance' as const],
+        tunable: true,
+      },
+      {
+        id: 'MissingFromBank',
+        name: 'Missing from Bank',
+        family: 'Classifier' as const,
+        description: 'Classifies unmatched GL-side transactions as missing from bank activity.',
+        varianceMetricIds: [],
+        tunable: false,
+      },
+    ],
+    metrics: [
+      { id: 'amountTolerance' as const, unit: 'USD' as const, default: 0.01, min: 0, max: 1 },
+      { id: 'timingDifferenceDays' as const, unit: 'days' as const, default: 21, min: 0, max: 90 },
+      { id: 'wireFeeTolerance' as const, unit: 'USD' as const, default: 500, min: 0, max: 5000 },
+    ],
+  };
+
+  return {
+    latestRunResponse: null,
+    latestRunError: null,
+    latestRunPromise: null,
+    ruleVersionsResponse: defaultRuleVersionsResponse,
+    defaultRuleVersionsResponse,
+    rulesCatalogResponse,
+    mappingProfileNames: ['Chase Operating', 'WF Payroll'],
+  };
+});
 
 vi.mock('./lib/api', async () => {
   const actual = await vi.importActual<typeof ApiModule>('./lib/api');
@@ -44,6 +138,27 @@ vi.mock('./lib/api', async () => {
         ReturnType<typeof actual.getLatestReconciliationRunRequest>
       >;
     }),
+    getRuleVersionsRequest: vi.fn(() =>
+      Promise.resolve(
+        mockedApiState.ruleVersionsResponse as Awaited<
+          ReturnType<typeof actual.getRuleVersionsRequest>
+        >,
+      ),
+    ),
+    // Mocked unconditionally (not gated by test scenario) so ReconciliationApp's eager
+    // fetch-on-mount for the NavRail family counts never falls through to the generic
+    // `fetch` spy individual tests set up for /api/reconciliation/run etc. -- letting it
+    // through there previously broke call-order-sensitive assertions on that spy.
+    getRulesCatalogRequest: vi.fn(() =>
+      Promise.resolve(
+        mockedApiState.rulesCatalogResponse as Awaited<
+          ReturnType<typeof actual.getRulesCatalogRequest>
+        >,
+      ),
+    ),
+    getMappingProfilesRequest: vi.fn(() =>
+      Promise.resolve(mockedApiState.mappingProfileNames),
+    ),
   };
 });
 
@@ -344,6 +459,11 @@ const createRunResponse = () => ({
   },
 });
 
+// jsdom doesn't implement Element.scrollIntoView -- the TUNABLE cell's click-to-scroll calls it
+// directly (not optional-chained past the method itself), so it needs a stub here.
+const scrollIntoViewMock = vi.fn();
+Element.prototype.scrollIntoView = scrollIntoViewMock;
+
 const renderApp = () =>
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -359,6 +479,7 @@ afterEach(() => {
   mockedApiState.latestRunResponse = null;
   mockedApiState.latestRunError = null;
   mockedApiState.latestRunPromise = null;
+  mockedApiState.ruleVersionsResponse = mockedApiState.defaultRuleVersionsResponse;
   globalThis.history.replaceState({}, '', '/');
 });
 
@@ -749,21 +870,194 @@ describe('App', () => {
     expect(screen.getByText('Latest review output could not be loaded')).toBeInTheDocument();
   });
 
-  it('shows the rules catalog with read-only thresholds for non-admins', () => {
+  it('shows the rules catalog with read-only thresholds for non-admins', async () => {
     setAuthenticatedUser('bray');
     renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
-    expect(screen.getByText('Rules Catalog')).toBeInTheDocument();
+    // The version header's badge/publish metadata comes from an async GET /api/rules/versions
+    // fetch (mocked via mockedApiState.ruleVersionsResponse) -- wait for it before asserting on
+    // state that depends on it (the read-only banner, the disabled sliders).
+    await waitFor(() => {
+      expect(screen.getByText('v7 · ACTIVE')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('heading', { name: 'Matching Rules' })).toBeInTheDocument();
     expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
     expect(screen.getByText('Likely Miscoding')).toBeInTheDocument();
-    expect(screen.getAllByText(/Last Change/i).length).toBeGreaterThan(0);
     expect(screen.getByText('Variance thresholds')).toBeInTheDocument();
 
     expect(screen.queryByRole('slider')).toBeNull();
-    expect(screen.getAllByText(/Admins set thresholds/i).length).toBeGreaterThan(0);
+    // One whole-screen affordance, not a repeated per-row line -- exactly one occurrence.
+    expect(screen.getByText('Read-only — admins set thresholds.')).toBeInTheDocument();
     expect(screen.getAllByText('21 days').length).toBeGreaterThan(0);
+  });
+
+  it('shows NOT APPLIED and genuinely disables editing, even for an admin, while overrides are not wired to the engine', async () => {
+    mockedApiState.ruleVersionsResponse = {
+      ...mockedApiState.defaultRuleVersionsResponse,
+      overridesAppliedToEngine: false,
+    };
+    setAuthenticatedUser('rray3');
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Not applied — thresholds are not reaching the engine'),
+      ).toBeInTheDocument();
+    });
+
+    // No slider renders at all -- the acceptance bar isn't "disabled inputs users could still
+    // try to interact with," it's that no override value can be submitted while this shows.
+    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.getByText('defaultReconciliationConfig')).toBeInTheDocument();
+    expect(screen.getByText('executeReconciliation')).toBeInTheDocument();
+  });
+
+  it('renders the rule grid with distinct TUNABLE treatment per rule, ASSIGNED TO chips, and a matching footer count', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+
+    // Tunable, non-elevated: plain metric count. Two fixture rules (reference-amount-match,
+    // LikelyMiscoding) each have exactly one metric, so this name isn't unique.
+    expect(screen.getAllByRole('button', { name: '1 metric' })).toHaveLength(2);
+    // Tunable, elevated risk: distinctly labeled and colored (not "one more grey slider").
+    const elevatedButton = screen.getByRole('button', { name: /1 metric · elevated risk/ });
+    expect(elevatedButton.className).toContain('rule-grid__tunable--elevated');
+    // Fixed: stated explicitly, never blank, and not a clickable link to nowhere. Scoped to the
+    // grid itself -- the NavRail also has a "No adjustable metric" filter sub-item (T5).
+    const grid = screen.getByRole('table', { name: 'Matching rules' });
+    expect(within(grid).getByText('No adjustable metric')).toBeInTheDocument();
+    expect(within(grid).queryByRole('button', { name: 'No adjustable metric' })).toBeNull();
+
+    // ASSIGNED TO: every row shows the same global profile chips (no per-rule assignment yet).
+    expect(screen.getAllByText('Chase Operating').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('WF Payroll').length).toBeGreaterThan(1);
+
+    // Footer count matches the (unfiltered) grid: 5 fixture rules, 4 tunable, 1 fixed.
+    expect(screen.getByText('Showing 5 of 5 · 4 tunable · 1 fixed')).toBeInTheDocument();
+  });
+
+  it('clicking TUNABLE scrolls to and highlights the metric that rule governs', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+
+    const wireFeeMetricRow = document.getElementById('variance-metric-wireFeeTolerance');
+    expect(wireFeeMetricRow).not.toBeNull();
+    expect(wireFeeMetricRow?.className).not.toContain('rule-variance-item--highlighted');
+
+    fireEvent.click(screen.getByRole('button', { name: /1 metric · elevated risk/ }));
+
+    expect(scrollIntoViewMock).toHaveBeenCalled();
+    expect(wireFeeMetricRow?.className).toContain('rule-variance-item--highlighted');
+  });
+
+  it('shows LAST CHANGE from the active version only for rules that version actually touched', async () => {
+    mockedApiState.ruleVersionsResponse = {
+      ...mockedApiState.defaultRuleVersionsResponse,
+      active: {
+        ...mockedApiState.defaultRuleVersionsResponse.active!,
+        varianceOverrides: { wireFeeTolerance: 750 },
+        publishedAt: '2026-08-04T00:00:00.000Z',
+      },
+    };
+    setAuthenticatedUser('rray');
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+
+    // The rule whose metric was actually overridden shows the publish date -- formatted via the
+    // same helper the component uses, so this assertion doesn't hardcode a timezone-dependent
+    // calendar day for a UTC-midnight timestamp.
+    expect(
+      screen.getByText(formatCompactDate('2026-08-04T00:00:00.000Z')),
+    ).toBeInTheDocument();
+    // ...while rules untouched by that override, and fixed rules, show an explicit "—".
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('search filters the rule grid by name and description, live and client-side', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+
+    expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
+    expect(screen.getByText('Missing from Bank')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/Search \d+ rules/), {
+      target: { value: 'correspondent' },
+    });
+
+    expect(screen.getByText('Wire Correspondent Fee Deduction')).toBeInTheDocument();
+    expect(screen.queryByText('Reference + Amount Match')).toBeNull();
+    expect(screen.queryByText('Missing from Bank')).toBeNull();
+  });
+
+  it('family and tunable filters compose rather than replacing each other, and round-trip through the URL', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classifier' }));
+    expect(screen.getByText('Likely Miscoding')).toBeInTheDocument();
+    expect(screen.getByText('Missing from Bank')).toBeInTheDocument();
+    expect(screen.queryByText('Reference + Amount Match')).toBeNull();
+    expect(globalThis.location.search).toContain('family=classifier');
+
+    // Composes with the existing family filter -- doesn't replace it.
+    fireEvent.click(screen.getByRole('button', { name: 'Fixed only' }));
+    expect(screen.getByText('Missing from Bank')).toBeInTheDocument();
+    expect(screen.queryByText('Likely Miscoding')).toBeNull();
+    expect(globalThis.location.search).toContain('family=classifier');
+    expect(globalThis.location.search).toContain('tunable=false');
+  });
+
+  it('reflects a family filter from the URL on load, and NavRail sub-item links carry real counts', async () => {
+    setAuthenticatedUser('rray');
+    globalThis.history.pushState({}, '', '/mapping/rules?family=matching');
+    renderApp();
+    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+
+    expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
+    expect(screen.getByText('Wire Correspondent Fee Deduction')).toBeInTheDocument();
+    expect(screen.queryByText('Missing from Bank')).toBeNull();
+
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    const matchingSubItem = within(nav)
+      .getAllByRole('link')
+      .find((link) => link.getAttribute('href') === '/mapping/rules?family=matching');
+    expect(matchingSubItem).toBeDefined();
+    expect(matchingSubItem?.textContent).toContain('Matching');
+    expect(matchingSubItem?.textContent).toContain('2');
+    expect(matchingSubItem?.className).toContain('nav-rail__item--active');
+  });
+
+  it('shows an explicit empty state naming the active filters, with a working clear-all', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+
+    fireEvent.change(screen.getByPlaceholderText(/Search \d+ rules/), {
+      target: { value: 'no rule matches this text' },
+    });
+
+    expect(screen.getByText(/No rules matching "no rule matches this text"/)).toBeInTheDocument();
+    expect(screen.queryByText('Reference + Amount Match')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+
+    expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
+    expect(screen.queryByText(/No rules matching/)).toBeNull();
   });
 
   it('shows a no-data review state before any reconciliation run exists', () => {
@@ -1159,16 +1453,19 @@ describe('App', () => {
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
   });
 
-  it('allows admin role to adjust variance thresholds in Rules', () => {
+  it('allows admin role to adjust variance thresholds in Rules', async () => {
     setAuthenticatedUser('rray3');
 
     renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
-    const slider = screen.getByRole('slider', {
-      name: /Dollar tolerance/i,
-    });
+    // Editing is gated on the async-loaded version state (ADMIN·EDITABLE requires an ACTIVE
+    // version with overridesAppliedToEngine true, not just the role) -- wait for GET
+    // /api/rules/versions to resolve before the slider exists at all.
+    const slider = await waitFor(() =>
+      screen.getByRole('slider', { name: /Amount Tolerance/i }),
+    );
 
     expect(slider).not.toBeDisabled();
     expect(screen.getByText(/Admin control mode is enabled\./i)).toBeInTheDocument();
@@ -1178,7 +1475,7 @@ describe('App', () => {
     expect(screen.getAllByText('$0.65').length).toBeGreaterThan(0);
   });
 
-  it('allows superuser to access all scopes and adjust slider defaults', () => {
+  it('allows superuser to access all scopes and adjust slider defaults', async () => {
     setAuthenticatedUser('rray');
 
     renderApp();
@@ -1188,9 +1485,9 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
-    const slider = screen.getByRole('slider', {
-      name: /Timing variance window/i,
-    });
+    const slider = await waitFor(() =>
+      screen.getByRole('slider', { name: /Timing Difference Days/i }),
+    );
     expect(slider).not.toBeDisabled();
   });
 

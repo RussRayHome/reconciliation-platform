@@ -3,6 +3,8 @@ import type { SVGProps } from 'react';
 /** Union of all recognized icon slot names used across the application. */
 export type SemanticIconName =
   | 'upload'
+  | 'search'
+  | 'rule'
   | 'rules'
   | 'exceptions'
   | 'reports'
@@ -40,6 +42,23 @@ const renderIconPath = (name: SemanticIconName) => {
           <path d="M12 4v10" />
           <path d="m7 9 5-5 5 5" />
           <rect x="4" y="15" width="16" height="5" rx="1.5" />
+        </>
+      );
+    case 'search':
+      return (
+        <>
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <line x1="15.3" y1="15.3" x2="20" y2="20" />
+        </>
+      );
+    case 'rule':
+      return (
+        <>
+          <rect x="3" y="9" width="18" height="6" rx="1" />
+          <line x1="7" y1="9" x2="7" y2="12" />
+          <line x1="11" y1="9" x2="11" y2="13" />
+          <line x1="15" y1="9" x2="15" y2="12" />
+          <line x1="19" y1="9" x2="19" y2="13" />
         </>
       );
     case 'rules':

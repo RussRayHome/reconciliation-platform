@@ -1,5 +1,6 @@
 export * from './export/workbookExporter';
 export * from './matching/engine';
+export * from './matching/ruleCatalog';
 export * from './matching/similarity';
 export * from './normalization/text';
 export * from './normalization/transactions';

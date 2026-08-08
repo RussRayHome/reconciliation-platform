@@ -1,24 +1,33 @@
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   errorCategories,
   errorCategoryDisplayNames,
+  type MatchingConfigVersion,
   type ReconciliationRunReport,
   type ReviewerDecision,
+  type RuleCatalogEntry,
+  type RuleFamily,
+  type RuleVarianceMetric,
 } from '@recon/domain';
 import { SectionCard, StatCard } from '@recon/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { downloadWorkbookRequest } from '../lib/api';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
-import { formatCurrency, formatCurrencyWhole } from '../lib/format';
+import { formatCompactDate, formatCurrency, formatCurrencyWhole, formatShortDate } from '../lib/format';
+import { computeRuleVersionHeaderState, type RuleVersionHeaderState } from '../lib/ruleVersionState';
 import {
-  summaryStatDefinitions,
-  varianceMetricFamilyLabels,
-  varianceMetricFamilyOrder,
-  type ReportView,
-  type RuleCatalogItem,
-  type RuleVarianceMetric,
-} from '../lib/appCatalog';
+  deriveMetricStep,
+  describeActiveFilters,
+  filterRules,
+  formatMetricLabel,
+  formatVarianceMetricValue,
+  parseRuleFamilyParam,
+  parseTunableParam,
+  ruleFamilyToSlug,
+} from '../lib/ruleFilters';
+import { summaryStatDefinitions, type ReportView } from '../lib/appCatalog';
 import { ChartsPanel } from './ChartsPanel';
 import { BentoModule } from './BentoModule';
 import {
@@ -93,45 +102,33 @@ const buildCategorySummaryRows = (run: RunData): CategorySummaryRow[] => {
 
 const probableMatchVirtualizationThreshold = 120;
 
-const formatVarianceValue = (value: number, unit: RuleVarianceMetric['unit']): string => {
-  if (unit === 'days') {
-    return `${value} day${value === 1 ? '' : 's'}`;
-  }
-
-  if (unit === 'usd') {
-    return formatCurrency(value);
-  }
-
-  return `${Number.isInteger(value) ? value : value.toFixed(2)}%`;
-};
-
 const metricConsequenceByMetric: Record<
   string,
   { label: string; value: (summary: RunData['summary']) => number }
 > = {
-  'amount-tolerance': { label: 'clean matches', value: (summary) => summary.exactMatches },
-  'date-tolerance-days': { label: 'date variances', value: (summary) => summary.dateVariances },
-  'timing-difference-days': {
+  amountTolerance: { label: 'clean matches', value: (summary) => summary.exactMatches },
+  dateToleranceDays: { label: 'date variances', value: (summary) => summary.dateVariances },
+  timingDifferenceDays: {
     label: 'timing differences',
     value: (summary) => summary.timingDifferences,
   },
-  'text-similarity-threshold': {
+  textSimilarityThreshold: {
     label: 'probable matches',
     value: (summary) => summary.probableMatches,
   },
-  'probable-text-similarity-threshold': {
+  probableTextSimilarityThreshold: {
     label: 'probable matches',
     value: (summary) => summary.probableMatches,
   },
-  'amount-mismatch-similarity-threshold': {
+  amountMismatchTextSimilarityThreshold: {
     label: 'amount mismatches',
     value: (summary) => summary.amountMismatches,
   },
-  'duplicate-date-window-days': {
+  duplicateDateWindowDays: {
     label: 'duplicate entries',
     value: (summary) => summary.bankDuplicates + summary.glDuplicates,
   },
-  'duplicate-similarity-threshold': {
+  duplicateSimilarityThreshold: {
     label: 'duplicate entries',
     value: (summary) => summary.bankDuplicates + summary.glDuplicates,
   },
@@ -152,12 +149,16 @@ const buildMetricConsequence = (metricId: string, run: RunData | undefined): str
 };
 
 /** A single variance-metric control: effective vs default value, per-metric reset, and run consequence. */
+/** DOM id `RuleGridTunableCell` scrolls to and `RuleVarianceControl` exposes, so clicking TUNABLE on a rule row reaches its metric. */
+const varianceMetricElementId = (metricId: string): string => `variance-metric-${metricId}`;
+
 function RuleVarianceControl({
   metric,
   effectiveValue,
   isChanged,
   canAdjust,
   consequence,
+  isHighlighted,
   onChange,
   onReset,
 }: Readonly<{
@@ -166,17 +167,25 @@ function RuleVarianceControl({
   isChanged: boolean;
   canAdjust: boolean;
   consequence: string | null;
+  isHighlighted?: boolean;
   onChange: (metricId: string, value: number) => void;
   onReset: (metricId: string) => void;
 }>) {
+  const label = formatMetricLabel(metric.id);
+
   return (
-    <li className="rule-variance-item">
+    <li
+      id={varianceMetricElementId(metric.id)}
+      className={
+        isHighlighted ? 'rule-variance-item rule-variance-item--highlighted' : 'rule-variance-item'
+      }
+    >
       <div className="rule-variance-item__head">
-        <span>{metric.label}</span>
-        <strong>{formatVarianceValue(effectiveValue, metric.unit)}</strong>
+        <span>{label}</span>
+        <strong>{formatVarianceMetricValue(effectiveValue, metric.unit)}</strong>
       </div>
       <p className="rule-variance-item__default">
-        Default {formatVarianceValue(metric.value, metric.unit)}
+        Default {formatVarianceMetricValue(metric.default, metric.unit)}
         {isChanged ? <span className="rule-variance-item__changed">Changed</span> : null}
       </p>
 
@@ -187,14 +196,14 @@ function RuleVarianceControl({
             className="rule-variance-slider"
             min={metric.min}
             max={metric.max}
-            step={metric.step}
+            step={deriveMetricStep(metric)}
             value={effectiveValue}
             onChange={(event) => onChange(metric.id, Number(event.target.value))}
-            aria-label={metric.label}
+            aria-label={label}
           />
           <div className="rule-variance-item__scale" aria-hidden="true">
-            <span>{formatVarianceValue(metric.min, metric.unit)}</span>
-            <span>{formatVarianceValue(metric.max, metric.unit)}</span>
+            <span>{formatVarianceMetricValue(metric.min, metric.unit)}</span>
+            <span>{formatVarianceMetricValue(metric.max, metric.unit)}</span>
           </div>
           {isChanged ? (
             <button
@@ -206,9 +215,7 @@ function RuleVarianceControl({
             </button>
           ) : null}
         </>
-      ) : (
-        <p className="rule-variance-item__readonly">Read-only · Admins set thresholds</p>
-      )}
+      ) : null}
 
       {consequence ? <p className="rule-variance-item__consequence">{consequence}</p> : null}
     </li>
@@ -964,8 +971,142 @@ export function CloseExportSection({
   );
 }
 
+/**
+ * Top-of-screen version badge, publish metadata, header actions, and the one state banner for
+ * the Matching Rules panel. `viewingVersion` supplies the badge/publish metadata (the ACTIVE
+ * version normally, or a SUPERSEDED version when browsing history); `state` — from
+ * `computeRuleVersionHeaderState` — selects which banner (if any) renders below it.
+ */
+export function RuleVersionHeader({
+  state,
+  viewingVersion,
+  canAdjustVarianceDefaults,
+  onEditAsDraft,
+  onCompareVersions,
+  onViewHistory,
+  onBackToActive,
+  onPublishDraft,
+}: Readonly<{
+  state: RuleVersionHeaderState;
+  viewingVersion: MatchingConfigVersion | null;
+  canAdjustVarianceDefaults: boolean;
+  onEditAsDraft?: () => void;
+  onCompareVersions?: () => void;
+  onViewHistory?: () => void;
+  onBackToActive?: () => void;
+  onPublishDraft?: () => void;
+}>) {
+  return (
+    <div className="rule-version-header" data-state={state}>
+      <div className="rule-version-header__row">
+        <div className="rule-version-header__meta">
+          {viewingVersion ? (
+            <>
+              <span
+                className={`rule-version-badge rule-version-badge--${viewingVersion.status.toLowerCase()}`}
+              >
+                v{viewingVersion.versionNumber} · {viewingVersion.status}
+              </span>
+              {viewingVersion.status === 'DRAFT' ? (
+                <span className="rule-version-header__detail">
+                  Waiting on {viewingVersion.pendingApprovalOwner ?? 'an approver'}
+                </span>
+              ) : (
+                <span className="rule-version-header__detail">
+                  Published by {viewingVersion.publishedBy ?? '—'} ·{' '}
+                  {formatShortDate(viewingVersion.publishedAt)}
+                  {viewingVersion.effectiveAt
+                    ? ` · effective ${formatShortDate(viewingVersion.effectiveAt)}`
+                    : ''}
+                </span>
+              )}
+              <button
+                type="button"
+                className="rule-version-header__link"
+                onClick={onViewHistory}
+                disabled={!onViewHistory}
+              >
+                Version history
+              </button>
+            </>
+          ) : (
+            <span className="rule-version-header__detail">No version has been published yet.</span>
+          )}
+        </div>
+        <div className="rule-version-header__actions">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onCompareVersions}
+            disabled={!viewingVersion || !onCompareVersions}
+          >
+            Compare versions
+          </button>
+          <button
+            type="button"
+            className="accent-button"
+            onClick={onEditAsDraft}
+            disabled={state === 'read-only'}
+          >
+            Edit as draft
+          </button>
+        </div>
+      </div>
+
+      {state === 'not-applied' ? (
+        <div className="rule-version-banner rule-version-banner--warning" role="status">
+          <SemanticIcon name="exceptions" aria-hidden="true" />
+          <div>
+            <strong>Not applied — thresholds are not reaching the engine</strong>
+            <p>
+              Every run currently uses <code>defaultReconciliationConfig</code>. Editing is
+              disabled until overrides are threaded into <code>executeReconciliation</code>.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {state === 'read-only' ? (
+        <div className="rule-version-banner rule-version-banner--muted" role="status">
+          Read-only — admins set thresholds.
+        </div>
+      ) : null}
+
+      {state === 'draft-pending' ? (
+        <div className="rule-version-banner rule-version-banner--pending" role="status">
+          <span>Reviewing draft v{viewingVersion?.versionNumber} against the active version.</span>
+          {canAdjustVarianceDefaults ? (
+            <button type="button" className="rule-version-header__link" onClick={onPublishDraft}>
+              Publish now
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {state === 'superseded' ? (
+        <div className="rule-version-banner rule-version-banner--muted" role="status">
+          <span>You are viewing a superseded version.</span>
+          <button
+            type="button"
+            className="rule-version-header__link"
+            onClick={onBackToActive}
+            disabled={!onBackToActive}
+          >
+            Back to active
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Rules catalog surface reached via the run bar (?panel=rules): read-only for non-admins. */
-/** Rules catalog surface reached via the run bar (?panel=rules): read-only for non-admins. */
+const RULE_FAMILY_CHIP_LABELS: Record<RuleFamily, string> = {
+  Matching: 'Matching',
+  'Grouped roll-up': 'Grouped roll-up',
+  Classifier: 'Classifier',
+};
+
 export function RulesCatalogSection({
   rules,
   metrics,
@@ -977,9 +1118,18 @@ export function RulesCatalogSection({
   run,
   thresholdSetLabel,
   thresholdSetTimestamp,
-  onClose,
+  viewingVersion,
+  overridesAppliedToEngine,
+  onEditAsDraft,
+  onCompareVersions,
+  onViewHistory,
+  onBackToActive,
+  onPublishDraft,
+  versionActionError,
+  activeVersion,
+  mappingProfiles,
 }: Readonly<{
-  rules: RuleCatalogItem[];
+  rules: RuleCatalogEntry[];
   metrics: RuleVarianceMetric[];
   varianceOverrides: RuleVarianceDefaultOverrides;
   canAdjustVarianceDefaults: boolean;
@@ -989,43 +1139,186 @@ export function RulesCatalogSection({
   run: RunData | undefined;
   thresholdSetLabel: string;
   thresholdSetTimestamp: string;
-  onClose?: () => void;
+  /** The version whose metadata the header displays -- the ACTIVE version normally, or a SUPERSEDED version when browsing history. */
+  viewingVersion: MatchingConfigVersion | null;
+  overridesAppliedToEngine: boolean;
+  onEditAsDraft?: () => void;
+  onCompareVersions?: () => void;
+  onViewHistory?: () => void;
+  onBackToActive?: () => void;
+  onPublishDraft?: () => void;
+  versionActionError?: string | null;
+  /** The org's published ACTIVE version, for the rule grid's LAST CHANGE column -- distinct from `viewingVersion`, which may be a draft. */
+  activeVersion: MatchingConfigVersion | null;
+  /** Distinct saved mapping profile names -- shown identically on every rule row (global scope) until per-rule assignment ships in Phase 4. */
+  mappingProfiles: string[];
 }>) {
   const changedCount = metrics.filter(
     (metric) => varianceOverrides[metric.id] !== undefined,
   ).length;
+  const versionHeaderState = computeRuleVersionHeaderState({
+    viewingVersion,
+    canAdjustVarianceDefaults,
+    overridesAppliedToEngine,
+  });
+  // The state, not the raw role permission, gates real editing -- an admin viewing a draft,
+  // a superseded version, or the ACTIVE version while overrides still aren't wired to the
+  // engine must not be able to submit an override, regardless of their role.
+  const isEditable = versionHeaderState === 'admin-editable';
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const familyFilter = parseRuleFamilyParam(searchParams.get('family'));
+  const tunableFilter = parseTunableParam(searchParams.get('tunable'));
+  const urlSearch = searchParams.get('q') ?? '';
+  const [searchInput, setSearchInput] = useState(urlSearch);
+
+  // Filtering is instant (43 rows, no server round-trip) -- only the URL write is debounced, so
+  // fast typing doesn't spam browser history/re-render the address bar on every keystroke.
+  useEffect(() => {
+    const handle = globalThis.setTimeout(() => {
+      setSearchParams(
+        (previous) => {
+          const next = new URLSearchParams(previous);
+          if (searchInput.trim()) {
+            next.set('q', searchInput);
+          } else {
+            next.delete('q');
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    }, 250);
+
+    return () => globalThis.clearTimeout(handle);
+    // setSearchParams's identity is stable per react-router; only the debounced value should retrigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  const setFamilyFilter = (family: RuleFamily | null): void => {
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        if (family) {
+          next.set('family', ruleFamilyToSlug(family));
+        } else {
+          next.delete('family');
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const setTunableFilter = (tunable: boolean | null): void => {
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        if (tunable === null) {
+          next.delete('tunable');
+        } else {
+          next.set('tunable', String(tunable));
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const clearAllFilters = (): void => {
+    setSearchInput('');
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete('q');
+        next.delete('family');
+        next.delete('tunable');
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const activeFilters = { search: searchInput, family: familyFilter, tunable: tunableFilter };
+  const filteredRules = useMemo(
+    () => filterRules(rules, activeFilters),
+    // activeFilters is a fresh object every render; its members are the real dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rules, searchInput, familyFilter, tunableFilter],
+  );
+  const hasActiveFilters = Boolean(searchInput.trim()) || familyFilter !== null || tunableFilter !== null;
+
+  const totalTunableCount = rules.filter((rule) => rule.tunable).length;
+  const totalFixedCount = rules.length - totalTunableCount;
+
+  // Clicking a rule's TUNABLE cell scrolls to and briefly highlights the metric rows it
+  // governs -- the many-to-many rule<->metric relationship is otherwise invisible.
+  const [highlightedMetricIds, setHighlightedMetricIds] = useState<Set<string>>(new Set());
+
+  const scrollToRuleMetrics = (rule: RuleCatalogEntry): void => {
+    if (rule.varianceMetricIds.length === 0) {
+      return;
+    }
+
+    document
+      .getElementById(varianceMetricElementId(rule.varianceMetricIds[0] as string))
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMetricIds(new Set(rule.varianceMetricIds));
+    globalThis.setTimeout(() => setHighlightedMetricIds(new Set()), 2000);
+  };
+
+  const ruleLastChange = (rule: RuleCatalogEntry): string => {
+    if (!activeVersion) {
+      return '—';
+    }
+
+    const touchesRule = rule.varianceMetricIds.some(
+      (metricId) => activeVersion.varianceOverrides[metricId] !== undefined,
+    );
+    return touchesRule ? formatCompactDate(activeVersion.publishedAt) : '—';
+  };
 
   return (
     <section className="rules-route-panel" aria-label="Rules catalog">
-      {onClose ? (
-        <button
-          type="button"
-          className="secondary-button rules-route-panel__back"
-          onClick={onClose}
-        >
-          Back to workspace
-        </button>
-      ) : null}
       <SectionCard
-        title="Rules Catalog"
+        title="Matching Rules"
         description="Current matching and classification rules surfaced from the reconciliation rulebook so reviewers can see the active decision logic in one place."
       >
-        <div className="threshold-set-banner" aria-label="Threshold set version">
-          <div>
-            <span>Threshold set</span>
-            <strong>{thresholdSetLabel}</strong>
-          </div>
-          <div>
-            <span>Updated</span>
-            <strong>{thresholdSetTimestamp}</strong>
-          </div>
-          <div>
-            <span>Changed metrics</span>
-            <strong>{changedCount}</strong>
-          </div>
-        </div>
+        <RuleVersionHeader
+          state={versionHeaderState}
+          viewingVersion={viewingVersion}
+          canAdjustVarianceDefaults={canAdjustVarianceDefaults}
+          onEditAsDraft={onEditAsDraft}
+          onCompareVersions={onCompareVersions}
+          onViewHistory={onViewHistory}
+          onBackToActive={onBackToActive}
+          onPublishDraft={onPublishDraft}
+        />
 
-        {canAdjustVarianceDefaults ? (
+        {versionActionError ? (
+          <p className="rule-version-header__error" role="alert">
+            {versionActionError}
+          </p>
+        ) : null}
+
+        {isEditable ? (
+          <div className="threshold-set-banner" aria-label="Threshold set version">
+            <div>
+              <span>Threshold set</span>
+              <strong>{thresholdSetLabel}</strong>
+            </div>
+            <div>
+              <span>Updated</span>
+              <strong>{thresholdSetTimestamp}</strong>
+            </div>
+            <div>
+              <span>Changed metrics</span>
+              <strong>{changedCount}</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {isEditable ? (
           <div className="rules-admin-controls">
             <p>Admin control mode is enabled.</p>
             <p>Threshold updates adjust the shared default variance thresholds.</p>
@@ -1042,54 +1335,166 @@ export function RulesCatalogSection({
 
         <div className="rule-variance-families" aria-label="Variance thresholds">
           <h3>Variance thresholds</h3>
-          {varianceMetricFamilyOrder.map((family) => {
-            const familyMetrics = metrics.filter((metric) => metric.family === family);
-
-            if (familyMetrics.length === 0) {
-              return null;
-            }
-
-            return (
-              <details key={family} className="rule-family-group" open>
-                <summary>
-                  {varianceMetricFamilyLabels[family]} ({familyMetrics.length})
-                </summary>
-                <ul className="rule-variance-list">
-                  {familyMetrics.map((metric) => (
-                    <RuleVarianceControl
-                      key={metric.id}
-                      metric={metric}
-                      effectiveValue={varianceOverrides[metric.id] ?? metric.value}
-                      isChanged={varianceOverrides[metric.id] !== undefined}
-                      canAdjust={canAdjustVarianceDefaults}
-                      consequence={buildMetricConsequence(metric.id, run)}
-                      onChange={onChangeVarianceDefault}
-                      onReset={onResetVarianceDefault}
-                    />
-                  ))}
-                </ul>
-              </details>
-            );
-          })}
+          <ul className="rule-variance-list">
+            {metrics.map((metric) => (
+              <RuleVarianceControl
+                key={metric.id}
+                metric={metric}
+                effectiveValue={varianceOverrides[metric.id] ?? metric.default}
+                isChanged={varianceOverrides[metric.id] !== undefined}
+                canAdjust={isEditable}
+                consequence={buildMetricConsequence(metric.id, run)}
+                isHighlighted={highlightedMetricIds.has(metric.id)}
+                onChange={onChangeVarianceDefault}
+                onReset={onResetVarianceDefault}
+              />
+            ))}
+          </ul>
         </div>
 
         <div className="rules-reference" aria-label="Rule reference">
           <h3>Rule reference</h3>
-          <div className="rules-grid">
-            {rules.map((rule) => (
-              <article key={rule.id} className="rule-card">
-                <div className="rule-card__header">
-                  <h4>{rule.name}</h4>
-                  <span className="rule-card__pill">Active</span>
-                </div>
-                <p>{rule.description}</p>
-                <div className="rule-card__meta">
-                  <span>Last Change</span>
-                  <strong>{rule.lastChange}</strong>
-                </div>
-              </article>
-            ))}
+
+          <div className="rules-filter-bar">
+            <label className="rules-search">
+              <SemanticIcon name="search" aria-hidden="true" />
+              <span className="visually-hidden">Search rules</span>
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder={`Search ${rules.length} rules`}
+              />
+            </label>
+
+            <div className="rules-filter-chips" role="group" aria-label="Filter by family">
+              <button
+                type="button"
+                className={
+                  familyFilter === null ? 'rules-filter-chip rules-filter-chip--active' : 'rules-filter-chip'
+                }
+                onClick={() => setFamilyFilter(null)}
+              >
+                All families
+              </button>
+              {(Object.keys(RULE_FAMILY_CHIP_LABELS) as RuleFamily[]).map((family) => (
+                <button
+                  key={family}
+                  type="button"
+                  className={
+                    familyFilter === family
+                      ? 'rules-filter-chip rules-filter-chip--active'
+                      : 'rules-filter-chip'
+                  }
+                  onClick={() => setFamilyFilter(family)}
+                >
+                  {RULE_FAMILY_CHIP_LABELS[family]}
+                </button>
+              ))}
+            </div>
+
+            <div className="rules-filter-chips" role="group" aria-label="Filter by tunability">
+              <button
+                type="button"
+                className={
+                  tunableFilter === true
+                    ? 'rules-filter-chip rules-filter-chip--active'
+                    : 'rules-filter-chip'
+                }
+                onClick={() => setTunableFilter(tunableFilter === true ? null : true)}
+              >
+                Tunable only
+              </button>
+              <button
+                type="button"
+                className={
+                  tunableFilter === false
+                    ? 'rules-filter-chip rules-filter-chip--active'
+                    : 'rules-filter-chip'
+                }
+                onClick={() => setTunableFilter(tunableFilter === false ? null : false)}
+              >
+                Fixed only
+              </button>
+            </div>
           </div>
+
+          {filteredRules.length === 0 ? (
+            <div className="rules-empty-state">
+              <p>No rules {describeActiveFilters(activeFilters)}.</p>
+              {hasActiveFilters ? (
+                <button type="button" className="secondary-button" onClick={clearAllFilters}>
+                  Clear all filters
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="rule-grid" role="table" aria-label="Matching rules">
+              <div className="rule-grid__row rule-grid__row--header" role="row">
+                <span role="columnheader">Rule</span>
+                <span role="columnheader">Family</span>
+                <span role="columnheader">Tunable</span>
+                <span role="columnheader">Assigned to</span>
+                <span role="columnheader">Last change</span>
+              </div>
+
+              {filteredRules.map((rule) => (
+                <div className="rule-card rule-grid__row" role="row" key={rule.id}>
+                  <div className="rule-grid__cell rule-grid__cell--rule" role="cell">
+                    <span className="rule-grid__rule-name">{rule.name}</span>
+                    <span className="rule-grid__rule-description">{rule.description}</span>
+                  </div>
+
+                  <span className="rule-grid__cell" role="cell">
+                    {rule.family}
+                  </span>
+
+                  <div className="rule-grid__cell" role="cell">
+                    {rule.tunable ? (
+                      <button
+                        type="button"
+                        className={
+                          rule.risk === 'elevated'
+                            ? 'rule-grid__tunable rule-grid__tunable--elevated'
+                            : 'rule-grid__tunable rule-grid__tunable--tunable'
+                        }
+                        onClick={() => scrollToRuleMetrics(rule)}
+                      >
+                        {rule.varianceMetricIds.length} metric
+                        {rule.varianceMetricIds.length === 1 ? '' : 's'}
+                        {rule.risk === 'elevated' ? ' · elevated risk' : ''}
+                      </button>
+                    ) : (
+                      <span className="rule-grid__tunable rule-grid__tunable--fixed">
+                        No adjustable metric
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="rule-grid__cell rule-grid__profiles" role="cell">
+                    {mappingProfiles.length === 0 ? (
+                      <span className="rule-grid__profiles-empty">No profiles yet</span>
+                    ) : (
+                      mappingProfiles.map((name) => (
+                        <span key={name} className="rule-grid__profile-chip">
+                          {name}
+                        </span>
+                      ))
+                    )}
+                  </div>
+
+                  <span className="rule-grid__cell rule-grid__cell--muted" role="cell">
+                    {ruleLastChange(rule)}
+                  </span>
+                </div>
+              ))}
+
+              <div className="rule-grid__footer">
+                Showing {filteredRules.length} of {rules.length} · {totalTunableCount} tunable ·{' '}
+                {totalFixedCount} fixed
+              </div>
+            </div>
+          )}
         </div>
       </SectionCard>
     </section>

@@ -6,6 +6,7 @@ import type {
   MappingProfileStatus,
   MatchConfidence,
   MatchDisposition,
+  MatchingConfigVersionStatus,
   ReconciliationRunStatus,
   SeverityLevel,
   SourceSystem,
@@ -436,6 +437,71 @@ export interface MatchingConfig {
   depositInTransitDays: number;
   partialPaymentWindowDays: number;
   wireFeeTolerance: number;
+}
+
+/** Unit of measure for a tunable `MatchingConfig` threshold, as shown in the rule catalog. */
+export type RuleVarianceMetricUnit = 'USD' | 'days' | 'percent' | 'count';
+
+/** One tunable `MatchingConfig` field, with the safe range the UI should constrain edits to. */
+export interface RuleVarianceMetric {
+  id: keyof MatchingConfig;
+  unit: RuleVarianceMetricUnit;
+  default: number;
+  min: number;
+  max: number;
+}
+
+/** Broad grouping for where in the reconciliation pipeline a catalog rule fires. */
+export type RuleFamily = 'Matching' | 'Grouped roll-up' | 'Classifier';
+
+/** One named rule the matching engine or exception classifier can emit, derived from `@recon/core`. */
+export interface RuleCatalogEntry {
+  id: string;
+  name: string;
+  family: RuleFamily;
+  description: string;
+  varianceMetricIds: Array<keyof MatchingConfig>;
+  tunable: boolean;
+  risk?: 'elevated';
+}
+
+/** Response shape for `GET /api/rules/catalog`. */
+export interface RuleCatalogResponse {
+  rules: RuleCatalogEntry[];
+  metrics: RuleVarianceMetric[];
+}
+
+/**
+ * A published or in-progress snapshot of `MatchingConfig` variance overrides for one
+ * organization. Versions are append-only and immutable once created — `publishedBy`/
+ * `publishedAt`/`effectiveAt` are null until a `DRAFT` is published, at which point it becomes
+ * `ACTIVE` and the previously `ACTIVE` version (if any) becomes `SUPERSEDED`.
+ */
+export interface MatchingConfigVersion {
+  id: string;
+  organizationId: string;
+  versionNumber: number;
+  status: MatchingConfigVersionStatus;
+  varianceOverrides: Partial<Record<keyof MatchingConfig, number>>;
+  createdBy: string;
+  createdAt: string;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  effectiveAt: string | null;
+  /** Who a `DRAFT` version is waiting on for approval; null once published or if unassigned. */
+  pendingApprovalOwner: string | null;
+}
+
+/**
+ * Response shape for `GET /api/rules/versions`. `overridesAppliedToEngine` reflects whether
+ * `executeReconciliation` actually applies the active version's `varianceOverrides` — false until
+ * that Phase 0 engine-wiring work ships, regardless of whether an `ACTIVE` version exists.
+ */
+export interface RuleVersionsResponse {
+  active: MatchingConfigVersion | null;
+  draft: MatchingConfigVersion | null;
+  history: MatchingConfigVersion[];
+  overridesAppliedToEngine: boolean;
 }
 
 /** Controls exception sort order and the severity level assigned to each exception category. */

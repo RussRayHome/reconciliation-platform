@@ -9,6 +9,158 @@
     min-height: 38px;
   }
 
+  .rule-version-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .rule-version-header__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  .rule-version-header__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .rule-version-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-control);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .rule-version-badge--active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .rule-version-badge--draft {
+    background: var(--severity-medium-soft);
+    color: var(--severity-medium);
+  }
+
+  .rule-version-badge--superseded {
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+  }
+
+  .rule-version-header__detail {
+    white-space: nowrap;
+  }
+
+  .rule-version-header__link {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .rule-version-header__link:hover {
+    color: var(--accent-hover);
+  }
+
+  .rule-version-header__link:disabled {
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  /* Header actions never wrap at 1100px: the meta group can wrap onto its own line first
+     (flex-wrap above), but the two action buttons stay on one line via nowrap + flex:none. */
+  .rule-version-header__actions {
+    margin-left: auto;
+    display: flex;
+    gap: 0.6rem;
+    flex: none;
+    flex-wrap: nowrap;
+  }
+
+  .rule-version-header__actions button {
+    white-space: nowrap;
+  }
+
+  .rule-version-header__error {
+    margin: 0;
+    padding: 0.6rem 0.85rem;
+    border-radius: var(--radius-control);
+    background: var(--negative-soft);
+    border: 1px solid var(--negative-soft-border);
+    color: var(--negative);
+    font-size: 0.8rem;
+  }
+
+  .rule-version-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: var(--radius-panel);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .rule-version-banner--warning {
+    background: var(--severity-high-soft);
+    border: 1px solid var(--severity-high-soft-border);
+    color: var(--severity-high);
+  }
+
+  .rule-version-banner--warning svg {
+    flex: none;
+    width: 20px;
+    height: 20px;
+  }
+
+  .rule-version-banner--warning strong {
+    display: block;
+    color: var(--severity-high);
+  }
+
+  .rule-version-banner--warning p {
+    margin: 0.2rem 0 0;
+    color: var(--text-secondary);
+  }
+
+  .rule-version-banner--warning code {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--bank);
+  }
+
+  .rule-version-banner--pending {
+    background: var(--severity-medium-soft);
+    border: 1px solid var(--severity-medium-soft-border);
+    color: var(--text-primary);
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .rule-version-banner--muted {
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    color: var(--text-secondary);
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
   .threshold-set-banner {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -35,19 +187,6 @@
     display: grid;
     gap: 0.75rem;
     margin-top: 1rem;
-  }
-
-  .rule-family-group {
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 0.5rem 0.85rem;
-  }
-
-  .rule-family-group > summary {
-    cursor: pointer;
-    font-weight: 600;
-    font-family: 'Space Grotesk', sans-serif;
-    padding: 0.35rem 0;
   }
 
   .rule-variance-list {
@@ -111,13 +250,6 @@
     font-size: 0.8rem;
   }
 
-  .rule-variance-item__readonly {
-    margin: 0;
-    font-size: 0.82rem;
-    color: var(--muted);
-    font-style: italic;
-  }
-
   .rule-variance-item__consequence {
     margin: 0.15rem 0 0;
     font-size: 0.8rem;
@@ -126,6 +258,87 @@
 
   .rules-reference {
     margin-top: 1.25rem;
+  }
+
+  .rules-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin: 0.75rem 0 1rem;
+  }
+
+  .rules-search {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 260px;
+    min-height: var(--control-height);
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--bg-sunken);
+  }
+
+  .rules-search svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    color: var(--text-tertiary);
+  }
+
+  .rules-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+  }
+
+  .rules-search input:focus {
+    outline: none;
+  }
+
+  .rules-filter-chips {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .rules-filter-chip {
+    min-height: 30px;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .rules-filter-chip:hover {
+    border-color: var(--line-strong);
+    color: var(--text-primary);
+  }
+
+  .rules-filter-chip--active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--text-primary);
+  }
+
+  .rules-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 1.5rem;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-panel);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
   }
 
   .rules-overview-grid {
@@ -138,17 +351,152 @@
     padding: 1.1rem 1.2rem;
   }
 
-  .rules-grid {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .rule-card {
+    transition: background-color 220ms ease;
   }
 
-  .rule-card {
+  /* Rule grid: retires the old two-column .rules-grid card layout. Each row (including the
+     header) shares one column template so RULE/FAMILY/TUNABLE/ASSIGNED TO/LAST CHANGE line up;
+     `minmax(0, ...)` on every fr track (via min-width: 0 on cells below) is what lets the RULE
+     description ellipsis and the ASSIGNED TO chips wrap instead of forcing horizontal overflow
+     at 1440/1100/900. */
+  .rule-grid {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+  }
+
+  .rule-grid__row {
     display: grid;
-    gap: 0.9rem;
-    padding: 1.1rem 1.2rem;
-    transition: all 220ms ease;
+    grid-template-columns: 2.1fr 1fr 1.1fr 2.2fr 0.9fr;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rule-grid__row:last-of-type {
+    border-bottom: 0;
+  }
+
+  .rule-grid__row--header {
+    background: var(--bg-sunken);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .rule-grid__row.rule-card:hover {
+    background: var(--bg-surface);
+  }
+
+  .rule-grid__cell {
+    min-width: 0;
+  }
+
+  .rule-grid__cell--rule {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .rule-grid__rule-name {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .rule-grid__rule-description {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.76rem;
+    color: var(--text-tertiary);
+  }
+
+  .rule-grid__cell--muted {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+  }
+
+  .rule-grid__tunable {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-size: 0.8rem;
+    text-align: left;
+  }
+
+  button.rule-grid__tunable {
+    cursor: pointer;
+  }
+
+  button.rule-grid__tunable:hover {
+    text-decoration: underline;
+  }
+
+  .rule-grid__tunable--tunable {
+    color: var(--accent);
+  }
+
+  .rule-grid__tunable--elevated {
+    color: var(--severity-high);
+    font-weight: 600;
+  }
+
+  .rule-grid__tunable--fixed {
+    color: var(--text-tertiary);
+  }
+
+  .rule-grid__profiles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .rule-grid__profile-chip {
+    padding: 0.15rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+  }
+
+  .rule-grid__profiles-empty {
+    color: var(--text-tertiary);
+    font-size: 0.78rem;
+    font-style: italic;
+  }
+
+  .rule-grid__footer {
+    padding: 0.7rem 1.1rem;
+    color: var(--text-tertiary);
+    font-size: 0.78rem;
+  }
+
+  /* Brief highlight when TUNABLE scrolls a rule's metric(s) into view -- fades back to the
+     ordinary .rule-variance-item styling on its own, no JS cleanup beyond removing the class. */
+  .rule-variance-item--highlighted {
+    animation: rule-variance-item-flash 2s ease-out;
+  }
+
+  @keyframes rule-variance-item-flash {
+    0%,
+    40% {
+      background: var(--accent-soft);
+      border-radius: var(--radius-control);
+      box-shadow: 0 0 0 1px var(--accent-soft-border);
+    }
+    100% {
+      background: transparent;
+      box-shadow: none;
+    }
   }
 
   .rule-variance {
@@ -218,26 +566,6 @@
     font-size: 0.72rem;
     line-height: 1;
     font-variant-numeric: tabular-nums;
-  }
-
-  .rule-card__header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.8rem;
-  }
-
-  .rule-card__pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 28px;
-    padding: 0.35rem 0.75rem;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-size: 0.78rem;
-    font-weight: 700;
   }
 
   .rule-card__meta {

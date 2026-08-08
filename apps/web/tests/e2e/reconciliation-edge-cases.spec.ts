@@ -312,7 +312,7 @@ test.describe('stage navigation', () => {
     await openSetup(page);
     await page.locator('.run-bar__overflow-trigger').click();
     await page.getByRole('button', { name: 'Rules', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Rules Catalog' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Matching Rules' })).toBeVisible();
   });
 
   test('after a run the application automatically navigates to the Review stage', async ({

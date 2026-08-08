@@ -24,6 +24,33 @@ interface DuplicateFinding {
   duplicateTransactionIds: Set<string>;
 }
 
+/**
+ * Every one-to-one match rule name `buildCandidate` can attach to a `MatchCandidate`. `ruleName`
+ * below is typed against this union, so a new literal used at a call site without being added
+ * here fails typecheck — the same guarantee `ruleCatalog.ts` relies on to stay complete.
+ */
+export const MATCHING_RULE_NAMES = [
+  'Check Number Amount Mismatch',
+  'Check Number Date Variance',
+  'Reference + Amount Match',
+  'Reference Match with Amount Variance',
+  'Historical Pattern Match',
+  'Month-End Transfer Review Match',
+  'Amount + Date + Text with Reference Variance',
+  'Amount + Date + Text Match',
+  'Amount + Date with Description Variance',
+  'Amount + Extended Date Window Match',
+  'Wire Correspondent Fee Deduction',
+  'FX Rate Variance',
+  'Possible Amount Mismatch',
+] as const;
+
+/** Union of every valid one-to-one match rule name; see `MATCHING_RULE_NAMES`. */
+export type MatchingRuleName = (typeof MATCHING_RULE_NAMES)[number];
+
+/** Derives the kebab-case rule id `MatchResult.ruleId` carries, from its display rule name. */
+export const slugifyRuleName = (name: string): string => name.toLowerCase().replaceAll(/\s+/g, '-');
+
 const SHORT_CONTEXT_TOKEN_LIMIT = 2;
 const ALIAS_PATTERN_MATCH_THRESHOLD = 0.5;
 
@@ -156,7 +183,7 @@ const isDistinctiveShortContextExactMatch = (
 const buildCandidate = (
   bankTransaction: NormalizedTransaction,
   glTransaction: NormalizedTransaction,
-  ruleName: string,
+  ruleName: MatchingRuleName,
   score: number,
   confidence: MatchCandidate['confidence'],
   evidence: string[],
@@ -189,7 +216,7 @@ const buildCandidate = (
     evidence,
     evaluations: [
       {
-        ruleId: ruleName.toLowerCase().replaceAll(/\s+/g, '-'),
+        ruleId: slugifyRuleName(ruleName),
         ruleName,
         passed: true,
         score,
