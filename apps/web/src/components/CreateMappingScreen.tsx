@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 import { baseAliases } from '@recon/config';
 import type { CanonicalField, MappingProfilePair, TransformKind } from '@recon/domain';

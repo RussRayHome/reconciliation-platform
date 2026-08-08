@@ -19,7 +19,7 @@ import {
   Routes,
   useLocation,
   useNavigate,
-} from 'react-router-dom';
+} from 'react-router';
 import { SectionCard } from '@recon/ui';
 import {
   rolePermissionsByRole,

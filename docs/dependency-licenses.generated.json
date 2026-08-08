@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-08T15:05:08.277Z",
+  "generatedAt": "2026-08-08T18:35:17.983Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 528,
+  "packageCount": 526,
   "packages": [
     {
       "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.3",
@@ -896,15 +896,15 @@
       "license": "MIT"
     },
     {
+      "package": "cookie-es@3.1.1",
+      "license": "MIT"
+    },
+    {
       "package": "cookie-signature@1.2.2",
       "license": "MIT"
     },
     {
       "package": "cookie@0.7.2",
-      "license": "MIT"
-    },
-    {
-      "package": "cookie@1.1.1",
       "license": "MIT"
     },
     {
@@ -1744,11 +1744,7 @@
       "license": "MIT"
     },
     {
-      "package": "react-router-dom@7.18.2",
-      "license": "MIT"
-    },
-    {
-      "package": "react-router@7.18.2",
+      "package": "react-router@8.3.0",
       "license": "MIT"
     },
     {
@@ -1865,10 +1861,6 @@
     },
     {
       "package": "serve-static@2.2.1",
-      "license": "MIT"
-    },
-    {
-      "package": "set-cookie-parser@2.7.2",
       "license": "MIT"
     },
     {

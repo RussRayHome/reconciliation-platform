@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 
 /*
  * Repository status section -- per the 2026-08-05 design handoff, and folded into the single
