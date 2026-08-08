@@ -38,6 +38,29 @@ const parseBooleanFlag = (value: string | undefined): boolean | null => {
   return null;
 };
 
+/**
+ * ISSUE-006: `DATABASE_URL` is required, not defaulted, but a required env var can still be set
+ * to the wrong role by mistake (a copy-pasted `.env` file, a rotated credential pointed at the
+ * old role). This is the backstop -- refuse to serve traffic if the role the API actually
+ * connected as is a superuser or bypasses row-level security, since either one silently turns
+ * every RLS tenant-isolation policy in the schema into a no-op for every query this pool runs.
+ */
+export const assertRuntimeRoleIsNotPrivileged = async (pool: Pick<Pool, 'query'>): Promise<void> => {
+  const result = await pool.query<{ rolsuper: boolean; rolbypassrls: boolean }>(
+    'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+  );
+  const role = result.rows[0];
+
+  if (role?.rolsuper || role?.rolbypassrls) {
+    throw new Error(
+      'Refusing to start: the database role the API connected as ' +
+        `(rolsuper=${String(role.rolsuper)}, rolbypassrls=${String(role.rolbypassrls)}) ` +
+        'bypasses row-level security. Point DATABASE_URL/API_DATABASE_URL at the least-' +
+        'privilege runtime role (app_user, changeset 0031) instead.',
+    );
+  }
+};
+
 /** Fully initialized server context returned by `createServerRuntime`. */
 export type ServerRuntime = {
   app: ReturnType<typeof createApp>;
@@ -67,10 +90,6 @@ const closeHttpServer = async (server: HttpServer): Promise<void> =>
  * Logging is written to stdout in every environment and optionally mirrored to
  * a newline-delimited JSON file when `LOG_FILE` is configured.
  */
-// No `await` in the body since migrations moved to Liquibase (see packages/persistence/liquibase),
-// but `async` stays: callers rely on a thrown "DATABASE_URL is required" turning into a promise
-// rejection, not a synchronous throw.
-// eslint-disable-next-line @typescript-eslint/require-await
 export const createServerRuntime = async (): Promise<ServerRuntime> => {
   const isProduction = process.env.NODE_ENV === 'production';
   const logFile = process.env.LOG_FILE;
@@ -124,6 +143,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
 
     const pool = createPostgresPool(postgresConfig);
     postgresPool = pool;
+    await assertRuntimeRoleIsNotPrivileged(pool);
 
     lifecycleStore = new PostgresReconciliationLifecycleStore(pool);
     readModelStore = new PostgresReconciliationReadModelStore(pool);

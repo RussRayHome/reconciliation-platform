@@ -176,6 +176,13 @@ export const isTokenDenylisted = async (
   logger?: pino.Logger,
 ): Promise<boolean> => {
   if (!client?.isOpen) {
+    // Matches denylistToken's error-level log for the same condition (ISSUE-007): a revoked
+    // token silently passing every check for up to AUTH_TOKEN_TTL_SECONDS is a real security
+    // degradation, not a transparent fallback, so it must be visible in production logs.
+    logger?.error(
+      { action: 'auth.denylist.check_unavailable', jti },
+      'Could not check the logout denylist (Redis unavailable); allowing the request through as if the token were not revoked.',
+    );
     return false;
   }
 

@@ -15,7 +15,10 @@ x-api-environment: &api-environment
   DEBUG_RECONCILIATION: ${DEBUG_RECONCILIATION:-false}
   MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
   RECON_PERSISTENCE_BACKEND: ${RECON_PERSISTENCE_BACKEND:-postgres}
-  DATABASE_URL: ${API_DATABASE_URL:-postgresql://recon_app:change-local-password@postgres:5432/reconciliation_platform}
+  # Required, not defaulted (ISSUE-006): a missing env file or a `docker compose up` without
+  # --env-file must fail loudly rather than have the API silently connect as the migration/owner
+  # role (recon_app) instead of the intended runtime role (app_user, changeset 0031).
+  DATABASE_URL: ${API_DATABASE_URL:?API_DATABASE_URL is required}
   PG_POOL_MAX: ${PG_POOL_MAX:-10}
   PG_IDLE_TIMEOUT_MS: ${PG_IDLE_TIMEOUT_MS:-30000}
   PG_STATEMENT_TIMEOUT_MS: ${PG_STATEMENT_TIMEOUT_MS:-60000}

@@ -2285,11 +2285,14 @@ export const createApp = (
         return;
       }
 
-      const { name, gl, bank, createdBy } = bodyResult.data;
+      const { name, gl, bank } = bodyResult.data;
       // ADR-0001: organizationId comes from the authenticated principal, not a shared default
       // organization -- that would let every tenant's mapping profiles land in (and become
       // visible in) the same organization once RLS is enforcing isolation everywhere else.
       const organizationId = request.auth!.organizationId;
+      // createdBy is likewise server-derived, not client-supplied -- an audit field naming who
+      // authored a mapping change must not be forgeable by the caller (ISSUE-008).
+      const createdBy = request.auth!.username;
 
       const saveSide = async (pairs: typeof gl, sourceType: 'gl' | 'bank') => {
         let profile = await findMappingProfile(pool!, organizationId, name, sourceType);
@@ -2341,22 +2344,42 @@ export const createApp = (
     }
   });
 
-  app.get('/api/reconciliation/:id/export/workbook', (request, response) => {
-    const run = repository.findById(request.params.id);
-    if (!run?.outputWorkbook) {
-      response.status(404).json({ message: 'Workbook export is not available for this run.' });
-      return;
-    }
+  app.get('/api/reconciliation/:id/export/workbook', async (request, response, next) => {
+    try {
+      // ISSUE-001: this used to call repository.findById() directly, with no tenant check at
+      // all. When a read model is configured it is authoritative for ownership, and that check
+      // must be a hard gate here -- NOT loadRunReport's usual read-model-then-repository
+      // fallback, which would fall through to the untenanted repository (and hand back another
+      // tenant's workbook) the moment the read model reports "not found" for this tenant. That
+      // fallback is real and intentional for the read-only report routes (ISSUE-002 tracks
+      // tightening it generally); this route deals bytes out the door, so it doesn't get to
+      // inherit the same leniency.
+      if (readModelStore) {
+        const owned = await readModelHasRun(request.auth!.organizationId, request.params.id);
+        if (!owned) {
+          response.status(404).json({ message: 'Workbook export is not available for this run.' });
+          return;
+        }
+      }
 
-    response.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    response.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${run.outputWorkbook.fileName}"`,
-    );
-    response.send(Buffer.from(run.outputWorkbook.binary));
+      const run = repository.findById(request.params.id);
+      if (!run?.outputWorkbook) {
+        response.status(404).json({ message: 'Workbook export is not available for this run.' });
+        return;
+      }
+
+      response.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      response.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${run.outputWorkbook.fileName}"`,
+      );
+      response.send(Buffer.from(run.outputWorkbook.binary));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use(

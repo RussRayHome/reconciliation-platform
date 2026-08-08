@@ -7,9 +7,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
+import type pino from 'pino';
 import request from 'supertest';
 
-import { hashPassword } from '../src/services/authService';
+import { hashPassword, isTokenDenylisted } from '../src/services/authService';
 import { authHeader, authedApp } from './testHelpers/authToken';
 
 describe('auth: unauthenticated access', () => {
@@ -93,6 +94,17 @@ describe('auth: unauthenticated access', () => {
       .post('/api/auth/login')
       .send({ username: '', password: '' })
       .expect(401); // reachable (not 401-from-missing-auth); this 401 is "bad credentials"
+  });
+
+  // ISSUE-013: Express serves both with strict routing disabled, but only the exact string was
+  // checked against PUBLIC_ROUTES -- a health-checker configured with a trailing slash 401ed and
+  // could restart-loop a container even though the endpoint worked fine when tested by hand.
+  it('leaves the public allowlist reachable with a trailing slash, no token', async () => {
+    const { createApp } = await import('../src/app');
+    const app = createApp();
+
+    await request(app).get('/api/health/').expect(200);
+    await request(app).get('/api/openapi.json/').expect(200);
   });
 });
 
@@ -243,5 +255,20 @@ describe('auth: logout denylist', () => {
 
     const afterLogout = await request(app).get('/api/aliases').set(header);
     expect(afterLogout.status).toBe(401);
+  });
+
+  // ISSUE-007: this path used to return false silently -- every denylist check passing as
+  // "not revoked" with zero trace, for up to AUTH_TOKEN_TTL_SECONDS, if Redis was ever down.
+  it('logs at error when Redis is unavailable during a denylist check, matching denylistToken', async () => {
+    const error = vi.fn();
+    const logger = { error } as unknown as pino.Logger;
+
+    const result = await isTokenDenylisted(null, 'some-jti', logger);
+
+    expect(result).toBe(false);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'auth.denylist.check_unavailable', jti: 'some-jti' }),
+      expect.any(String),
+    );
   });
 });
