@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Blocks a commit if gitleaks finds a secret in the staged changes (ISSUE-049.2/ISSUE-049.3).
+#
+# scripts/security-scan-secrets.mjs already runs gitleaks + trufflehog with full-history
+# coverage in CI (nightly, and on every push to dev) -- that catches what already landed. This
+# hook is the piece that was missing: it runs before a commit completes, on exactly what's
+# staged, so a secret (including an accidentally `git add -f`'d gitignored file, e.g.
+# apps/developer-dashboard-api/.env) never reaches history in the first place.
+#
+# Enabled automatically via `npm install` (see the root "prepare" script, which sets
+# `git config core.hooksPath .githooks`). Skips gracefully -- with a warning, not a block -- if
+# gitleaks isn't installed locally, matching security-scan-secrets.mjs's own degrade-gracefully
+# behavior; this is a local backstop, not the only line of defense.
+#
+# Escape hatch: `git commit --no-verify` skips this hook, same as any git hook. Use it only for a
+# confirmed false positive, not to push through an unresolved finding.
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed locally -- skipping the staged-secret check." >&2
+  echo "pre-commit: install it (https://github.com/gitleaks/gitleaks#installing) so this hook can actually protect you." >&2
+  exit 0
+fi
+
+if ! gitleaks protect --staged --redact --exit-code 1; then
+  echo "" >&2
+  echo "pre-commit: gitleaks found what looks like a secret in your staged changes -- commit blocked." >&2
+  echo "pre-commit: if this is a confirmed false positive, rerun with 'git commit --no-verify'." >&2
+  exit 1
+fi
