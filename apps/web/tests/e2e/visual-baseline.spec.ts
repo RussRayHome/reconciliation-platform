@@ -1,6 +1,7 @@
 import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
+import { expect, test } from './fixtures';
 import { openSetup } from './auth';
 
 // Visual acceptance oracle for the CSS layering refactor (docs/css-refactor-plan.md).

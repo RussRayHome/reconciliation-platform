@@ -1,6 +1,6 @@
 import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
-import { expect, test } from '@playwright/test';
 
+import { expect, test } from './fixtures';
 import { loginToApplication, openSetup } from './auth';
 
 test('requires login and lands on the application after successful authentication', async ({
