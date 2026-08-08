@@ -10,6 +10,7 @@ import type { Pool } from 'pg';
 
 import { FileBackedRunRepository } from './services/runRepository';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
+import { logRedactOptions } from './services/logRedaction';
 import { startTelemetry, stopTelemetry } from './telemetry';
 import { createApp } from './app';
 import { createWriteStream } from 'node:fs';
@@ -119,7 +120,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
     streams.push({ level: 'debug', stream: createWriteStream(logFile, { flags: 'a' }) });
   }
 
-  const logger = pino({ level }, pino.multistream(streams));
+  const logger = pino({ level, redact: logRedactOptions }, pino.multistream(streams));
   const telemetryRequired = parseBooleanFlag(process.env.OTEL_REQUIRED) === true;
 
   try {

@@ -18,7 +18,7 @@
     "@types/pg": "8.20.3"
   },
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "dev": "concurrently -k -n API,WEB \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "npm run dev --workspace @recon/api",
     "dev:web": "npm run dev --workspace @recon/web",

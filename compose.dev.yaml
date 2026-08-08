@@ -8,6 +8,14 @@ services:
       - postgres
       - -c
       - shared_preload_libraries=pgaudit
+      # ddl+role: schema changes and role/privilege/grant changes -- the "who changed what
+      # privileged thing" questions ISSUE-047 exists to answer. Deliberately not `write`: that
+      # would log every INSERT/UPDATE/DELETE from the app's normal reconciliation processing at
+      # session level, which is volume, not signal, for a high-throughput workload. Auditing
+      # writes to specific sensitive tables is pgaudit's separate object-level (pgaudit.role)
+      # feature -- a distinctly scoped follow-up, not this changeset's job.
+      - -c
+      - pgaudit.log=ddl, role
 
   api:
     build:
