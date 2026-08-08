@@ -62,6 +62,7 @@ import {
   verifyIdentityCode,
 } from './services/identityVerificationService';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
+import { logRedactOptions } from './services/logRedaction';
 import {
   createReconciliationQueue,
   type QueuedReconciliationFilePayload,
@@ -1015,7 +1016,10 @@ export const createApp = (
 ) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
-  const httpLogger = pino({ level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL) });
+  const httpLogger = pino({
+    level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL),
+    redact: logRedactOptions,
+  });
   const apiMetricsFlag = parseBooleanFlag(process.env.ENABLE_API_METRICS);
   const apiMetrics = apiMetricsFlag === true || apiMetricsFlag === null ? createApiMetrics() : null;
   const apiRateLimiter = createApiRateLimiter(httpLogger);

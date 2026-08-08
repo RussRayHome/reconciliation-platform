@@ -8,6 +8,9 @@ services:
       - postgres
       - -c
       - shared_preload_libraries=pgaudit
+      # See compose.dev.yaml's comment on this same setting -- ddl+role, not write, deliberately.
+      - -c
+      - pgaudit.log=ddl, role
 
   web:
     build:
