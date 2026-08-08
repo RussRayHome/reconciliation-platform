@@ -26,6 +26,28 @@ const readActiveCveAllowlist = (repoRoot) => {
   return active;
 };
 
+/** Same expiry-driven convention as readActiveCveAllowlist, but keyed by check ID *and* target
+ * path: a misconfiguration check like DS-0002 applies to every Dockerfile in the repo, so a bare
+ * ID would silently exempt files nobody reviewed. */
+const readActiveMisconfigAllowlist = (repoRoot) => {
+  const allowlistPath = path.join(repoRoot, 'scripts', 'ops', 'misconfig-allowlist.txt');
+  if (!existsSync(allowlistPath)) return new Set();
+  const today = new Date().toISOString().slice(0, 10);
+  const active = new Set();
+  for (const line of readFileSync(allowlistPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const [id, target, expiresOn] = trimmed.split('|');
+    const checkId = id?.trim();
+    const targetPath = target?.trim();
+    const expires = expiresOn?.trim();
+    if (!checkId || !targetPath) continue;
+    if (expires && expires < today) continue;
+    active.add(`${checkId.toUpperCase()}::${targetPath}`);
+  }
+  return active;
+};
+
 const scoreFromFindings = (findings) => {
   const score = createZeroScore();
   for (const f of findings) {
@@ -1227,6 +1249,119 @@ const scanTrivyImages = async (component, imageRefs, repoRoot, trivyAvailable) =
   return withTotal(result);
 };
 
+/** Trivy walks the whole tree by default, and node_modules alone contributes ~56 findings from
+ * vendored Dockerfiles and Kubernetes manifests inside aws-cdk-lib and cpu-features — third-party
+ * files this project neither ships nor can fix. Scoping to first-party config is what makes the
+ * result actionable enough to gate on. */
+const misconfigSkipDirs = [
+  '**/node_modules',
+  '**/dist',
+  'playwright-browsers',
+  'coverage',
+  'test-results',
+  '.git',
+];
+
+const parseTrivyMisconfigFindings = (output) => {
+  const parsed = parseJsonFromOutput(output);
+  if (!parsed || !Array.isArray(parsed.Results)) {
+    return null;
+  }
+
+  const findings = [];
+  for (const result of parsed.Results) {
+    const target = String(result?.Target ?? '').trim();
+    const misconfigurations = Array.isArray(result?.Misconfigurations)
+      ? result.Misconfigurations
+      : [];
+
+    for (const misconfiguration of misconfigurations) {
+      // Trivy emits PASS entries too when --include-non-failures is set; never count those as
+      // findings even if a future caller adds the flag.
+      if (String(misconfiguration?.Status ?? '').toUpperCase() !== 'FAIL') {
+        continue;
+      }
+
+      findings.push({
+        id: String(misconfiguration?.ID ?? '').trim(),
+        title: clipText(misconfiguration?.Title),
+        severity: normalizeSeverityLabel(misconfiguration?.Severity),
+        target,
+        message: clipText(misconfiguration?.Message),
+        resolution: clipText(misconfiguration?.Resolution),
+        url: String(misconfiguration?.PrimaryURL ?? '').trim(),
+      });
+    }
+  }
+
+  return findings;
+};
+
+const sortMisconfigFindings = (findings) =>
+  [...findings].sort(
+    (left, right) =>
+      (severityRankByLabel[left.severity] ?? 9) - (severityRankByLabel[right.severity] ?? 9) ||
+      left.target.localeCompare(right.target) ||
+      left.id.localeCompare(right.id),
+  );
+
+/** Scans first-party Dockerfiles and IaC manifests for misconfiguration (Trivy's `config`
+ * subcommand), as opposed to the CVE scanning every other component does against built images.
+ * Note this covers Dockerfiles, Kubernetes, Terraform, CloudFormation, Helm and Ansible — Trivy
+ * has no Docker Compose scanner, so compose.yaml is NOT checked here. */
+const scanTrivyConfig = async (component, repoRoot, trivyAvailable) => {
+  const result = createComponentResult(component, 'Trivy (misconfig)');
+  result.misconfigFindings = [];
+
+  if (!trivyAvailable) {
+    result.status = 'skipped';
+    result.note = 'Trivy is not installed in this runtime.';
+    return withTotal(result);
+  }
+
+  const args = ['config', '--quiet', '--format', 'json'];
+  for (const skipDir of misconfigSkipDirs) {
+    args.push('--skip-dirs', skipDir);
+  }
+  args.push('.');
+
+  const response = await runCommand('trivy', args, { cwd: repoRoot, timeout: 300000 });
+  const output = `${response.stdout}\n${response.stderr}`.trim();
+  const findings = parseTrivyMisconfigFindings(output);
+
+  if (!findings) {
+    result.status = 'error';
+    result.note =
+      firstNonEmptyLine(response.stderr || response.stdout || response.message) ||
+      'Trivy config output was not parseable.';
+    return withTotal(result);
+  }
+
+  const allowlist = readActiveMisconfigAllowlist(repoRoot);
+  const reported = [];
+  let allowlistedCount = 0;
+
+  for (const finding of findings) {
+    if (allowlist.has(`${finding.id.toUpperCase()}::${finding.target}`)) {
+      allowlistedCount += 1;
+      continue;
+    }
+    reported.push(finding);
+  }
+
+  result.misconfigFindings = sortMisconfigFindings(reported);
+  Object.assign(result, scoreFromFindings(reported));
+
+  const notes = [];
+  if (allowlistedCount > 0) {
+    notes.push(`${allowlistedCount} finding(s) suppressed by scripts/ops/misconfig-allowlist.txt`);
+  }
+  notes.push('Docker Compose files are not covered — Trivy has no compose misconfig scanner.');
+  result.note = notes.join(' | ');
+
+  return withTotal(result);
+};
+
 const checkPgAudit = async (repoRoot, dockerAvailable, composePrefixArgs) => {
   if (!dockerAvailable) {
     return {
@@ -1289,6 +1424,7 @@ const componentScriptByKey = {
   database: 'security-scan-database.mjs',
   container: 'security-scan-container-component.mjs',
   web: 'security-scan-web-server.mjs',
+  config: 'security-scan-config-component.mjs',
 };
 
 const componentNameByKey = {
@@ -1296,6 +1432,7 @@ const componentNameByKey = {
   database: 'Database',
   container: 'Container Component',
   web: 'Web Server',
+  config: 'Configuration',
 };
 
 const normalizeComponentKey = (value) => {
@@ -1317,6 +1454,10 @@ const normalizeComponentKey = (value) => {
 
   if (raw === 'web' || raw === 'web-server' || raw === 'web_server') {
     return 'web';
+  }
+
+  if (raw === 'config' || raw === 'configuration' || raw === 'iac' || raw === 'misconfig') {
+    return 'config';
   }
 
   return null;
@@ -1348,6 +1489,9 @@ const collectApiComponent = async (repoRoot) =>
 
 const collectWebServerComponent = async (repoRoot) =>
   scanNpmWorkspaceComponent('Web Server', '@recon/web', repoRoot);
+
+const collectConfigComponent = async (repoRoot, trivyAvailable) =>
+  scanTrivyConfig('Configuration', repoRoot, trivyAvailable);
 
 const collectDatabaseComponent = async (
   repoRoot,
@@ -1477,6 +1621,10 @@ const collectComponentByKey = async (
     return collectContainerComponent(repoRoot, trivyAvailable, dockerAvailable, composeContext);
   }
 
+  if (componentKey === 'config') {
+    return collectConfigComponent(repoRoot, trivyAvailable);
+  }
+
   return collectWebServerComponent(repoRoot);
 };
 
@@ -1595,7 +1743,7 @@ const main = async () => {
   }
 
   const components = [];
-  for (const componentKey of ['api', 'database', 'container', 'web']) {
+  for (const componentKey of ['api', 'database', 'container', 'web', 'config']) {
     const component = await runComponentScript(componentKey, repoRoot);
     components.push(component);
   }
@@ -1633,6 +1781,9 @@ const main = async () => {
   // Only CRITICAL is blocking for these components (matching db-preflight behavior).
   // API and Web Server HIGH CVEs (from npm audit) remain blocking unless individually
   // allowlisted in scripts/ops/db-cve-allowlist.txt (see computeNpmAuditAllowlistExclusion).
+  // Configuration HIGH findings are blocking too, and deliberately so: unlike a base-image CVE,
+  // a Dockerfile/IaC misconfiguration is always fixable in this repo. Genuine false positives go
+  // in scripts/ops/misconfig-allowlist.txt with a target path, an expiry, and a reason.
   const appComponentHighCount = components
     .filter((c) => c.component !== 'Database' && c.component !== 'Container Component')
     .reduce((sum, c) => sum + c.high, 0);
