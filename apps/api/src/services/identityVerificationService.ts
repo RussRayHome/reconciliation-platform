@@ -42,9 +42,13 @@ export interface NotificationChannel {
   send(target: string, code: string): Promise<void>;
 }
 
+/** The `NotificationChannel` implementation used until a real email/SMS vendor is wired in --
+ * see the interface doc above for why logging stands in for sending. */
 export class MockNotificationChannel implements NotificationChannel {
+  /** @param logger Optional; when omitted the code is generated but never surfaced anywhere. */
   constructor(private readonly logger?: pino.Logger) {}
 
+  /** Logs `code` instead of delivering it to `target` -- see the class doc for why. */
   send(target: string, code: string): Promise<void> {
     this.logger?.info(
       { action: 'identity_verification.code_sent', target, code },

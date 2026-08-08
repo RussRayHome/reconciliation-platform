@@ -26,6 +26,7 @@ export interface EntityVerificationProvider {
  * own fake SoS logic), anything else passes.
  */
 export class MockEntityVerificationProvider implements EntityVerificationProvider {
+  /** Fails on an all-zero or '9999'-containing filing number; verifies everything else. */
   verify(request: EntityVerificationRequest): Promise<EntityVerificationResult> {
     const digits = request.filingNumber.replace(/\D/g, '');
     const looksFake = digits.length === 0 || /^0+$/.test(digits) || digits.includes('9999');
