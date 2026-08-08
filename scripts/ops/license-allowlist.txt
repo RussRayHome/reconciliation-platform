@@ -1,0 +1,53 @@
+# Approved SPDX license identifiers (and named package exceptions) for production dependencies —
+# scripts/check-licenses.mjs.
+#
+# Format:
+#   - A bare line is an approved license identifier (matches any package reporting that license).
+#   - A line starting "pkg:" is a named exception for one specific package:
+#       pkg:<name>@<version>|<reason>
+#     Use this only for a package individually reviewed and judged safe despite not declaring an
+#     approved license — never as a blanket way to accept "unknown".
+#
+# Notes:
+# - Scope is production dependencies only (`npm ls --omit=dev`); dev-only tooling (Playwright,
+#   ESLint, tsx, etc.) never ships in a built image and is a separate, lower-risk category
+#   (ISSUE-036).
+# - Every license entry here must be permissive with no copyleft/source-disclosure obligation.
+#   Do not add GPL/LGPL/AGPL/SSPL/MPL or any "OR-later"/network-copyleft variant without a
+#   deliberate legal review — that is the exact risk this allowlist exists to catch.
+# - Adding an entry is a reviewable diff: state why the license (or package) is safe to approve.
+
+# Full audit, 2026-08-08: 500+ production packages scanned (npm ls --all --omit=dev), one
+# genuinely undocumented package found (see the pkg: exception below), zero copyleft findings.
+# The npm tree (React, Express, CDK, Playwright, Liquibase tooling) came back exactly as
+# predicted in ISSUE-036 — "almost certainly fine" — but this is the actual check, not the
+# assumption.
+MIT
+Apache-2.0
+ISC
+BSD-2-Clause
+BSD-3-Clause
+0BSD
+BlueOak-1.0.0
+Unlicense
+Zlib
+# Pre-SPDX slash notation some old packages (chainsaw@0.1.0, traverse@0.3.9) still declare
+# verbatim in package.json -- X11 is the historical name overlap with MIT, not a distinct license.
+MIT/X11
+
+# check-licenses.mjs also approves compound SPDX expressions built from the identifiers above:
+# "X AND Y" (both parts apply, both must be approved) and "X OR Y" (the consumer -- us -- may
+# pick either license, so having at least one approved part is sufficient). Seen in this tree:
+# jszip@3.10.1 / case@1.6.3 ("MIT OR GPL-3.0-or-later" -- we're electing MIT), pako@1.0.11
+# ("MIT AND Zlib"), victory-vendor@37.3.6 ("MIT AND ISC").
+
+# buffers@0.1.1 (transitive: apps/api -> exceljs -> unzipper -> binary -> buffers) declares no
+# `license` field, ships no LICENSE file, and its source repo (github.com/substack/node-buffers)
+# no longer exists to check further -- npm registry metadata is also empty. Manually reviewed
+# 2026-08-08: a ~50-line Buffer-concatenation utility from the same "substack" ecosystem as
+# dozens of other, MIT-licensed early-Node packages; the only available source (its published
+# index.js) shows no copyleft/viral terms of any kind. Residual risk judged low given the
+# package's trivial size and purpose, but this is a genuine gap, not a false positive -- revisit
+# if exceljs/unzipper ever drops this transitive dependency, and treat any *other* unlicensed
+# package as a real finding, not "probably fine like buffers was."
+pkg:buffers@0.1.1|No license field/file; source repo deleted; manually reviewed, judged low-risk (tiny utility, no copyleft indicators) -- see scripts/check-licenses.mjs header

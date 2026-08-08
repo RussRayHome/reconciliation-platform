@@ -4,6 +4,7 @@
 # generator emits, and `npm run docs:api:check` / `docs:openapi:check` then fail in CI.
 docs/api-reference-generated.md
 docs/openapi.generated.json
+docs/dependency-licenses.generated.json
 
 # Playwright visual baselines
 apps/web/tests/e2e/**/*-snapshots/

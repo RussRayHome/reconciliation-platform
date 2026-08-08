@@ -133,7 +133,9 @@
     "docs:api:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-api-docs.ts",
     "docs:api:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-api-docs.ts --check",
     "docs:openapi:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-openapi-docs.ts",
-    "docs:openapi:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-openapi-docs.ts --check"
+    "docs:openapi:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-openapi-docs.ts --check",
+    "licenses:generate": "NODE_OPTIONS=--no-deprecation node scripts/check-licenses.mjs",
+    "licenses:check": "NODE_OPTIONS=--no-deprecation node scripts/check-licenses.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
