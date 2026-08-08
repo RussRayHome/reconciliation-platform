@@ -55,24 +55,15 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
-      migratedTableExists = await tableExists(
-        database.pool,
-        'reconciliation_matching_config_version',
-      );
+      migratedTableExists = await tableExists(database.pool, 'reconciliation_login_event');
 
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
-      rolledBackTableExists = await tableExists(
-        database.pool,
-        'reconciliation_matching_config_version',
-      );
+      rolledBackTableExists = await tableExists(database.pool, 'reconciliation_login_event');
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
-      reappliedTableExists = await tableExists(
-        database.pool,
-        'reconciliation_matching_config_version',
-      );
+      reappliedTableExists = await tableExists(database.pool, 'reconciliation_login_event');
     }, 180000);
 
     afterAll(async () => {
@@ -89,15 +80,15 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0039 by dropping the reconciliation_matching_config_version table', () => {
-      // 0039 (the most recent changeset as of this test) creates
-      // reconciliation_matching_config_version from scratch; its rollback drops it (CASCADE,
-      // though nothing yet references it). Table creation/removal shows up directly in
-      // schema-baseline.sql's table listing, so migratedSchema/rolledBackSchema genuinely differ
-      // here, unlike 0038's grant-only rollback. When a future changeset lands on top of 0039,
-      // update this test to describe that changeset instead -- it is intentionally pinned to
-      // "whatever is currently the most recent changeset", not to 0039 forever (see 0033's git
-      // history for the last time this moved).
+    it('reverses changeset 0040 by dropping the reconciliation_login_event table', () => {
+      // 0040 (the most recent changeset as of this test) creates reconciliation_login_event
+      // from scratch; its rollback drops it (CASCADE, though nothing yet references it). Table
+      // creation/removal shows up directly in schema-baseline.sql's table listing, so
+      // migratedSchema/rolledBackSchema genuinely differ here, unlike 0038's grant-only
+      // rollback. When a future changeset lands on top of 0040, update this test to describe
+      // that changeset instead -- it is intentionally pinned to "whatever is currently the most
+      // recent changeset", not to 0040 forever (see 0033's git history for the last time this
+      // moved).
       expect(migratedTableExists).toBe(true);
       expect(rolledBackTableExists).toBe(false);
       expect(reappliedTableExists).toBe(true);
@@ -105,7 +96,7 @@ describe('Liquibase rollback', () => {
     });
   });
 
-  describe('rolling back fourteen changesets (0039 down through 0026 schema-changing)', () => {
+  describe('rolling back fifteen changesets (0040 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -117,17 +108,17 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now fourteen changesets back from HEAD (0039): 0027 (verify-only), 0028 (adds
+      // 0026 is now fifteen changesets back from HEAD (0040): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
       // its own reconciliation_user/reconciliation_organization columns -- rolled back along with
       // everything else in this range, which is correct and untested by the assertions below
       // since they only look at password/password_hash/role), 0035-0037 (new tables, no
-      // reconciliation_user changes), 0038 (grants only), and 0039 (new table, no
-      // reconciliation_user changes) all sit on top of it without reversing anything this test
-      // cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=14');
+      // reconciliation_user changes), 0038 (grants only), 0039 (new table, no reconciliation_user
+      // changes), and 0040 (new table, no reconciliation_user changes) all sit on top of it
+      // without reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=15');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

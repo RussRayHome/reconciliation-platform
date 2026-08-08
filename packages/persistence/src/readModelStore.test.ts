@@ -9,11 +9,14 @@ import {
   createPayeeAlias,
   deactivatePayeeAlias,
   findMappingProfile,
+  getMappingProfileDetail,
   listMappingProfiles,
   listMappingProfileVersions,
   listMatchingConfigVersions,
   loadPayeeAliases,
   publishMatchingConfigVersion,
+  recordLoginEvent,
+  retireMappingProfile,
   updatePayeeAlias,
 } from './readModelStore';
 
@@ -932,6 +935,61 @@ describe('listMappingProfiles', () => {
   });
 });
 
+describe('getMappingProfileDetail', () => {
+  it('returns both sides with their version histories when both exist', async () => {
+    const glRow = MAPPING_PROFILE_ROW;
+    const bankRow = { ...MAPPING_PROFILE_ROW, id: 'profile-2', source_type: 'bank' as const };
+    const pool = makePool(
+      { rows: [glRow, bankRow] },
+      { rows: [MAPPING_PROFILE_VERSION_ROW] },
+      { rows: [{ ...MAPPING_PROFILE_VERSION_ROW, id: 'version-2', profile_id: 'profile-2' }] },
+    );
+
+    const detail = await getMappingProfileDetail(pool, 'org-1', 'Monthly Bank + GL', 'rray');
+
+    expect(detail?.name).toBe('Monthly Bank + GL');
+    expect(detail?.gl?.profile.id).toBe('profile-1');
+    expect(detail?.gl?.versions).toHaveLength(1);
+    expect(detail?.bank?.profile.id).toBe('profile-2');
+    expect(detail?.bank?.versions).toHaveLength(1);
+  });
+
+  it('leaves a side null when only one side was ever saved', async () => {
+    const pool = makePool({ rows: [MAPPING_PROFILE_ROW] }, { rows: [MAPPING_PROFILE_VERSION_ROW] });
+
+    const detail = await getMappingProfileDetail(pool, 'org-1', 'Monthly Bank + GL', 'rray');
+
+    expect(detail?.gl).not.toBeNull();
+    expect(detail?.bank).toBeNull();
+  });
+
+  it('returns null when the name does not exist (or belongs to another tenant)', async () => {
+    const pool = makePool({ rows: [] });
+    expect(await getMappingProfileDetail(pool, 'org-1', 'Nonexistent', 'rray')).toBeNull();
+  });
+});
+
+describe('retireMappingProfile', () => {
+  it('flips both sides to DEPRECATED and returns the updated rows', async () => {
+    const pool = makePool({
+      rows: [
+        { ...MAPPING_PROFILE_ROW, status: 'DEPRECATED' as const },
+        { ...MAPPING_PROFILE_ROW, id: 'profile-2', source_type: 'bank' as const, status: 'DEPRECATED' as const },
+      ],
+    });
+
+    const retired = await retireMappingProfile(pool, 'org-1', 'Monthly Bank + GL', 'rray');
+
+    expect(retired).toHaveLength(2);
+    expect(retired.every((row) => row.status === 'DEPRECATED')).toBe(true);
+  });
+
+  it('returns an empty array when nothing ACTIVE matched the name', async () => {
+    const pool = makePool({ rows: [] });
+    expect(await retireMappingProfile(pool, 'org-1', 'Nonexistent', 'rray')).toEqual([]);
+  });
+});
+
 describe('listMappingProfileVersions', () => {
   it('maps every version row', async () => {
     const pool = makePool({
@@ -1075,5 +1133,71 @@ describe('listMatchingConfigVersions', () => {
   it('returns an empty array for an organization with no versions yet', async () => {
     const pool = makePool({ rows: [] });
     expect(await listMatchingConfigVersions(pool, 'org-1')).toEqual([]);
+  });
+});
+
+describe('recordLoginEvent', () => {
+  // Plain pool.query, not runInTenantScope -- reconciliation_login_event is deliberately not
+  // RLS-protected (see its changeset), so makePool's transaction-aware fake isn't the right fit.
+  const makePlainPool = (row: Record<string, unknown>): Pool =>
+    ({ query: vi.fn().mockResolvedValue({ rows: [row] }) }) as unknown as Pool;
+
+  it('records a LOGIN_SUCCESS event with an organization', async () => {
+    const pool = makePlainPool({
+      id: 'login-1',
+      organization_id: 'org-1',
+      username: 'rray',
+      event_type: 'LOGIN_SUCCESS',
+      failure_reason: null,
+      ip_address: '127.0.0.1',
+      created_at: '2026-08-08T00:00:00.000Z',
+    });
+
+    const event = await recordLoginEvent(pool, {
+      id: 'login-1',
+      organizationId: 'org-1',
+      username: 'rray',
+      eventType: 'LOGIN_SUCCESS',
+      ipAddress: '127.0.0.1',
+    });
+
+    expect(event.organizationId).toBe('org-1');
+    expect(event.eventType).toBe('LOGIN_SUCCESS');
+    expect(event.failureReason).toBeNull();
+  });
+
+  it('records a LOGIN_FAILURE event with a null organization and a failure reason', async () => {
+    const pool = makePlainPool({
+      id: 'login-2',
+      organization_id: null,
+      username: 'nonexistent-user',
+      event_type: 'LOGIN_FAILURE',
+      failure_reason: 'unknown_username',
+      ip_address: null,
+      created_at: '2026-08-08T00:00:00.000Z',
+    });
+
+    const event = await recordLoginEvent(pool, {
+      id: 'login-2',
+      organizationId: null,
+      username: 'nonexistent-user',
+      eventType: 'LOGIN_FAILURE',
+      failureReason: 'unknown_username',
+    });
+
+    expect(event.organizationId).toBeNull();
+    expect(event.failureReason).toBe('unknown_username');
+  });
+
+  it('throws when INSERT returns no row', async () => {
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as Pool;
+    await expect(
+      recordLoginEvent(pool, {
+        id: 'login-3',
+        organizationId: 'org-1',
+        username: 'rray',
+        eventType: 'LOGOUT',
+      }),
+    ).rejects.toThrow('recordLoginEvent: INSERT returned no row');
   });
 });

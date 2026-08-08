@@ -8,7 +8,7 @@ import {
   nonStandardHeaderBankRows,
   nonStandardHeaderGlRows,
 } from '@recon/test-fixtures';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { PostgresReconciliationReadModelStore } from '@recon/persistence';
 
@@ -1264,5 +1264,180 @@ describe('reconciliation API', () => {
       organizationId: 'org-1',
     });
     expect(typeof (response.body as { token: unknown }).token).toBe('string');
+  });
+});
+
+describe('login/logout audit trail (ISSUE-050.2)', () => {
+  // These tests assert on 'info'-level log lines, but `npm run test:integration` runs with
+  // LOG_LEVEL=silent (see package.json) for quieter CI output -- and resolveLogLevelAtLeastInfo
+  // (apps/api/src/services/logLevel.ts) deliberately honors `silent` under Vitest rather than
+  // flooring it to 'info' like it would in a real runtime. Without this override, createApp()
+  // builds an httpLogger that genuinely emits nothing, and every capture.lines() lookup below
+  // finds an empty array -- not a timing race, a real level mismatch.
+  beforeEach(() => {
+    vi.stubEnv('LOG_LEVEL', 'info');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  type CapturedInsert = { params: unknown[] };
+
+  /** Fake pool answering both the login handler's user-lookup SELECT and recordLoginEvent's
+   * INSERT -- QueryableAuthPool (used by the tests above) only ever needed the first. */
+  const makeAuditPool = (userRow: Record<string, unknown> | null) => {
+    const inserts: CapturedInsert[] = [];
+    const query = (text: string, params?: unknown[]) => {
+      if (text.includes('FROM reconciliation_user')) {
+        return Promise.resolve({ rows: userRow ? [userRow] : [] });
+      }
+      if (text.includes('INSERT INTO reconciliation_login_event')) {
+        inserts.push({ params: params ?? [] });
+        return Promise.resolve({
+          rows: [
+            {
+              id: params?.[0],
+              organization_id: params?.[1],
+              username: params?.[2],
+              event_type: params?.[3],
+              failure_reason: params?.[4] ?? null,
+              ip_address: params?.[5] ?? null,
+              created_at: new Date().toISOString(),
+            },
+          ],
+        });
+      }
+      throw new Error(`makeAuditPool: unexpected query: ${text}`);
+    };
+    return { pool: { query } as unknown as Parameters<typeof createApp>[3], inserts };
+  };
+
+  /** Captures every line written to stdout during the test, parsed as JSON -- createApp()
+   * builds its own internal httpLogger writing to process.stdout with no injectable stream
+   * (see apps/api/tests/log-redaction.test.ts for the same technique).
+   *
+   * MUST be called before `createApp()`, not after: pino's default destination (SonicBoom)
+   * binds to `process.stdout.write` once, at construction time, inside `pino({...})`. A spy
+   * installed after that construction never sees anything -- this bit a first draft of these
+   * tests, where every log-line assertion silently found nothing. */
+  const captureStdout = () => {
+    const written: string[] = [];
+    const spy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation((chunk: string | Uint8Array) => {
+        written.push(chunk.toString());
+        return true;
+      });
+    return {
+      lines: (): Record<string, unknown>[] =>
+        written
+          .join('')
+          .split('\n')
+          .filter((line) => line.trim().length > 0)
+          .map((line) => JSON.parse(line) as Record<string, unknown>),
+      // Extra safety margin in case a write is still queued when the request resolves --
+      // setImmediate runs after I/O callbacks, which is where SonicBoom's async flush lands.
+      restore: async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+        spy.mockRestore();
+      },
+    };
+  };
+
+  it('persists and logs LOGIN_SUCCESS for a real-DB login', async () => {
+    const passwordHash = await hashPassword('rray');
+    const { pool, inserts } = makeAuditPool({
+      user_name: 'rray',
+      first_name: 'Ryan',
+      last_name: 'Ray',
+      password_hash: passwordHash,
+      role: 'superuser',
+      organization_id: 'org-1',
+    });
+    const capture = captureStdout();
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    await request(app).post('/api/auth/login').send({ username: 'rray', password: 'rray' }).expect(200);
+    await capture.restore();
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.params).toEqual(
+      expect.arrayContaining(['org-1', 'rray', 'LOGIN_SUCCESS']),
+    );
+
+    const logLine = capture.lines().find((line) => line.action === 'auth.login_success');
+    expect(logLine).toMatchObject({ username: 'rray', organizationId: 'org-1' });
+  });
+
+  it('persists and logs LOGIN_FAILURE with reason unknown_username', async () => {
+    const { pool, inserts } = makeAuditPool(null);
+    const capture = captureStdout();
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'nobody', password: 'whatever' })
+      .expect(401);
+    await capture.restore();
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.params).toEqual(
+      expect.arrayContaining([null, 'nobody', 'LOGIN_FAILURE', 'unknown_username']),
+    );
+
+    const logLine = capture.lines().find((line) => line.action === 'auth.login_failure');
+    expect(logLine).toMatchObject({ username: 'nobody', failureReason: 'unknown_username' });
+  });
+
+  it('persists and logs LOGIN_FAILURE with reason invalid_password, distinct from unknown_username', async () => {
+    const passwordHash = await hashPassword('rray');
+    const { pool, inserts } = makeAuditPool({
+      user_name: 'rray',
+      first_name: 'Ryan',
+      last_name: 'Ray',
+      password_hash: passwordHash,
+      role: 'superuser',
+      organization_id: 'org-1',
+    });
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'rray', password: 'wrong-password' })
+      .expect(401);
+
+    expect(inserts[0]?.params).toEqual(
+      expect.arrayContaining(['org-1', 'rray', 'LOGIN_FAILURE', 'invalid_password']),
+    );
+  });
+
+  it('logs LOGIN_SUCCESS for local fallback without attempting to persist (no pool configured)', async () => {
+    vi.stubEnv('ALLOW_LOCAL_LOGIN_FALLBACK', 'true');
+    const capture = captureStdout();
+    const app = createApp();
+
+    await request(app).post('/api/auth/login').send({ username: 'rray', password: 'rray' }).expect(200);
+    await capture.restore();
+
+    const logLine = capture.lines().find((line) => line.action === 'auth.login_success');
+    expect(logLine).toMatchObject({ username: 'rray' });
+  });
+
+  it('persists and logs LOGOUT after a successful logout', async () => {
+    const { pool, inserts } = makeAuditPool(null);
+    const capture = captureStdout();
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    await authedApp(app, { sub: 'rray', organizationId: 'org-1' })
+      .post('/api/auth/logout')
+      .expect(204);
+    await capture.restore();
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.params).toEqual(expect.arrayContaining(['org-1', 'rray', 'LOGOUT']));
+
+    const logLine = capture.lines().find((line) => line.action === 'auth.logout');
+    expect(logLine).toMatchObject({ username: 'rray', organizationId: 'org-1' });
   });
 });

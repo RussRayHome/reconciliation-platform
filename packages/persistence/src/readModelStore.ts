@@ -7,7 +7,10 @@ import type {
   GroupedMatchResult,
   ImportApproval,
   ImportApprovalStatus,
+  LoginEvent,
+  LoginEventType,
   MappingProfile,
+  MappingProfileDetail,
   MappingProfileVersion,
   MatchingConfig,
   MatchingConfigVersion,
@@ -25,7 +28,7 @@ import type {
 
 import type { Pool, PoolClient } from 'pg';
 
-import { runInTenantScope } from './postgres';
+import { runInTenantScope, runInTenantScopeAsUser } from './postgres';
 
 type ReconciliationJobRow = {
   id: string;
@@ -1047,6 +1050,100 @@ export const listMappingProfiles = async (
   });
 };
 
+/** Shared by `getMappingProfileDetail` and `retireMappingProfile` -- fetches a profile's full
+ * version history over an already-open, already-tenant-scoped client (never opens its own
+ * transaction, so it composes safely inside either caller's `runInTenantScope*`). */
+const fetchMappingProfileVersionsWithClient = async (
+  client: PoolClient,
+  profileId: string,
+): Promise<MappingProfileVersion[]> => {
+  const result = await client.query<MappingProfileVersionRow>(
+    `SELECT id, profile_id, version_number, column_mapping, transformation_rules, status, created_by, created_at
+       FROM reconciliation_mapping_profile_version
+      WHERE profile_id = $1
+      ORDER BY version_number DESC`,
+    [profileId],
+  );
+  return result.rows.map(mapMappingProfileVersion);
+};
+
+/**
+ * Full detail for a named mapping profile -- both sides (gl/bank), each with its complete
+ * version history. `null` if neither side exists (either because it was never saved, or because
+ * RLS hides it for a caller in the wrong organization -- the two are indistinguishable by
+ * design, same as every other route in this API).
+ *
+ * `readAs` is the requesting user, threaded through to `runInTenantScopeAsUser` so a DB-level
+ * audit trail (pgaudit, or any future per-user RLS policy) can attribute this read to a real
+ * person, not just the pooled `app_user` role (ISSUE-050.2). The caller (the API route handler)
+ * is still responsible for the actual read/access log event this issue asks for -- that's an
+ * application-level concern, not a persistence-layer one.
+ */
+export const getMappingProfileDetail = async (
+  pool: Pool,
+  organizationId: string,
+  name: string,
+  readAs: string,
+): Promise<MappingProfileDetail | null> => {
+  return runInTenantScopeAsUser(pool, organizationId, readAs, async (client) => {
+    const result = await client.query<MappingProfileRow>(
+      `SELECT id, organization_id, name, source_type, status, created_at
+         FROM reconciliation_mapping_profile
+        WHERE organization_id = $1 AND name = $2`,
+      [organizationId, name],
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const bySide = new Map(result.rows.map((row) => [row.source_type, mapMappingProfile(row)]));
+    const glProfile = bySide.get('gl');
+    const bankProfile = bySide.get('bank');
+
+    const [glVersions, bankVersions] = await Promise.all([
+      glProfile ? fetchMappingProfileVersionsWithClient(client, glProfile.id) : Promise.resolve([]),
+      bankProfile
+        ? fetchMappingProfileVersionsWithClient(client, bankProfile.id)
+        : Promise.resolve([]),
+    ]);
+
+    return {
+      name,
+      gl: glProfile ? { profile: glProfile, versions: glVersions } : null,
+      bank: bankProfile ? { profile: bankProfile, versions: bankVersions } : null,
+    };
+  });
+};
+
+/**
+ * Retires a named mapping profile: flips both sides (gl/bank, whichever exist) from ACTIVE to
+ * DEPRECATED. Returns the rows actually updated -- empty if the name doesn't exist or was
+ * already fully retired, which the route handler treats as 404 rather than a silent no-op.
+ *
+ * `retiredBy` is server-derived from `request.auth!.username` at the call site (never
+ * client-supplied -- same reasoning as `createdBy` on create, ISSUE-008), and is threaded
+ * through `runInTenantScopeAsUser` for the same DB-level attribution reasoning as
+ * `getMappingProfileDetail` above.
+ */
+export const retireMappingProfile = async (
+  pool: Pool,
+  organizationId: string,
+  name: string,
+  retiredBy: string,
+): Promise<MappingProfile[]> => {
+  return runInTenantScopeAsUser(pool, organizationId, retiredBy, async (client) => {
+    const result = await client.query<MappingProfileRow>(
+      `UPDATE reconciliation_mapping_profile
+          SET status = 'DEPRECATED'
+        WHERE organization_id = $1 AND name = $2 AND status = 'ACTIVE'
+      RETURNING id, organization_id, name, source_type, status, created_at`,
+      [organizationId, name],
+    );
+    return result.rows.map(mapMappingProfile);
+  });
+};
+
 type MatchingConfigVersionRow = {
   id: string;
   organization_id: string;
@@ -1332,4 +1429,65 @@ export const loadApprovalHistory = async (
       createdAt: row.created_at,
     }));
   });
+};
+
+type LoginEventRow = {
+  id: string;
+  organization_id: string | null;
+  username: string;
+  event_type: LoginEventType;
+  failure_reason: string | null;
+  ip_address: string | null;
+  created_at: string;
+};
+
+const mapLoginEvent = (row: LoginEventRow): LoginEvent => ({
+  id: row.id,
+  organizationId: row.organization_id,
+  username: row.username,
+  eventType: row.event_type,
+  failureReason: row.failure_reason,
+  ipAddress: row.ip_address,
+  createdAt: row.created_at,
+});
+
+/** Input fields accepted when recording an authentication event (ISSUE-050.2). */
+export interface RecordLoginEventInput {
+  id: string;
+  organizationId: string | null;
+  username: string;
+  eventType: LoginEventType;
+  failureReason?: string;
+  ipAddress?: string;
+}
+
+/**
+ * Records one row in the durable authentication audit trail. Uses a plain `pool.query`, not
+ * `runInTenantScope` -- `reconciliation_login_event` is deliberately not RLS-protected (see the
+ * table's own changeset comment), for the same reason `reconciliation_user` isn't: a
+ * `LOGIN_FAILURE` for an unresolvable username has no organization to scope a transaction to.
+ */
+export const recordLoginEvent = async (
+  pool: Pool,
+  input: RecordLoginEventInput,
+): Promise<LoginEvent> => {
+  const result = await pool.query<LoginEventRow>(
+    `INSERT INTO reconciliation_login_event
+       (id, organization_id, username, event_type, failure_reason, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, organization_id, username, event_type, failure_reason, ip_address, created_at`,
+    [
+      input.id,
+      input.organizationId,
+      input.username,
+      input.eventType,
+      input.failureReason ?? null,
+      input.ipAddress ?? null,
+    ],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error('recordLoginEvent: INSERT returned no row');
+  }
+  return mapLoginEvent(row);
 };

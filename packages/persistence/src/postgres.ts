@@ -49,20 +49,21 @@ export const createPostgresPool = (config: PostgresPersistenceConfig): Pool => {
 };
 
 /**
- * ADR-0001 step 6: checks out a client, sets `app.current_organization_id` for this transaction
- * only (`set_config(..., true)` == SET LOCAL), runs `callback`, then commits/rolls back and
- * releases. This is the only place that GUC should be set -- `pg.Pool` reuses connections, so
- * setting it anywhere else (or per-query on a pooled connection outside a transaction) risks a
- * later request inheriting the previous request's tenant. Every read or write that touches an
- * RLS-protected table must go through this rather than `pool.query` directly.
+ * Shared implementation behind `runInTenantScope` and `runInTenantScopeAsUser`: checks out a
+ * client, sets `app.current_organization_id` (and optionally `app.current_user_name`) for this
+ * transaction only (`set_config(..., true)` == SET LOCAL), runs `callback`, then commits/rolls
+ * back and releases. This is the only place either GUC should be set -- `pg.Pool` reuses
+ * connections, so setting one anywhere else (or per-query on a pooled connection outside a
+ * transaction) risks a later request inheriting the previous request's tenant or actor.
  *
- * Uses `set_config` (a regular function call) rather than `SET LOCAL app.current_organization_id
- * = $1` because `SET` does not accept bind parameters -- this is also what keeps the tenant id
- * out of the SQL text.
+ * Uses `set_config` (a regular function call) rather than `SET LOCAL ... = $1` because `SET`
+ * does not accept bind parameters -- this is also what keeps the tenant id and username out of
+ * the SQL text.
  */
-export const runInTenantScope = async <T>(
+const runInScope = async <T>(
   pool: Pool,
   organizationId: string,
+  username: string | undefined,
   callback: (client: PoolClient) => Promise<T>,
 ): Promise<T> => {
   const client = await pool.connect();
@@ -72,6 +73,9 @@ export const runInTenantScope = async <T>(
     await client.query("SELECT set_config('app.current_organization_id', $1, true)", [
       organizationId,
     ]);
+    if (username) {
+      await client.query("SELECT set_config('app.current_user_name', $1, true)", [username]);
+    }
     const result = await callback(client);
     await client.query('COMMIT');
     return result;
@@ -82,3 +86,29 @@ export const runInTenantScope = async <T>(
     client.release();
   }
 };
+
+/**
+ * ADR-0001 step 6: every read or write that touches an RLS-protected table must go through this
+ * (or `runInTenantScopeAsUser`) rather than `pool.query` directly. See `runInScope` for what it
+ * actually does.
+ */
+export const runInTenantScope = async <T>(
+  pool: Pool,
+  organizationId: string,
+  callback: (client: PoolClient) => Promise<T>,
+): Promise<T> => runInScope(pool, organizationId, undefined, callback);
+
+/**
+ * Same as `runInTenantScope`, but additionally sets `app.current_user_name` for the transaction
+ * (ISSUE-050.2) -- without it, pgaudit and any future per-user RLS policy can only ever see the
+ * pooled `app_user` role running a query, never which actual person triggered it. Use this
+ * instead of `runInTenantScope` for operations where DB-level "who did this" attribution matters
+ * (mapping profile create/read/retire, at minimum); plain `runInTenantScope` remains correct for
+ * everything else -- it isn't a required migration, just an opt-in for call sites that need it.
+ */
+export const runInTenantScopeAsUser = async <T>(
+  pool: Pool,
+  organizationId: string,
+  username: string,
+  callback: (client: PoolClient) => Promise<T>,
+): Promise<T> => runInScope(pool, organizationId, username, callback);
