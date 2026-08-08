@@ -156,6 +156,7 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
     lifecycleStore,
     readModelStore,
     postgresPool,
+    logger,
   );
   const port = Number(process.env.PORT ?? '4000');
 

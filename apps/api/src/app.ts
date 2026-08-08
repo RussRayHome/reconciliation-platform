@@ -1016,13 +1016,21 @@ export const createApp = (
   lifecycleStore?: PostgresReconciliationLifecycleStore,
   readModelStore?: PostgresReconciliationReadModelStore,
   pool?: Pool,
+  logger?: pino.Logger,
 ) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
-  const httpLogger = pino({
-    level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL),
-    redact: logRedactOptions,
-  });
+  // Defaults to its own stdout-only logger (as every existing test relies on) when the caller
+  // doesn't supply one. createServerRuntime (server.ts) passes its own LOG_FILE-multistreamed
+  // logger here in real deployments -- without this, every per-request log line (including the
+  // ISSUE-050.2 login/logout/mapping-profile audit trail) would only ever reach stdout, never
+  // the durable file compose.yaml's LOG_FILE wiring exists specifically to provide.
+  const httpLogger =
+    logger ??
+    pino({
+      level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL),
+      redact: logRedactOptions,
+    });
   const apiMetricsFlag = parseBooleanFlag(process.env.ENABLE_API_METRICS);
   const apiMetrics = apiMetricsFlag === true || apiMetricsFlag === null ? createApiMetrics() : null;
   const apiRateLimiter = createApiRateLimiter(httpLogger);
