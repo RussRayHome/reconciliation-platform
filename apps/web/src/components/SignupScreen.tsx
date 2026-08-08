@@ -207,22 +207,26 @@ export function SignupScreen({
       });
   };
 
+  // Always computed, regardless of `tried` -- handleSubmit's guard reads this synchronously on
+  // the very first submit, before the `setTried(true)` it just called has re-rendered. Gating
+  // this list on `tried` made it stale on that first click (still reflecting the pre-submit
+  // render's `tried = false`), so the guard saw an empty list and let an invalid request reach
+  // the backend. Display is still gated on `tried` at the render site below; only the
+  // computation itself needed to stop depending on it.
   const problems: string[] = [];
-  if (tried) {
-    if (!form.email.trim()) problems.push('Work email is required.');
-    else if (emailCheck.tone === 'error') problems.push(emailCheck.note);
-    if (!form.fullName.trim()) problems.push('Full name is required for audit records.');
-    if (!form.username.trim()) problems.push('Choose a username.');
-    else if (usernameCheck.tone === 'error') problems.push(usernameCheck.note);
-    if (!passwordAllMet(form.password)) problems.push('Password does not meet all five requirements.');
-    if (phoneCheck.tone === 'error') problems.push(phoneCheck.note);
-    if (!form.companyName.trim()) problems.push('Legal entity name is required.');
-    if (!form.headcount) problems.push('Select a headcount range.');
-    if (!form.industry) problems.push('Select an industry.');
-    if (!form.entityState.trim()) problems.push('Select the state where the entity is on record.');
-    if (!form.entityFilingNumber.trim()) problems.push('Enter the Secretary of State filing number.');
-    if (!termsAccepted) problems.push('Accept the Terms of Service and Data Processing Addendum.');
-  }
+  if (!form.email.trim()) problems.push('Work email is required.');
+  else if (emailCheck.tone === 'error') problems.push(emailCheck.note);
+  if (!form.fullName.trim()) problems.push('Full name is required for audit records.');
+  if (!form.username.trim()) problems.push('Choose a username.');
+  else if (usernameCheck.tone === 'error') problems.push(usernameCheck.note);
+  if (!passwordAllMet(form.password)) problems.push('Password does not meet all five requirements.');
+  if (phoneCheck.tone === 'error') problems.push(phoneCheck.note);
+  if (!form.companyName.trim()) problems.push('Legal entity name is required.');
+  if (!form.headcount) problems.push('Select a headcount range.');
+  if (!form.industry) problems.push('Select an industry.');
+  if (!form.entityState.trim()) problems.push('Select the state where the entity is on record.');
+  if (!form.entityFilingNumber.trim()) problems.push('Enter the Secretary of State filing number.');
+  if (!termsAccepted) problems.push('Accept the Terms of Service and Data Processing Addendum.');
 
   const handleSubmit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();

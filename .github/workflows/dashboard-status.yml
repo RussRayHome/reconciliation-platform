@@ -339,6 +339,17 @@ jobs:
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
           ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
+          # The route-sweep and signup specs (ISSUE-026/ISSUE-033) each do real logins in
+          # sequence -- against a local Postgres, this reproducibly tripped the API's
+          # 120-requests/minute rate limit (a real 429 on /api/auth/me, confirmed via the
+          # failing run's network trace) once total e2e request volume crossed that threshold.
+          # The limiter is generic Express middleware applying regardless of persistence
+          # backend, so the same risk exists here even though CI's in-memory backend takes a
+          # different login path (ALLOW_LOCAL_LOGIN_FALLBACK, not real Postgres auth). Safe to
+          # disable for this job specifically: DISABLE_API_RATE_LIMIT has no production-safety
+          # guard of its own, but this env var only ever reaches the ephemeral webServer this
+          # job spawns for itself, never a deployed instance.
+          DISABLE_API_RATE_LIMIT: 'true'
       - if: always()
         uses: actions/upload-artifact@v4
         with:
