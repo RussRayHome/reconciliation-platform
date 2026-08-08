@@ -22,7 +22,7 @@ export default defineConfig([
       'vitest.config.ts',
       'apps/web/vite.config.ts',
       'scripts/**/*.ts',
-      'packages/infra/**',
+      'infra/**',
     ],
   },
   js.configs.recommended,
