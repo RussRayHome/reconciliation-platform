@@ -1,0 +1,59 @@
+name: Build Images
+
+# One-off, manually-triggered build: packages the API and web runtime images the same way
+# docker:dev would, so they can be pulled down and used to redeploy the local dev stack without
+# rebuilding from source there. Deliberately workflow_dispatch-only, not wired to push -- this is
+# not a standing CI/CD pipeline, just a way to get a GitHub-built image onto a developer machine
+# on demand. Uploads as build artifacts rather than pushing to a registry (GHCR would need
+# packages:write/read scopes this environment doesn't have configured).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
+
+      - name: Build API image
+        run: |
+          set -euo pipefail
+          docker build --target runtime -f apps/api/Dockerfile -t reconciliation-platform-dev-api:${{ github.sha }} .
+
+      - name: Build web image
+        run: |
+          set -euo pipefail
+          docker build --build-arg VITE_ENVIRONMENT_PATH_SEGMENT=dev -f apps/web/Dockerfile -t reconciliation-platform-dev-web:${{ github.sha }} .
+
+      - name: Save images to tarballs
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/images
+          docker save reconciliation-platform-dev-api:${{ github.sha }} -o /tmp/images/api.tar
+          docker save reconciliation-platform-dev-web:${{ github.sha }} -o /tmp/images/web.tar
+
+      - name: Upload API image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-image
+          path: /tmp/images/api.tar
+          retention-days: 1
+
+      - name: Upload web image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-image
+          path: /tmp/images/web.tar
+          retention-days: 1
