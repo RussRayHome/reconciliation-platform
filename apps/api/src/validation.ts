@@ -316,20 +316,22 @@ export const createAliasBodySchema = z.object({
   normalizedTokens: optionalNormalizedTokens,
   accountIdentifier: z.string().optional().catch(undefined),
   sourceDirection: z.enum(['bidirectional', 'bank_to_gl']).catch('bank_to_gl'),
-  matchConfidence: z.number().min(0).max(1).catch(1),
+  // `.optional().default(1)` (not `.catch(1)`): an omitted value still defaults sensibly, but a
+  // present-and-invalid one now rejects with 400 instead of silently becoming maximum confidence
+  // (ISSUE-011).
+  matchConfidence: z.number().min(0).max(1).optional().default(1),
 });
 
 const mappingProfilePairSchema = z.object({
   col: requiredTrimmedString('col is required.'),
   db: z.enum(businessFields),
-  transform: z.enum(transformKinds).optional().catch(undefined),
+  transform: z.enum(transformKinds).optional(),
 });
 
 export const saveMappingProfileBodySchema = z.object({
   name: requiredTrimmedString('name is required.'),
   gl: z.array(mappingProfilePairSchema),
   bank: z.array(mappingProfilePairSchema),
-  createdBy: requiredTrimmedString('createdBy is required.'),
 });
 
 /**

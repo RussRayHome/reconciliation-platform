@@ -48,6 +48,15 @@ const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Strips a single trailing slash (preserving `/` itself) so `/api/health/` matches the same
+ * `PUBLIC_ROUTES` entry as `/api/health` -- Express serves both with strict routing disabled by
+ * default, but only the exact string was ever checked here (ISSUE-013). Left unfixed, a liveness
+ * probe or load balancer configured with a trailing slash 401s and restart-loops the container.
+ */
+const stripTrailingSlash = (path: string): string =>
+  path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+
+/**
  * Verifies the bearer token on every non-public request and attaches `request.auth`. Does not
  * enforce role; see `requireApplicationAccess` for that.
  */
@@ -56,7 +65,7 @@ export const createAuthMiddleware = (
   getDenylistClient: () => DenylistRedisClient | null,
 ): RequestHandler => {
   return (request: Request, response: Response, next: NextFunction): void => {
-    if (PUBLIC_ROUTES.has(request.path)) {
+    if (PUBLIC_ROUTES.has(stripTrailingSlash(request.path))) {
       next();
       return;
     }

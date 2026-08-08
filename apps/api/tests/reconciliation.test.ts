@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { PostgresReconciliationReadModelStore } from '@recon/persistence';
 
 import ExcelJS from 'exceljs';
-import { FileBackedRunRepository } from '../src/services/runRepository';
+import { FileBackedRunRepository, InMemoryRunRepository } from '../src/services/runRepository';
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
 import request from 'supertest';
@@ -836,6 +836,150 @@ describe('reconciliation API', () => {
       .get(`/api/reconciliation/${unknownId}/exceptions?limit=5&offset=0`)
       .expect(404);
     await authedApp(app).get(`/api/reconciliation/${unknownId}/export/workbook`).expect(404);
+  });
+
+  // ISSUE-001: the workbook export route used to call repository.findById() directly, never
+  // consulting request.auth -- any authenticated user from any tenant could download another
+  // tenant's output workbook given the run id. It now resolves through the same tenant-scoped
+  // path (loadRunReport / readModelStore) as the sibling run routes, so a real ownership check
+  // gates the export the same way it already gates GET /api/reconciliation/:id.
+  it('serves the workbook to the owning tenant but 404s for a different tenant requesting the same run id', async () => {
+    const runId = 'tenant-scoped-run';
+    const ownerOrgId = 'org-a';
+    const fileName = 'tenant-scoped-run.xlsx';
+
+    const query = (text: string, params?: unknown[]): Promise<{ rows: unknown[] }> => {
+      if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.includes('set_config(')) {
+        return Promise.resolve({ rows: [{ set_config: params?.[1] }] });
+      }
+
+      // Mirrors what RLS does at the database layer: a real Postgres pool would silently filter
+      // every one of these rows out for any organization other than the one they belong to. The
+      // fake pool has no RLS of its own, so it has to emulate that filtering explicitly here.
+      const currentOrgId = query.currentOrgId;
+      const ownedByCurrentTenant = currentOrgId === ownerOrgId;
+
+      if (text.includes('FROM reconciliation_job') && text.includes('WHERE id = $1')) {
+        const [requestedId] = params as [string];
+        if (requestedId !== runId || !ownedByCurrentTenant) {
+          return Promise.resolve({ rows: [] });
+        }
+        return Promise.resolve({
+          rows: [
+            {
+              id: runId,
+              correlation_id: 'corr-1',
+              account_identifier: null,
+              period_label: null,
+              reconciliation_frequency: null,
+              current_state: 'Completed',
+              started_at: '2026-08-01T00:00:00.000Z',
+              completed_at: '2026-08-01T00:00:01.000Z',
+            },
+          ],
+        });
+      }
+      if (text.includes('FROM reconciliation_export') && text.includes("'workbook'")) {
+        if (!ownedByCurrentTenant) {
+          return Promise.resolve({ rows: [] });
+        }
+        return Promise.resolve({
+          rows: [{ file_name: fileName, generated_at: '2026-08-01T00:00:01.000Z', tab_names_json: [] }],
+        });
+      }
+      // Every other query loadFullReportWithClient issues (source files, matches, exceptions,
+      // summary, ...) is irrelevant to what this test is proving -- answer with nothing.
+      return Promise.resolve({ rows: [] });
+    };
+    // set_config's second param is the organization id being applied for this transaction --
+    // track it on the fn object so the branches above can read the "current" tenant.
+    query.currentOrgId = undefined as string | undefined;
+    const trackedQuery = (text: string, params?: unknown[]): Promise<{ rows: unknown[] }> => {
+      if (text.includes('set_config(')) {
+        query.currentOrgId = params?.[0] as string;
+      }
+      return query(text, params);
+    };
+
+    const pool = {
+      connect: () => Promise.resolve({ query: trackedQuery, release: () => undefined }),
+    } as unknown as ConstructorParameters<typeof PostgresReconciliationReadModelStore>[0];
+    const readModelStore = new PostgresReconciliationReadModelStore(pool);
+
+    // The read model only ever stores export *metadata* (see fetchOutputWorkbook) -- the actual
+    // binary lives in the in-memory repository, so it has to be seeded there directly for the
+    // owning-tenant case to reach a real 200. repository.findById() has no tenant awareness of
+    // its own (that gap is ISSUE-002, tracked separately); this test's 404 for org-b has to come
+    // entirely from the readModelStore check above, exactly as it would in production once RLS
+    // is what's doing the filtering instead of this fake.
+    const repository = new InMemoryRunRepository();
+    repository.save({
+      id: runId,
+      correlationId: 'corr-1',
+      status: 'Completed',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      completedAt: '2026-08-01T00:00:01.000Z',
+      sourceFiles: [],
+      rawRows: [],
+      normalizedTransactions: [],
+      matchResults: [],
+      groupedMatchResults: [],
+      probableMatches: [],
+      exceptions: [],
+      summary: {
+        totalRecordsReviewed: 0,
+        bankRecords: 0,
+        glRecords: 0,
+        exactMatches: 0,
+        probableMatches: 0,
+        unmatchedItems: 0,
+        duplicates: 0,
+        bankDuplicates: 0,
+        glDuplicates: 0,
+        dateVariances: 0,
+        timingDifferences: 0,
+        dataQualityIssues: 0,
+        amountMismatches: 0,
+        missingFromBank: 0,
+        missingFromGL: 0,
+        unmatchedBankNetAmount: 0,
+        unmatchedGlNetAmount: 0,
+        cleanMatchedAmount: 0,
+        unresolvedExposure: 0,
+        countsByCategory: {},
+        amountByCategory: {},
+        charts: [],
+      },
+      reviewerObservations: [],
+      reviewerDecisions: [],
+      auditEvents: [],
+      outputWorkbook: { fileName, generatedAt: '2026-08-01T00:00:01.000Z', tabNames: [], binary: new Uint8Array([1, 2, 3]) },
+    });
+
+    const app = createApp(repository, undefined, readModelStore);
+
+    const crossTenantResponse = await authedApp(app, { organizationId: 'org-b' }).get(
+      `/api/reconciliation/${runId}/export/workbook`,
+    );
+    expect(crossTenantResponse.status).toBe(404);
+    expect((crossTenantResponse.body as { message: string }).message).toBe(
+      'Workbook export is not available for this run.',
+    );
+
+    const ownerResponse = await authedApp(app, { organizationId: ownerOrgId })
+      .get(`/api/reconciliation/${runId}/export/workbook`)
+      .buffer(true)
+      .parse(
+        parseBinaryBody as (
+          response: unknown,
+          callback: (error: Error | null, body: unknown) => void,
+        ) => void,
+      );
+    expect(ownerResponse.status).toBe(200);
+    expect(ownerResponse.headers['content-disposition']).toContain(fileName);
   });
 
   it('returns 404 when posting a reviewer decision to an unknown run id', async () => {

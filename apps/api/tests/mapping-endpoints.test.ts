@@ -139,7 +139,7 @@ describe('POST /api/mapping/profiles', () => {
     const app = createApp();
     await authedApp(app)
       .post('/api/mapping/profiles')
-      .send({ name: 'Test', gl: [], bank: [], createdBy: 'rray' })
+      .send({ name: 'Test', gl: [], bank: [] })
       .expect(501);
   });
 
@@ -147,7 +147,7 @@ describe('POST /api/mapping/profiles', () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
     await authedApp(app)
       .post('/api/mapping/profiles')
-      .send({ name: '', gl: [], bank: [], createdBy: 'rray' })
+      .send({ name: '', gl: [], bank: [] })
       .expect(400);
   });
 
@@ -159,7 +159,18 @@ describe('POST /api/mapping/profiles', () => {
         name: 'Test',
         gl: [{ col: 'Account Code', db: 'not_a_real_field' }],
         bank: [],
-        createdBy: 'rray',
+      })
+      .expect(400);
+  });
+
+  it('rejects an unknown transform with 400 instead of silently dropping it (ISSUE-010)', async () => {
+    const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
+    await authedApp(app)
+      .post('/api/mapping/profiles')
+      .send({
+        name: 'Test',
+        gl: [{ col: 'Account Code', db: 'accountIdentifier', transform: 'not_a_real_transform' }],
+        bank: [],
       })
       .expect(400);
   });
@@ -172,7 +183,6 @@ describe('POST /api/mapping/profiles', () => {
         name: 'Monthly Bank + GL',
         gl: [{ col: 'Account Code', db: 'accountIdentifier', transform: 'trim' }],
         bank: [{ col: 'Description', db: 'description' }],
-        createdBy: 'rray',
       })
       .expect(201);
 
@@ -188,5 +198,21 @@ describe('POST /api/mapping/profiles', () => {
     expect(body.glVersion.columnMapping).toEqual({ 'Account Code': 'accountIdentifier' });
     expect(body.bankProfile.sourceType).toBe('bank');
     expect(body.bankVersion.columnMapping).toEqual({ Description: 'description' });
+  });
+
+  it('ignores a client-supplied createdBy and attributes the version to the authenticated user (ISSUE-008)', async () => {
+    const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
+    const response = await authedApp(app)
+      .post('/api/mapping/profiles')
+      .send({
+        name: 'Monthly Bank + GL',
+        gl: [{ col: 'Account Code', db: 'accountIdentifier' }],
+        bank: [],
+        createdBy: 'someone-else',
+      })
+      .expect(201);
+
+    const body = response.body as { glVersion: { createdBy: string } };
+    expect(body.glVersion.createdBy).toBe('test-user');
   });
 });

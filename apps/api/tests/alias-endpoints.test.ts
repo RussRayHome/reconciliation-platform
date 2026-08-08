@@ -259,20 +259,21 @@ describe('alias endpoints', () => {
       expect(response.status).toBe(400);
     });
 
-    // `sourceDirection` and `matchConfidence` use zod `.catch()`, so a bad value silently falls
-    // back to the default instead of returning 400. Pinning that here so the coercion is a
-    // deliberate contract rather than an accident nobody notices until a client sends garbage.
-    it('coerces an out-of-range matchConfidence to the default rather than rejecting it', async () => {
+    // ISSUE-011: an out-of-range matchConfidence used to silently fall back to 1.0 -- maximum
+    // confidence, the most dangerous possible default for a matching engine. It now rejects.
+    it('rejects an out-of-range matchConfidence with 400 instead of coercing it to 1.0', async () => {
       const response = await authedApp(appWithPool(pool)).post('/api/aliases').send({
         bankPattern: 'AMZN MKTP',
         canonicalPayeeName: 'Amazon',
         matchConfidence: 42,
       });
 
-      expect(response.status).toBe(201);
-      expect((response.body as { matchConfidence: number }).matchConfidence).toBe(1);
+      expect(response.status).toBe(400);
     });
 
+    // `sourceDirection` still uses zod `.catch()`, so a bad value silently falls back to the
+    // default instead of returning 400. Pinning that here so the coercion is a deliberate
+    // contract rather than an accident nobody notices until a client sends garbage.
     it('coerces an unknown sourceDirection to bank_to_gl rather than rejecting it', async () => {
       const response = await authedApp(appWithPool(pool)).post('/api/aliases').send({
         bankPattern: 'AMZN MKTP',
