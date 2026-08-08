@@ -116,6 +116,7 @@
     "security:scan:component:database": "node scripts/security-scan-database.mjs",
     "security:scan:component:container": "node scripts/security-scan-container-component.mjs",
     "security:scan:component:web-server": "node scripts/security-scan-web-server.mjs",
+    "security:scan:component:config": "node scripts/security-scan-config-component.mjs",
     "security:scan:components": "node scripts/security-component-scan.mjs",
     "security:scan:secrets": "node scripts/security-scan-secrets.mjs",
     "security:sbom": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-sbom.ts",

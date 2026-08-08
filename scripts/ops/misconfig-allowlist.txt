@@ -1,0 +1,19 @@
+# Infrastructure-as-code misconfiguration allowlist — security-component-scan (Configuration component).
+# Format: CHECK-ID|target_path|expires_on_utc_yyyy-mm-dd|reason
+# Notes:
+# - Target path is repo-relative and must match Trivy's reported target exactly, so an exception
+#   granted for one Dockerfile never silently covers another.
+# - Expired entries are ignored automatically, which forces a re-review rather than letting an
+#   exception outlive the reason for it.
+# - Only CRITICAL/HIGH findings block the scan; MEDIUM/LOW are reported as counts and do not need
+#   an entry here. Add one only to suppress a genuine false positive or an accepted risk — not to
+#   quiet a finding that should be fixed.
+# - Check IDs and their rationale: https://avd.aquasec.com/misconfig/<id-lowercased>
+
+# ── Postgres data image ─────────────────────────────────────────────────────
+# Verified 2026-08-08 against the running dev container: PID 1 is `postgres` (uid 999), not root.
+# The official postgres image ships no USER directive by design — docker-entrypoint.sh re-execs
+# via `exec gosu postgres` when started as root, which Trivy's static Dockerfile analysis cannot
+# see. Adding a USER line would break initdb on first boot, which must run as root to chown the
+# data directory. Re-verify with: docker exec <postgres-container> cat /proc/1/status
+DS-0002|Dockerfile.postgres|2027-02-08|Official postgres entrypoint drops to uid 999 via gosu; a static USER directive would break first-boot initdb
