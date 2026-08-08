@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Pool } from 'pg';
-import { createPostgresPool, runInTenantScope } from '../src/postgres';
+import { createPostgresPool, runInTenantScope, runInTenantScopeAsUser } from '../src/postgres';
 import { createDatabaseFromTemplate, postgresHarness } from './testHelpers/database';
 import type { TestDatabase } from './testHelpers/database';
 
@@ -167,5 +167,37 @@ describe('RLS tenant isolation (leak tests)', () => {
     const ids = rows.map((row) => row.id);
     expect(ids).toContain(aliasA.rows[0]!.id);
     expect(ids).not.toContain(aliasB.rows[0]!.id);
+  });
+
+  // ISSUE-050.2: proves app.current_user_name against a real connection, not just the SQL text
+  // sent (already covered at the unit level in ../src/postgres.test.ts) -- this is the same
+  // `runtimePool`/app_user role every other test in this file uses, so it also confirms the new
+  // GUC doesn't somehow interfere with the tenant one already proven above.
+  it('runInTenantScopeAsUser sets app.current_user_name for the transaction, on top of the tenant GUC', async () => {
+    if (startupError) throw startupError;
+
+    const settings = await runInTenantScopeAsUser(runtimePool, orgAId, 'rray', async (client) => {
+      const result = await client.query<{ org: string; user: string }>(
+        `SELECT current_setting('app.current_organization_id', true) AS org,
+                current_setting('app.current_user_name', true) AS user`,
+      );
+      return result.rows[0];
+    });
+
+    expect(settings?.org).toBe(orgAId);
+    expect(settings?.user).toBe('rray');
+  });
+
+  it('leaves app.current_user_name unset when using plain runInTenantScope', async () => {
+    if (startupError) throw startupError;
+
+    const userSetting = await runInTenantScope(runtimePool, orgAId, async (client) => {
+      const result = await client.query<{ user: string }>(
+        "SELECT current_setting('app.current_user_name', true) AS user",
+      );
+      return result.rows[0]?.user;
+    });
+
+    expect(userSetting).toBe('');
   });
 });

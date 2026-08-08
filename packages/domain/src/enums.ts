@@ -126,6 +126,11 @@ export const mappingProfileStatuses = ['ACTIVE', 'DEPRECATED'] as const;
 /** Union of valid mapping profile / version lifecycle statuses. */
 export type MappingProfileStatus = (typeof mappingProfileStatuses)[number];
 
+/** Authentication event kinds recorded in `reconciliation_login_event` (ISSUE-050.2). */
+export const loginEventTypes = ['LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT'] as const;
+/** Union of valid login-event kinds. */
+export type LoginEventType = (typeof loginEventTypes)[number];
+
 /**
  * Lifecycle status of a matching-config version (a named, published snapshot of
  * `MatchingConfig` variance overrides). At most one version per organization is `ACTIVE` and at

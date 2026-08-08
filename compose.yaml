@@ -29,6 +29,12 @@ x-api-environment: &api-environment
   RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379}
   RATE_LIMIT_REDIS_PREFIX: ${RATE_LIMIT_REDIS_PREFIX:-recon:rate-limit:}
   RECONCILIATION_RUN_STORE_PATH: ${RECONCILIATION_RUN_STORE_PATH:-/var/lib/reconciliation/latest-reconciliation-run.json}
+  # ISSUE-050.2: without this, structured logs (login/logout/mapping-profile audit events among
+  # them) only ever reach stdout -- captured by Docker's json-file driver for a while, but
+  # rotated (max-size/max-file above) and gone entirely if the container is ever removed rather
+  # than just restarted. recon-app-state is the same durable named volume
+  # RECONCILIATION_RUN_STORE_PATH already relies on, so this survives exactly as long as that does.
+  LOG_FILE: ${LOG_FILE:-/var/lib/reconciliation/api.log}
 
 services:
   redis:

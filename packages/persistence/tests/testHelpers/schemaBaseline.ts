@@ -181,13 +181,16 @@ export const generateSchemaBaseline = async (pool: Pool): Promise<string> => {
     // to a new table without also enabling RLS on it fails this baseline diff immediately, rather
     // than shipping a silently unprotected tenant table.
     //
-    // reconciliation_user is the one deliberate exception (changeset 0032): /api/auth/login must
-    // look up a row by username before any tenant is known -- that lookup is how the tenant gets
-    // established in the first place, so it cannot itself be gated by a tenant GUC that doesn't
-    // exist yet. Same category as reconciliation_organization (already excluded, no
-    // organization_id column at all): both bootstrap tenant context rather than operate within it.
+    // reconciliation_user (changeset 0032) and reconciliation_login_event (changeset 0040) are
+    // the deliberate exceptions: /api/auth/login must look up a row by username, and a
+    // LOGIN_FAILURE for an unresolvable username must still be recorded, before any tenant is
+    // known -- both are how tenant context gets established or a failed attempt to establish it
+    // gets recorded, so neither can itself be gated by a tenant GUC that doesn't exist yet. Same
+    // category as reconciliation_organization (already excluded, no organization_id column at
+    // all): all three bootstrap tenant context rather than operate within it.
+    const rlsExemptTables = new Set(['reconciliation_user', 'reconciliation_login_event']);
     if (
-      table !== 'reconciliation_user' &&
+      !rlsExemptTables.has(table) &&
       tableColumns.some((column) => column.column_name === 'organization_id')
     ) {
       assertions.push(

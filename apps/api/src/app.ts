@@ -18,11 +18,14 @@ import {
   createPayeeAlias,
   deactivatePayeeAlias,
   findMappingProfile,
+  getMappingProfileDetail,
   listMappingProfiles,
   listMappingProfileVersions,
   listMatchingConfigVersions,
   loadPayeeAliases,
   publishMatchingConfigVersion,
+  recordLoginEvent,
+  retireMappingProfile,
   updatePayeeAlias,
   type CreatePayeeAliasInput,
   type ExceptionPageFilters,
@@ -1291,6 +1294,48 @@ export const createApp = (
     }
   });
 
+  // ISSUE-050.2: structured, action-tagged audit logging for every authentication event
+  // (matching the pattern the signup handler already uses, e.g. 'signup.entity_verification.failed'
+  // -- login previously logged nothing at all, success or failure). Also persists to the durable
+  // reconciliation_login_event table when a real database is configured -- local-fallback mode
+  // (no pool) can only log, not persist, since there's nowhere to write to.
+  const auditLoginEvent = async (
+    request: express.Request,
+    eventType: 'LOGIN_SUCCESS' | 'LOGIN_FAILURE' | 'LOGOUT',
+    username: string,
+    organizationId: string | null,
+    failureReason?: string,
+  ): Promise<void> => {
+    const ipAddress = request.ip;
+    httpLogger.info(
+      { action: `auth.${eventType.toLowerCase()}`, username, organizationId, ipAddress, failureReason },
+      `Authentication event: ${eventType}`,
+    );
+
+    if (!pool) {
+      return;
+    }
+
+    try {
+      await recordLoginEvent(pool, {
+        id: randomUUID(),
+        organizationId,
+        username,
+        eventType,
+        failureReason,
+        ipAddress,
+      });
+    } catch (error) {
+      // The audit trail failing to persist must never block the login/logout response itself --
+      // the structured log line above already recorded the event; this is a durability layer on
+      // top of it, not the only copy.
+      httpLogger.error(
+        { action: 'auth.login_event.persist_failed', username, err: error },
+        'Failed to persist login event to the database',
+      );
+    }
+  };
+
   app.post('/api/auth/login', async (request, response, next) => {
     try {
       const { username, password } = loginBodySchema.parse(request.body ?? {});
@@ -1302,6 +1347,7 @@ export const createApp = (
 
       if (!pool) {
         if (!localLoginFallbackEnabled) {
+          await auditLoginEvent(request, 'LOGIN_FAILURE', username, null, 'local_fallback_disabled');
           response.status(401).json({ message: invalidLoginMessage });
           return;
         }
@@ -1309,6 +1355,7 @@ export const createApp = (
         const localUser = authenticateWithLocalUsers(username, password);
 
         if (!localUser) {
+          await auditLoginEvent(request, 'LOGIN_FAILURE', username, null, 'invalid_local_credentials');
           response.status(401).json({ message: invalidLoginMessage });
           return;
         }
@@ -1322,6 +1369,12 @@ export const createApp = (
             lastName: localUser.lastName,
           },
           httpLogger,
+        );
+        await auditLoginEvent(
+          request,
+          'LOGIN_SUCCESS',
+          localUser.username,
+          LOCAL_LOGIN_FALLBACK_ORGANIZATION_ID,
         );
         response.json({
           token,
@@ -1359,6 +1412,11 @@ export const createApp = (
       const passwordMatches = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
 
       if (!user || !passwordMatches) {
+        // Distinguishable server-side (never surfaced to the client, which always gets the same
+        // generic message) so an auditor can tell "no such account" from "wrong password" without
+        // that distinction ever being usable for username enumeration over the wire.
+        const failureReason = user ? 'invalid_password' : 'unknown_username';
+        await auditLoginEvent(request, 'LOGIN_FAILURE', username, user?.organization_id ?? null, failureReason);
         response.status(401).json({ message: invalidLoginMessage });
         return;
       }
@@ -1373,6 +1431,8 @@ export const createApp = (
         },
         httpLogger,
       );
+
+      await auditLoginEvent(request, 'LOGIN_SUCCESS', user.user_name, user.organization_id);
 
       response.json({
         token,
@@ -1400,6 +1460,9 @@ export const createApp = (
           AUTH_TOKEN_TTL_SECONDS,
           httpLogger,
         );
+        // ISSUE-050.2: a successful logout previously produced zero log lines at all (only a
+        // denylistToken failure did). Matches the login handler's audit pattern above.
+        await auditLoginEvent(request, 'LOGOUT', request.auth.username, request.auth.organizationId);
       }
 
       response.status(204).end();
@@ -2184,6 +2247,88 @@ export const createApp = (
       next(error);
     }
   });
+
+  // ISSUE-050.1: the "read/access" stage of the mapping profile lifecycle audit trail -- until
+  // this route existed there was nothing to log an access event against (GET /api/mapping/profiles
+  // above only ever returned bare names for the rule grid's ASSIGNED TO chips, not a profile's
+  // actual detail or version history).
+  app.get('/api/mapping/profiles/:name', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const detail = await getMappingProfileDetail(
+        pool!,
+        request.auth!.organizationId,
+        request.params.name,
+        request.auth!.username,
+      );
+
+      if (!detail) {
+        response.status(404).json({ message: 'Mapping profile not found.' });
+        return;
+      }
+
+      httpLogger.info(
+        {
+          action: 'mapping_profile.read',
+          organizationId: request.auth!.organizationId,
+          actor: request.auth!.username,
+          profileName: request.params.name,
+          glVersionCount: detail.gl?.versions.length ?? 0,
+          bankVersionCount: detail.bank?.versions.length ?? 0,
+        },
+        'Mapping profile detail accessed',
+      );
+
+      response.json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ISSUE-050.1: the "retirement" stage -- status was dead schema (referenced only in TS row
+  // types, never written) before this. Retires both sides of the named profile together, since a
+  // profile is created and thought of as one named entity even though it's two rows internally.
+  app.post(
+    '/api/mapping/profiles/:name/retire',
+    requireFullyVerified,
+    async (request, response, next) => {
+      if (!requirePool(response)) return;
+      try {
+        // Combining a route param with a preceding middleware (requireFullyVerified) widens
+        // Express's inferred param type away from the path-literal-derived `string` -- the
+        // runtime value is always a plain string for a concrete `:name` segment regardless.
+        const profileName = request.params.name as string;
+        const retired = await retireMappingProfile(
+          pool!,
+          request.auth!.organizationId,
+          profileName,
+          request.auth!.username,
+        );
+
+        if (retired.length === 0) {
+          response
+            .status(404)
+            .json({ message: 'No active mapping profile with that name was found to retire.' });
+          return;
+        }
+
+        httpLogger.info(
+          {
+            action: 'mapping_profile.retired',
+            organizationId: request.auth!.organizationId,
+            actor: request.auth!.username,
+            profileName,
+            sidesRetired: retired.map((profile) => profile.sourceType),
+          },
+          'Mapping profile retired',
+        );
+
+        response.json(retired);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   app.get('/api/rules/catalog', (_request, response) => {
     response.json(RULES_CATALOG);

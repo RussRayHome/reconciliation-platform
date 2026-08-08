@@ -3,6 +3,7 @@ import type {
   ChartIdentifier,
   ErrorCategory,
   ImportApprovalStatus,
+  LoginEventType,
   MappingProfileStatus,
   MatchConfidence,
   MatchDisposition,
@@ -614,6 +615,34 @@ export interface MappingProfileVersion {
   transformationRules: unknown[];
   status: MappingProfileStatus;
   createdBy: string;
+  createdAt: string;
+}
+
+/** One side (`gl` or `bank`) of a named mapping profile, with its full immutable version
+ * history -- the response shape for `GET /api/mapping/profiles/:name` (ISSUE-050.1). */
+export interface MappingProfileSideDetail {
+  profile: MappingProfile;
+  versions: MappingProfileVersion[];
+}
+
+/** Full detail for a named mapping profile: both sides, each with their version history. Either
+ * side is `null` if that side was never saved (a profile need not have both). */
+export interface MappingProfileDetail {
+  name: string;
+  gl: MappingProfileSideDetail | null;
+  bank: MappingProfileSideDetail | null;
+}
+
+/** One row of the durable authentication audit trail. Stored in `reconciliation_login_event`
+ * (ISSUE-050.2); `organizationId` is null for a `LOGIN_FAILURE` against an unresolvable username
+ * -- the login attempt is what would have discovered the tenant, and never got that far. */
+export interface LoginEvent {
+  id: string;
+  organizationId: string | null;
+  username: string;
+  eventType: LoginEventType;
+  failureReason: string | null;
+  ipAddress: string | null;
   createdAt: string;
 }
 

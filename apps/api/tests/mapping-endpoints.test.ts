@@ -216,3 +216,145 @@ describe('POST /api/mapping/profiles', () => {
     expect(body.glVersion.createdBy).toBe('test-user');
   });
 });
+
+describe('GET /api/mapping/profiles/:name (ISSUE-050.1)', () => {
+  const PROFILE_ROW_GL = {
+    id: 'profile-gl-1',
+    organization_id: 'test-org',
+    name: 'Monthly Bank + GL',
+    source_type: 'gl',
+    status: 'ACTIVE',
+    created_at: '2026-08-01T00:00:00.000Z',
+  };
+  const PROFILE_ROW_BANK = { ...PROFILE_ROW_GL, id: 'profile-bank-1', source_type: 'bank' };
+  const VERSION_ROW = {
+    id: 'version-1',
+    profile_id: 'profile-gl-1',
+    version_number: 1,
+    column_mapping: { 'Account Code': 'accountIdentifier' },
+    transformation_rules: [],
+    status: 'ACTIVE',
+    created_by: 'rray',
+    created_at: '2026-08-01T00:00:00.000Z',
+  };
+
+  const createFakeDetailPool = (profileRows: Array<Record<string, unknown>>): Pool => {
+    const clientQuery = (text: string, params?: unknown[]) => {
+      if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      }
+      if (text.includes('set_config(')) {
+        return Promise.resolve({ rows: [{ set_config: params?.[1] }], rowCount: 1 });
+      }
+      if (text.includes('FROM reconciliation_mapping_profile') && text.includes('WHERE organization_id = $1 AND name = $2')) {
+        return Promise.resolve({ rows: profileRows });
+      }
+      if (text.includes('FROM reconciliation_mapping_profile_version')) {
+        return Promise.resolve({ rows: [VERSION_ROW] });
+      }
+      throw new Error(`createFakeDetailPool: unexpected query: ${text}`);
+    };
+
+    return {
+      connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
+    } as unknown as Pool;
+  };
+
+  it('returns both sides with version histories when both were saved', async () => {
+    const app = createApp(
+      undefined,
+      undefined,
+      undefined,
+      createFakeDetailPool([PROFILE_ROW_GL, PROFILE_ROW_BANK]),
+    );
+
+    const response = await authedApp(app)
+      .get('/api/mapping/profiles/Monthly%20Bank%20%2B%20GL')
+      .expect(200);
+
+    const body = response.body as {
+      name: string;
+      gl: { profile: { id: string }; versions: unknown[] } | null;
+      bank: { profile: { id: string }; versions: unknown[] } | null;
+    };
+    expect(body.name).toBe('Monthly Bank + GL');
+    expect(body.gl?.profile.id).toBe('profile-gl-1');
+    expect(body.gl?.versions).toHaveLength(1);
+    expect(body.bank?.profile.id).toBe('profile-bank-1');
+  });
+
+  it('returns 404 for a name that does not exist', async () => {
+    const app = createApp(undefined, undefined, undefined, createFakeDetailPool([]));
+    await authedApp(app).get('/api/mapping/profiles/Nonexistent').expect(404);
+  });
+});
+
+describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
+  const createFakeRetirePool = (updatedRows: Array<Record<string, unknown>>): Pool => {
+    const query = (text: string) => {
+      if (text.includes('identity_verification_status') && text.includes('entity_verification_status')) {
+        return Promise.resolve({
+          rows: [{ identity_verification_status: 'verified', entity_verification_status: 'verified' }],
+        });
+      }
+      throw new Error(`createFakeRetirePool: unexpected pool.query: ${text}`);
+    };
+
+    const clientQuery = (text: string, params?: unknown[]) => {
+      if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      }
+      if (text.includes('set_config(')) {
+        return Promise.resolve({ rows: [{ set_config: params?.[1] }], rowCount: 1 });
+      }
+      if (text.includes('UPDATE reconciliation_mapping_profile')) {
+        return Promise.resolve({ rows: updatedRows });
+      }
+      throw new Error(`createFakeRetirePool: unexpected client.query: ${text}`);
+    };
+
+    return {
+      query,
+      connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
+    } as unknown as Pool;
+  };
+
+  it('retires both sides and returns the updated rows', async () => {
+    const app = createApp(
+      undefined,
+      undefined,
+      undefined,
+      createFakeRetirePool([
+        {
+          id: 'profile-gl-1',
+          organization_id: 'test-org',
+          name: 'Monthly Bank + GL',
+          source_type: 'gl',
+          status: 'DEPRECATED',
+          created_at: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          id: 'profile-bank-1',
+          organization_id: 'test-org',
+          name: 'Monthly Bank + GL',
+          source_type: 'bank',
+          status: 'DEPRECATED',
+          created_at: '2026-08-01T00:00:00.000Z',
+        },
+      ]),
+    );
+
+    const response = await authedApp(app)
+      .post('/api/mapping/profiles/Monthly%20Bank%20%2B%20GL/retire')
+      .expect(200);
+
+    const body = response.body as Array<{ status: string; sourceType: string }>;
+    expect(body).toHaveLength(2);
+    expect(body.every((row) => row.status === 'DEPRECATED')).toBe(true);
+  });
+
+  it('returns 404 when nothing ACTIVE matched the name', async () => {
+    const app = createApp(undefined, undefined, undefined, createFakeRetirePool([]));
+    await authedApp(app).post('/api/mapping/profiles/Nonexistent/retire').expect(404);
+  });
+});
