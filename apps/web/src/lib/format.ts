@@ -39,3 +39,34 @@ export const formatCurrencyWhole = (value: number | null | undefined): string =>
 
 /** Formats an optional ISO/date string for display, falling back to "N/A". */
 export const formatDate = (value: string | null | undefined): string => value?.trim() || 'N/A';
+
+const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
+
+/** Formats an ISO timestamp as "4 Aug 2026", falling back to "—" for null/invalid input. */
+export const formatShortDate = (value: string | null | undefined): string => {
+  if (!value) {
+    return '—';
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? '—' : shortDateFormatter.format(parsed);
+};
+
+const compactDateFormatter = new Intl.DateTimeFormat('en-US', {
+  day: '2-digit',
+  month: 'short',
+});
+
+/** Formats an ISO timestamp as "04 Aug" (no year), for narrow table columns. Falls back to "—". */
+export const formatCompactDate = (value: string | null | undefined): string => {
+  if (!value) {
+    return '—';
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? '—' : compactDateFormatter.format(parsed);
+};

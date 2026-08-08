@@ -9,6 +9,8 @@ import type {
   ImportApprovalStatus,
   MappingProfile,
   MappingProfileVersion,
+  MatchingConfig,
+  MatchingConfigVersion,
   MatchResult,
   OutputWorkbookManifest,
   PayeeAlias,
@@ -1021,6 +1023,166 @@ export const createMappingProfile = async (
       throw new Error('createMappingProfile: INSERT returned no row');
     }
     return mapMappingProfile(row);
+  });
+};
+
+/**
+ * Distinct ACTIVE mapping profile names for an organization. Saving one named profile creates
+ * two rows (one per `source_type`, see `createMappingProfile`) -- `DISTINCT name` collapses that
+ * gl/bank pairing back into the single named entity a user thinks of as "the profile."
+ */
+export const listMappingProfiles = async (
+  pool: Pool,
+  organizationId: string,
+): Promise<string[]> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<{ name: string }>(
+      `SELECT DISTINCT name
+         FROM reconciliation_mapping_profile
+        WHERE organization_id = $1 AND status = 'ACTIVE'
+        ORDER BY name`,
+      [organizationId],
+    );
+    return result.rows.map((row) => row.name);
+  });
+};
+
+type MatchingConfigVersionRow = {
+  id: string;
+  organization_id: string;
+  version_number: number;
+  status: MatchingConfigVersion['status'];
+  variance_overrides: Partial<Record<keyof MatchingConfig, number>>;
+  created_by: string;
+  created_at: string;
+  published_by: string | null;
+  published_at: string | null;
+  effective_at: string | null;
+  pending_approval_owner: string | null;
+};
+
+const MATCHING_CONFIG_VERSION_COLUMNS =
+  'id, organization_id, version_number, status, variance_overrides, created_by, created_at, ' +
+  'published_by, published_at, effective_at, pending_approval_owner';
+
+const mapMatchingConfigVersion = (row: MatchingConfigVersionRow): MatchingConfigVersion => ({
+  id: row.id,
+  organizationId: row.organization_id,
+  versionNumber: row.version_number,
+  status: row.status,
+  varianceOverrides: row.variance_overrides,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+  publishedBy: row.published_by,
+  publishedAt: row.published_at,
+  effectiveAt: row.effective_at,
+  pendingApprovalOwner: row.pending_approval_owner,
+});
+
+/** Input fields accepted when drafting a new matching-config version. */
+export interface CreateMatchingConfigVersionDraftInput {
+  id: string;
+  organizationId: string;
+  varianceOverrides: Partial<Record<keyof MatchingConfig, number>>;
+  createdBy: string;
+  pendingApprovalOwner?: string | null;
+}
+
+/**
+ * Inserts a new DRAFT matching-config version, one past the organization's highest existing
+ * version number (draft or otherwise). The partial unique index
+ * `reconciliation_matching_config_version_one_draft_idx` rejects a second concurrent draft for
+ * the same organization -- callers should catch a unique-violation (Postgres error code 23505)
+ * and surface it as "a draft is already pending" rather than a generic 500.
+ */
+export const createMatchingConfigVersionDraft = async (
+  pool: Pool,
+  input: CreateMatchingConfigVersionDraftInput,
+): Promise<MatchingConfigVersion> => {
+  return runInTenantScope(pool, input.organizationId, async (client) => {
+    const result = await client.query<MatchingConfigVersionRow>(
+      `INSERT INTO reconciliation_matching_config_version
+         (id, organization_id, version_number, variance_overrides, created_by, pending_approval_owner)
+       SELECT $1, $2, COALESCE(MAX(version_number), 0) + 1, $3::jsonb, $4, $5
+         FROM reconciliation_matching_config_version
+        WHERE organization_id = $2
+       RETURNING ${MATCHING_CONFIG_VERSION_COLUMNS}`,
+      [
+        input.id,
+        input.organizationId,
+        JSON.stringify(input.varianceOverrides),
+        input.createdBy,
+        input.pendingApprovalOwner ?? null,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('createMatchingConfigVersionDraft: INSERT returned no row');
+    }
+    return mapMatchingConfigVersion(row);
+  });
+};
+
+/**
+ * Publishes a DRAFT matching-config version: moves it to ACTIVE (stamping publishedBy/
+ * publishedAt/effectiveAt) and, in the same transaction, moves the organization's previous
+ * ACTIVE version (if any) to SUPERSEDED. Throws if `versionId` does not identify a DRAFT version
+ * belonging to `organizationId`.
+ */
+export const publishMatchingConfigVersion = async (
+  pool: Pool,
+  organizationId: string,
+  versionId: string,
+  input: { publishedBy: string; effectiveAt?: string },
+): Promise<MatchingConfigVersion> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    // Supersede the current ACTIVE row *before* activating the draft -- the reverse order (as
+    // this originally shipped) briefly asserts a second ACTIVE row for the organization while
+    // both UPDATEs are pending, which reconciliation_matching_config_version_one_active_idx
+    // (a partial unique index, checked immediately, not deferred) correctly rejects. If
+    // versionId turns out not to be a real DRAFT, the "no matching DRAFT" throw below rolls this
+    // supersede back too, via runInTenantScope's catch -- so it's never left half-applied.
+    await client.query(
+      `UPDATE reconciliation_matching_config_version
+          SET status = 'SUPERSEDED'
+        WHERE organization_id = $1 AND status = 'ACTIVE' AND id <> $2`,
+      [organizationId, versionId],
+    );
+
+    const activated = await client.query<MatchingConfigVersionRow>(
+      `UPDATE reconciliation_matching_config_version
+          SET status = 'ACTIVE',
+              published_by = $3,
+              published_at = NOW(),
+              effective_at = COALESCE($4::timestamptz, NOW()),
+              pending_approval_owner = NULL
+        WHERE id = $1 AND organization_id = $2 AND status = 'DRAFT'
+        RETURNING ${MATCHING_CONFIG_VERSION_COLUMNS}`,
+      [versionId, organizationId, input.publishedBy, input.effectiveAt ?? null],
+    );
+    const row = activated.rows[0];
+    if (!row) {
+      throw new Error('publishMatchingConfigVersion: no matching DRAFT version to publish');
+    }
+
+    return mapMatchingConfigVersion(row);
+  });
+};
+
+/** Every matching-config version for an organization, newest first — includes ACTIVE, the DRAFT if one exists, and all SUPERSEDED history. */
+export const listMatchingConfigVersions = async (
+  pool: Pool,
+  organizationId: string,
+): Promise<MatchingConfigVersion[]> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<MatchingConfigVersionRow>(
+      `SELECT ${MATCHING_CONFIG_VERSION_COLUMNS}
+         FROM reconciliation_matching_config_version
+        WHERE organization_id = $1
+        ORDER BY version_number DESC`,
+      [organizationId],
+    );
+    return result.rows.map(mapMatchingConfigVersion);
   });
 };
 

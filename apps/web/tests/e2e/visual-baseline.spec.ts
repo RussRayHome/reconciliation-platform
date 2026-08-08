@@ -143,7 +143,7 @@ for (const width of widths) {
 
       await page.locator('.run-bar__overflow-trigger').click();
       await page.getByRole('button', { name: 'Rules', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Rules Catalog' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Matching Rules' })).toBeVisible();
       await expect(page).toHaveScreenshot(`rules-panel-${width}.png`, screenshotOptions);
 
       await runReconciliation(page);

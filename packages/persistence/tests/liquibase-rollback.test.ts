@@ -40,26 +40,14 @@ describe('Liquibase rollback', () => {
     return result.rows[0]?.exists === true;
   };
 
-  // has_table_privilege rather than a constraint-text check: 0038 (the most recent changeset as
-  // of this test) only grants/revokes on dashboard_secret_scan_run, and schema-baseline.sql's
-  // pgTap assertions don't cover GRANTs at all -- so unlike 0033's CHECK-constraint rollback
-  // (which genuinely changed the baseline text), this rollback is invisible to
-  // generateSchemaBaseline and has to be observed by asking Postgres directly.
-  const dashboardAppRuntimeCanReadScanHistory = async (pool: Pool): Promise<boolean> => {
-    const result = await pool.query<{ has_privilege: boolean }>(
-      "SELECT has_table_privilege('dashboard_app_runtime', 'dashboard_secret_scan_run', 'SELECT') AS has_privilege",
-    );
-    return result.rows[0]?.has_privilege === true;
-  };
-
   describe('rolling back the most recent changeset', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackSchema: string;
     let reappliedSchema: string;
-    let migratedCanRead: boolean;
-    let rolledBackCanRead: boolean;
-    let reappliedCanRead: boolean;
+    let migratedTableExists: boolean;
+    let rolledBackTableExists: boolean;
+    let reappliedTableExists: boolean;
 
     beforeAll(async () => {
       database = await createEmptyDatabase('recon_rollback_one');
@@ -67,15 +55,24 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
-      migratedCanRead = await dashboardAppRuntimeCanReadScanHistory(database.pool);
+      migratedTableExists = await tableExists(
+        database.pool,
+        'reconciliation_matching_config_version',
+      );
 
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
-      rolledBackCanRead = await dashboardAppRuntimeCanReadScanHistory(database.pool);
+      rolledBackTableExists = await tableExists(
+        database.pool,
+        'reconciliation_matching_config_version',
+      );
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
-      reappliedCanRead = await dashboardAppRuntimeCanReadScanHistory(database.pool);
+      reappliedTableExists = await tableExists(
+        database.pool,
+        'reconciliation_matching_config_version',
+      );
     }, 180000);
 
     afterAll(async () => {
@@ -92,20 +89,23 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0038 by revoking dashboard_app_runtime\'s grant on dashboard_secret_scan_run', () => {
-      // When a future changeset lands on top of 0038, update this test to describe that
-      // changeset instead -- it is intentionally pinned to "whatever is currently the most
-      // recent changeset", not to 0038 forever (see 0033's git history for the last time this
-      // moved).
-      expect(migratedCanRead).toBe(true);
-      expect(rolledBackCanRead).toBe(false);
-      expect(reappliedCanRead).toBe(true);
-      // Confirms the claim above: a grant-only rollback really is invisible to the baseline text.
-      expect(rolledBackSchema).toEqual(migratedSchema);
+    it('reverses changeset 0039 by dropping the reconciliation_matching_config_version table', () => {
+      // 0039 (the most recent changeset as of this test) creates
+      // reconciliation_matching_config_version from scratch; its rollback drops it (CASCADE,
+      // though nothing yet references it). Table creation/removal shows up directly in
+      // schema-baseline.sql's table listing, so migratedSchema/rolledBackSchema genuinely differ
+      // here, unlike 0038's grant-only rollback. When a future changeset lands on top of 0039,
+      // update this test to describe that changeset instead -- it is intentionally pinned to
+      // "whatever is currently the most recent changeset", not to 0039 forever (see 0033's git
+      // history for the last time this moved).
+      expect(migratedTableExists).toBe(true);
+      expect(rolledBackTableExists).toBe(false);
+      expect(reappliedTableExists).toBe(true);
+      expect(rolledBackSchema).not.toEqual(migratedSchema);
     });
   });
 
-  describe('rolling back thirteen changesets (0038 down through 0026 schema-changing)', () => {
+  describe('rolling back fourteen changesets (0039 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -117,16 +117,17 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now thirteen changesets back from HEAD (0038): 0027 (verify-only), 0028 (adds
+      // 0026 is now fourteen changesets back from HEAD (0039): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
       // its own reconciliation_user/reconciliation_organization columns -- rolled back along with
       // everything else in this range, which is correct and untested by the assertions below
       // since they only look at password/password_hash/role), 0035-0037 (new tables, no
-      // reconciliation_user changes), and 0038 (grants only) all sit on top of it without
-      // reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=13');
+      // reconciliation_user changes), 0038 (grants only), and 0039 (new table, no
+      // reconciliation_user changes) all sit on top of it without reversing anything this test
+      // cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=14');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

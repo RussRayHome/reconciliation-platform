@@ -28,6 +28,9 @@ import {
   type IdentityVerificationStatus,
   type ReviewerDecision,
   type RolePermissions,
+  type RuleCatalogResponse,
+  type RuleFamily,
+  type RuleVersionsResponse,
   type UserRole,
 } from '@recon/domain';
 
@@ -49,18 +52,19 @@ import { RunBar } from './components/RunBar';
 import { NavRail } from './components/NavRail';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import {
+  createRuleVersionDraftRequest,
   getLatestReconciliationRunRequest,
+  getMappingProfilesRequest,
+  getRuleVersionsRequest,
+  getRulesCatalogRequest,
   loginRequest,
   logoutRequest,
   meRequest,
+  publishRuleVersionRequest,
 } from './lib/api';
 import { clearAuthToken, getAuthToken } from './lib/authToken';
-import {
-  rulesCatalog,
-  rulesCatalogLastRefresh,
-  varianceMetricCatalog,
-  type AppTab,
-} from './lib/appCatalog';
+import { countFixedRules, countRulesByFamily } from './lib/ruleFilters';
+import type { AppTab } from './lib/appCatalog';
 import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
@@ -614,7 +618,6 @@ function ReconciliationApp({
   const [hasExportedJson, setHasExportedJson] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const [isRulesPanelOpen, setIsRulesPanelOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [pendingSavedViewId, setPendingSavedViewId] = useState<string | null>(null);
   const [persistedRun, setPersistedRun] = useState<RunData | undefined>(() => loadPersistedRun());
@@ -627,6 +630,11 @@ function ReconciliationApp({
   const [varianceOverridesUpdatedAt, setVarianceOverridesUpdatedAt] = useState<string | null>(() =>
     loadSliderDefaultsUpdatedAt(),
   );
+  const [ruleVersions, setRuleVersions] = useState<RuleVersionsResponse | null>(null);
+  const [ruleVersionActionError, setRuleVersionActionError] = useState<string | null>(null);
+  const [rulesCatalogData, setRulesCatalogData] = useState<RuleCatalogResponse | null>(null);
+  const [rulesCatalogError, setRulesCatalogError] = useState<string | null>(null);
+  const [mappingProfileNames, setMappingProfileNames] = useState<string[]>([]);
   const [periodLabel, setPeriodLabel] = useState(
     buildDefaultPeriodLabel('Monthly', defaultMonth, annualYear, currentYear),
   );
@@ -657,6 +665,79 @@ function ReconciliationApp({
   useEffect(() => {
     persistSliderDefaultOverrides(varianceDefaultOverrides);
   }, [varianceDefaultOverrides]);
+
+  const isOnRulesRoute = location.pathname === routePaths.mappingRules;
+
+  useEffect(() => {
+    if (!isOnRulesRoute) {
+      return;
+    }
+
+    let cancelled = false;
+    setRuleVersionActionError(null);
+    void getRuleVersionsRequest()
+      .then((data) => {
+        if (!cancelled) {
+          setRuleVersions(data);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setRuleVersionActionError(
+            error instanceof Error ? error.message : 'Unable to load matching-rule versions.',
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnRulesRoute]);
+
+  useEffect(() => {
+    if (!isOnRulesRoute) {
+      return;
+    }
+
+    let cancelled = false;
+    void getMappingProfilesRequest()
+      .then((names) => {
+        if (!cancelled) {
+          setMappingProfileNames(names);
+        }
+      })
+      .catch(() => {
+        // Non-fatal: the rule grid's ASSIGNED TO column just shows "No profiles yet" instead.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnRulesRoute]);
+
+  useEffect(() => {
+    // Fetched once at mount, not gated by route: NavRail needs the family/fixed counts for its
+    // Matching Rules sub-items on every page, not just while /mapping/rules is open.
+    let cancelled = false;
+    setRulesCatalogError(null);
+    void getRulesCatalogRequest()
+      .then((data) => {
+        if (!cancelled) {
+          setRulesCatalogData(data);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setRulesCatalogError(
+            error instanceof Error ? error.message : 'Unable to load the rule catalog.',
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (run) {
@@ -773,12 +854,64 @@ function ReconciliationApp({
     void navigate(routePaths.exceptions);
   };
 
-  const openRulesPanel = (): void => {
-    setIsRulesPanelOpen(true);
+  // Creates a new DRAFT matching-config version from the locally-staged slider overrides.
+  // Deliberately does not touch varianceDefaultOverrides/localStorage -- the draft becomes the
+  // record of "what's proposed," independent of this browser's local scratch state. Publishing
+  // the draft (a separate, not-yet-built step) is what would make it ACTIVE.
+  const handleEditAsDraft = (): void => {
+    if (!rolePermissions.canAdjustSliderDefaults) {
+      return;
+    }
+
+    setRuleVersionActionError(null);
+    void createRuleVersionDraftRequest(varianceDefaultOverrides)
+      .then((draft) => {
+        setRuleVersions((current) =>
+          current ? { ...current, draft, history: [draft, ...current.history] } : current,
+        );
+      })
+      .catch((error: unknown) => {
+        setRuleVersionActionError(
+          error instanceof Error ? error.message : 'Unable to create a draft version.',
+        );
+      });
   };
 
-  const closeRulesPanel = (): void => {
-    setIsRulesPanelOpen(false);
+  const handlePublishDraft = (): void => {
+    if (!rolePermissions.canAdjustSliderDefaults || !ruleVersions?.draft) {
+      return;
+    }
+
+    const draftId = ruleVersions.draft.id;
+    setRuleVersionActionError(null);
+    void publishRuleVersionRequest(draftId)
+      .then((activated) => {
+        setRuleVersions((current) => {
+          if (!current) {
+            return current;
+          }
+          const supersededPrevious = current.active
+            ? [{ ...current.active, status: 'SUPERSEDED' as const }]
+            : [];
+          return {
+            ...current,
+            active: activated,
+            draft: null,
+            history: [
+              activated,
+              ...supersededPrevious,
+              ...current.history.filter(
+                (version) => version.id !== activated.id && version.id !== current.active?.id,
+              ),
+            ],
+          };
+        });
+      })
+      .catch((error: unknown) => {
+        setRuleVersionActionError(
+          error instanceof Error ? error.message : 'Unable to publish the draft version.',
+        );
+      });
   };
 
   const handleChangeVarianceDefault = (metricId: string, value: number): void => {
@@ -927,6 +1060,18 @@ function ReconciliationApp({
   const runBarFrequency = reportRun?.reconciliationFrequency ?? reconciliationFrequency;
   const appliedVarianceOverrides = reportRun?.appliedVarianceOverrides;
   const rulesUsedCount = reportRun ? Object.keys(appliedVarianceOverrides ?? {}).length : null;
+  const matchingRuleFamilyCounts = useMemo(
+    () =>
+      rulesCatalogData
+        ? (Object.entries(countRulesByFamily(rulesCatalogData.rules)) as Array<[RuleFamily, number]>).map(
+            ([family, count]) => ({ family, count }),
+          )
+        : undefined,
+    [rulesCatalogData],
+  );
+  const matchingRuleFixedCount = rulesCatalogData
+    ? countFixedRules(rulesCatalogData.rules)
+    : undefined;
   const reviewProgressLabel = reportRun
     ? `${reviewerDecisions.resolvedCount} of ${reportRun.exceptions.length} resolved · ${reviewerDecisions.researchCount} in research`
     : null;
@@ -938,7 +1083,7 @@ function ReconciliationApp({
   const thresholdSetTimestamp =
     varianceOverrideCount > 0
       ? (varianceOverridesUpdatedAt?.slice(0, 10) ?? 'This session')
-      : rulesCatalogLastRefresh;
+      : 'Not yet customized';
 
   useEffect(() => {
     if (!reportRun) {
@@ -1017,6 +1162,9 @@ function ReconciliationApp({
         onSignOut={onSignOut}
         isMobileOpen={isMobileNavOpen}
         onMobileClose={() => setIsMobileNavOpen(false)}
+        matchingRuleTotalCount={rulesCatalogData?.rules.length}
+        matchingRuleFamilyCounts={matchingRuleFamilyCounts}
+        matchingRuleFixedCount={matchingRuleFixedCount}
       />
       <main className="app-layout app-layout--rail">
         <RunBar
@@ -1033,7 +1181,7 @@ function ReconciliationApp({
           elapsedLabel={elapsedLabel}
           isComplete={Boolean(reportRun)}
           onOpenReview={() => navigate(routePaths.reconSummary)}
-          onOpenRules={openRulesPanel}
+          onOpenRules={() => navigate(routePaths.mappingRules)}
           rulesUsedCount={rulesUsedCount}
           reviewProgressLabel={reviewProgressLabel}
           progressSteps={progressSteps}
@@ -1044,22 +1192,7 @@ function ReconciliationApp({
           onChangeDensity={setDensity}
         />
 
-        {isRulesPanelOpen ? (
-          <RulesCatalogSection
-            rules={rulesCatalog}
-            metrics={varianceMetricCatalog}
-            varianceOverrides={varianceDefaultOverrides}
-            canAdjustVarianceDefaults={rolePermissions.canAdjustSliderDefaults}
-            onChangeVarianceDefault={handleChangeVarianceDefault}
-            onResetVarianceDefault={handleResetVarianceDefault}
-            onResetVarianceDefaults={handleResetVarianceDefaults}
-            run={reportRun}
-            thresholdSetLabel={thresholdSetLabel}
-            thresholdSetTimestamp={thresholdSetTimestamp}
-            onClose={closeRulesPanel}
-          />
-        ) : (
-          <section className="tabbed-workspace" aria-label="Reconciliation workspace">
+        <section className="tabbed-workspace" aria-label="Reconciliation workspace">
             <Routes>
               <Route
                 path={routePaths.importFiles}
@@ -1154,6 +1287,36 @@ function ReconciliationApp({
                 }
               />
               <Route
+                path={routePaths.mappingRules}
+                element={
+                  rulesCatalogError ? (
+                    <p role="alert">{rulesCatalogError}</p>
+                  ) : !rulesCatalogData ? (
+                    <p>Loading rule catalog…</p>
+                  ) : (
+                    <RulesCatalogSection
+                      rules={rulesCatalogData.rules}
+                      metrics={rulesCatalogData.metrics}
+                      varianceOverrides={varianceDefaultOverrides}
+                      canAdjustVarianceDefaults={rolePermissions.canAdjustSliderDefaults}
+                      onChangeVarianceDefault={handleChangeVarianceDefault}
+                      onResetVarianceDefault={handleResetVarianceDefault}
+                      onResetVarianceDefaults={handleResetVarianceDefaults}
+                      run={reportRun}
+                      thresholdSetLabel={thresholdSetLabel}
+                      thresholdSetTimestamp={thresholdSetTimestamp}
+                      viewingVersion={ruleVersions?.draft ?? ruleVersions?.active ?? null}
+                      overridesAppliedToEngine={ruleVersions?.overridesAppliedToEngine ?? false}
+                      onEditAsDraft={handleEditAsDraft}
+                      onPublishDraft={handlePublishDraft}
+                      versionActionError={ruleVersionActionError}
+                      activeVersion={ruleVersions?.active ?? null}
+                      mappingProfiles={mappingProfileNames}
+                    />
+                  )
+                }
+              />
+              <Route
                 path={routePaths.mappingHistory}
                 element={
                   <ComingSoonPage
@@ -1242,8 +1405,7 @@ function ReconciliationApp({
 
               <Route path="*" element={<Navigate to={routePaths.importFiles} replace />} />
             </Routes>
-          </section>
-        )}
+        </section>
 
         <footer className="page-footer">
           <p>

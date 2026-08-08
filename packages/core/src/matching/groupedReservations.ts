@@ -2,32 +2,34 @@ import type { MatchingConfig, NormalizedTransaction } from '@recon/domain';
 
 import { currencyEquals, dateDifferenceDays, tokenSimilarity } from './similarity';
 
+/**
+ * Every grouped (many-to-many) rule the reservation stage can select, as paired
+ * category/ruleId/ruleName triples. Single source of truth for `GroupedReservationCandidate`'s
+ * three identifier fields below and for `ruleCatalog.ts` — a new grouped rule added to a call
+ * site without a matching entry here fails typecheck.
+ */
+export const GROUPED_RULES = [
+  { category: 'DepositGroupingIssue', ruleId: 'grouped-deposit-reserved', ruleName: 'Grouped Deposit Candidate' },
+  { category: 'LikelySplitCombineIssue', ruleId: 'grouped-split-combine-reserved', ruleName: 'Grouped Split/Combine Candidate' },
+  { category: 'FeeNettingMatch', ruleId: 'fee-netting-reserved', ruleName: 'Fee Netting Candidate' },
+  { category: 'PartialPaymentMatch', ruleId: 'partial-payment-reserved', ruleName: 'Partial Payment Candidate' },
+  { category: 'PayrollBatchMatch', ruleId: 'payroll-batch-reserved', ruleName: 'Payroll Batch Candidate' },
+  { category: 'BankServiceChargeAmortization', ruleId: 'bank-service-charge-reserved', ruleName: 'Bank Service Charge Candidate' },
+  { category: 'LoanPaymentSplit', ruleId: 'loan-payment-split-reserved', ruleName: 'Loan Payment Split Candidate' },
+] as const;
+
+/** Union of every valid grouped-rule category; see `GROUPED_RULES`. */
+export type GroupedRuleCategory = (typeof GROUPED_RULES)[number]['category'];
+/** Union of every valid grouped-rule id; see `GROUPED_RULES`. */
+export type GroupedRuleId = (typeof GROUPED_RULES)[number]['ruleId'];
+/** Union of every valid grouped-rule display name; see `GROUPED_RULES`. */
+export type GroupedRuleName = (typeof GROUPED_RULES)[number]['ruleName'];
+
 /** A proposed many-to-many grouped match candidate with its constituent bank and GL transactions. */
 export interface GroupedReservationCandidate {
-  category:
-    | 'DepositGroupingIssue'
-    | 'LikelySplitCombineIssue'
-    | 'FeeNettingMatch'
-    | 'PartialPaymentMatch'
-    | 'PayrollBatchMatch'
-    | 'BankServiceChargeAmortization'
-    | 'LoanPaymentSplit';
-  ruleId:
-    | 'grouped-deposit-reserved'
-    | 'grouped-split-combine-reserved'
-    | 'fee-netting-reserved'
-    | 'partial-payment-reserved'
-    | 'payroll-batch-reserved'
-    | 'bank-service-charge-reserved'
-    | 'loan-payment-split-reserved';
-  ruleName:
-    | 'Grouped Deposit Candidate'
-    | 'Grouped Split/Combine Candidate'
-    | 'Fee Netting Candidate'
-    | 'Partial Payment Candidate'
-    | 'Payroll Batch Candidate'
-    | 'Bank Service Charge Candidate'
-    | 'Loan Payment Split Candidate';
+  category: GroupedRuleCategory;
+  ruleId: GroupedRuleId;
+  ruleName: GroupedRuleName;
   reason: string;
   evidence: string[];
   dateDifferenceDays: number | null;

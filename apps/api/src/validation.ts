@@ -332,6 +332,23 @@ export const saveMappingProfileBodySchema = z.object({
   createdBy: requiredTrimmedString('createdBy is required.'),
 });
 
+/**
+ * Shape-only: keys are checked against the real set of tunable `MatchingConfig` fields at the
+ * route handler in app.ts (via `RULES_CATALOG.metrics`), not here — this schema stays free of
+ * `@recon/core` so validation.ts keeps importing only `@recon/domain`.
+ */
+export const matchingConfigVersionDraftBodySchema = z.object({
+  varianceOverrides: z.record(z.string(), z.number()),
+  pendingApprovalOwner: z
+    .string()
+    .transform((value) => value.trim())
+    .optional(),
+});
+
+export const publishMatchingConfigVersionBodySchema = z.object({
+  effectiveAt: z.string().datetime().optional(),
+});
+
 export const updateAliasBodySchema = z.object({
   bankPattern: z
     .string()

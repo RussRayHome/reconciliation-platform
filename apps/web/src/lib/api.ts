@@ -5,10 +5,13 @@ import type {
   IdentityVerificationStatus,
   MappingProfileSavePayload,
   MappingProfileSaveResult,
+  MatchingConfigVersion,
   ReconciliationRunReport,
   ReviewerDecision,
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
+  RuleCatalogResponse,
+  RuleVersionsResponse,
   UserRole,
 } from '@recon/domain';
 import { clearAuthToken, getAuthToken, setAuthToken } from './authToken';
@@ -374,6 +377,48 @@ export const downloadWorkbookRequest = async (runId: string, fileName: string): 
 export const getCanonicalFieldsRequest = async (): Promise<CanonicalField[]> => {
   const response = await apiFetch('/api/mapping/canonical-fields');
   return parseResponse<CanonicalField[]>(response);
+};
+
+/** Fetches the organization's distinct saved mapping profile names. */
+export const getMappingProfilesRequest = async (): Promise<string[]> => {
+  const response = await apiFetch('/api/mapping/profiles');
+  return parseResponse<string[]>(response);
+};
+
+/** Fetches the organization's active/draft matching-config versions and publish history. */
+export const getRuleVersionsRequest = async (): Promise<RuleVersionsResponse> => {
+  const response = await apiFetch('/api/rules/versions');
+  return parseResponse<RuleVersionsResponse>(response);
+};
+
+/** Fetches every rule the matching engine and exception classifier can emit, with tunable metrics. */
+export const getRulesCatalogRequest = async (): Promise<RuleCatalogResponse> => {
+  const response = await apiFetch('/api/rules/catalog');
+  return parseResponse<RuleCatalogResponse>(response);
+};
+
+/** Drafts a new matching-config version from a proposed set of variance overrides. Admin-only. */
+export const createRuleVersionDraftRequest = async (
+  varianceOverrides: Record<string, number>,
+): Promise<MatchingConfigVersion> => {
+  const response = await apiFetch('/api/rules/versions/draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ varianceOverrides }),
+  });
+  return parseResponse<MatchingConfigVersion>(response);
+};
+
+/** Publishes a draft matching-config version, superseding the previous active version. Admin-only. */
+export const publishRuleVersionRequest = async (
+  versionId: string,
+): Promise<MatchingConfigVersion> => {
+  const response = await apiFetch(`/api/rules/versions/${encodeURIComponent(versionId)}/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  return parseResponse<MatchingConfigVersion>(response);
 };
 
 /** Saves (or adds a new version to) a paired GL + Bank mapping profile. */

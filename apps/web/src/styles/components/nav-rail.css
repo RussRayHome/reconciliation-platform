@@ -339,6 +339,10 @@
     font-size: 0.68rem;
   }
 
+  .nav-rail--collapsed .nav-rail__pill {
+    display: none;
+  }
+
   .nav-rail__footer {
     margin-top: auto;
     display: flex;

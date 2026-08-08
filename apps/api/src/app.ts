@@ -5,18 +5,24 @@ import type {
   ReviewerDecision,
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
+  RuleVersionsResponse,
   SeverityLevel,
   UserRole,
 } from '@recon/domain';
+import { rolePermissionsByRole } from '@recon/domain';
 import {
   computeSha256Hex,
   createMappingProfile,
   createMappingProfileVersion,
+  createMatchingConfigVersionDraft,
   createPayeeAlias,
   deactivatePayeeAlias,
   findMappingProfile,
+  listMappingProfiles,
   listMappingProfileVersions,
+  listMatchingConfigVersions,
   loadPayeeAliases,
+  publishMatchingConfigVersion,
   updatePayeeAlias,
   type CreatePayeeAliasInput,
   type ExceptionPageFilters,
@@ -29,6 +35,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { CANONICAL_FIELDS } from './services/canonicalFields';
+import {
+  OVERRIDES_APPLIED_TO_ENGINE,
+  RULES_CATALOG,
+  RULES_CATALOG_METRIC_IDS,
+} from './services/rulesCatalog';
 import {
   AUTH_TOKEN_TTL_SECONDS,
   DUMMY_PASSWORD_HASH,
@@ -66,6 +77,8 @@ import {
   identityConfirmBodySchema,
   isErrorCategory,
   loginBodySchema,
+  matchingConfigVersionDraftBodySchema,
+  publishMatchingConfigVersionBodySchema,
   reconciliationRunBodySchema,
   respondWithValidationError,
   reviewerDecisionBodySchema,
@@ -1131,9 +1144,12 @@ export const createApp = (
   // line requires a valid bearer token; a forgotten route 401s instead of silently staying open.
   app.use(createAuthMiddleware(httpLogger, () => apiRateLimiter.redisClient));
 
-  // ADR-0002 step 5: the reconciliation/aliases/mapping surface additionally requires
+  // ADR-0002 step 5: the reconciliation/aliases/mapping/rules surface additionally requires
   // canAccessApplication.
-  app.use(['/api/reconciliation', '/api/aliases', '/api/mapping'], requireApplicationAccess);
+  app.use(
+    ['/api/reconciliation', '/api/aliases', '/api/mapping', '/api/rules'],
+    requireApplicationAccess,
+  );
 
   // Mapping *creation* specifically additionally requires both verification gates -- see
   // createRequireFullyVerified. Instantiated once here (not per-request) and mounted inline on
@@ -2153,6 +2169,111 @@ export const createApp = (
 
   app.get('/api/mapping/canonical-fields', (_request, response) => {
     response.json(CANONICAL_FIELDS);
+  });
+
+  app.get('/api/mapping/profiles', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const names = await listMappingProfiles(pool!, request.auth!.organizationId);
+      response.json(names);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/rules/catalog', (_request, response) => {
+    response.json(RULES_CATALOG);
+  });
+
+  app.get('/api/rules/versions', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const versions = await listMatchingConfigVersions(pool!, organizationId);
+
+      response.json({
+        active: versions.find((version) => version.status === 'ACTIVE') ?? null,
+        draft: versions.find((version) => version.status === 'DRAFT') ?? null,
+        history: versions,
+        overridesAppliedToEngine: OVERRIDES_APPLIED_TO_ENGINE,
+      } satisfies RuleVersionsResponse);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/rules/versions/draft', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    // Mirrors the client-side gate on canAdjustSliderDefaults (App.tsx) server-side -- this is a
+    // new mutating, org-wide-visible endpoint, so it needs its own enforcement rather than
+    // trusting the UI to have hidden the control.
+    if (!rolePermissionsByRole[request.auth!.role].canAdjustSliderDefaults) {
+      response.status(403).json({ message: 'Only admins can draft a matching-config version.' });
+      return;
+    }
+    try {
+      const bodyResult = matchingConfigVersionDraftBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+      const unknownMetricId = Object.keys(bodyResult.data.varianceOverrides).find(
+        (id) => !RULES_CATALOG_METRIC_IDS.has(id),
+      );
+      if (unknownMetricId) {
+        response.status(400).json({ message: `Unknown variance metric id: ${unknownMetricId}.` });
+        return;
+      }
+
+      const version = await createMatchingConfigVersionDraft(pool!, {
+        id: randomUUID(),
+        organizationId: request.auth!.organizationId,
+        varianceOverrides: bodyResult.data.varianceOverrides,
+        createdBy: request.auth!.username,
+        pendingApprovalOwner: bodyResult.data.pendingApprovalOwner ?? null,
+      });
+      response.status(201).json(version);
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        response
+          .status(409)
+          .json({ message: 'A draft version is already pending for this organization.' });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  app.post('/api/rules/versions/:id/publish', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canAdjustSliderDefaults) {
+      response.status(403).json({ message: 'Only admins can publish a matching-config version.' });
+      return;
+    }
+    try {
+      const bodyResult = publishMatchingConfigVersionBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+
+      const version = await publishMatchingConfigVersion(
+        pool!,
+        request.auth!.organizationId,
+        request.params.id,
+        { publishedBy: request.auth!.username, effectiveAt: bodyResult.data.effectiveAt },
+      );
+      response.json(version);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'publishMatchingConfigVersion: no matching DRAFT version to publish'
+      ) {
+        response.status(404).json({ message: 'No matching draft version to publish.' });
+        return;
+      }
+      next(error);
+    }
   });
 
   app.post('/api/mapping/profiles', requireFullyVerified, async (request, response, next) => {

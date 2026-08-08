@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
-import type { ExceptionItem } from '@recon/domain';
+import type { ExceptionItem, RuleFamily } from '@recon/domain';
 
 import navRailLogo from '../assets/nav-rail-logo.png';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
@@ -10,6 +10,7 @@ import { RemoveAccountDialog } from './RemoveAccountDialog';
 import { routePaths } from '../routes/routePaths';
 import { BANK_TEMPLATE_URL, GL_TEMPLATE_URL } from '../lib/templates';
 import { useNavSectionCollapse } from '../hooks/useNavSectionCollapse';
+import { parseRuleFamilyParam, parseTunableParam, ruleFamilyToSlug } from '../lib/ruleFilters';
 import {
   loadSavedViews,
   matchesFacets,
@@ -82,6 +83,9 @@ export function NavRail({
   onSignOut,
   isMobileOpen,
   onMobileClose,
+  matchingRuleTotalCount,
+  matchingRuleFamilyCounts,
+  matchingRuleFixedCount,
 }: Readonly<{
   unreviewedExceptionCount: number | null;
   exceptions: ExceptionItem[];
@@ -95,6 +99,12 @@ export function NavRail({
   onSignOut: () => void;
   isMobileOpen: boolean;
   onMobileClose: () => void;
+  /** Total rule count for the Matching Rules item's pill/aria-label; omitted (no pill) until the catalog loads. */
+  matchingRuleTotalCount?: number;
+  /** Per-family rule counts for the Matching Rules rail sub-items; omitted (no sub-items) until the catalog loads. */
+  matchingRuleFamilyCounts?: Array<{ family: RuleFamily; count: number }>;
+  /** Count of rules with no adjustable metric, for the "No adjustable metric" sub-item. */
+  matchingRuleFixedCount?: number;
 }>) {
   const [isCollapsed, setIsCollapsed] = useState(() => loadRailCollapsed(username));
   const [isRemoveAccountOpen, setIsRemoveAccountOpen] = useState(false);
@@ -204,6 +214,44 @@ export function NavRail({
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
+            <NavItemLink
+              to={routePaths.mappingRules}
+              label="Matching Rules"
+              icon="rule"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+              count={matchingRuleTotalCount}
+              ariaLabel={
+                matchingRuleTotalCount === undefined
+                  ? 'Matching Rules'
+                  : `Matching Rules, ${matchingRuleTotalCount} rules`
+              }
+            />
+            {matchingRuleFamilyCounts ? (
+              <div className="nav-rail__indent">
+                {matchingRuleFamilyCounts.map(({ family, count }) => (
+                  <MatchingRuleFilterLink
+                    key={family}
+                    label={family}
+                    count={count}
+                    search={`?family=${ruleFamilyToSlug(family)}`}
+                    isActiveFor={(searchParams) => parseRuleFamilyParam(searchParams.get('family')) === family}
+                    isCollapsed={isCollapsed}
+                    onNavigate={onMobileClose}
+                  />
+                ))}
+                {matchingRuleFixedCount !== undefined ? (
+                  <MatchingRuleFilterLink
+                    label="No adjustable metric"
+                    count={matchingRuleFixedCount}
+                    search="?tunable=false"
+                    isActiveFor={(searchParams) => parseTunableParam(searchParams.get('tunable')) === false}
+                    isCollapsed={isCollapsed}
+                    onNavigate={onMobileClose}
+                  />
+                ) : null}
+              </div>
+            ) : null}
             {!isCollapsed ? (
               <p className="nav-rail__subgroup-label">
                 <span className="nav-rail__item-icon" aria-hidden="true">
@@ -357,6 +405,8 @@ function NavItemLink({
   isCollapsed,
   indented,
   badge,
+  count,
+  ariaLabel,
   onNavigate,
 }: Readonly<{
   to: string;
@@ -365,6 +415,8 @@ function NavItemLink({
   isCollapsed: boolean;
   indented?: boolean;
   badge?: number | null;
+  count?: number;
+  ariaLabel?: string;
   onNavigate: () => void;
 }>) {
   const link = (
@@ -375,6 +427,7 @@ function NavItemLink({
         isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'
       }
       title={isCollapsed ? label : undefined}
+      aria-label={ariaLabel}
       onClick={onNavigate}
     >
       <span className="nav-rail__item-icon" aria-hidden="true">
@@ -386,10 +439,50 @@ function NavItemLink({
           {badge}
         </span>
       ) : null}
+      {count !== undefined ? <span className="nav-rail__pill">{count}</span> : null}
     </NavLink>
   );
 
   return indented ? <div className="nav-rail__indent">{link}</div> : link;
+}
+
+/**
+ * One Matching Rules filter sub-item -- navigates to `/mapping/rules` plus a family or tunable
+ * query param (T5: "filters into /mapping/rules -- not separate routes"). Active-state is
+ * determined by `isActiveFor` inspecting the current URLSearchParams directly rather than
+ * NavLink's own `isActive`, since that only compares pathname, not query params.
+ */
+function MatchingRuleFilterLink({
+  label,
+  count,
+  search,
+  isActiveFor,
+  isCollapsed,
+  onNavigate,
+}: Readonly<{
+  label: string;
+  count: number;
+  search: string;
+  isActiveFor: (searchParams: URLSearchParams) => boolean;
+  isCollapsed: boolean;
+  onNavigate: () => void;
+}>) {
+  const location = useLocation();
+  const isActive =
+    location.pathname === routePaths.mappingRules &&
+    isActiveFor(new URLSearchParams(location.search));
+
+  return (
+    <NavLink
+      to={`${routePaths.mappingRules}${search}`}
+      className={isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'}
+      title={isCollapsed ? label : undefined}
+      onClick={onNavigate}
+    >
+      <span className="nav-rail__item-label">{label}</span>
+      <span className="nav-rail__pill">{count}</span>
+    </NavLink>
+  );
 }
 
 /** Collapsible nav-rail group: `<button aria-expanded>` header + children, state persisted per section/user. */

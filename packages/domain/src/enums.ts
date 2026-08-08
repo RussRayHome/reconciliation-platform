@@ -126,6 +126,16 @@ export const mappingProfileStatuses = ['ACTIVE', 'DEPRECATED'] as const;
 /** Union of valid mapping profile / version lifecycle statuses. */
 export type MappingProfileStatus = (typeof mappingProfileStatuses)[number];
 
+/**
+ * Lifecycle status of a matching-config version (a named, published snapshot of
+ * `MatchingConfig` variance overrides). At most one version per organization is `ACTIVE` and at
+ * most one is `DRAFT` at a time; publishing a `DRAFT` moves it to `ACTIVE` and moves the
+ * previously `ACTIVE` version to `SUPERSEDED` in the same transaction.
+ */
+export const matchingConfigVersionStatuses = ['DRAFT', 'ACTIVE', 'SUPERSEDED'] as const;
+/** Union of valid matching-config version lifecycle statuses. */
+export type MatchingConfigVersionStatus = (typeof matchingConfigVersionStatuses)[number];
+
 /** A per-column data transform applied between a mapped source value and its canonical field. */
 export const transformKinds = [
   'none',

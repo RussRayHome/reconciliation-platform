@@ -99,6 +99,41 @@ describe('GET /api/mapping/canonical-fields', () => {
   });
 });
 
+describe('GET /api/mapping/profiles', () => {
+  const createFakeProfileListPool = (names: string[]): Pool => {
+    const clientQuery = (text: string, params?: unknown[]) => {
+      if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      }
+      if (text.includes('set_config(')) {
+        return Promise.resolve({ rows: [{ set_config: params?.[1] }], rowCount: 1 });
+      }
+      if (text.includes('SELECT DISTINCT name') && text.includes('reconciliation_mapping_profile')) {
+        return Promise.resolve({ rows: names.map((name) => ({ name })) });
+      }
+      throw new Error(`createFakeProfileListPool: unexpected query: ${text}`);
+    };
+
+    return {
+      connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
+    } as unknown as Pool;
+  };
+
+  it('returns distinct saved profile names', async () => {
+    const app = createApp(undefined, undefined, undefined, createFakeProfileListPool(['Chase Operating', 'WF Payroll']));
+    const response = await authedApp(app).get('/api/mapping/profiles').expect(200);
+
+    expect(response.body).toEqual(['Chase Operating', 'WF Payroll']);
+  });
+
+  it('returns an empty array for an organization with no saved profiles', async () => {
+    const app = createApp(undefined, undefined, undefined, createFakeProfileListPool([]));
+    const response = await authedApp(app).get('/api/mapping/profiles').expect(200);
+
+    expect(response.body).toEqual([]);
+  });
+});
+
 describe('POST /api/mapping/profiles', () => {
   it('returns 501 when no database is configured', async () => {
     const app = createApp();

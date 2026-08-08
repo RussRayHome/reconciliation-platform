@@ -5,11 +5,15 @@ import {
   PostgresReconciliationReadModelStore,
   createMappingProfile,
   createMappingProfileVersion,
+  createMatchingConfigVersionDraft,
   createPayeeAlias,
   deactivatePayeeAlias,
   findMappingProfile,
+  listMappingProfiles,
   listMappingProfileVersions,
+  listMatchingConfigVersions,
   loadPayeeAliases,
+  publishMatchingConfigVersion,
   updatePayeeAlias,
 } from './readModelStore';
 
@@ -915,6 +919,19 @@ describe('createMappingProfile', () => {
   });
 });
 
+describe('listMappingProfiles', () => {
+  it('returns distinct profile names, deduped across the gl/bank row pairing', async () => {
+    const pool = makePool({ rows: [{ name: 'Amex Corporate' }, { name: 'Chase Operating' }] });
+    const names = await listMappingProfiles(pool, 'org-1');
+    expect(names).toEqual(['Amex Corporate', 'Chase Operating']);
+  });
+
+  it('returns an empty array for an organization with no saved profiles yet', async () => {
+    const pool = makePool({ rows: [] });
+    expect(await listMappingProfiles(pool, 'org-1')).toEqual([]);
+  });
+});
+
 describe('listMappingProfileVersions', () => {
   it('maps every version row', async () => {
     const pool = makePool({
@@ -962,5 +979,101 @@ describe('createMappingProfileVersion', () => {
         createdBy: 'rray',
       }),
     ).rejects.toThrow('createMappingProfileVersion: INSERT returned no row');
+  });
+});
+
+const MATCHING_CONFIG_VERSION_ROW = {
+  id: 'mcv-1',
+  organization_id: 'org-1',
+  version_number: 1,
+  status: 'DRAFT' as const,
+  variance_overrides: { wireFeeTolerance: 750 },
+  created_by: 'rray',
+  created_at: '2026-08-01T00:00:00.000Z',
+  published_by: null,
+  published_at: null,
+  effective_at: null,
+  pending_approval_owner: 'mortega',
+};
+
+describe('createMatchingConfigVersionDraft', () => {
+  it('creates and maps a new draft version', async () => {
+    const pool = makePool({ rows: [MATCHING_CONFIG_VERSION_ROW] });
+    const version = await createMatchingConfigVersionDraft(pool, {
+      id: 'mcv-1',
+      organizationId: 'org-1',
+      varianceOverrides: { wireFeeTolerance: 750 },
+      createdBy: 'rray',
+      pendingApprovalOwner: 'mortega',
+    });
+    expect(version.id).toBe('mcv-1');
+    expect(version.status).toBe('DRAFT');
+    expect(version.varianceOverrides).toEqual({ wireFeeTolerance: 750 });
+    expect(version.pendingApprovalOwner).toBe('mortega');
+    expect(version.publishedBy).toBeNull();
+  });
+
+  it('throws when INSERT returns no row', async () => {
+    const pool = makePool({ rows: [] });
+    await expect(
+      createMatchingConfigVersionDraft(pool, {
+        id: 'mcv-1',
+        organizationId: 'org-1',
+        varianceOverrides: {},
+        createdBy: 'rray',
+      }),
+    ).rejects.toThrow('createMatchingConfigVersionDraft: INSERT returned no row');
+  });
+});
+
+describe('publishMatchingConfigVersion', () => {
+  it('activates the draft and returns it, superseding the previous active version in the same call', async () => {
+    const activatedRow = {
+      ...MATCHING_CONFIG_VERSION_ROW,
+      status: 'ACTIVE' as const,
+      published_by: 'mortega',
+      published_at: '2026-08-04T00:00:00.000Z',
+      effective_at: '2026-08-01T00:00:00.000Z',
+      pending_approval_owner: null,
+    };
+    // Supersede-old-active runs first (see publishMatchingConfigVersion's comment on why), so
+    // its response is queued first; the activate-draft response follows.
+    const pool = makePool({ rows: [], rowCount: 1 }, { rows: [activatedRow] });
+
+    const version = await publishMatchingConfigVersion(pool, 'org-1', 'mcv-1', {
+      publishedBy: 'mortega',
+      effectiveAt: '2026-08-01T00:00:00.000Z',
+    });
+
+    expect(version.status).toBe('ACTIVE');
+    expect(version.publishedBy).toBe('mortega');
+    expect(version.pendingApprovalOwner).toBeNull();
+  });
+
+  it('throws when there is no matching DRAFT version to publish', async () => {
+    const pool = makePool({ rows: [], rowCount: 0 }, { rows: [] });
+    await expect(
+      publishMatchingConfigVersion(pool, 'org-1', 'mcv-missing', { publishedBy: 'mortega' }),
+    ).rejects.toThrow('publishMatchingConfigVersion: no matching DRAFT version to publish');
+  });
+});
+
+describe('listMatchingConfigVersions', () => {
+  it('maps every version row, newest first', async () => {
+    const pool = makePool({
+      rows: [
+        { ...MATCHING_CONFIG_VERSION_ROW, id: 'mcv-2', version_number: 2 },
+        { ...MATCHING_CONFIG_VERSION_ROW, id: 'mcv-1', version_number: 1 },
+      ],
+    });
+    const versions = await listMatchingConfigVersions(pool, 'org-1');
+    expect(versions).toHaveLength(2);
+    expect(versions[0]?.versionNumber).toBe(2);
+    expect(versions[1]?.versionNumber).toBe(1);
+  });
+
+  it('returns an empty array for an organization with no versions yet', async () => {
+    const pool = makePool({ rows: [] });
+    expect(await listMatchingConfigVersions(pool, 'org-1')).toEqual([]);
   });
 });
