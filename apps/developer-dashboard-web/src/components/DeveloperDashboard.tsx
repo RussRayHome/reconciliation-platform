@@ -1340,6 +1340,9 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
   const linesBenchmark = coverageCheck?.coverageBenchmarks?.find(
     (benchmark) => benchmark.key === 'L',
   );
+  const branchesBenchmark = coverageCheck?.coverageBenchmarks?.find(
+    (benchmark) => benchmark.key === 'B',
+  );
   const securityAggregate = securityCheck?.securityAggregateScore;
   const e2eFlakyCount = (e2eCheck?.e2eSpecs ?? []).filter((spec) => spec.status === 'flaky').length;
 
@@ -1462,7 +1465,11 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
           verdictLabel={belowMinimumFiles > 0 ? `${belowMinimumFiles} files < 75%` : 'Clear'}
           headline={linesBenchmark?.value ?? '—'}
           headlineUnit="%"
-          stats={['min 75% per file', `${belowMinimumFiles} below minimum`]}
+          stats={[
+            `${branchesBenchmark?.value ?? '—'}% branches`,
+            'min 75% per file',
+            `${belowMinimumFiles} below minimum`,
+          ]}
           hint="All files"
         />
         <OverviewCard
