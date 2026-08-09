@@ -123,9 +123,15 @@ jobs:
           # Trivy's default secret scanner otherwise flags -- redundant anyway, since secret
           # scanning is already covered by the dedicated gitleaks/trufflehog pipeline (see
           # Secret Integrity on the Developer Dashboard).
+          # .trivyignore covers the migrate image's bundled-but-out-of-our-control surface
+          # (Go stdlib and Ubuntu base packages baked into liquibase/liquibase:4.33.0, plus
+          # Jackson/postgresql-jdbc that Liquibase itself bundles and uses) -- each entry
+          # expiry-dated, same convention as scripts/ops/db-cve-allowlist.txt. Applying it to
+          # every image is harmless: api/web have no findings for it to match against.
           for image in "${project}-api" "${project}-web" "${project}-migrate"; do
             echo "Scanning ${image}"
-            trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --scanners vuln "${image}"
+            trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --scanners vuln \
+              --ignorefile .trivyignore "${image}"
           done
 
       - name: Run container smoke test
