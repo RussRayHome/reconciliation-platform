@@ -46,16 +46,24 @@ const mockReconciliationRun = async (page: Page): Promise<void> => {
   );
 };
 
+// Shared by both page-level and region-scoped (locator) captures -- fullPage is a page-only
+// option, so it's added separately below rather than living in this shared object, where it
+// would be meaningless (and misleading to read) on every region-scoped call.
 const screenshotOptions = {
-  fullPage: true,
   animations: 'disabled',
-  // Text-heavy pages (dozens of small stat labels/numbers) accumulate enough sub-pixel
-  // font-rendering variance between runs -- observed ~1% of pixels on review-summary -- to fail
-  // with zero tolerance, even after Playwright's own internal stability retries. Real UI
-  // regressions caught earlier during development were 2-26% of pixels, so this stays well clear
-  // of masking an actual defect while absorbing rendering noise.
-  maxDiffPixelRatio: 0.015,
+  // Was 0.015 suite-wide (pre-P4/P5), justified by ~1% observed sub-pixel font-rendering
+  // variance -- that variance came from a live reconciliation run's rendering timing and a
+  // then-ungraded macOS baseline set, both gone now (P4's canonical container, P5's frozen
+  // fixture). Empirically re-measured for P6: 4 consecutive runs (1 record + 3 verify) against
+  // every capture in this file, at this exact 0, produced zero diffs across all of them. True
+  // zero, not "near zero" -- if a future capture turns out to need real tolerance, that's a
+  // signal worth seeing immediately, not something to pre-emptively budget for.
+  maxDiffPixelRatio: 0,
 } as const;
+
+// Page-level (full-page) captures only -- see the "Kept full-page here deliberately" comment at
+// the review-summary capture for why a handful of screens still use this instead of a region.
+const fullPageScreenshotOptions = { ...screenshotOptions, fullPage: true } as const;
 
 // loginToApplication waits for the Import Files link, which only superuser/admin roles see;
 // this variant just submits credentials and lets each test wait for its own landmark.
@@ -146,13 +154,13 @@ for (const width of widths) {
     test(`login and error state @${width}`, async ({ page }) => {
       await page.goto('/');
       await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
-      await expect(page).toHaveScreenshot(`login-${width}.png`, screenshotOptions);
+      await expect(page).toHaveScreenshot(`login-${width}.png`, fullPageScreenshotOptions);
 
       await page.getByLabel('Username').fill('nobody');
       await page.getByLabel('Password').fill('wrong');
       await page.getByRole('button', { name: 'Log in' }).click();
       await expect(page.locator('.login-error')).toBeVisible();
-      await expect(page).toHaveScreenshot(`login-error-${width}.png`, screenshotOptions);
+      await expect(page).toHaveScreenshot(`login-error-${width}.png`, fullPageScreenshotOptions);
     });
 
     test(`superuser workspace @${width}`, async ({ page }) => {
@@ -160,43 +168,96 @@ for (const width of widths) {
       await loginAs(page, 'rray', 'P@ssw0rd');
 
       await openSetup(page);
-      // Native <select> chrome (the dropdown arrow) renders with a few
-      // non-deterministic pixels under headless Linux Chromium between
-      // otherwise-identical runs — mask both selects on this screen rather
-      // than loosen the pixel-diff tolerance suite-wide.
-      await expect(page).toHaveScreenshot(`setup-upload-${width}.png`, {
-        ...screenshotOptions,
-        mask: [
-          page.getByLabel('Reconciliation frequency'),
-          page.getByLabel('Monthly reconciliation month'),
-        ],
-      });
+      // Region-scoped to the upload form itself (#source-upload-form, App.tsx) rather than the
+      // full page -- excludes the nav rail/hero chrome already covered by other captures. Native
+      // <select> chrome (the dropdown arrow) still renders with a few non-deterministic pixels
+      // under headless Linux Chromium between otherwise-identical runs -- mask both selects
+      // rather than loosen the pixel-diff tolerance for this whole region.
+      await expect(page.locator('#source-upload-form')).toHaveScreenshot(
+        `setup-upload-${width}.png`,
+        {
+          ...screenshotOptions,
+          mask: [
+            page.getByLabel('Reconciliation frequency'),
+            page.getByLabel('Monthly reconciliation month'),
+          ],
+        },
+      );
 
       await page.locator('.run-bar__overflow-trigger').click();
       await page.getByRole('button', { name: 'Rules', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Matching Rules' })).toBeVisible();
-      await expect(page).toHaveScreenshot(`rules-panel-${width}.png`, screenshotOptions);
+      // Region-scoped to the whole Rules route panel (includes the SectionCard title/chrome
+      // wrapping "Matching Rules" -- this is the outermost element the route itself renders, so
+      // it excludes nav/hero the same way #source-upload-form does above).
+      await expect(page.getByRole('region', { name: 'Rules catalog' })).toHaveScreenshot(
+        `rules-panel-${width}.png`,
+        screenshotOptions,
+      );
 
       await runReconciliation(page);
       await expect(page.getByText('Total reviewed')).toBeVisible();
-      await expect(page).toHaveScreenshot(`review-summary-${width}.png`, screenshotOptions);
+      // Kept full-page here deliberately (D2: "small retained set of full-page captures for
+      // layout composition") -- Review/Summary is exactly the multi-region page where a CSS
+      // grid/spacing regression could make two of the regions below overlap or misalign, which
+      // no number of independent region captures would ever catch on their own.
+      await expect(page).toHaveScreenshot(`review-summary-${width}.png`, fullPageScreenshotOptions);
+      // Four region-scoped captures for Review/Summary's actual component boundaries, replacing
+      // full-page as the primary signal -- a failure here says "the stats grid changed", not
+      // "something changed somewhere in a 9800px page". Also the only capture exercising
+      // StatCard's real rendered tones (positive/warning/critical) and the shared
+      // SectionCard-derived BentoModule primitive.
+      await expect(page.getByRole('region', { name: 'Run statistics' })).toHaveScreenshot(
+        `review-summary-stats-${width}.png`,
+        screenshotOptions,
+      );
+      await expect(page.getByRole('region', { name: 'Reconciliation verdict' })).toHaveScreenshot(
+        `review-summary-verdict-${width}.png`,
+        screenshotOptions,
+      );
+      await expect(
+        page.getByRole('region', { name: 'Exception category breakdown' }),
+      ).toHaveScreenshot(`review-summary-category-breakdown-${width}.png`, screenshotOptions);
+      await expect(page.locator('.chart-grid')).toHaveScreenshot(
+        `review-summary-charts-${width}.png`,
+        screenshotOptions,
+      );
 
       // Probable matches was dropped from the nav rail in the v3 nav restructure (commit
       // 5f08130, "no longer nav-linked, per confirmed decision") -- the route itself stays
       // reachable directly.
       await page.goto('/probable-matches');
-      await expect(page).toHaveScreenshot(`probable-matches-${width}.png`, screenshotOptions);
+      // Region-scoped to the table itself, excluding the generic "Review" SectionCard chrome
+      // that wraps it (already covered by rules-panel's SectionCard capture above).
+      await expect(page.locator('.probable-match-table-shell')).toHaveScreenshot(
+        `probable-matches-${width}.png`,
+        screenshotOptions,
+      );
 
       await page.getByRole('link', { name: 'Exceptions' }).click();
       await expect(page.getByPlaceholder('Search file, message, or tokens')).toBeVisible();
-      await expect(page).toHaveScreenshot(`exceptions-triage-${width}.png`, screenshotOptions);
+      // Explicitly select the first exception row on every width -- at the two desktop widths
+      // the evidence panel already auto-shows the first exception without a click, but at 900px
+      // (mobile) it stays hidden until a row opens its drawer. Clicking unconditionally keeps all
+      // three widths in the same state, and is what gives the shared Pill primitive (severity
+      // tag, ExceptionEvidencePanel.tsx) its only real coverage in this suite.
+      await page.getByRole('listbox', { name: 'Exceptions' }).getByRole('option').first().click();
+      await expect(page.locator('.exception-detail')).toBeVisible();
+      await expect(page.locator('.exception-triage')).toHaveScreenshot(
+        `exceptions-triage-${width}.png`,
+        screenshotOptions,
+      );
 
       // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
       await page.getByRole('link', { name: 'Reports', exact: true }).click();
-      // Artifact filenames embed the run id -- previously masked because a live run's id was
-      // different every time. Now that the report is a frozen fixture (mockReconciliationRun),
-      // the filename is identical every run and this region is real, assertable coverage.
-      await expect(page).toHaveScreenshot(`close-${width}.png`, screenshotOptions);
+      // Region-scoped to the artifacts grid itself. Artifact filenames embed the run id --
+      // previously masked because a live run's id was different every time. Now that the report
+      // is a frozen fixture (mockReconciliationRun), the filename is identical every run and this
+      // region is real, assertable coverage, not a masked box.
+      await expect(page.locator('.artifacts-grid')).toHaveScreenshot(
+        `close-${width}.png`,
+        screenshotOptions,
+      );
     });
 
     test(`docs hub and document @${width}`, async ({ page }) => {
@@ -205,7 +266,7 @@ for (const width of widths) {
       await page.goto('/docs');
       await page.waitForLoadState('networkidle');
       await waitForStableLayout(page);
-      await expect(page).toHaveScreenshot(`docs-hub-${width}.png`, screenshotOptions);
+      await expect(page).toHaveScreenshot(`docs-hub-${width}.png`, fullPageScreenshotOptions);
 
       // DocsOverview.tsx selects documents via <button class="docs-nav-card"> + client-side hash
       // routing (history.replaceState), not real <a href="/docs/..."> sub-page links -- there
@@ -217,14 +278,17 @@ for (const width of widths) {
       await otherDocCard.click();
       await page.waitForLoadState('networkidle');
       await waitForStableLayout(page);
-      await expect(page).toHaveScreenshot(`docs-document-${width}.png`, screenshotOptions);
+      await expect(page).toHaveScreenshot(`docs-document-${width}.png`, fullPageScreenshotOptions);
     });
 
     test(`analyst workspace @${width}`, async ({ page }) => {
       await mockReconciliationRun(page);
       await loginAs(page, 'bray', 'bray123');
       await page.waitForLoadState('networkidle');
-      await expect(page).toHaveScreenshot(`analyst-workspace-${width}.png`, screenshotOptions);
+      await expect(page).toHaveScreenshot(
+        `analyst-workspace-${width}.png`,
+        fullPageScreenshotOptions,
+      );
     });
   });
 }

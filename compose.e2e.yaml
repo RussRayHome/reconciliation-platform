@@ -9,6 +9,12 @@ services:
     # always a one-shot `run --rm`, never a standing service.
     profiles:
       - e2e-visual
+    environment:
+      # Bare name (no value): passes the invoking shell's own PLAYWRIGHT_JSON_OUTPUT_NAME through
+      # to the container unchanged, so CI (which sets it as a step-level env var) can control
+      # where the JSON reporter writes without this file needing to know about CI specifically.
+      # Unset locally -- harmless, Playwright just uses its default reporter/output path.
+      - PLAYWRIGHT_JSON_OUTPUT_NAME
     volumes:
       # Live bind mount so edited spec files run immediately and --update-snapshots writes the new
       # baselines straight back to the host's git-tracked snapshot directory.
