@@ -71,31 +71,32 @@ The suite is split into two Playwright projects, in `apps/web/tests/e2e/function
   parallel-safe.
 - **visual** — pixel-comparison regression checks (`visual-baseline.spec.ts`). Slower and more
   environment-sensitive; kept separate so its constraints don't slow down the functional lane.
+  Only runs inside its canonical container (`docker/e2e-visual.Dockerfile`, pinned to match CI's
+  `ubuntu-24.04` runner exactly) — running it on the host fails fast rather than silently
+  comparing against baselines recorded on a different OS's font rendering.
 
 Commands:
 
 ```bash
-npm run test:e2e             # both projects
-npm run test:e2e:functional  # functional lane only
-npm run test:e2e:visual      # visual lane only
+npm run test:e2e:functional          # functional lane, runs on the host
+npm run test:e2e:visual:container    # visual lane, runs inside the canonical container
 ```
 
 ## 3. Command matrix
 
-| Command                       | Purpose                                    | Typical use               |
-| ----------------------------- | ------------------------------------------ | ------------------------- |
-| `npm run test`                | unit + integration aggregate               | default pre-PR validation |
-| `npm run test:unit`           | fast deterministic logic checks            | iterative development     |
-| `npm run test:integration`    | API contract behavior                      | route/service changes     |
-| `npm run test:postgres`       | real DB persistence checks                 | schema/store changes      |
-| `npm run test:e2e`            | browser regression checks (both projects)  | UI workflow changes       |
-| `npm run test:e2e:functional` | browser behavioural checks, no screenshots | fast, parallel-safe       |
-| `npm run test:e2e:visual`     | pixel-comparison regression checks         | UI/CSS layout changes     |
-| `npm run lint`                | static quality checks                      | every PR                  |
-| `npm run typecheck`           | TS type safety checks                      | every PR                  |
-| `npm run coverage`            | coverage report generation                 | release verification      |
-| `npm run security:scan`       | dependency vulnerability audit             | release verification      |
-| `npm run build`               | production build integrity                 | merge/release gate        |
+| Command                             | Purpose                                         | Typical use               |
+| ----------------------------------- | ----------------------------------------------- | ------------------------- |
+| `npm run test`                      | unit + integration aggregate                    | default pre-PR validation |
+| `npm run test:unit`                 | fast deterministic logic checks                 | iterative development     |
+| `npm run test:integration`          | API contract behavior                           | route/service changes     |
+| `npm run test:postgres`             | real DB persistence checks                      | schema/store changes      |
+| `npm run test:e2e:functional`       | browser behavioural checks, no screenshots      | fast, parallel-safe       |
+| `npm run test:e2e:visual:container` | pixel-comparison checks, in canonical container | UI/CSS layout changes     |
+| `npm run lint`                      | static quality checks                           | every PR                  |
+| `npm run typecheck`                 | TS type safety checks                           | every PR                  |
+| `npm run coverage`                  | coverage report generation                      | release verification      |
+| `npm run security:scan`             | dependency vulnerability audit                  | release verification      |
+| `npm run build`                     | production build integrity                      | merge/release gate        |
 
 ## 4. Suggested validation tiers
 
@@ -112,7 +113,8 @@ npm run typecheck
 ```bash
 npm run test
 npm run test:postgres
-npm run test:e2e
+npm run test:e2e:functional
+npm run test:e2e:visual:container
 npm run coverage
 npm run build
 ```
@@ -122,7 +124,8 @@ npm run build
 ```bash
 npm run test
 npm run test:postgres
-npm run test:e2e
+npm run test:e2e:functional
+npm run test:e2e:visual:container
 npm run lint
 npm run typecheck
 npm run coverage

@@ -21,13 +21,13 @@ export default defineConfig({
     {
       name: 'visual',
       testDir: './apps/web/tests/e2e/visual',
-      // Playwright's default snapshotPathTemplate includes {-projectName}, which is empty today
-      // (no named projects existed before this). The instant a project is named "visual", that
-      // token would resolve to "-visual" and every one of the 60 committed baseline filenames
-      // would stop matching, reporting as missing. Pin the template to reproduce today's naming
-      // exactly (still {-platform}-suffixed) so this phase is a pure rename-free split; dropping
-      // the platform suffix is a deliberate later phase (P4), not a side effect of this one.
-      snapshotPathTemplate: '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-platform}{ext}',
+      // Playwright's default snapshotPathTemplate includes {-projectName} and {-platform}. Drops
+      // both: {-projectName} would rename every baseline the moment a project is named "visual"
+      // (unrelated to this file's own purpose); {-platform} is dropped deliberately here -- now
+      // that the visual project only ever runs inside the canonical container
+      // (docker/e2e-visual.Dockerfile, enforced by containerGuard.ts), there is exactly one
+      // platform, so a platform suffix would be redundant noise, not a real second baseline set.
+      snapshotPathTemplate: '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{ext}',
       // Single worker: visual-baseline.spec.ts is already forced serial within itself
       // (see its own test.describe.configure) because its three viewport variants
       // submit the identical reconciliation and race on shared backend run state if
