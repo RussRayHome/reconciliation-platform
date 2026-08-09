@@ -34,8 +34,17 @@ export default defineConfig({
       // to race on -- see P5 in the UI-testing breakout plan). Uncapped (Playwright's runner
       // default, half the container's CPU count -- 8 on this container's 16) was tried first and
       // caused real 60s test timeouts on navigation/network-idle waits under the resulting
-      // resource contention, not flaky pixel diffs. workers: 2 was verified stable.
+      // resource contention, not flaky pixel diffs. workers: 2 verified stable in P5.
       workers: 2,
+      // P6 added several region-scoped captures per test (Review/Summary alone went from 1
+      // screenshot to 6) without changing worker count -- under workers: 2, the resulting extra
+      // per-test wall-clock was enough to make an unrelated test (docs-hub-and-document, whose
+      // own page.waitForLoadState('networkidle') has nothing to do with any P6 change) exceed the
+      // global 60s test timeout under contention. Confirmed not a real bug: that same test passed
+      // cleanly in isolation (35s) with no sibling load. Scoped a longer timeout to this project
+      // rather than raising workers back down or dropping parallelism -- functional's tests are
+      // fast enough that 60s should still mean something there if one genuinely hangs.
+      timeout: 90_000,
       // Full-page screenshots on long doc pages (~9800px tall) can exceed the 5s
       // default `toHaveScreenshot` timeout under CPU contention from sibling workers
       // running concurrently — confirmed by a byte-identical actual/expected pair on
