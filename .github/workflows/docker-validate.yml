@@ -115,6 +115,123 @@ jobs:
           path: test-results/e2e
           if-no-files-found: ignore
 
+  visual-path-check:
+    # Gates e2e-visual below on D4 (UI-testing breakout plan): run on every PR except the
+    # existing inert-path exclusions dashboard-status.yml already uses. Deliberately NOT filtered
+    # to apps/web/** -- packages/ui or a dependency bump can shift rendering too, so anything
+    # outside issue_tracker/**, docs/**, and **.md counts as "real" for this check.
+    #
+    # No top-level `if:` -- this job always runs and always produces a real true/false output,
+    # rather than conditionally skipping itself for non-PR events. A downstream job (`needs:`)
+    # depending on a job that was SKIPPED (not failed) is skipped by default unless its own `if:`
+    # explicitly overrides that -- simpler and less error-prone to just always run this cheap
+    # check and let its own logic decide, than to rely on getting that skip-propagation subtlety
+    # right with no way to dry-run it locally (no `act` available).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_visual: ${{ steps.check.outputs.run_visual }}
+    steps:
+      - name: Determine whether only inert paths changed
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Not a pull_request event -- always running the visual lane."
+            echo "run_visual=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fail open toward RUNNING the visual lane, not skipping it: a wasted run only costs a
+          # few CI minutes, but a wrongly-skipped run silently creates a gap in the soak record
+          # D3's "2 weeks of active development" depends on -- much harder to notice after the
+          # fact than a few extra green runs.
+          if ! CHANGED=$(gh pr diff "${{ github.event.pull_request.number }}" --name-only 2>&1); then
+            echo "Could not determine changed files (gh pr diff failed: $CHANGED) -- running visual lane to be safe."
+            echo "run_visual=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NON_INERT=$(echo "$CHANGED" | grep -vE '^(issue_tracker/|docs/|.*\.md$)' || true)
+
+          if [ -z "$NON_INERT" ]; then
+            echo "Every changed file matches an inert path (issue_tracker/**, docs/**, **.md) -- skipping visual lane."
+            echo "run_visual=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_visual=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e-visual:
+    needs: visual-path-check
+    if: needs.visual-path-check.outputs.run_visual == 'true'
+    runs-on: ubuntu-latest
+    # Non-blocking (D3's soak): continue-on-error means a failure here shows as a distinct
+    # neutral indicator on the PR, not a red X -- accurately signaling "not yet a merge gate,
+    # currently being soaked" rather than looking like an ordinary broken check. Not in
+    # scripts/github-branch-protection.ts's required-checks array either (deliberately, see the
+    # P8 commit/PR), so it can't block a merge regardless -- this is belt-and-suspenders on how
+    # it's *displayed*, not what actually gates.
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
+
+      - name: Set up Node.js
+        run: |
+          set -euo pipefail
+          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        # compose.e2e.yaml bind-mounts the repo root over the container's /app and relies on an
+        # anonymous volume to shadow just /app/node_modules with the image's own npm-ci'd
+        # install (avoiding a host/container ABI mismatch on a developer's Mac). On a genuinely
+        # fresh runner -- fresh checkout, fresh anonymous volume, no prior local Docker state --
+        # that volume's auto-populate-from-image never ran here in practice: the first real CI
+        # trigger of this job failed every single test at the very first `page.goto('/')`, with
+        # Vite's own dev-server overlay reporting `Failed to resolve import "react-router"` --
+        # i.e. node_modules was effectively empty inside the container, not an app or dependency
+        # bug (react-router is a real dependency, apps/web/package.json:21). Installing here on
+        # the Linux runner sidesteps the whole shadow-volume question: this IS already the same
+        # OS as the container image, so there's no ABI mismatch to protect against in CI the way
+        # there is on a macOS dev machine, and the bind-mounted node_modules the container sees
+        # is simply this real, complete install.
+        run: npm ci
+
+      - name: Run visual E2E tests
+        # Runs inside docker/e2e-visual.Dockerfile via compose.e2e.yaml. Docker is preinstalled
+        # on GitHub-hosted ubuntu-latest runners. First run on a fresh runner builds the image
+        # from scratch (no registry cache configured yet) -- a real cost, tracked as a known
+        # follow-up, not solved here.
+        run: docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e npm run test:e2e:visual -- --reporter=list
+
+      - name: Upload diff artifacts
+        # The PNG diff is the code review (per the plan's own standing convention) -- this upload
+        # is what makes that diff inspectable when this check fails, since GitHub doesn't render
+        # images from a job log. test-results/e2e matches playwright.config.ts's outputDir; the
+        # container writes there via its bind mount (compose.e2e.yaml), so it's already on the
+        # runner's own filesystem by the time this step runs, same as e2e-functional's upload above.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-visual-diff
+          path: test-results/e2e
+          if-no-files-found: ignore
+
   security-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 30
