@@ -31,6 +31,24 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # compose.e2e.yaml bind-mounts the repo root over the container's /app and relies on an
+        # anonymous volume to shadow just /app/node_modules with the image's own npm-ci'd
+        # install. On a fresh runner (fresh checkout, fresh anonymous volume) that shadow's
+        # auto-populate-from-image doesn't reliably happen -- confirmed via docker-validate.yml's
+        # e2e-visual job, whose first real CI run failed every test at the very first page load
+        # with Vite reporting an unresolvable "react-router" import (a real dependency, not an
+        # app bug). Installing here means the bind-mounted node_modules the container actually
+        # sees is this real, complete install -- and since this runner is already Linux, same as
+        # the container image, there's no ABI mismatch to protect against the way there is on a
+        # macOS dev machine.
+        run: npm ci
+
       - name: Regenerate baselines inside the P4 container
         run: npm run test:e2e:visual:container:update-snapshots
 

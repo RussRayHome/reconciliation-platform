@@ -188,12 +188,35 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      - name: Set up Node.js
+        run: |
+          set -euo pipefail
+          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        # compose.e2e.yaml bind-mounts the repo root over the container's /app and relies on an
+        # anonymous volume to shadow just /app/node_modules with the image's own npm-ci'd
+        # install (avoiding a host/container ABI mismatch on a developer's Mac). On a genuinely
+        # fresh runner -- fresh checkout, fresh anonymous volume, no prior local Docker state --
+        # that volume's auto-populate-from-image never ran here in practice: the first real CI
+        # trigger of this job failed every single test at the very first `page.goto('/')`, with
+        # Vite's own dev-server overlay reporting `Failed to resolve import "react-router"` --
+        # i.e. node_modules was effectively empty inside the container, not an app or dependency
+        # bug (react-router is a real dependency, apps/web/package.json:21). Installing here on
+        # the Linux runner sidesteps the whole shadow-volume question: this IS already the same
+        # OS as the container image, so there's no ABI mismatch to protect against in CI the way
+        # there is on a macOS dev machine, and the bind-mounted node_modules the container sees
+        # is simply this real, complete install.
+        run: npm ci
+
       - name: Run visual E2E tests
-        # Runs entirely inside docker/e2e-visual.Dockerfile via compose.e2e.yaml -- no Node/
-        # Playwright setup needed on the runner itself, unlike e2e-functional above. Docker is
-        # preinstalled on GitHub-hosted ubuntu-latest runners. First run on a fresh runner builds
-        # the image from scratch (no registry cache configured yet) -- a real cost, tracked as a
-        # known follow-up, not solved here.
+        # Runs inside docker/e2e-visual.Dockerfile via compose.e2e.yaml. Docker is preinstalled
+        # on GitHub-hosted ubuntu-latest runners. First run on a fresh runner builds the image
+        # from scratch (no registry cache configured yet) -- a real cost, tracked as a known
+        # follow-up, not solved here.
         run: docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e npm run test:e2e:visual -- --reporter=list
 
       - name: Upload diff artifacts
