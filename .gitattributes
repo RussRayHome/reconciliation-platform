@@ -1,0 +1,1 @@
+apps/web/tests/e2e/visual/visual-baseline.spec.ts-snapshots/*.png -diff merge=binary

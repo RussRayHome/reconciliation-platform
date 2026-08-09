@@ -1,0 +1,20 @@
+services:
+  visual-e2e:
+    build:
+      context: .
+      dockerfile: docker/e2e-visual.Dockerfile
+    # Never starts via a bare `docker compose up` -- only `--profile e2e-visual` opts in. This is
+    # deliberate: the previous long-lived `tools` container being wedged once took the whole
+    # Developer Dashboard down for hours (see dashboard-status.yml's header comment), so this is
+    # always a one-shot `run --rm`, never a standing service.
+    profiles:
+      - e2e-visual
+    volumes:
+      # Live bind mount so edited spec files run immediately and --update-snapshots writes the new
+      # baselines straight back to the host's git-tracked snapshot directory.
+      - .:/app
+      # Anonymous volume shadows the bind mount at node_modules specifically, so the container
+      # keeps the Linux binaries npm ci installed at build time instead of inheriting the host's
+      # (macOS) node_modules, which would be binary-incompatible (Chromium, native deps).
+      - /app/node_modules
+    command: npm run test:e2e:visual

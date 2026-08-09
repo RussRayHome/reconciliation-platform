@@ -1,12 +1,17 @@
+import './containerGuard';
+
 import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { openSetup } from '../auth';
 
-// Visual acceptance oracle for the CSS layering refactor (docs/css-refactor-plan.md).
-// Snapshots are recorded once on the pre-refactor tree; every later phase must
-// produce ZERO diffs. Never regenerate after Phase 0.
+// Visual acceptance oracle, originally recorded for the CSS layering refactor
+// (docs/css-refactor-plan.md, EXECUTED 2026-07-30, 15/15 zero-diff) -- that refactor's own
+// baselines already served their purpose and are done. The same discipline continues though:
+// baselines are only ever regenerated deliberately, via the canonical container
+// (docker/e2e-visual.Dockerfile, `npm run test:e2e:visual:container:update-snapshots`), reviewed
+// as an image diff in its own commit -- never as a side effect of an unrelated change.
 
 // All three viewport variants submit the identical reconciliation (same account
 // identifier and period label) as "superuser workspace". Running them concurrently

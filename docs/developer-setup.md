@@ -99,7 +99,8 @@ Run these before opening or updating a pull request:
 ```bash
 npm run test
 npm run test:postgres
-npm run test:e2e
+npm run test:e2e:functional
+npm run test:e2e:visual:container
 npm run lint
 npm run typecheck
 npm run build
@@ -107,16 +108,40 @@ npm run coverage
 npm run security:scan
 ```
 
+The plain `npm run test:e2e` still runs both Playwright projects together, but the `visual`
+project now refuses to run outside its canonical container (see "The `visual` project requires
+Docker" below) -- for local pre-PR checks, run `test:e2e:functional` and
+`test:e2e:visual:container` as two separate commands instead of the aggregate.
+
 ### What each command validates
 
 - `test`: unit + integration logic and API behavior.
 - `test:postgres`: PostgreSQL lifecycle/persistence integration via Testcontainers.
-- `test:e2e`: browser-level upload-to-results workflow (both the `functional` and `visual` Playwright projects — use `test:e2e:functional` / `test:e2e:visual` to run one lane only).
+- `test:e2e:functional`: browser-level behavioural/workflow checks, runs directly on the host.
+- `test:e2e:visual:container`: pixel-comparison regression checks, runs inside the pinned
+  `docker/e2e-visual.Dockerfile` container -- see below for why.
 - `lint`: static quality and style checks.
 - `typecheck`: TypeScript type safety across workspaces.
 - `build`: production bundle/compile verification.
 - `coverage`: combined coverage for unit + integration suites.
 - `security:scan`: npm audit with high-severity threshold.
+
+### The `visual` project requires Docker
+
+`apps/web/tests/e2e/visual/visual-baseline.spec.ts` only runs inside the canonical container
+(`docker/e2e-visual.Dockerfile`, pinned to `mcr.microsoft.com/playwright:v1.62.1-noble`, matching
+CI's `ubuntu-24.04` runner). Running it directly on the host fails fast with an explanatory error
+(`containerGuard.ts`) instead of silently comparing against or overwriting baselines with your own
+OS's font rendering -- macOS and Linux Chromium produce measurably different pixels for the same
+page, which is what caused the two-baseline-set problem this container exists to fix.
+
+```bash
+npm run test:e2e:visual:container                    # run the visual lane
+npm run test:e2e:visual:container:update-snapshots    # regenerate baselines (deliberate only --
+                                                       # review the resulting PNG diff before committing)
+```
+
+The `functional` project is unaffected and always runs directly on the host.
 
 ## 6. Docker deployment runbook
 
@@ -291,8 +316,11 @@ Ensure Playwright browsers are installed and stack is stable:
 
 ```bash
 npx playwright install
-npm run test:e2e
+npm run test:e2e:functional
 ```
+
+(The `visual` project needs Docker, not a local browser install -- see "The `visual` project
+requires Docker" above.)
 
 If E2E tests pass but complete in 3–4 ms (all skipped), the Playwright browser version does not
 match the installed binary -- reinstall with `npx playwright install --with-deps chromium`.
@@ -357,10 +385,12 @@ Source of truth: `package.json` scripts at the repository root.
 - `test:unit`: runs Vitest unit projects (`unit-core`, `unit-web`).
 - `test:integration`: runs Vitest integration project.
 - `test:postgres`: runs PostgreSQL integration suite (Testcontainers-backed).
-- `test:e2e`: runs Playwright end-to-end browser tests (both projects — `functional` and `visual`).
+- `test:e2e`: runs Playwright end-to-end browser tests (both projects — `functional` and `visual`); the `visual` half only succeeds inside the canonical container (see `test:e2e:visual:container` below).
 - `test:e2e:functional`: runs only the `functional` Playwright project (behavioural, no screenshots).
-- `test:e2e:visual`: runs only the `visual` Playwright project (pixel-comparison regression checks).
-- `test:e2e:visual:update-snapshots`: regenerates `visual` project baselines — a deliberate act, never run as a side effect of a normal test pass.
+- `test:e2e:visual`: runs only the `visual` Playwright project directly — fails fast outside the canonical container; not meant to be run directly, use `test:e2e:visual:container` instead.
+- `test:e2e:visual:update-snapshots`: same, with `--update-snapshots` — also container-only.
+- `test:e2e:visual:container`: builds and runs the `visual` project inside `docker/e2e-visual.Dockerfile` — the supported way to run visual regression checks.
+- `test:e2e:visual:container:update-snapshots`: regenerates `visual` project baselines inside the container — a deliberate act, never run as a side effect of a normal test pass.
 - `lint`: runs ESLint across the repository.
 - `analyze:static`: runs full static quality chain (`lint`, test-quality, deps, unused exports, complexity).
 - `analyze:deps`: runs dependency-cruiser boundary/cycle analysis.
