@@ -111,7 +111,7 @@ npm run security:scan
 
 - `test`: unit + integration logic and API behavior.
 - `test:postgres`: PostgreSQL lifecycle/persistence integration via Testcontainers.
-- `test:e2e`: browser-level upload-to-results workflow.
+- `test:e2e`: browser-level upload-to-results workflow (both the `functional` and `visual` Playwright projects — use `test:e2e:functional` / `test:e2e:visual` to run one lane only).
 - `lint`: static quality and style checks.
 - `typecheck`: TypeScript type safety across workspaces.
 - `build`: production bundle/compile verification.
@@ -357,7 +357,10 @@ Source of truth: `package.json` scripts at the repository root.
 - `test:unit`: runs Vitest unit projects (`unit-core`, `unit-web`).
 - `test:integration`: runs Vitest integration project.
 - `test:postgres`: runs PostgreSQL integration suite (Testcontainers-backed).
-- `test:e2e`: runs Playwright end-to-end browser tests.
+- `test:e2e`: runs Playwright end-to-end browser tests (both projects — `functional` and `visual`).
+- `test:e2e:functional`: runs only the `functional` Playwright project (behavioural, no screenshots).
+- `test:e2e:visual`: runs only the `visual` Playwright project (pixel-comparison regression checks).
+- `test:e2e:visual:update-snapshots`: regenerates `visual` project baselines — a deliberate act, never run as a side effect of a normal test pass.
 - `lint`: runs ESLint across the repository.
 - `analyze:static`: runs full static quality chain (`lint`, test-quality, deps, unused exports, complexity).
 - `analyze:deps`: runs dependency-cruiser boundary/cycle analysis.
