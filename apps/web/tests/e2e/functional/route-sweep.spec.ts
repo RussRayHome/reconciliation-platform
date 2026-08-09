@@ -105,6 +105,23 @@ test.describe('route sweep', () => {
     test('every in-app route renders its expected heading and does not fall through to the login redirect', async ({
       page,
     }) => {
+      // Raised from the global 60s (playwright.config.ts): a real CI run (docker-validate.yml's
+      // e2e-functional, first live trigger of that job) failed here 3 times in a row --
+      // identically, not flakily -- with the importFiles/reconSummary race below timing out at
+      // its default ~30s. The uploaded page snapshot at failure time showed the "Run
+      // reconciliation" button HAD rendered, just after that wait gave up -- this route is the
+      // first thing any test in this file's shard renders post-login, and it's a heavier page
+      // than most (nav rail rules-count and exceptions-count badges, a run-status summary bar for
+      // an existing completed run, the full upload form), so a cold Vite dev-server transform on
+      // a slower/contended runner can genuinely take longer than 30s to finish here even though
+      // it's near-instant warm/local. A first fix at 45s/120s still failed once locally under
+      // this machine's own full-functional-suite parallel run (all 47 tests contending for CPU
+      // at once -- a harsher scenario than CI's actual one-shard-per-VM model, but real evidence
+      // 45s can still be marginal), so this has real margin built in, not just enough to clear
+      // the first failure. Raising the whole test's budget, not the global default, so this
+      // doesn't mask genuine slowness in some other, unrelated test.
+      test.setTimeout(150_000);
+
       await loginToApplication(page);
 
       await test.step(`importFiles (${routePaths.importFiles})`, async () => {
@@ -117,15 +134,16 @@ test.describe('route sweep', () => {
         // login in this run, so accept either the fresh setup form or that redirect; only a
         // route that resolves to neither is the "fell through to something wrong" failure this
         // sweep is meant to catch. Race two real waits (not .isVisible(), which doesn't
-        // auto-wait) rather than assume one is already settled.
+        // auto-wait) rather than assume one is already settled. Explicit 60s timeout on each
+        // wait (was the implicit ~30s default) -- see the cold-CI-render comment above.
         const result = await Promise.race([
           page
             .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
-            .waitFor({ state: 'visible' })
+            .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'importFiles' as const),
           page
             .getByRole('heading', { name: 'Review' })
-            .waitFor({ state: 'visible' })
+            .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'reconSummary' as const),
         ]).catch(() => null);
         expect.soft(result).not.toBeNull();
@@ -152,15 +170,15 @@ test.describe('route sweep', () => {
         // Whichever outcome -- the route existing (Run Book heading) or not (redirected to
         // importFiles) -- is correct depending on the role this sweep happened to log in as;
         // see the comment on RUN_BOOK_HEADING above. Same race-two-real-waits pattern as
-        // importFiles.
+        // importFiles, same explicit 60s timeout for the same cold-CI-render reason.
         const result = await Promise.race([
           page
             .getByRole('heading', { name: RUN_BOOK_HEADING })
-            .waitFor({ state: 'visible' })
+            .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'runBook' as const),
           page
             .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
-            .waitFor({ state: 'visible' })
+            .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'redirectedToImportFiles' as const),
         ]).catch(() => null);
         expect.soft(result).not.toBeNull();
