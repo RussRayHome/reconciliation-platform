@@ -141,6 +141,14 @@ npm run test:e2e:visual:container:update-snapshots    # regenerate baselines (de
                                                        # review the resulting PNG diff before committing)
 ```
 
+Don't have Docker locally, or want the regeneration to run on the same CI-grade environment PRs
+are checked against? Dispatch the **Regenerate Visual Baselines** workflow
+(`.github/workflows/regenerate-visual-baselines.yml`) from the Actions tab, picking your PR branch
+as the ref to run from. It runs the same container-based `update-snapshots` command and pushes any
+changed baseline PNGs straight back to that branch as their own commit -- still reviewed as an
+image diff like any other baseline update, just without needing Docker on your own machine. It
+refuses to run against `dev` directly.
+
 The `functional` project is unaffected and always runs directly on the host.
 
 ## 6. Docker deployment runbook

@@ -1,0 +1,92 @@
+name: Regenerate Visual Baselines
+
+# The only sanctioned way to update apps/web/tests/e2e/visual/visual-baseline.spec.ts-snapshots/.
+# Manually dispatched against a PR branch (pick the branch as this workflow's "Use workflow from"
+# ref in the Actions UI) -- never automatic, and never against `dev` directly (guarded below).
+# Regenerating inside the P4 container is what P4 built that container FOR: baselines recorded on
+# a developer's own macOS/Windows machine reintroduce exactly the cross-platform divergence P4
+# removed (see docker-validate.yml's e2e-visual job and docker/e2e-visual.Dockerfile).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # GITHUB_TOKEN defaults to read-only in this org (confirmed on dashboard-status.yml's
+    # `aggregate` job -- see its comment) -- without this, the push step below fails with
+    # "Write access to repository not granted" regardless of whether the commit itself succeeds.
+    permissions:
+      contents: write
+    steps:
+      - name: Refuse to run against dev
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_name }}" = "dev" ]; then
+            echo "Refusing to regenerate baselines directly against dev -- dispatch this workflow from a PR branch instead, so the regenerated PNGs go through review like any other baseline update." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Regenerate baselines inside the P4 container
+        run: npm run test:e2e:visual:container:update-snapshots
+
+      - name: Commit and push regenerated baselines
+        env:
+          SNAPSHOT_DIR: apps/web/tests/e2e/visual/visual-baseline.spec.ts-snapshots
+        run: |
+          set -euo pipefail
+          git config user.name "visual-baseline-bot"
+          git config user.email "visual-baseline-bot@users.noreply.github.com"
+
+          # Scoped to just the snapshot dir, not `git add -A` -- this workflow's only sanctioned
+          # job is regenerating baselines; anything else that changed (a dirty container, a stray
+          # file) should surface as a review question, not get silently swept into this commit.
+          git add "$SNAPSHOT_DIR"
+
+          if git diff --staged --quiet; then
+            echo "No baseline changes -- visual output already matches committed baselines."
+            exit 0
+          fi
+
+          git commit -m "test(visual): regenerate baselines via P4 container"
+
+          # Same retry pattern as dashboard-status.yml's proven `Publish to status-data branch`
+          # step: on a rejected push, reset (not rebase) onto the new remote tip and recommit --
+          # our regenerated PNGs are a full, deterministic re-render from this run's container, so
+          # "ours wins" is the right merge policy here, same as that step's regenerated JSON file.
+          attempt=1
+          while true; do
+            if git push origin "HEAD:${{ github.ref_name }}"; then
+              break
+            fi
+
+            if [ "$attempt" -ge 5 ]; then
+              echo "Failed to push regenerated baselines after $attempt attempts." >&2
+              exit 1
+            fi
+
+            echo "Push rejected (attempt $attempt) -- pulling and retrying."
+            git fetch origin "${{ github.ref_name }}"
+            git reset --soft "origin/${{ github.ref_name }}"
+            git add "$SNAPSHOT_DIR"
+
+            if git diff --staged --quiet; then
+              echo "Remote branch already has this exact regeneration -- nothing left to push."
+              exit 0
+            fi
+
+            git commit -m "test(visual): regenerate baselines via P4 container"
+            attempt=$((attempt + 1))
+          done
+
+      - name: Upload regenerated baselines for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-visual-baselines
+          path: apps/web/tests/e2e/visual/visual-baseline.spec.ts-snapshots
+          if-no-files-found: ignore
