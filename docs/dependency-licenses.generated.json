@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-08T18:35:17.983Z",
+  "generatedAt": "2026-08-08T23:22:24.674Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 526,
+  "packageCount": 508,
   "packages": [
     {
       "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.3",
@@ -13,30 +13,6 @@
     },
     {
       "package": "@apm-js-collab/tracing-hooks@0.13.0",
-      "license": "Apache-2.0"
-    },
-    {
-      "package": "@aws-cdk/asset-awscli-v1@2.2.282",
-      "license": "Apache-2.0"
-    },
-    {
-      "package": "@aws-cdk/asset-node-proxy-agent-v6@2.1.2",
-      "license": "Apache-2.0"
-    },
-    {
-      "package": "@aws-cdk/cloud-assembly-api@2.2.6",
-      "license": "Apache-2.0"
-    },
-    {
-      "package": "@aws-cdk/cloud-assembly-schema@54.16.0",
-      "license": "Apache-2.0"
-    },
-    {
-      "package": "@aws/cloudformation-validate@1.6.0-beta",
-      "license": "Apache-2.0"
-    },
-    {
-      "package": "@balena/dockerignore@1.0.2",
       "license": "Apache-2.0"
     },
     {
@@ -732,10 +708,6 @@
       "license": "MIT"
     },
     {
-      "package": "aws-cdk-lib@2.263.0",
-      "license": "Apache-2.0"
-    },
-    {
       "package": "balanced-match@4.0.4",
       "license": "MIT"
     },
@@ -773,10 +745,6 @@
     },
     {
       "package": "body-parser@2.3.0",
-      "license": "MIT"
-    },
-    {
-      "package": "brace-expansion@5.0.8",
       "license": "MIT"
     },
     {
@@ -828,10 +796,6 @@
       "license": "MIT"
     },
     {
-      "package": "case@1.6.3",
-      "license": "(MIT OR GPL-3.0-or-later)"
-    },
-    {
       "package": "chainsaw@0.1.0",
       "license": "MIT/X11"
     },
@@ -878,10 +842,6 @@
     {
       "package": "concat-stream@2.0.0",
       "license": "MIT"
-    },
-    {
-      "package": "constructs@10.8.1",
-      "license": "Apache-2.0"
     },
     {
       "package": "content-disposition@1.1.0",
@@ -1172,10 +1132,6 @@
       "license": "MIT"
     },
     {
-      "package": "fs-extra@11.3.6",
-      "license": "MIT"
-    },
-    {
       "package": "fs.realpath@1.0.0",
       "license": "ISC"
     },
@@ -1260,10 +1216,6 @@
       "license": "BSD-3-Clause"
     },
     {
-      "package": "ignore@5.3.2",
-      "license": "MIT"
-    },
-    {
       "package": "immediate@3.0.6",
       "license": "MIT"
     },
@@ -1325,14 +1277,6 @@
     },
     {
       "package": "json-bigint@1.0.0",
-      "license": "MIT"
-    },
-    {
-      "package": "jsonfile@6.2.1",
-      "license": "MIT"
-    },
-    {
-      "package": "jsonschema@1.5.0",
       "license": "MIT"
     },
     {
@@ -1494,10 +1438,6 @@
     {
       "package": "mime-types@3.0.2",
       "license": "MIT"
-    },
-    {
-      "package": "minimatch@10.2.5",
-      "license": "BlueOak-1.0.0"
     },
     {
       "package": "minimatch@3.1.5",
@@ -1705,10 +1645,6 @@
     },
     {
       "package": "pump@3.0.4",
-      "license": "MIT"
-    },
-    {
-      "package": "punycode@2.3.1",
       "license": "MIT"
     },
     {
@@ -2012,10 +1948,6 @@
       "license": "MIT"
     },
     {
-      "package": "universalify@2.0.1",
-      "license": "MIT"
-    },
-    {
       "package": "unpipe@1.0.0",
       "license": "MIT"
     },
@@ -2077,10 +2009,6 @@
     },
     {
       "package": "y18n@5.0.8",
-      "license": "ISC"
-    },
-    {
-      "package": "yaml@1.10.3",
       "license": "ISC"
     },
     {

@@ -41,6 +41,16 @@ FROM node:26.5.1-alpine AS runtime-base
 WORKDIR /app
 COPY --from=manifests / /app/
 
+# The base image ships npm, and npm vendors its own dependency tree under
+# /usr/local/lib/node_modules/npm/node_modules. Trivy scans those as part of the image and they
+# account for every HIGH/CRITICAL finding this image has had (tar, brace-expansion, undici,
+# ip-address) -- none of which are project dependencies or appear in package-lock.json, so no
+# lockfile change can fix them and `npm audit` never sees them either. This stage runs the built
+# CJS bundle directly (CMD and HEALTHCHECK both invoke `node`, never npm), so the package manager
+# is dead weight in a production runtime. Deleting it removes the vulnerable code rather than
+# suppressing the finding, and keeps the docker-validate Trivy gate strict.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 FROM runtime-base AS runtime
 ENV NODE_ENV=production
 ENV RECONCILIATION_RUN_STORE_PATH=/var/lib/reconciliation/latest-reconciliation-run.json

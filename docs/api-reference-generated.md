@@ -1,14 +1,48 @@
 # API Reference (Generated)
 
-Generated at 2026-08-05T19:36:35.674Z.
+Generated at 2026-08-08T22:35:13.510Z.
 
 ## Coverage Summary
 
 - Exported classes scanned: 6
-- Class members scanned: 35
+- Class members scanned: 30
 - Missing documentation items: 0
 
 ## Exported Classes
+
+### MockEntityVerificationProvider
+
+- Source: `apps/api/src/services/entityVerificationService.ts:28`
+- Summary: Stands in for a real Secretary-of-State lookup vendor. Deterministic so the whole account-created -> pending -> verified/failed path is exercisable without any external dependency: an all-zero or '9999'-containing filing number fails (mirrors the design mockup's own fake SoS logic), anything else passes.
+
+#### MockEntityVerificationProvider Constructors
+
+- None
+
+#### MockEntityVerificationProvider Methods
+
+- `verify(request: EntityVerificationRequest): Promise<EntityVerificationResult>` — Fails on an all-zero or '9999'-containing filing number; verifies everything else.
+
+#### MockEntityVerificationProvider Properties
+
+- None
+
+### MockNotificationChannel
+
+- Source: `apps/api/src/services/identityVerificationService.ts:47`
+- Summary: The `NotificationChannel` implementation used until a real email/SMS vendor is wired in -- see the interface doc above for why logging stands in for sending.
+
+#### MockNotificationChannel Constructors
+
+- `constructor(logger?: Logger<never, boolean>): MockNotificationChannel` — @param logger Optional; when omitted the code is generated but never surfaced anywhere.
+
+#### MockNotificationChannel Methods
+
+- `send(target: string, code: string): Promise<void>` — Logs `code` instead of delivering it to `target` -- see the class doc for why.
+
+#### MockNotificationChannel Properties
+
+- None
 
 ### FileBackedRunRepository
 
@@ -51,48 +85,9 @@ Generated at 2026-08-05T19:36:35.674Z.
 
 - None
 
-### EphemeralStack
-
-- Source: `packages/infra/lib/ephemeral-stack.ts:21`
-- Summary: Ephemeral runtime infrastructure stack for deployable API/Web services and database compute. This stack depends on `PersistentStack` for shared resources while allowing the runtime environment to be safely recreated or restored from snapshots.
-
-#### EphemeralStack Constructors
-
-- `constructor(scope: Construct, id: string, props: EphemeralStackProps): EphemeralStack` — Creates runtime networking, database, ECS services, and load-balancer routing.
-
-#### EphemeralStack Methods
-
-- None
-
-#### EphemeralStack Properties
-
-- None
-
-### PersistentStack
-
-- Source: `packages/infra/lib/persistent-stack.ts:15`
-- Summary: Long-lived infrastructure resources shared across ephemeral environment deployments. This stack provisions durable repositories, storage, IAM roles, and database credentials that are referenced by runtime stacks and retained across teardown/recreate cycles.
-
-#### PersistentStack Constructors
-
-- `constructor(scope: Construct, id: string, props?: StackProps): PersistentStack` — Creates the persistent baseline infrastructure resources for the platform.
-
-#### PersistentStack Methods
-
-- None
-
-#### PersistentStack Properties
-
-- `apiRepo: Repository` — ECR repository used for API image pushes and deployments.
-- `webRepo: Repository` — ECR repository used for web image pushes and deployments.
-- `uploadsBucket: Bucket` — S3 bucket for uploaded source workbooks and related artifacts.
-- `executionRole: Role` — ECS execution role used for pulling images and publishing container logs.
-- `taskRole: Role` — ECS task role used by application containers for runtime AWS permissions.
-- `dbSecret: Secret` — Secret containing persisted database credentials used by runtime stacks.
-
 ### PostgresReconciliationReadModelStore
 
-- Source: `packages/persistence/src/readModelStore.ts:573`
+- Source: `packages/persistence/src/readModelStore.ts:578`
 - Summary: PostgreSQL-backed read-model store for reconciliation runs, exceptions, exports, and reviewer decisions. Used by the API to serve report and dashboard queries. ADR-0001 step 6: every method takes `organizationId` and runs through `runInTenantScope`, which sets `app.current_organization_id` for the transaction before issuing any query -- RLS policies (changeset 0030) key off that GUC, so a runId belonging to a different tenant than `organizationId` resolves as "not found" rather than leaking another customer's data.
 
 #### PostgresReconciliationReadModelStore Constructors
