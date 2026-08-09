@@ -1,0 +1,56 @@
+# Trivy vulnerability ignore file for docker-validate.yml's container-image scan
+# (.github/workflows/docker-validate.yml, "Scan container images for vulnerabilities" step).
+#
+# Same convention as scripts/ops/db-cve-allowlist.txt: only for CVEs with no non-breaking fix
+# available to this project (upstream/base-image packages we don't control), each with an expiry
+# to force a revisit rather than a silent permanent exception. Format: one ID per line, optional
+# "exp:YYYY-MM-DD" to auto-expire (Trivy 0.73+).
+#
+# ── packages/persistence/liquibase image (liquibase/liquibase:4.33.0) ───────────────────────
+# All entries below found 2026-08-09 via `trivy image --severity HIGH,CRITICAL --exit-code 1
+# --ignore-unfixed --scanners vuln` against the built migrate image -- see ISSUE-082 for the
+# original writeup (filed against the Go stdlib subset before the fuller scan below surfaced the
+# rest of this image's bundled Java/OS surface).
+
+# Go stdlib bundled inside Liquibase's own tooling binary (not this project's code; no
+# non-breaking fix -- would need Liquibase to publish an image on a patched Go toolchain).
+CVE-2025-68121 exp:2026-11-01
+CVE-2025-61726 exp:2026-11-01
+CVE-2025-61729 exp:2026-11-01
+CVE-2026-25679 exp:2026-11-01
+CVE-2026-27145 exp:2026-11-01
+CVE-2026-32280 exp:2026-11-01
+CVE-2026-32281 exp:2026-11-01
+CVE-2026-32283 exp:2026-11-01
+CVE-2026-33811 exp:2026-11-01
+CVE-2026-33814 exp:2026-11-01
+CVE-2026-39820 exp:2026-11-01
+CVE-2026-39822 exp:2026-11-01
+CVE-2026-39836 exp:2026-11-01
+CVE-2026-42499 exp:2026-11-01
+CVE-2026-42504 exp:2026-11-01
+
+# Ubuntu base OS packages (dirmngr, libssl3) inside the liquibase/liquibase:4.33.0 base image --
+# not a project dependency; needs an upstream base-image rebuild, not a change here.
+CVE-2025-68973 exp:2026-11-01
+CVE-2026-45447 exp:2026-11-01
+
+# jackson-databind/jackson-core, bundled by Liquibase itself for its own YAML/JSON changelog
+# parsing -- genuinely used by Liquibase internals, not something this project can remove or
+# upgrade independently of a new Liquibase release.
+CVE-2026-54512 exp:2026-11-01
+CVE-2026-54513 exp:2026-11-01
+GHSA-r7wm-3cxj-wff9 exp:2026-11-01
+
+# mssql-jdbc, bundled by Liquibase for SQL Server support -- this project only ever runs
+# migrations against Postgres, never SQL Server. Confirmed unused 2026-08-09. Deleting the jar
+# from the image (matching the approach already used for apps/api/Dockerfile's runtime stage) is
+# the better fix and removes this finding rather than suppressing it -- tracked as a fast
+# follow-up; allowlisted here in the meantime since the underlying code path is never executed.
+CVE-2025-59250 exp:2026-09-01
+
+# org.postgresql:postgresql, Liquibase's bundled JDBC driver -- genuinely used (this project
+# only targets Postgres). No non-breaking fix in the image today; needs a Liquibase release
+# bundling a patched driver version.
+CVE-2026-42198 exp:2026-11-01
+CVE-2026-54291 exp:2026-11-01
