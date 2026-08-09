@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-08T23:22:24.674Z",
+  "generatedAt": "2026-08-09T02:13:06.871Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 508,
+  "packageCount": 507,
   "packages": [
     {
       "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.3",
@@ -45,10 +45,6 @@
     },
     {
       "package": "@js-sdsl/ordered-map@4.4.2",
-      "license": "MIT"
-    },
-    {
-      "package": "@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.4",
       "license": "MIT"
     },
     {
