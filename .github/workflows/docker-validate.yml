@@ -38,6 +38,83 @@ jobs:
       - name: Run unit and integration tests
         run: npm run test
 
+  e2e-functional:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # fail-fast defaults to true here (unlike dashboard-status.yml's e2e-functional, which sets
+      # it false) -- that job exists to report full status to a dashboard regardless of any one
+      # shard's outcome; this one exists to gate a merge, where one failing shard already means
+      # the PR is blocked and there's no reason to spend the other shards' CI minutes finding out
+      # what else might also be broken.
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Check out repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
+
+      - name: Set up Node.js
+        run: |
+          set -euo pipefail
+          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # ALLOW_LOCAL_LOGIN_FALLBACK: this runtime has no real Postgres (in-memory backend, via
+      # Playwright's own webServer), so apps/web/tests/e2e/auth.ts's fallback credentials
+      # (rray/rray, bray/bray, rray3/rray3) are the only login path available -- without this,
+      # app.ts rejects every attempt before the fallback logic ever runs. Safe by design, not just
+      # by convention: app.ts refuses to start with this set in a production runtime at all
+      # (ADR-0002 step 7).
+      #
+      # DISABLE_API_RATE_LIMIT: the route-sweep and signup specs (ISSUE-026/ISSUE-033) each do
+      # real logins in sequence -- against a local Postgres, this reproducibly tripped the API's
+      # 120-requests/minute rate limit (a real 429 on /api/auth/me, confirmed via the failing
+      # run's network trace) once total e2e request volume crossed that threshold. The limiter is
+      # generic Express middleware applying regardless of persistence backend, so the same risk
+      # exists here even though CI's in-memory backend takes a different login path
+      # (ALLOW_LOCAL_LOGIN_FALLBACK, not real Postgres auth). Safe to disable for this job
+      # specifically: DISABLE_API_RATE_LIMIT has no production-safety guard of its own, but this
+      # env var only ever reaches the ephemeral webServer this job spawns for itself, never a
+      # deployed instance.
+      #
+      # Normal retry policy (retries: process.env.CI ? 2 : 0, from playwright.config.ts) -- not
+      # dashboard-status.yml's --max-failures=1 --retries=0, which that file's own comment marks
+      # explicitly temporary/triage-only. A required merge gate should retry ordinary flakiness
+      # the same way any other check here would, not fail-fast on the first flake.
+      - name: Run functional E2E tests
+        # --reporter=list, explicit: Playwright's default is 'dot' outside a TTY, which is much
+        # harder to debug from a CI log than list's per-test lines when this job fails.
+        run: npm run test:e2e:functional -- --reporter=list --shard=${{ matrix.shard }}/4
+        env:
+          ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
+          DISABLE_API_RATE_LIMIT: 'true'
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-functional-${{ matrix.shard }}-failure
+          path: test-results/e2e
+          if-no-files-found: ignore
+
   security-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 30
