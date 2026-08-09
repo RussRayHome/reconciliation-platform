@@ -281,7 +281,7 @@ jobs:
           path: .ci-out/secrets
           if-no-files-found: warn
 
-  e2e:
+  e2e-functional:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -289,21 +289,20 @@ jobs:
       # first failure would contradict this whole pipeline's "always publish whatever the other
       # jobs produced" design (see the header comment and `aggregate`'s if: always()). Each shard
       # gets its own runner and its own fresh webServer instance (API + web, both
-      # reuseExistingServer: true but nothing is already listening on a clean runner), so this is
-      # safe alongside playwright.config.ts's workers: 1 -- that setting exists because concurrent
-      # *workers sharing one backend* race on shared run state; separate shards on separate
-      # runners don't share anything. Playwright's default shard granularity is per FILE, not per
-      # test, so visual-baseline.spec.ts's forced-serial suite always lands wholly within one
-      # shard and keeps its own internal ordering guarantee.
+      # reuseExistingServer: true but nothing is already listening on a clean runner). Unlike the
+      # old combined job, the functional project has no workers cap (playwright.config.ts) --
+      # nothing here shares mutable state across workers or shards, so that's fine.
       #
-      # Shard count matches the spec FILE count (3), not an arbitrary round number -- since
-      # sharding is per-file, a 4th shard would always come up empty (spin up a runner, npm ci,
-      # install Chromium, find 0 tests assigned, exit) which burns CI minutes for zero benefit.
-      # Going further than 3 would need splitting the spec files themselves, not just the shard
-      # count. Bump this back up if a new spec file is added.
+      # Shard count matches the functional project's spec FILE count (4), not an arbitrary round
+      # number -- sharding is per-file, so a 5th shard would always come up empty (spin up a
+      # runner, npm ci, install Chromium, find 0 tests assigned, exit), burning CI minutes for
+      # zero benefit. Bump this back up if a new functional spec file is added. The visual project
+      # is a separate job below (e2e-visual) -- it doesn't shard, and it doesn't run on this bare
+      # runner at all, since visual-baseline.spec.ts refuses to run outside its canonical
+      # container (containerGuard.ts, see the UI-testing breakout plan's P4).
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -314,51 +313,72 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # Root cause found via a --max-failures=1 diagnostic run: every spec failed identically at
-      # login, because apps/web/tests/e2e/auth.ts's fallback credentials (rray/rray, bray/bray,
-      # rray3/rray3) only work when the app's local-login-fallback path is enabled -- and nothing
-      # set ALLOW_LOCAL_LOGIN_FALLBACK, so app.ts rejected every attempt before the fallback logic
-      # ever ran. This runtime has no real Postgres (in-memory backend, via Playwright's own
-      # webServer), so this is the only login path available to it. Verified locally: with this
-      # set, auth succeeds and specs actually run (15 passed before hitting an unrelated, real UI
-      # timeout on a different element -- confirming this was the login blocker, not a red herring).
-      # Safe by design, not just by convention: app.ts refuses to start with this set in a
-      # production runtime at all (ADR-0002 step 7).
+      # ALLOW_LOCAL_LOGIN_FALLBACK: this runtime has no real Postgres (in-memory backend, via
+      # Playwright's own webServer), so apps/web/tests/e2e/auth.ts's fallback credentials
+      # (rray/rray, bray/bray, rray3/rray3) are the only login path available -- without this,
+      # app.ts rejects every attempt before the fallback logic ever runs. Safe by design, not just
+      # by convention: app.ts refuses to start with this set in a production runtime at all
+      # (ADR-0002 step 7).
       #
-      # TEMPORARY, deliberate: --max-failures=1 --retries=0 while still working through E2E's
-      # remaining known-broken specs one at a time. A fully-clean run with the default
-      # retries: process.env.CI ? 2 : 0 found 34 passed / 2 failed / 13 didn't run (2026-08-05) --
-      # each failure now costs 2 retries before the next one even starts, and we already know
-      # there's more than one distinct root cause left. Fail-fast + no retries turns "find one bug"
-      # into a ~15s round trip instead of burning minutes retrying a test we already expect to
-      # fail for a known reason. Restore the normal flags once E2E is fully green.
+      # DISABLE_API_RATE_LIMIT: the route-sweep and signup specs (ISSUE-026/ISSUE-033) each do
+      # real logins in sequence -- against a local Postgres, this reproducibly tripped the API's
+      # 120-requests/minute rate limit (a real 429 on /api/auth/me, confirmed via the failing
+      # run's network trace) once total e2e request volume crossed that threshold. The limiter is
+      # generic Express middleware applying regardless of persistence backend, so the same risk
+      # exists here even though CI's in-memory backend takes a different login path
+      # (ALLOW_LOCAL_LOGIN_FALLBACK, not real Postgres auth). Safe to disable for this job
+      # specifically: DISABLE_API_RATE_LIMIT has no production-safety guard of its own, but this
+      # env var only ever reaches the ephemeral webServer this job spawns for itself, never a
+      # deployed instance.
       - run: >
-          npx tsx scripts/ci/run-check.ts --name "E2E tests (shard ${{ matrix.shard }}/3)" --meta .ci-out/e2e/meta.json --
-          npm run test:e2e -- --reporter=list,json --max-failures=1 --retries=0
-          --shard=${{ matrix.shard }}/3
+          npx tsx scripts/ci/run-check.ts --name "E2E functional tests (shard ${{ matrix.shard }}/4)" --meta .ci-out/e2e/meta.json --
+          npm run test:e2e:functional -- --reporter=list,json
+          --shard=${{ matrix.shard }}/4
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
           ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
-          # The route-sweep and signup specs (ISSUE-026/ISSUE-033) each do real logins in
-          # sequence -- against a local Postgres, this reproducibly tripped the API's
-          # 120-requests/minute rate limit (a real 429 on /api/auth/me, confirmed via the
-          # failing run's network trace) once total e2e request volume crossed that threshold.
-          # The limiter is generic Express middleware applying regardless of persistence
-          # backend, so the same risk exists here even though CI's in-memory backend takes a
-          # different login path (ALLOW_LOCAL_LOGIN_FALLBACK, not real Postgres auth). Safe to
-          # disable for this job specifically: DISABLE_API_RATE_LIMIT has no production-safety
-          # guard of its own, but this env var only ever reaches the ephemeral webServer this
-          # job spawns for itself, never a deployed instance.
           DISABLE_API_RATE_LIMIT: 'true'
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-${{ matrix.shard }}
+          name: e2e-functional-${{ matrix.shard }}
           path: .ci-out/e2e
           if-no-files-found: warn
 
+  e2e-visual:
+    runs-on: ubuntu-latest
+    # No shard matrix: visual-baseline.spec.ts is one file, and its own internal parallel mode
+    # (P5) already spreads its tests across workers inside the single container run below --
+    # sharding across multiple runners would just mean N cold container builds instead of one.
+    #
+    # No checkout/setup-node/npm-ci steps beyond checkout: everything this job needs (Node,
+    # Playwright, Chromium, the app's own dependencies) is installed at `docker build` time inside
+    # docker/e2e-visual.Dockerfile, not on this runner. `docker compose run` builds the image on
+    # first use if it isn't already cached (always true on a fresh runner -- no registry cache
+    # configured yet; a real cost, tracked as a known follow-up, not solved here).
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
+      - run: >
+          npx tsx scripts/ci/run-check.ts --name "E2E visual tests" --meta .ci-out/e2e-visual/meta.json --
+          docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e
+          npm run test:e2e:visual -- --reporter=list,json
+        env:
+          # Read inside the container by playwright.config.ts's use of process.env -- compose.e2e.yaml
+          # doesn't declare this itself, so it must be passed through from the invoking shell here.
+          PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e-visual/e2e-results.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-visual
+          path: .ci-out/e2e-visual
+          if-no-files-found: warn
+
   aggregate:
-    needs: [unit, integration, postgres, lint, typecheck, coverage, security, secrets, e2e]
+    needs:
+      [unit, integration, postgres, lint, typecheck, coverage, security, secrets, e2e-functional, e2e-visual]
     if: always() # publish whatever succeeded even if one or more check jobs failed or timed out
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -430,24 +450,38 @@ jobs:
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: e2e-1
-          path: .ci-artifacts/e2e-1
+          name: e2e-functional-1
+          path: .ci-artifacts/e2e-functional-1
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: e2e-2
-          path: .ci-artifacts/e2e-2
+          name: e2e-functional-2
+          path: .ci-artifacts/e2e-functional-2
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: e2e-3
-          path: .ci-artifacts/e2e-3
+          name: e2e-functional-3
+          path: .ci-artifacts/e2e-functional-3
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-functional-4
+          path: .ci-artifacts/e2e-functional-4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-visual
+          path: .ci-artifacts/e2e-visual
 
       - name: Merge e2e shards
-        # Combines the 3 shard artifacts back into the single .ci-artifacts/e2e/ layout
-        # aggregate-dashboard-status.ts expects, so that script stays shard-count-agnostic.
+        # Combines the 4 functional shards and the single visual result back into the one
+        # .ci-artifacts/e2e/ layout aggregate-dashboard-status.ts expects, so that script stays
+        # lane/shard-agnostic and keeps reporting one "E2E tests" dashboard entry.
         if: always()
-        run: npx tsx scripts/ci/merge-e2e-shards.ts --artifacts .ci-artifacts --shards 3 --out .ci-artifacts/e2e
+        run: >
+          npx tsx scripts/ci/merge-e2e-shards.ts --artifacts .ci-artifacts
+          --dirs e2e-functional-1,e2e-functional-2,e2e-functional-3,e2e-functional-4,e2e-visual
+          --out .ci-artifacts/e2e
 
       - name: Aggregate results
         # Belt-and-suspenders alongside continue-on-error above: a download that genuinely found
