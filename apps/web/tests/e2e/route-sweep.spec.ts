@@ -36,9 +36,17 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   accountBilling: { heading: 'Billing' },
   accountNotification: { heading: 'Notification' },
   accountPreferences: { heading: 'Preferences' },
-  // Gated on rolePermissions.canAccessRunBook -- true for the superuser role auth.ts logs in as.
-  documentationRunBook: { heading: 'Run Book' },
 };
+
+// documentationRunBook's <Route> is only registered at all when the logged-in account has
+// rolePermissions.canAccessRunBook (App.tsx: `{canAccessRunBook ? <Route .../> : null}`) --
+// without it, the route doesn't exist and the unmatched-route fallback redirects to importFiles,
+// same as any other unregistered path. auth.ts's loginToApplication tries its fallback
+// credentials in a fixed order (bray before rray) and returns whichever succeeds first, so which
+// role -- and therefore whether this route exists -- isn't something this sweep controls. Handled
+// separately from AUTHENTICATED_ROUTES's generic loop for that reason, with the same
+// redirect-tolerant pattern as importFiles below.
+const RUN_BOOK_HEADING = 'Run Book';
 
 /** Pre-auth routes, reachable without logging in. */
 const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
@@ -56,6 +64,7 @@ const IMPORT_FILES_LANDMARK_NAME = 'Run reconciliation';
 
 const accountedForKeys = [
   'importFiles',
+  'documentationRunBook',
   ...Object.keys(PUBLIC_ROUTES),
   ...Object.keys(AUTHENTICATED_ROUTES),
 ].sort();
@@ -136,6 +145,30 @@ test.describe('route sweep', () => {
           expect.soft(new URL(page.url()).pathname).toBe(path);
         });
       }
+
+      await test.step(`documentationRunBook (${routePaths.documentationRunBook})`, async () => {
+        await page.goto(routePaths.documentationRunBook);
+
+        // Whichever outcome -- the route existing (Run Book heading) or not (redirected to
+        // importFiles) -- is correct depending on the role this sweep happened to log in as;
+        // see the comment on RUN_BOOK_HEADING above. Same race-two-real-waits pattern as
+        // importFiles.
+        const result = await Promise.race([
+          page
+            .getByRole('heading', { name: RUN_BOOK_HEADING })
+            .waitFor({ state: 'visible' })
+            .then(() => 'runBook' as const),
+          page
+            .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
+            .waitFor({ state: 'visible' })
+            .then(() => 'redirectedToImportFiles' as const),
+        ]).catch(() => null);
+        expect.soft(result).not.toBeNull();
+
+        if (result === 'runBook') {
+          expect.soft(new URL(page.url()).pathname).toBe(routePaths.documentationRunBook);
+        }
+      });
     });
   });
 });
