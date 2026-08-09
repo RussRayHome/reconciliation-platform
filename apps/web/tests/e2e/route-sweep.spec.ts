@@ -100,10 +100,26 @@ test.describe('route sweep', () => {
 
       await test.step(`importFiles (${routePaths.importFiles})`, async () => {
         await page.goto(routePaths.importFiles);
-        await expect
-          .soft(page.getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME }))
-          .toBeVisible();
-        expect.soft(new URL(page.url()).pathname).toBe(routePaths.importFiles);
+
+        // App.tsx intentionally redirects '/' -> reconSummary when the logged-in account
+        // already has a completed reconciliation run (same behavior reconciliation-edge-
+        // cases.spec.ts exercises directly after running one) -- not a broken route. Whether
+        // that's true here depends on whatever earlier tests already did with this shared
+        // login in this run, so accept either the fresh setup form or that redirect; only a
+        // route that resolves to neither is the "fell through to something wrong" failure this
+        // sweep is meant to catch. Race two real waits (not .isVisible(), which doesn't
+        // auto-wait) rather than assume one is already settled.
+        const result = await Promise.race([
+          page
+            .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
+            .waitFor({ state: 'visible' })
+            .then(() => 'importFiles' as const),
+          page
+            .getByRole('heading', { name: 'Review' })
+            .waitFor({ state: 'visible' })
+            .then(() => 'reconSummary' as const),
+        ]).catch(() => null);
+        expect.soft(result).not.toBeNull();
       });
 
       for (const [routeKey, { heading }] of Object.entries(AUTHENTICATED_ROUTES)) {
