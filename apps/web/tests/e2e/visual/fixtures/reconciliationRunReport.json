@@ -1,0 +1,385 @@
+{
+  "id": "ebda97b9-bec1-4590-8fd4-c140b9852759",
+  "correlationId": "6cf5db0e-7399-477a-b78f-92b6c342ff14",
+  "accountIdentifier": "OPERATING-001",
+  "periodLabel": "Monthly Recon for March 2026",
+  "reconciliationFrequency": "Monthly",
+  "status": "Completed",
+  "startedAt": "2026-08-09T16:18:36.568Z",
+  "completedAt": "2026-08-09T16:18:36.874Z",
+  "sourceFiles": [
+    {
+      "id": "7930c32b-c55d-4194-9d8f-1d5b6fc4bd7e",
+      "source": "bank",
+      "fileName": "bank.xlsx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "sizeBytes": 6787,
+      "worksheetName": "Transactions",
+      "headerRow": 1,
+      "transactionStartRow": 2,
+      "excludedRowNumbers": [],
+      "uploadedAt": "2026-08-09T16:18:36.641Z"
+    },
+    {
+      "id": "30a37386-b4b2-4752-9b9c-1da060a78716",
+      "source": "gl",
+      "fileName": "gl.xlsx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "sizeBytes": 6820,
+      "worksheetName": "Transactions",
+      "headerRow": 1,
+      "transactionStartRow": 2,
+      "excludedRowNumbers": [
+        2
+      ],
+      "uploadedAt": "2026-08-09T16:18:36.646Z"
+    }
+  ],
+  "groupedMatchResults": [],
+  "probableMatches": [
+    {
+      "id": "ff801a8d-a9d3-415a-928a-983559d9536b",
+      "disposition": "ProbableMatch",
+      "confidence": "Probable",
+      "ruleId": "amount-+-date-with-description-variance",
+      "ruleName": "Amount + Date with Description Variance",
+      "reason": "Amounts align and dates are close, but description or merchant context still needs review. Reviewer confirmation is required before the match can be treated as exact.",
+      "score": 0.72,
+      "bankTransactionId": "43b5abda-57b4-4353-a794-d2998f1d84ad",
+      "glTransactionId": "9582489b-f6db-4d89-ada6-a2d6bb7c3c5b",
+      "dateDifferenceDays": 0,
+      "amountDifference": 0,
+      "evidence": [
+        "Amounts align and dates are close, but description or merchant context still needs review.",
+        "Reviewer confirmation is required before the match can be treated as exact."
+      ],
+      "likelyMatchingReference": "9582489b-f6db-4d89-ada6-a2d6bb7c3c5b",
+      "exceptionCategory": "DescriptionMerchantVariance"
+    },
+    {
+      "id": "180e6239-7ba2-44e2-9130-f45734a4a391",
+      "disposition": "ProbableMatch",
+      "confidence": "Probable",
+      "ruleId": "amount-+-date-with-description-variance",
+      "ruleName": "Amount + Date with Description Variance",
+      "reason": "Amounts align and dates are close, but description or merchant context still needs review. Reviewer confirmation is required before the match can be treated as exact.",
+      "score": 0.72,
+      "bankTransactionId": "f9c869da-f078-45e1-a5fe-54552b7a7b94",
+      "glTransactionId": "095c49c4-5ad1-459c-8996-cef135802881",
+      "dateDifferenceDays": 0,
+      "amountDifference": 0,
+      "evidence": [
+        "Amounts align and dates are close, but description or merchant context still needs review.",
+        "Reviewer confirmation is required before the match can be treated as exact."
+      ],
+      "likelyMatchingReference": "095c49c4-5ad1-459c-8996-cef135802881",
+      "exceptionCategory": "DescriptionMerchantVariance"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "c82978aa-aeb1-4411-a7fd-b3377d9622ec",
+      "runId": "ebda97b9-bec1-4590-8fd4-c140b9852759",
+      "category": "InvalidOrMissingData",
+      "severity": "Critical",
+      "source": "bank",
+      "spreadsheetFileName": "bank.xlsx",
+      "lineNumber": 7,
+      "transactionDate": "2025-01-11",
+      "amount": 0,
+      "errorMessage": "Critical matching fields are incomplete, preventing reliable reconciliation. Zero amount transaction requires review.",
+      "ruleTrace": {
+        "ruleId": "invalid-or-missing-data",
+        "ruleName": "Invalid or Missing Data",
+        "reason": "Zero amount transaction requires review.",
+        "evidence": [
+          "Zero amount transaction requires review."
+        ]
+      },
+      "recommendedNextActions": [
+        "Repair the missing or malformed source fields before relying on automated matching output.",
+        "Obtain the original export or source document if the current row cannot be corrected confidently."
+      ],
+      "matchConfidence": "Unmatched",
+      "normalizedComparisonTokens": [
+        "ADJUSTMENT",
+        "CARD"
+      ],
+      "relatedTransactionIds": []
+    },
+    {
+      "id": "5de720ac-72e5-419d-a0ac-c02a6b391370",
+      "runId": "ebda97b9-bec1-4590-8fd4-c140b9852759",
+      "category": "InvalidOrMissingData",
+      "severity": "Critical",
+      "source": "gl",
+      "spreadsheetFileName": "gl.xlsx",
+      "lineNumber": 7,
+      "transactionDate": "2025-01-10",
+      "amount": 0,
+      "errorMessage": "Critical matching fields are incomplete, preventing reliable reconciliation. Zero amount transaction requires review.",
+      "ruleTrace": {
+        "ruleId": "invalid-or-missing-data",
+        "ruleName": "Invalid or Missing Data",
+        "reason": "Zero amount transaction requires review.",
+        "evidence": [
+          "Zero amount transaction requires review."
+        ]
+      },
+      "recommendedNextActions": [
+        "Repair the missing or malformed source fields before relying on automated matching output.",
+        "Obtain the original export or source document if the current row cannot be corrected confidently."
+      ],
+      "matchConfidence": "Unmatched",
+      "normalizedComparisonTokens": [],
+      "relatedTransactionIds": []
+    },
+    {
+      "id": "5023e6ee-f472-4008-8860-986cc23989fb",
+      "runId": "ebda97b9-bec1-4590-8fd4-c140b9852759",
+      "category": "DuplicateInBank",
+      "severity": "High",
+      "source": "bank",
+      "spreadsheetFileName": "bank.xlsx",
+      "lineNumber": 6,
+      "transactionDate": "2025-01-09",
+      "amount": -1600,
+      "errorMessage": "Bank entry appears duplicated based on same amount, date proximity, and materially similar description.",
+      "ruleTrace": {
+        "ruleId": "duplicate-detection",
+        "ruleName": "Duplicate Detection in Bank",
+        "reason": "Same-source duplicate detected from amount equality, close dates, and similar description or reference tokens.",
+        "evidence": [
+          "Same amount within configured tolerance.",
+          "Date proximity falls within duplicate detection window.",
+          "Description or reference similarity indicates a duplicate posting."
+        ]
+      },
+      "recommendedNextActions": [
+        "Review bank posting detail to determine whether the item is an actual duplicate or a reversal pattern.",
+        "If duplicated, document the bank-side resolution and remove the extra item from reconciliation support."
+      ],
+      "matchConfidence": "Probable",
+      "normalizedComparisonTokens": [
+        "1052",
+        "CHECK",
+        "RENT"
+      ],
+      "relatedTransactionIds": []
+    },
+    {
+      "id": "32b7b168-219e-46fa-b7b3-ea38ee4da1ec",
+      "runId": "ebda97b9-bec1-4590-8fd4-c140b9852759",
+      "category": "DescriptionMerchantVariance",
+      "severity": "Low",
+      "source": "bank",
+      "spreadsheetFileName": "bank.xlsx",
+      "lineNumber": 2,
+      "transactionDate": "2025-01-02",
+      "amount": -125.5,
+      "errorMessage": "Transactions appear related but contain materially different merchant, payee, or description wording and should be reviewed.",
+      "ruleTrace": {
+        "ruleId": "amount-+-date-with-description-variance",
+        "ruleName": "Amount + Date with Description Variance",
+        "reason": "Amounts align and dates are close, but description or merchant context still needs review. Reviewer confirmation is required before the match can be treated as exact.",
+        "evidence": [
+          "Amounts align and dates are close, but description or merchant context still needs review.",
+          "Reviewer confirmation is required before the match can be treated as exact."
+        ],
+        "counterpart": {
+          "source": "gl",
+          "spreadsheetFileName": "gl.xlsx",
+          "lineNumber": 3,
+          "transactionId": "9582489b-f6db-4d89-ada6-a2d6bb7c3c5b",
+          "amount": -125.5,
+          "transactionDate": "2025-01-02"
+        },
+        "counterparts": [
+          {
+            "source": "gl",
+            "spreadsheetFileName": "gl.xlsx",
+            "lineNumber": 3,
+            "transactionId": "9582489b-f6db-4d89-ada6-a2d6bb7c3c5b",
+            "amount": -125.5,
+            "transactionDate": "2025-01-02"
+          }
+        ]
+      },
+      "recommendedNextActions": [
+        "Review merchant, payee, and memo fields against source support to verify the counterpart relationship.",
+        "Add reviewer notes before approving or rejecting the proposed relationship."
+      ],
+      "likelyMatchingReference": "9582489b-f6db-4d89-ada6-a2d6bb7c3c5b",
+      "matchConfidence": "Probable",
+      "normalizedComparisonTokens": [
+        "ACME",
+        "OFFICE",
+        "SUPPLY"
+      ],
+      "relatedTransactionIds": [
+        "43b5abda-57b4-4353-a794-d2998f1d84ad",
+        "9582489b-f6db-4d89-ada6-a2d6bb7c3c5b"
+      ]
+    },
+    {
+      "id": "9bcffcac-65c7-4aa2-bfe4-a33835c76427",
+      "runId": "ebda97b9-bec1-4590-8fd4-c140b9852759",
+      "category": "DescriptionMerchantVariance",
+      "severity": "Low",
+      "source": "bank",
+      "spreadsheetFileName": "bank.xlsx",
+      "lineNumber": 3,
+      "transactionDate": "2025-01-03",
+      "amount": -3200,
+      "errorMessage": "Transactions appear related but contain materially different merchant, payee, or description wording and should be reviewed.",
+      "ruleTrace": {
+        "ruleId": "amount-+-date-with-description-variance",
+        "ruleName": "Amount + Date with Description Variance",
+        "reason": "Amounts align and dates are close, but description or merchant context still needs review. Reviewer confirmation is required before the match can be treated as exact.",
+        "evidence": [
+          "Amounts align and dates are close, but description or merchant context still needs review.",
+          "Reviewer confirmation is required before the match can be treated as exact."
+        ],
+        "counterpart": {
+          "source": "gl",
+          "spreadsheetFileName": "gl.xlsx",
+          "lineNumber": 4,
+          "transactionId": "095c49c4-5ad1-459c-8996-cef135802881",
+          "amount": -3200,
+          "transactionDate": "2025-01-03"
+        },
+        "counterparts": [
+          {
+            "source": "gl",
+            "spreadsheetFileName": "gl.xlsx",
+            "lineNumber": 4,
+            "transactionId": "095c49c4-5ad1-459c-8996-cef135802881",
+            "amount": -3200,
+            "transactionDate": "2025-01-03"
+          }
+        ]
+      },
+      "recommendedNextActions": [
+        "Review merchant, payee, and memo fields against source support to verify the counterpart relationship.",
+        "Add reviewer notes before approving or rejecting the proposed relationship."
+      ],
+      "likelyMatchingReference": "095c49c4-5ad1-459c-8996-cef135802881",
+      "matchConfidence": "Probable",
+      "normalizedComparisonTokens": [
+        "PAYROLL"
+      ],
+      "relatedTransactionIds": [
+        "f9c869da-f078-45e1-a5fe-54552b7a7b94",
+        "095c49c4-5ad1-459c-8996-cef135802881"
+      ]
+    }
+  ],
+  "summary": {
+    "totalRecordsReviewed": 11,
+    "bankRecords": 6,
+    "glRecords": 5,
+    "exactMatches": 2,
+    "probableMatches": 2,
+    "unmatchedItems": 2,
+    "duplicates": 1,
+    "bankDuplicates": 1,
+    "glDuplicates": 0,
+    "dateVariances": 0,
+    "timingDifferences": 0,
+    "dataQualityIssues": 2,
+    "amountMismatches": 0,
+    "missingFromBank": 0,
+    "missingFromGL": 0,
+    "unmatchedBankNetAmount": 0,
+    "unmatchedGlNetAmount": 0,
+    "cleanMatchedAmount": 1600,
+    "unresolvedExposure": 4925.5,
+    "countsByCategory": {
+      "InvalidOrMissingData": 2,
+      "DuplicateInBank": 1,
+      "DescriptionMerchantVariance": 2
+    },
+    "amountByCategory": {
+      "InvalidOrMissingData": 0,
+      "DuplicateInBank": 1600,
+      "DescriptionMerchantVariance": 3325.5
+    },
+    "charts": [
+      {
+        "id": "countByCategory",
+        "title": "Counts by Category",
+        "data": [
+          {
+            "label": "Exact Matches",
+            "value": 2
+          },
+          {
+            "label": "Probable Matches",
+            "value": 2
+          },
+          {
+            "label": "Duplicate in Bank",
+            "value": 1
+          },
+          {
+            "label": "Description/Merchant Variance",
+            "value": 2
+          },
+          {
+            "label": "Invalid or Missing Data",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "id": "exposureByCategory",
+        "title": "Dollar Exposure by Exception Category",
+        "data": [
+          {
+            "label": "Invalid or Missing Data",
+            "value": 0
+          },
+          {
+            "label": "Duplicate in Bank",
+            "value": 1600
+          },
+          {
+            "label": "Description/Merchant Variance",
+            "value": 3325.5
+          }
+        ]
+      }
+    ]
+  },
+  "reviewerObservations": [
+    {
+      "id": "5440f500-cb30-4fa0-afd5-85be683e1b2a",
+      "runId": "ebda97b9-bec1-4590-8fd4-c140b9852759",
+      "category": "System",
+      "title": "Exception report generated",
+      "message": "Reconciliation generated 5 exceptions requiring accountant or auditor review.",
+      "severity": "High",
+      "createdAt": "2026-08-09T16:18:36.680Z",
+      "relatedTransactionIds": [
+        "43b5abda-57b4-4353-a794-d2998f1d84ad",
+        "9582489b-f6db-4d89-ada6-a2d6bb7c3c5b",
+        "f9c869da-f078-45e1-a5fe-54552b7a7b94",
+        "095c49c4-5ad1-459c-8996-cef135802881"
+      ]
+    }
+  ],
+  "reviewerDecisions": [],
+  "outputWorkbook": {
+    "fileName": "OPERATING-001-ebda97b9-bec1-4590-8fd4-c140b9852759.xlsx",
+    "generatedAt": "2026-08-09T16:18:36.874Z",
+    "tabNames": [
+      "Summary",
+      "Mapping and Assumptions",
+      "Error Report",
+      "Probable Matches Review",
+      "Reviewer Observations",
+      "Bank Normalized",
+      "GL Normalized"
+    ]
+  }
+}

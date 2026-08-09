@@ -1,10 +1,12 @@
 import './containerGuard';
 
 import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
+import type { ReconciliationRunReport } from '@recon/domain';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { openSetup } from '../auth';
+import reconciliationRunReportFixture from './fixtures/reconciliationRunReport.json' with { type: 'json' };
 
 // Visual acceptance oracle, originally recorded for the CSS layering refactor
 // (docs/css-refactor-plan.md, EXECUTED 2026-07-30, 15/15 zero-diff) -- that refactor's own
@@ -13,14 +15,36 @@ import { openSetup } from '../auth';
 // (docker/e2e-visual.Dockerfile, `npm run test:e2e:visual:container:update-snapshots`), reviewed
 // as an image diff in its own commit -- never as a side effect of an unrelated change.
 
-// All three viewport variants submit the identical reconciliation (same account
-// identifier and period label) as "superuser workspace". Running them concurrently
-// races against shared backend run state and produces nondeterministic exception
-// counts in the Review charts — confirmed by comparing a --workers=1 run against
-// the default parallel run. Force this file to run serially to keep it deterministic.
-test.describe.configure({ mode: 'serial' });
-
 const widths = [1440, 1100, 900] as const;
+
+// A real, complete ReconciliationRunReport captured once from a live run against the sample
+// bank/GL workbooks (packages/test-fixtures), frozen as a static fixture. Every screen this spec
+// screenshots (Review/Summary, Probable Matches, Exceptions, Reports/artifacts) reads from this
+// one embedded object -- there's no separate endpoint per screen -- so intercepting the two
+// endpoints that deliver it is enough to make the whole suite deterministic. This is what let P5
+// replace the old forced-serial mode with the parallel mode below: with a live backend, three
+// viewport variants submitting the identical reconciliation concurrently raced on shared backend
+// run state and produced nondeterministic exception counts; with every variant getting this same
+// static JSON regardless of timing, there's nothing left to race on.
+//
+// A single spec file defaults to one worker running its tests in declaration order unless told
+// otherwise (this is a Playwright default, not something this file previously opted out of) --
+// explicitly requesting parallel mode is what actually lets the three widths run concurrently.
+test.describe.configure({ mode: 'parallel' });
+const mockReconciliationRun = async (page: Page): Promise<void> => {
+  const fixture = reconciliationRunReportFixture as unknown as ReconciliationRunReport;
+  const body = JSON.stringify(fixture);
+  await page.route('**/api/reconciliation/run', (route) =>
+    route.fulfill({ status: 201, contentType: 'application/json', body }),
+  );
+  // The analyst-workspace test lands on /recon-summary automatically after login, which fetches
+  // this on mount -- org-scoped, not user-scoped, so without this mock it would show whatever the
+  // real backend's last run happened to be (previously: the superuser-workspace test's run,
+  // relying on serial execution order). Mocked here too so every test is self-contained.
+  await page.route('**/api/reconciliation/latest', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body }),
+  );
+};
 
 const screenshotOptions = {
   fullPage: true,
@@ -132,6 +156,7 @@ for (const width of widths) {
     });
 
     test(`superuser workspace @${width}`, async ({ page }) => {
+      await mockReconciliationRun(page);
       await loginAs(page, 'rray', 'P@ssw0rd');
 
       await openSetup(page);
@@ -168,30 +193,35 @@ for (const width of widths) {
 
       // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
       await page.getByRole('link', { name: 'Reports', exact: true }).click();
-      // Artifact filenames embed the run id; mask them so baselines stay deterministic.
-      await expect(page).toHaveScreenshot(`close-${width}.png`, {
-        ...screenshotOptions,
-        mask: [page.locator('.artifacts-grid h3')],
-      });
+      // Artifact filenames embed the run id -- previously masked because a live run's id was
+      // different every time. Now that the report is a frozen fixture (mockReconciliationRun),
+      // the filename is identical every run and this region is real, assertable coverage.
+      await expect(page).toHaveScreenshot(`close-${width}.png`, screenshotOptions);
     });
 
     test(`docs hub and document @${width}`, async ({ page }) => {
+      await mockReconciliationRun(page);
       await loginAs(page, 'rray', 'P@ssw0rd');
       await page.goto('/docs');
       await page.waitForLoadState('networkidle');
       await waitForStableLayout(page);
       await expect(page).toHaveScreenshot(`docs-hub-${width}.png`, screenshotOptions);
 
-      const firstDocLink = page.locator('a[href^="/docs/"]').first();
-      if (await firstDocLink.isVisible().catch(() => false)) {
-        await firstDocLink.click();
-        await page.waitForLoadState('networkidle');
-        await waitForStableLayout(page);
-        await expect(page).toHaveScreenshot(`docs-document-${width}.png`, screenshotOptions);
-      }
+      // DocsOverview.tsx selects documents via <button class="docs-nav-card"> + client-side hash
+      // routing (history.replaceState), not real <a href="/docs/..."> sub-page links -- there
+      // were never any anchor tags here for the previous a[href^="/docs/"] locator to match,
+      // which is why this capture never fired for any committed baseline. Pick a non-active card
+      // (the hub loads with the first document already selected) so this genuinely exercises the
+      // document-switch interaction rather than re-capturing the same content as docs-hub.
+      const otherDocCard = page.locator('.docs-nav-card:not(.docs-nav-card--active)').first();
+      await otherDocCard.click();
+      await page.waitForLoadState('networkidle');
+      await waitForStableLayout(page);
+      await expect(page).toHaveScreenshot(`docs-document-${width}.png`, screenshotOptions);
     });
 
     test(`analyst workspace @${width}`, async ({ page }) => {
+      await mockReconciliationRun(page);
       await loginAs(page, 'bray', 'bray123');
       await page.waitForLoadState('networkidle');
       await expect(page).toHaveScreenshot(`analyst-workspace-${width}.png`, screenshotOptions);

@@ -28,12 +28,14 @@ export default defineConfig({
       // (docker/e2e-visual.Dockerfile, enforced by containerGuard.ts), there is exactly one
       // platform, so a platform suffix would be redundant noise, not a real second baseline set.
       snapshotPathTemplate: '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{ext}',
-      // Single worker: visual-baseline.spec.ts is already forced serial within itself
-      // (see its own test.describe.configure) because its three viewport variants
-      // submit the identical reconciliation and race on shared backend run state if
-      // run concurrently. Scoped to this project only (not the old top-level setting)
-      // now that the functional project no longer needs to pay for it.
-      workers: 1,
+      // Was forced single-worker because its three viewport variants submitted the identical
+      // reconciliation and raced on shared backend run state (visual-baseline.spec.ts's
+      // mockReconciliationRun intercepts that request now, so there's no live backend state left
+      // to race on -- see P5 in the UI-testing breakout plan). Uncapped (Playwright's runner
+      // default, half the container's CPU count -- 8 on this container's 16) was tried first and
+      // caused real 60s test timeouts on navigation/network-idle waits under the resulting
+      // resource contention, not flaky pixel diffs. workers: 2 was verified stable.
+      workers: 2,
       // Full-page screenshots on long doc pages (~9800px tall) can exceed the 5s
       // default `toHaveScreenshot` timeout under CPU contention from sibling workers
       // running concurrently — confirmed by a byte-identical actual/expected pair on
