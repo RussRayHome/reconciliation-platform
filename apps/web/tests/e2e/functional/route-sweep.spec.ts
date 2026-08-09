@@ -1,8 +1,8 @@
 import type { Page } from '@playwright/test';
 
-import { expect, test } from './fixtures';
-import { loginToApplication } from './auth';
-import { routePaths } from '../../src/routes/routePaths';
+import { expect, test } from '../fixtures';
+import { loginToApplication } from '../auth';
+import { routePaths } from '../../../src/routes/routePaths';
 
 type RouteAssertion = {
   /** Text of an accessible heading (role="heading") this route is expected to render, or an

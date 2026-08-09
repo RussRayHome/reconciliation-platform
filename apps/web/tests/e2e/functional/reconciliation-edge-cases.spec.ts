@@ -19,8 +19,8 @@ import {
 } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
 
-import { expect, test } from './fixtures';
-import { loginToApplication, openSetup } from './auth';
+import { expect, test } from '../fixtures';
+import { loginToApplication, openSetup } from '../auth';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
