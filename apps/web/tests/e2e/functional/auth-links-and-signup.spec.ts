@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { expect, test } from '../fixtures';
 
 // ─── Login screen outbound links ────────────────────────────────────────────
 // Never click-tested before (ISSUE-033): each of these resolves the login screen's only
