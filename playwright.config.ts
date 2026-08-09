@@ -26,6 +26,23 @@ export default defineConfig({
   // time. A Playwright project split with a dependency ordering was tried first
   // but caused unrelated hangs; a single worker is simpler and reliably stable.
   workers: 1,
+  projects: [
+    {
+      name: 'functional',
+      testDir: './apps/web/tests/e2e/functional',
+    },
+    {
+      name: 'visual',
+      testDir: './apps/web/tests/e2e/visual',
+      // Playwright's default snapshotPathTemplate includes {-projectName}, which is empty today
+      // (no named projects existed before this). The instant a project is named "visual", that
+      // token would resolve to "-visual" and every one of the 60 committed baseline filenames
+      // would stop matching, reporting as missing. Pin the template to reproduce today's naming
+      // exactly (still {-platform}-suffixed) so this phase is a pure rename-free split; dropping
+      // the platform suffix is a deliberate later phase (P4), not a side effect of this one.
+      snapshotPathTemplate: '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-platform}{ext}',
+    },
+  ],
   use: {
     baseURL,
     trace: 'retain-on-failure',

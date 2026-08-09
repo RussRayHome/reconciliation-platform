@@ -64,26 +64,38 @@ Scope:
 - monthly reconciliation controls and output visibility
 - end-user critical path from file submission through report surfaces
 
-Command:
+The suite is split into two Playwright projects, in `apps/web/tests/e2e/functional/` and
+`apps/web/tests/e2e/visual/` respectively:
+
+- **functional** — behavioural and workflow assertions, no screenshots. Fast, deterministic,
+  parallel-safe.
+- **visual** — pixel-comparison regression checks (`visual-baseline.spec.ts`). Slower and more
+  environment-sensitive; kept separate so its constraints don't slow down the functional lane.
+
+Commands:
 
 ```bash
-npm run test:e2e
+npm run test:e2e             # both projects
+npm run test:e2e:functional  # functional lane only
+npm run test:e2e:visual      # visual lane only
 ```
 
 ## 3. Command matrix
 
-| Command                    | Purpose                         | Typical use               |
-| -------------------------- | ------------------------------- | ------------------------- |
-| `npm run test`             | unit + integration aggregate    | default pre-PR validation |
-| `npm run test:unit`        | fast deterministic logic checks | iterative development     |
-| `npm run test:integration` | API contract behavior           | route/service changes     |
-| `npm run test:postgres`    | real DB persistence checks      | schema/store changes      |
-| `npm run test:e2e`         | browser regression checks       | UI workflow changes       |
-| `npm run lint`             | static quality checks           | every PR                  |
-| `npm run typecheck`        | TS type safety checks           | every PR                  |
-| `npm run coverage`         | coverage report generation      | release verification      |
-| `npm run security:scan`    | dependency vulnerability audit  | release verification      |
-| `npm run build`            | production build integrity      | merge/release gate        |
+| Command                       | Purpose                                    | Typical use               |
+| ----------------------------- | ------------------------------------------ | ------------------------- |
+| `npm run test`                | unit + integration aggregate               | default pre-PR validation |
+| `npm run test:unit`           | fast deterministic logic checks            | iterative development     |
+| `npm run test:integration`    | API contract behavior                      | route/service changes     |
+| `npm run test:postgres`       | real DB persistence checks                 | schema/store changes      |
+| `npm run test:e2e`            | browser regression checks (both projects)  | UI workflow changes       |
+| `npm run test:e2e:functional` | browser behavioural checks, no screenshots | fast, parallel-safe       |
+| `npm run test:e2e:visual`     | pixel-comparison regression checks         | UI/CSS layout changes     |
+| `npm run lint`                | static quality checks                      | every PR                  |
+| `npm run typecheck`           | TS type safety checks                      | every PR                  |
+| `npm run coverage`            | coverage report generation                 | release verification      |
+| `npm run security:scan`       | dependency vulnerability audit             | release verification      |
+| `npm run build`               | production build integrity                 | merge/release gate        |
 
 ## 4. Suggested validation tiers
 
