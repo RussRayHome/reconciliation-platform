@@ -76,7 +76,7 @@ jobs:
           npm run test:unit -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/unit/unit-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit
           path: .ci-out/unit
@@ -99,7 +99,7 @@ jobs:
           npm run test:integration:dashboard -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/integration/integration-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration
           path: .ci-out/integration
@@ -121,7 +121,7 @@ jobs:
           npx tsx scripts/ci/run-check.ts --name "Postgres DB tests" --meta .ci-out/postgres/meta.json --
           npm run test:postgres -- --reporter=json --outputFile.json=.ci-out/postgres/postgres-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: postgres
           path: .ci-out/postgres
@@ -144,7 +144,7 @@ jobs:
         if: always()
         run: npm run lint -- --format json --output-file .ci-out/lint/lint-results.json || true
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint
           path: .ci-out/lint
@@ -164,7 +164,7 @@ jobs:
       - run: npm ci
       - run: npx tsx scripts/ci/run-check.ts --name "Static analysis (typecheck)" --meta .ci-out/typecheck/meta.json -- npm run typecheck
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: typecheck
           path: .ci-out/typecheck
@@ -186,7 +186,7 @@ jobs:
       - if: always()
         run: mkdir -p .ci-out/coverage && cp coverage/coverage-summary.json .ci-out/coverage/coverage-summary.json || true
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: .ci-out/coverage
@@ -224,7 +224,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/security/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security
           path: .ci-out/security
@@ -275,7 +275,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/secrets/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: secrets
           path: .ci-out/secrets
@@ -339,7 +339,7 @@ jobs:
           ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
           DISABLE_API_RATE_LIMIT: 'true'
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-functional-${{ matrix.shard }}
           path: .ci-out/e2e
@@ -392,7 +392,7 @@ jobs:
           # doesn't declare this itself, so it must be passed through from the invoking shell here.
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e-visual/e2e-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-visual
           path: .ci-out/e2e-visual
@@ -517,7 +517,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-status-${{ env.TARGET_BRANCH }}
           path: dashboard-status/${{ env.TARGET_BRANCH }}.json
