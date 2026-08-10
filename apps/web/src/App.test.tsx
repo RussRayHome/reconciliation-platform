@@ -686,6 +686,52 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Create Mapping' })).toBeInTheDocument();
   });
 
+  // Regression coverage for the segment being hardcoded to 'dev': the fix above originally only
+  // rewrote bare deep links for that one literal segment, silently leaving every other
+  // environment-prefixed deployment (e.g. stage) rendering blank on a direct route hit.
+  it('redirects root to /stage when the stage environment path segment is configured', () => {
+    setAuthenticatedUser('rray');
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'stage');
+    globalThis.history.pushState({}, '', '/');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/stage');
+  });
+
+  it('redirects a single-segment route hit directly onto /stage instead of rendering blank', () => {
+    setAuthenticatedUser('rray');
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'stage');
+    globalThis.history.pushState({}, '', '/export');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/stage/export');
+    expect(screen.getByRole('link', { name: /Reports/i })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('redirects a multi-segment deep link onto /stage instead of rendering blank', () => {
+    setAuthenticatedUser('rray');
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'stage');
+    globalThis.history.pushState({}, '', '/mapping/create');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/stage/mapping/create');
+    expect(screen.getByRole('heading', { name: 'Create Mapping' })).toBeInTheDocument();
+  });
+
+  it('does not double-prefix a route that is already under /stage', () => {
+    setAuthenticatedUser('rray');
+    vi.stubEnv('VITE_ENVIRONMENT_PATH_SEGMENT', 'stage');
+    globalThis.history.pushState({}, '', '/stage/mapping/create');
+
+    renderApp();
+
+    expect(globalThis.location.pathname).toBe('/stage/mapping/create');
+    expect(screen.getByRole('heading', { name: 'Create Mapping' })).toBeInTheDocument();
+  });
+
   it('renders the documentation hub on the docs route', () => {
     setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/docs');
