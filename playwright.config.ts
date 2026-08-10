@@ -3,6 +3,15 @@ import { defineConfig } from '@playwright/test';
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173';
 const apiURL = process.env.PLAYWRIGHT_API_URL ?? 'http://127.0.0.1:4000';
 
+// Only Stage is a live, rate-limited Dockerized deployment this suite can target -- native/CI
+// runs (no PLAYWRIGHT_ENVIRONMENT_PATH_SEGMENT) hit an in-process/native server, and CI already
+// disables rate limiting for those via its own DISABLE_API_RATE_LIMIT step-level env var, so they
+// don't need this and shouldn't get it: changing their worker count risks reopening the CI
+// shard-math fragility already fixed once (P6a). Deliberately checks for 'stage' specifically,
+// not "any segment configured" -- a hypothetical future dev-targeted run isn't known to have the
+// same contention problem and shouldn't inherit this cap without its own evidence.
+const isStageTargeted = process.env.PLAYWRIGHT_ENVIRONMENT_PATH_SEGMENT === 'stage';
+
 export default defineConfig({
   testDir: './apps/web/tests/e2e',
   timeout: 60_000,
@@ -14,9 +23,15 @@ export default defineConfig({
     {
       name: 'functional',
       testDir: './apps/web/tests/e2e/functional',
-      // No workers/expect override -- runs at the runner's default parallelism with
-      // Playwright's default 5s expect timeout, now that it no longer shares a
-      // config with the visual project's constraints.
+      // No expect override -- runs with Playwright's default 5s expect timeout, now that it no
+      // longer shares a config with the visual project's constraints. Workers default to
+      // Playwright's own parallelism (native/CI) unless targeting Stage -- see isStageTargeted
+      // above: 4 concurrent workers logging in/uploading against Stage's live, Redis-backed rate
+      // limiter (120 req/60s) produced real 429s and a downstream 401, confirmed to disappear
+      // when run single-worker. Capped to 2, matching the visual project's own precedent for
+      // tuning worker count down from a real, confirmed-not-flaky contention failure rather than
+      // guessing at a number.
+      ...(isStageTargeted ? { workers: 2 } : {}),
     },
     {
       name: 'visual',

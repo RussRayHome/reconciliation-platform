@@ -1,4 +1,4 @@
-import { expect, test } from '../fixtures';
+import { expect, expectedPathname, test } from '../fixtures';
 
 // ─── Login screen outbound links ────────────────────────────────────────────
 // Never click-tested before (ISSUE-033): each of these resolves the login screen's only
@@ -11,21 +11,21 @@ test.describe('login screen outbound links', () => {
     await page.goto('/');
     await page.getByRole('link', { name: 'Forgot password?' }).click();
     await expect(page.getByRole('heading', { name: 'Forgot Password' })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe('/forgot-password');
+    expect(new URL(page.url()).pathname).toBe(expectedPathname('/forgot-password'));
   });
 
   test('Create an account navigates to the signup screen', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('link', { name: 'Create an account' }).click();
     await expect(page.getByRole('heading', { name: 'Create an account' })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe('/signup');
+    expect(new URL(page.url()).pathname).toBe(expectedPathname('/signup'));
   });
 
   test('Contact support navigates to the Contact Support screen', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('link', { name: 'Contact support' }).click();
     await expect(page.getByRole('heading', { name: 'Contact Support' })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe('/support');
+    expect(new URL(page.url()).pathname).toBe(expectedPathname('/support'));
   });
 });
 
@@ -145,6 +145,6 @@ test.describe('successful signup', () => {
     // separately per-feature (e.g. Create Mapping) by isFullyVerified.
     await page.getByRole('button', { name: 'Skip and enter the app' }).click();
     await expect(page.getByRole('link', { name: 'Import Files' })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe('/');
+    expect(new URL(page.url()).pathname).toBe(expectedPathname('/'));
   });
 });

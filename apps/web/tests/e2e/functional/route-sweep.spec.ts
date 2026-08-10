@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, test } from '../fixtures';
+import { expect, expectedPathname, test } from '../fixtures';
 import { loginToApplication } from '../auth';
 import { routePaths } from '../../../src/routes/routePaths';
 
@@ -91,7 +91,9 @@ test.describe('route sweep', () => {
       await page.goto(routePaths[routeKey as keyof typeof routePaths]);
 
       await expectHeadingSoft(page, heading);
-      expect(new URL(page.url()).pathname).toBe(routePaths[routeKey as keyof typeof routePaths]);
+      expect(new URL(page.url()).pathname).toBe(
+        expectedPathname(routePaths[routeKey as keyof typeof routePaths]),
+      );
     });
   }
 
@@ -160,7 +162,7 @@ test.describe('route sweep', () => {
           // The unmatched-route fallback silently redirects to importFiles -- confirming the URL
           // stayed on this route is what actually catches that failure mode, since a redirected
           // page can still happen to render *a* heading.
-          expect.soft(new URL(page.url()).pathname).toBe(path);
+          expect.soft(new URL(page.url()).pathname).toBe(expectedPathname(path));
         });
       }
 
@@ -184,7 +186,9 @@ test.describe('route sweep', () => {
         expect.soft(result).not.toBeNull();
 
         if (result === 'runBook') {
-          expect.soft(new URL(page.url()).pathname).toBe(routePaths.documentationRunBook);
+          expect.soft(new URL(page.url()).pathname).toBe(
+            expectedPathname(routePaths.documentationRunBook),
+          );
         }
       });
     });
