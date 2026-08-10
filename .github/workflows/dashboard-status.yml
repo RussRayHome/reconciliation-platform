@@ -371,6 +371,18 @@ jobs:
         # already Linux, same as the container image, there's no ABI mismatch to protect against
         # the way there is on a macOS dev machine.
         run: npm ci
+      - name: Pre-create the output directory
+        # The visual-e2e container runs as root internally, and PLAYWRIGHT_JSON_OUTPUT_NAME below
+        # points inside .ci-out/e2e-visual -- via compose.e2e.yaml's bind mount, whichever process
+        # creates that directory FIRST owns it on the host. Without this step, the container
+        # creates it (as root) while writing its own JSON report, and run-check.ts's later attempt
+        # to write meta.json into that same now-root-owned directory (as this job's unprivileged
+        # runner user) fails with EACCES -- confirmed on this job's own first-ever live run, after
+        # fixing the earlier node_modules issue above let it get this far. Creating it here first
+        # means the directory itself stays runner-owned even after root writes a file into it --
+        # root can still write into a directory it doesn't own (root bypasses permission checks),
+        # but that doesn't change who owns the directory itself.
+        run: mkdir -p .ci-out/e2e-visual
       - run: >
           npx tsx scripts/ci/run-check.ts --name "E2E visual tests" --meta .ci-out/e2e-visual/meta.json --
           docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e
