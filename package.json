@@ -189,7 +189,7 @@
     "@tanstack/query-sync-storage-persister": "^5.101.1",
     "@tanstack/react-query-persist-client": "^5.101.1",
     "@tanstack/react-virtual": "^3.14.4",
-    "bullmq": "^5.79.2",
+    "bullmq": "^6.0.9",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "prom-client": "^15.1.3",
