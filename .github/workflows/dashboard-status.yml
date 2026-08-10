@@ -350,17 +350,27 @@ jobs:
     # No shard matrix: visual-baseline.spec.ts is one file, and its own internal parallel mode
     # (P5) already spreads its tests across workers inside the single container run below --
     # sharding across multiple runners would just mean N cold container builds instead of one.
-    #
-    # No checkout/setup-node/npm-ci steps beyond checkout: everything this job needs (Node,
-    # Playwright, Chromium, the app's own dependencies) is installed at `docker build` time inside
-    # docker/e2e-visual.Dockerfile, not on this runner. `docker compose run` builds the image on
-    # first use if it isn't already cached (always true on a fresh runner -- no registry cache
-    # configured yet; a real cost, tracked as a known follow-up, not solved here).
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install dependencies
+        # compose.e2e.yaml bind-mounts the repo root over the container's /app and relies on an
+        # anonymous volume to shadow just /app/node_modules with the image's own npm-ci'd
+        # install. On a fresh runner (fresh checkout, fresh anonymous volume) that shadow's
+        # auto-populate-from-image doesn't reliably happen -- first confirmed via
+        # docker-validate.yml's e2e-visual job, and reproduced identically here on this job's own
+        # first-ever live run (Vite reporting an unresolvable "react-router" import -- a real
+        # dependency, not an app bug). Installing here means the bind-mounted node_modules the
+        # container actually sees is this real, complete install -- and since this runner is
+        # already Linux, same as the container image, there's no ABI mismatch to protect against
+        # the way there is on a macOS dev machine.
+        run: npm ci
       - run: >
           npx tsx scripts/ci/run-check.ts --name "E2E visual tests" --meta .ci-out/e2e-visual/meta.json --
           docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e
