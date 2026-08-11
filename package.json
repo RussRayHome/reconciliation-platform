@@ -97,6 +97,7 @@
     "analyze:unused-exports:raw": "ts-prune -p tsconfig.typecheck.json -s \"(\\.test\\.|\\.spec\\.|/tests/|/coverage/|/docs/)\"",
     "analyze:unused-exports:baseline:update": "NODE_OPTIONS=--no-deprecation tsx scripts/triage-unused-exports.ts --update",
     "analyze:complexity": "NODE_OPTIONS=--no-deprecation tsx scripts/escomplex-analysis.ts",
+    "analyze:complexity:json": "NODE_OPTIONS=--no-deprecation tsx scripts/escomplex-analysis.ts --json-out .ci-out/complexity/scan.json",
     "format": "prettier --write .",
     "typecheck": "tsc -p tsconfig.typecheck.json --pretty false",
     "coverage": "vitest run --coverage --no-file-parallelism --project unit-core --project unit-web --project unit-data --project integration --exclude apps/api/tests/deploy-cleanup.test.ts",

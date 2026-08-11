@@ -1,8 +1,10 @@
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 
 import { dashboardApiFetch } from '../lib/api';
 import { SkeletonPanel, KpiWellsSkeleton, SkeletonLines, TableSkeleton } from './Skeleton';
 import { RepoStatusSection, type RepoStatusPayload } from './RepoStatus';
+import { ComplexityPanel, type ComplexityScan } from './ComplexityPanel';
+import { DetailPanel, StatusPill, type Verdict } from './StatusPrimitives';
 
 /*
  * Ported from apps/web/src/components/DeveloperDashboard.tsx (the product's in-app "Developer
@@ -29,8 +31,6 @@ import { RepoStatusSection, type RepoStatusPayload } from './RepoStatus';
  * shared header, above "Testing & verification"), sharing this component's single /api/status
  * fetch rather than each screen fetching it independently.
  */
-
-type Verdict = 'pass' | 'fail' | 'warn' | 'neutral';
 
 type TestItem = {
   name: string;
@@ -191,6 +191,7 @@ type DeveloperCheckResponse = {
     info: number;
   };
   secretScanTools?: { gitleaks: boolean; trufflehog: boolean };
+  complexityScan?: ComplexityScan;
 };
 
 type PromotionReadiness = {
@@ -323,10 +324,6 @@ const overallVerdict = (verdicts: Verdict[]): 'Healthy' | 'Degraded' | 'Failing'
   return 'Healthy';
 };
 
-function StatusPill({ verdict, label }: Readonly<{ verdict: Verdict; label: string }>) {
-  return <span className={`status-pill status-pill--${verdict}`}>{label}</span>;
-}
-
 function VerdictBanner({ verdict }: Readonly<{ verdict: 'Healthy' | 'Degraded' | 'Failing' }>) {
   const tone: Verdict = verdict === 'Healthy' ? 'pass' : verdict === 'Degraded' ? 'warn' : 'fail';
   return <StatusPill verdict={tone} label={verdict} />;
@@ -375,63 +372,6 @@ function OverviewCard({
       </div>
       <span className="overview-card__hint">{hint} →</span>
     </a>
-  );
-}
-
-/** Shared shell for every "Testing & verification" section below the overview cards: a header
- *  (title + subtitle) and a collapse arrow on the right, so the whole section's body can be
- *  closed without losing its place -- useful once several sections are open at once and the page
- *  gets long. Collapsing unmounts the body rather than hiding it with CSS, so a collapsed
- *  section's own internal state (e.g. CoveragePanel's "show remaining files") resets on
- *  re-expand; deliberate, keeps this wrapper simple, and matches how the per-band
- *  Show/Hide toggles inside SecretIntegrityPanel already behave. */
-function DetailPanel({
-  id,
-  title,
-  subtitle,
-  children,
-}: Readonly<{
-  id: string;
-  title: string;
-  subtitle: ReactNode;
-  children: ReactNode;
-}>) {
-  const [collapsed, setCollapsed] = useState(false);
-
-  return (
-    <div className="detail-panel" id={id}>
-      <div className="detail-panel__head">
-        <h3>{title}</h3>
-        <div className="detail-panel__head-right">
-          <span className="detail-panel__sub">{subtitle}</span>
-          <button
-            type="button"
-            className="detail-panel__collapse-toggle"
-            aria-expanded={!collapsed}
-            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
-            onClick={() => setCollapsed((current) => !current)}
-          >
-            <svg
-              className={`detail-panel__collapse-icon${collapsed ? ' detail-panel__collapse-icon--collapsed' : ''}`}
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 6L8 10L12 6"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-      {collapsed ? null : children}
-    </div>
   );
 }
 
@@ -1313,6 +1253,7 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
   const securityCheck = findCheck(status.checks, 'Security vulnerabilities');
   const secretCheck = findCheck(status.checks, 'Secret integrity');
   const e2eCheck = findCheck(status.checks, 'E2E tests');
+  const complexityCheck = findCheck(status.checks, 'Complexity');
 
   const verdicts = {
     unit: unitVerdict(unitCheck),
@@ -1541,6 +1482,8 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
         onActionRecorded={() => void loadSecretActions()}
       />
       <E2ePanel check={e2eCheck} />
+
+      <ComplexityPanel scan={complexityCheck?.complexityScan ?? null} />
 
       <footer className="developer-dashboard__footer">
         <span>Published {formatClock(status.generatedAt)}</span>
