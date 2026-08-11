@@ -469,7 +469,7 @@ const collectRepoStatusBranches = async (): Promise<RepoStatusBranch[]> => {
     .map((line) => line.slice('origin/'.length))
     .filter((name) => name.length > 0 && !NON_FEATURE_BRANCHES.has(name));
 
-  const openPrs = await execFileAsync('gh', [
+  const openPrsPromise = execFileAsync('gh', [
     'pr',
     'list',
     '--state',
@@ -482,12 +482,35 @@ const collectRepoStatusBranches = async (): Promise<RepoStatusBranch[]> => {
       console.log(`[aggregate-dashboard-status] gh pr list (repo status branches) failed: ${describeError(error)}`);
       return [];
     });
+
+  // Branches left over after a squash merge never rejoin dev's commit history, so a raw
+  // ahead-of-dev diff sees them as permanently "in flight" even though the PR is done. Their
+  // only remaining state is "needs deletion," which isn't this section's concern.
+  const mergedBranchNamesPromise = execFileAsync('gh', [
+    'pr',
+    'list',
+    '--state',
+    'merged',
+    '--json',
+    'headRefName',
+    '--limit',
+    '200',
+  ], { cwd: repoRoot, timeout: 8000 })
+    .then((result) => new Set((JSON.parse(result.stdout?.toString() ?? '[]') as Array<{ headRefName: string }>).map((pr) => pr.headRefName)))
+    .catch((error: unknown) => {
+      console.log(`[aggregate-dashboard-status] gh pr list --state merged (repo status branches) failed: ${describeError(error)}`);
+      return new Set<string>();
+    });
+
+  const [openPrs, mergedBranchNames] = await Promise.all([openPrsPromise, mergedBranchNamesPromise]);
   const prByBranch = new Map(openPrs.map((pr) => [pr.headRefName, pr]));
 
   const now = Date.now();
 
   const branches = await Promise.all(
-    branchNames.map(async (name): Promise<RepoStatusBranch | null> => {
+    branchNames
+      .filter((name) => !mergedBranchNames.has(name))
+      .map(async (name): Promise<RepoStatusBranch | null> => {
       const counts = await readGitCommandOutput([
         'rev-list',
         '--left-right',
