@@ -18,6 +18,7 @@
 
 @import './components/developer.css';
 @import './components/repo-status.css';
+@import './components/complexity.css';
 @import './components/dependency.css';
 
 @layer components {

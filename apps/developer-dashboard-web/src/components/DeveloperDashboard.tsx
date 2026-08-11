@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { dashboardApiFetch } from '../lib/api';
 import { SkeletonPanel, KpiWellsSkeleton, SkeletonLines, TableSkeleton } from './Skeleton';
 import { RepoStatusSection, type RepoStatusPayload } from './RepoStatus';
+import { ComplexityPanel, type ComplexityScan } from './ComplexityPanel';
 import { DependencyCruiserPanel, type DependencyScan } from './DependencyCruiserPanel';
 import { DetailPanel, StatusPill, type Verdict } from './StatusPrimitives';
 
@@ -191,6 +192,7 @@ type DeveloperCheckResponse = {
     info: number;
   };
   secretScanTools?: { gitleaks: boolean; trufflehog: boolean };
+  complexityScan?: ComplexityScan;
   dependencyScan?: DependencyScan;
 };
 
@@ -1253,6 +1255,7 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
   const securityCheck = findCheck(status.checks, 'Security vulnerabilities');
   const secretCheck = findCheck(status.checks, 'Secret integrity');
   const e2eCheck = findCheck(status.checks, 'E2E tests');
+  const complexityCheck = findCheck(status.checks, 'Complexity');
   const dependenciesCheck = findCheck(status.checks, 'Dependencies');
 
   const verdicts = {
@@ -1482,6 +1485,8 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
         onActionRecorded={() => void loadSecretActions()}
       />
       <E2ePanel check={e2eCheck} />
+
+      <ComplexityPanel scan={complexityCheck?.complexityScan ?? null} />
 
       <DependencyCruiserPanel scan={dependenciesCheck?.dependencyScan ?? null} />
 

@@ -38,6 +38,12 @@ describe('coverage exclude configuration', () => {
     'apps/api/src/server.ts',
     'packages/domain/src/types.ts',
     'scripts/**',
+    'packages/config/src/index.ts',
+    'packages/core/src/index.ts',
+    'packages/domain/src/index.ts',
+    'packages/persistence/src/index.ts',
+    'packages/test-fixtures/src/index.ts',
+    'packages/ui/src/index.ts',
   ];
 
   afterEach(() => {

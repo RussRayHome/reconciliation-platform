@@ -14,7 +14,9 @@ import { promisify } from 'node:util';
 
 import {
   buildCoverageBenchmarks,
+  countComplexityMethods,
   parseAuditSummary,
+  parseComplexityScan,
   parseCoverageSummaryJson,
   parseDbTestItems,
   parseDependencyScan,
@@ -845,6 +847,35 @@ const run = async (): Promise<void> => {
     coverageFiles,
   };
 
+  // --- Complexity ---
+  const complexityMeta = readCheckMeta('complexity', 'Complexity');
+  const complexityScanRaw = readText(join(artifactsDir, 'complexity', 'scan.json'));
+  const complexityScan = complexityScanRaw ? parseComplexityScan(complexityScanRaw) : null;
+  // Burn-in: `ok` is "did the scan itself run and parse", not "zero threshold violations" --
+  // complexityMeta.ok/exitCode reflect the latter (escomplex-analysis.ts's own per-function gate,
+  // same one `npm run analyze:complexity` has always enforced locally), and this check is brand
+  // new with nobody having triaged the repo's existing violations yet. Once that triage happens
+  // and the team wants this to gate for real, switch back to `ok: complexityMeta.ok` here AND
+  // remove the matching `|| true` in dashboard-status.yml's complexity job at the same time --
+  // otherwise a real scan crash would report ok:true from the meta.json fallback while this stays
+  // silent about it.
+  const complexity: DeveloperCheck = {
+    name: complexityMeta.name,
+    command: complexityMeta.command,
+    ok: complexityScan !== null,
+    exitCode: complexityMeta.exitCode,
+    durationMs: complexityMeta.durationMs,
+    summary: complexityScan
+      ? `${countComplexityMethods(complexityScan.root)} methods analyzed${complexityMeta.ok ? '' : ' (threshold violations present -- informational during burn-in)'}`
+      : 'Complexity scan unavailable for this run.',
+    details:
+      complexityScan !== null
+        ? 'See job log for full output.'
+        : 'Scan did not produce parseable output -- see job log.',
+    areaLabel: 'Complexity',
+    complexityScan: complexityScan ?? undefined,
+  };
+
   // --- Dependencies ---
   const dependenciesMeta = readCheckMeta('dependencies', 'Dependencies');
   const dependencyScanRaw = readText(join(artifactsDir, 'dependencies', 'scan.json'));
@@ -936,6 +967,7 @@ const run = async (): Promise<void> => {
     lint,
     typecheck,
     coverage,
+    complexity,
     dependencies,
     security,
     secrets,

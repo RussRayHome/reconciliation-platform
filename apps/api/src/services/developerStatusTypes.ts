@@ -111,6 +111,29 @@ export type CoverageFileEntry = {
   meetsMinimum: boolean;
 };
 
+/** One function/method's complexity metrics, extracted from escomplex's per-function report. No
+ *  nesting depth or exit-point count -- escomplex doesn't report those, and the Code Health
+ *  section hides those columns rather than estimate them. */
+export type ComplexityMethod = {
+  name: string;
+  cc: number;
+  lines: number;
+  params: number;
+  startLine: number;
+};
+
+/** One node in the complexity scan's directory tree -- a directory (with children) or a file
+ *  (with its own methods). Mirrors scripts/escomplex-analysis.ts's ScanNode. */
+export type ComplexityNode =
+  | { type: 'dir'; name: string; children: ComplexityNode[] }
+  | { type: 'file'; name: string; lines: number; methods: ComplexityMethod[] };
+
+/** Whole-repo complexity scan as written by `scripts/escomplex-analysis.ts --json-out`. */
+export type ComplexityScan = {
+  scannedAt: string;
+  root: ComplexityNode;
+};
+
 /** One database test result extracted from the Postgres preflight/Vitest run. */
 export type DbTestItem = {
   name: string;
@@ -210,6 +233,7 @@ export type DeveloperCheck = {
   secretFindings?: SecretFinding[];
   secretFindingsAggregate?: SecretFindingsScore;
   secretScanTools?: { gitleaks: boolean; trufflehog: boolean };
+  complexityScan?: ComplexityScan;
   dependencyScan?: DependencyScan;
   penetrationTestStatuses?: PenetrationTestStatus[];
   testItems?: TestItem[];

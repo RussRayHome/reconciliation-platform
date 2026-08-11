@@ -192,6 +192,34 @@ jobs:
           path: .ci-out/coverage
           if-no-files-found: warn
 
+  complexity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      # analyze:complexity:json writes .ci-out/complexity/scan.json itself (--json-out) and still
+      # exits non-zero on a threshold violation, same as `npm run analyze:complexity` always has
+      # locally -- meta.json below faithfully records that real exitCode/ok. The `|| true` is
+      # deliberate and temporary: this check is brand new and nobody has triaged the repo's
+      # existing violations yet (at least one is already known: SemanticIcon.tsx), so this job
+      # must not go red for pre-existing debt nobody asked it to flag as a build break. Remove
+      # `|| true` once that burn-in triage is done and the team wants this to gate for real -- see
+      # the matching aggregate-dashboard-status.ts comment, which must be reverted at the same time.
+      - run: npx tsx scripts/ci/run-check.ts --name "Complexity" --meta .ci-out/complexity/meta.json -- npm run analyze:complexity:json || true
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: complexity
+          path: .ci-out/complexity
+          if-no-files-found: warn
+
   dependencies:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -428,7 +456,7 @@ jobs:
 
   aggregate:
     needs:
-      [unit, integration, postgres, lint, typecheck, coverage, dependencies, security, secrets, e2e-functional, e2e-visual]
+      [unit, integration, postgres, lint, typecheck, coverage, complexity, dependencies, security, secrets, e2e-functional, e2e-visual]
     if: always() # publish whatever succeeded even if one or more check jobs failed or timed out
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -487,6 +515,11 @@ jobs:
         with:
           name: coverage
           path: .ci-artifacts/coverage
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: complexity
+          path: .ci-artifacts/complexity
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:

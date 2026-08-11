@@ -8,6 +8,16 @@ const baseCoverageExclude = [
   'apps/api/src/server.ts',
   'packages/domain/src/types.ts',
   'scripts/**',
+  // Pure `export * from './x'` barrel files -- zero instrumentable statements, so v8 reports a
+  // mathematically-undefined 0/0 as "0%". That reads as untested logic on the Developer
+  // Dashboard's coverage-by-file panel when there's actually no code here to cover; the re-exports
+  // themselves are smoke-tested by each package's own index.test.ts instead.
+  'packages/config/src/index.ts',
+  'packages/core/src/index.ts',
+  'packages/domain/src/index.ts',
+  'packages/persistence/src/index.ts',
+  'packages/test-fixtures/src/index.ts',
+  'packages/ui/src/index.ts',
 ];
 
 // Set by the Developer Dashboard when it has to drop the Testcontainers persistence suites (no
