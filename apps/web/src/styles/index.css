@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* Self-hosted (see fonts.css for why this replaced a Google Fonts @import). */
+@import './fonts.css';
 
 /* The layer order declaration lives at the top of tokens.css (the first import):
    Vite's postcss-import rejects @import statements that follow an @layer
