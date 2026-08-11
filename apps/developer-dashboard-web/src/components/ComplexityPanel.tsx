@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { DetailPanel, StatusPill, type Verdict } from './DeveloperDashboard';
+import { DetailPanel, StatusPill, type Verdict } from './StatusPrimitives';
 
 /** One function/method's complexity metrics -- mirrors apps/api's ComplexityMethod. escomplex has
  *  no nesting-depth or exit-point count, so those columns from the original design spec are
