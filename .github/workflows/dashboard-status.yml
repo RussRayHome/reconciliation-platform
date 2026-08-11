@@ -192,6 +192,34 @@ jobs:
           path: .ci-out/coverage
           if-no-files-found: warn
 
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      # analyze:deps:json (scripts/ci/depcruise-scan.ts) writes .ci-out/dependencies/scan.json
+      # itself and still exits non-zero on an error-severity dependency-cruiser violation, same
+      # as `npm run analyze:deps` always has locally -- meta.json below faithfully records that
+      # real exitCode/ok. The `|| true` is deliberate and temporary, same reasoning as the
+      # `complexity` job: this check is brand new and nobody has agreed this dashboard should gate
+      # on it yet, so it must not go red the first time a real violation shows up. Remove `|| true`
+      # once the team wants this to gate for real -- see the matching aggregate-dashboard-
+      # status.ts comment, which must be reverted at the same time.
+      - run: npx tsx scripts/ci/run-check.ts --name "Dependencies" --meta .ci-out/dependencies/meta.json -- npm run analyze:deps:json || true
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependencies
+          path: .ci-out/dependencies
+          if-no-files-found: warn
+
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -400,7 +428,7 @@ jobs:
 
   aggregate:
     needs:
-      [unit, integration, postgres, lint, typecheck, coverage, security, secrets, e2e-functional, e2e-visual]
+      [unit, integration, postgres, lint, typecheck, coverage, dependencies, security, secrets, e2e-functional, e2e-visual]
     if: always() # publish whatever succeeded even if one or more check jobs failed or timed out
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -459,6 +487,11 @@ jobs:
         with:
           name: coverage
           path: .ci-artifacts/coverage
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: dependencies
+          path: .ci-artifacts/dependencies
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:

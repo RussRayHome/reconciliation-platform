@@ -92,6 +92,7 @@
     "lint": "eslint .",
     "analyze:static": "npm run lint && npm run analyze:test-quality && npm run analyze:deps && npm run analyze:unused-exports && npm run analyze:complexity",
     "analyze:deps": "depcruise --config .dependency-cruiser.cjs --output-type err-long apps packages scripts",
+    "analyze:deps:json": "NODE_OPTIONS=--no-deprecation tsx scripts/ci/depcruise-scan.ts --json-out .ci-out/dependencies/scan.json",
     "analyze:test-quality": "NODE_OPTIONS=--no-deprecation tsx scripts/check-test-assertions.ts",
     "analyze:unused-exports": "NODE_OPTIONS=--no-deprecation tsx scripts/triage-unused-exports.ts",
     "analyze:unused-exports:raw": "ts-prune -p tsconfig.typecheck.json -s \"(\\.test\\.|\\.spec\\.|/tests/|/coverage/|/docs/)\"",

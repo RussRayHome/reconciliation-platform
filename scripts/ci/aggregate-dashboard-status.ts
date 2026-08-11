@@ -17,6 +17,7 @@ import {
   parseAuditSummary,
   parseCoverageSummaryJson,
   parseDbTestItems,
+  parseDependencyScan,
   parseEslintJsonIssues,
   parsePlaywrightJsonSpecs,
   parseSecretMetadata,
@@ -844,6 +845,34 @@ const run = async (): Promise<void> => {
     coverageFiles,
   };
 
+  // --- Dependencies ---
+  const dependenciesMeta = readCheckMeta('dependencies', 'Dependencies');
+  const dependencyScanRaw = readText(join(artifactsDir, 'dependencies', 'scan.json'));
+  const dependencyScan = dependencyScanRaw ? parseDependencyScan(dependencyScanRaw) : null;
+  // Burn-in: `ok` is "did the scan run and parse", not "zero dependency-cruiser violations" --
+  // dependenciesMeta.ok/exitCode reflect the latter (depcruise-scan.ts's own error-severity gate,
+  // same one `npm run analyze:deps` has always enforced locally), and this check is brand new
+  // with nobody having agreed the dashboard should gate on it yet. Revert to
+  // `ok: dependenciesMeta.ok` (and remove the matching `|| true` in dashboard-status.yml's
+  // `dependencies` job at the same time) once the team wants this to gate for real.
+  const errorViolationCount = dependencyScan?.violations.filter((v) => v.sev === 'error').length ?? 0;
+  const dependencies: DeveloperCheck = {
+    name: dependenciesMeta.name,
+    command: dependenciesMeta.command,
+    ok: dependencyScan !== null,
+    exitCode: dependenciesMeta.exitCode,
+    durationMs: dependenciesMeta.durationMs,
+    summary: dependencyScan
+      ? `${dependencyScan.modules.length} modules, ${dependencyScan.violations.length} violation(s)${errorViolationCount > 0 ? ` (${errorViolationCount} error -- informational during burn-in)` : ''}`
+      : 'Dependency scan unavailable for this run.',
+    details:
+      dependencyScan !== null
+        ? 'See job log for full output.'
+        : 'Scan did not produce parseable output -- see job log.',
+    areaLabel: 'Dependencies',
+    dependencyScan: dependencyScan ?? undefined,
+  };
+
   // --- Security ---
   const securityMeta = readCheckMeta('security', 'Security vulnerabilities');
   const securityOutput = readText(join(artifactsDir, 'security', 'security-output.txt')) ?? '';
@@ -900,7 +929,18 @@ const run = async (): Promise<void> => {
     e2eSpecs,
   };
 
-  const checks = [unitTests, integrationTests, postgresTests, lint, typecheck, coverage, security, secrets, e2e];
+  const checks = [
+    unitTests,
+    integrationTests,
+    postgresTests,
+    lint,
+    typecheck,
+    coverage,
+    dependencies,
+    security,
+    secrets,
+    e2e,
+  ];
   const failedChecks = checks.filter((c) => !c.ok).length;
   const passedChecks = checks.length - failedChecks;
   const totalDurationMs = checks.reduce((sum, c) => sum + c.durationMs, 0);
