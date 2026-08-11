@@ -1,5 +1,9 @@
 import type {
+  ApprovableType,
+  ApprovalCountsByGroup,
+  ApprovalRow,
   ErrorCategory,
+  ImportApprovalStatus,
   ReconciliationRun,
   ReconciliationRunReport,
   ReviewerDecision,
@@ -11,24 +15,38 @@ import type {
 } from '@recon/domain';
 import { rolePermissionsByRole } from '@recon/domain';
 import {
+  claimApprovalRequest,
+  claimImportApproval,
   computeSha256Hex,
+  createApprovalRequest,
   createMappingProfile,
   createMappingProfileVersion,
   createMatchingConfigVersionDraft,
   createPayeeAlias,
   deactivatePayeeAlias,
   findMappingProfile,
+  getApprovalRequestCounts,
+  getImportApprovalCounts,
   getMappingProfileDetail,
+  listApprovalRequests,
+  listImportApprovals,
   listMappingProfiles,
   listMappingProfileVersions,
   listMatchingConfigVersions,
   loadPayeeAliases,
   publishMatchingConfigVersion,
+  recordApprovalDecision,
+  recordApprovalRequestDecision,
   recordLoginEvent,
   retireMappingProfile,
   updatePayeeAlias,
+  type ApprovalRequestRecord,
   type CreatePayeeAliasInput,
   type ExceptionPageFilters,
+  type GenericApprovableType,
+  type ImportApprovalListItem,
+  type ListApprovalRequestsFilter,
+  type ListImportApprovalsFilter,
   type PaginatedExceptionsResult,
   type PostgresReconciliationLifecycleStore,
   type PostgresReconciliationReadModelStore,
@@ -75,6 +93,8 @@ import {
 import { captureApiException, flushApiSentry, initializeApiSentry } from './services/sentry';
 import {
   aliasesQuerySchema,
+  approvalDecisionBodySchema,
+  approvalsQuerySchema,
   createAliasBodySchema,
   entityVerificationCheckBodySchema,
   exceptionsQuerySchema,
@@ -2389,6 +2409,15 @@ export const createApp = (
         createdBy: request.auth!.username,
         pendingApprovalOwner: bodyResult.data.pendingApprovalOwner ?? null,
       });
+      // Opens the Approvals-queue gate for this draft (subjectType 'matchingRule' covers both
+      // rule and variance-threshold changes -- they're fields on the same versioned object, not
+      // separate entities; see toGenericApprovalRow below).
+      await createApprovalRequest(pool!, request.auth!.organizationId, {
+        id: randomUUID(),
+        subjectType: 'matchingRule',
+        subjectId: version.id,
+        submittedBy: request.auth!.username,
+      });
       response.status(201).json(version);
     } catch (error) {
       if ((error as { code?: string }).code === '23505') {
@@ -2420,6 +2449,26 @@ export const createApp = (
         request.params.id,
         { publishedBy: request.auth!.username, effectiveAt: bodyResult.data.effectiveAt },
       );
+
+      // This admin-direct-publish path bypasses the Approvals queue, but if this draft has a
+      // pending approval request (the normal path opens one at draft time), resolve it too so the
+      // queue doesn't keep showing a now-stale PENDING row for an already-published version.
+      const pendingRequests = await listApprovalRequests(pool!, request.auth!.organizationId, {
+        subjectType: 'matchingRule',
+        status: 'PENDING',
+      });
+      const pendingRequest = pendingRequests.find(
+        (candidate) => candidate.subjectId === request.params.id,
+      );
+      if (pendingRequest) {
+        await recordApprovalRequestDecision(pool!, request.auth!.organizationId, {
+          approvalRequestId: pendingRequest.id,
+          toStatus: 'APPROVED',
+          actor: request.auth!.username,
+          rationale: 'Published directly by an admin.',
+        });
+      }
+
       response.json(version);
     } catch (error) {
       if (
@@ -2427,6 +2476,247 @@ export const createApp = (
         error.message === 'publishMatchingConfigVersion: no matching DRAFT version to publish'
       ) {
         response.status(404).json({ message: 'No matching draft version to publish.' });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  const GENERIC_APPROVABLE_TYPES: GenericApprovableType[] = [
+    'mappingProfile',
+    'matchingRule',
+    'varianceThreshold',
+    'exceptionResolution',
+    'reportDistribution',
+  ];
+
+  const ageHoursSince = (isoTimestamp: string): number =>
+    Math.max(0, Math.round((Date.now() - new Date(isoTimestamp).getTime()) / (60 * 60 * 1000)));
+
+  const toImportApprovalRow = (item: ImportApprovalListItem): ApprovalRow => ({
+    id: item.id,
+    type: 'import',
+    title: item.fileName,
+    meta: `${item.sourceSystem.toUpperCase()} import`,
+    submitter: item.uploadedBy,
+    approver: item.approvedBy ?? null,
+    ageHours: ageHoursSince(item.requestedAt),
+    state: item.status,
+  });
+
+  // matchingRule and varianceThreshold both point at reconciliation_matching_config_version --
+  // variance-threshold changes are a field on that same versioned object (varianceOverrides), not
+  // a separate entity, so both subject types resolve their title the same way. mappingProfile,
+  // exceptionResolution and reportDistribution have no creation trigger wired yet (see the
+  // Approvals feature's known-gaps note), so nothing ever populates them today -- the fallback
+  // title (the raw subject id) exists for correctness once one of those gets a real trigger, not
+  // because it's expected to render now.
+  const toGenericApprovalRow = async (
+    organizationId: string,
+    record: ApprovalRequestRecord,
+  ): Promise<ApprovalRow> => {
+    let title = record.subjectId;
+    let meta: string | undefined;
+    if (record.subjectType === 'matchingRule' || record.subjectType === 'varianceThreshold') {
+      const versions = await listMatchingConfigVersions(pool!, organizationId);
+      const version = versions.find((candidate) => candidate.id === record.subjectId);
+      if (version) {
+        title = `Matching config v${version.versionNumber}`;
+        meta =
+          record.subjectType === 'varianceThreshold' ? 'Variance threshold change' : 'Matching rule change';
+      }
+    }
+    return {
+      id: record.id,
+      type: record.subjectType,
+      title,
+      meta,
+      submitter: record.submittedBy,
+      approver: record.decidedBy ?? null,
+      ageHours: ageHoursSince(record.requestedAt),
+      state: record.status,
+    };
+  };
+
+  app.get('/api/approvals', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const queryResult = approvalsQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        respondWithValidationError(response, queryResult.error);
+        return;
+      }
+      const { type, tab } = queryResult.data;
+      const { organizationId, username, role } = request.auth!;
+      const canApprove = rolePermissionsByRole[role].canApprove;
+      const tabStatus: Extract<ImportApprovalStatus, 'PENDING' | 'APPROVED' | 'REJECTED'> =
+        tab === 'pending' ? 'PENDING' : tab === 'approved' ? 'APPROVED' : 'REJECTED';
+
+      if (type === 'import') {
+        const filter: ListImportApprovalsFilter =
+          tab === 'mine'
+            ? { uploadedBy: username }
+            : canApprove
+              ? { status: tabStatus, routedToOrUnassigned: tab === 'pending' ? username : undefined }
+              : { status: tabStatus, uploadedBy: username };
+
+        const items = await listImportApprovals(pool!, organizationId, filter);
+        response.json(items.map(toImportApprovalRow) satisfies ApprovalRow[]);
+        return;
+      }
+
+      const genericFilter: ListApprovalRequestsFilter =
+        tab === 'mine'
+          ? { subjectType: type, submittedBy: username }
+          : canApprove
+            ? {
+                subjectType: type,
+                status: tabStatus,
+                routedToOrUnassigned: tab === 'pending' ? username : undefined,
+              }
+            : { subjectType: type, status: tabStatus, submittedBy: username };
+
+      const records = await listApprovalRequests(pool!, organizationId, genericFilter);
+      const rows = await Promise.all(
+        records.map((record) => toGenericApprovalRow(organizationId, record)),
+      );
+      response.json(rows satisfies ApprovalRow[]);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/approvals/counts', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const { organizationId, username, role } = request.auth!;
+      const canApprove = rolePermissionsByRole[role].canApprove;
+      const [importCounts, mappingProfileCounts, matchingRuleCounts, exceptionResolutionCounts, reportDistributionCounts] =
+        await Promise.all([
+          getImportApprovalCounts(pool!, organizationId, username, canApprove),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['mappingProfile']),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
+            'matchingRule',
+            'varianceThreshold',
+          ]),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['exceptionResolution']),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['reportDistribution']),
+        ]);
+      response.json({
+        import: importCounts,
+        mappingProfile: mappingProfileCounts,
+        matchingRule: matchingRuleCounts,
+        exceptionResolution: exceptionResolutionCounts,
+        reportDistribution: reportDistributionCounts,
+      } satisfies ApprovalCountsByGroup);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/approvals/:type/:id/decision', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    // Only approvers may decide -- mirrors the canAdjustSliderDefaults gate above, on the new
+    // canApprove permission (RailMenuMods: Controller/VP Finance/CFO/Admin/Superuser).
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only approvers can decide on an approval.' });
+      return;
+    }
+    const type = request.params.type as ApprovableType;
+    try {
+      const bodyResult = approvalDecisionBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+      const { organizationId, username } = request.auth!;
+
+      if (type === 'import') {
+        const approval = await recordApprovalDecision(pool!, organizationId, {
+          approvalId: request.params.id,
+          toStatus: bodyResult.data.status,
+          actor: username,
+          rationale: bodyResult.data.rationale,
+        });
+        response.json(approval);
+        return;
+      }
+
+      if (!GENERIC_APPROVABLE_TYPES.includes(type as GenericApprovableType)) {
+        response.status(400).json({ message: `Unknown approvable type: ${type}.` });
+        return;
+      }
+
+      // For a matching-config version, approving IS publishing it -- do that first so an invalid
+      // publish (e.g. the draft was already published or withdrawn out from under this approval
+      // request) fails loudly instead of leaving a decision recorded against a no-op.
+      if (
+        bodyResult.data.status === 'APPROVED' &&
+        (type === 'matchingRule' || type === 'varianceThreshold')
+      ) {
+        const [record] = await listApprovalRequests(pool!, organizationId, {
+          subjectType: type,
+          status: 'PENDING',
+        }).then((records) => records.filter((candidate) => candidate.id === request.params.id));
+        if (!record) {
+          response.status(404).json({ message: 'Approval request not found.' });
+          return;
+        }
+        await publishMatchingConfigVersion(pool!, organizationId, record.subjectId, {
+          publishedBy: username,
+        });
+      }
+
+      const decided = await recordApprovalRequestDecision(pool!, organizationId, {
+        approvalRequestId: request.params.id,
+        toStatus: bodyResult.data.status,
+        actor: username,
+        rationale: bodyResult.data.rationale,
+      });
+      response.json(decided);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('reconciliation_import_approval not found')) {
+        response.status(404).json({ message: 'Import approval not found.' });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith('reconciliation_approval_request not found')) {
+        response.status(404).json({ message: 'Approval request not found.' });
+        return;
+      }
+      if (
+        error instanceof Error &&
+        error.message === 'publishMatchingConfigVersion: no matching DRAFT version to publish'
+      ) {
+        response.status(409).json({ message: 'This draft is no longer pending publish.' });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  app.post('/api/approvals/:type/:id/claim', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only approvers can claim an approval.' });
+      return;
+    }
+    const type = request.params.type as ApprovableType;
+    try {
+      const { organizationId, username } = request.auth!;
+      const claimed =
+        type === 'import'
+          ? await claimImportApproval(pool!, organizationId, request.params.id, username)
+          : await claimApprovalRequest(pool!, organizationId, request.params.id, username);
+      response.json(claimed);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.startsWith('claimImportApproval: no unclaimed') ||
+          error.message.startsWith('claimApprovalRequest: no unclaimed'))
+      ) {
+        response
+          .status(409)
+          .json({ message: 'This item was already claimed or decided by someone else.' });
         return;
       }
       next(error);

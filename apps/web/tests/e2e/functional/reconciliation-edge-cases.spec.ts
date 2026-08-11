@@ -324,7 +324,7 @@ test.describe('stage navigation', () => {
       createSampleGlWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
-    await expect(page.getByRole('link', { name: 'Reconciliation' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -337,7 +337,7 @@ test.describe('stage navigation', () => {
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Reconciliation' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -475,9 +475,9 @@ test.describe('edge cases', () => {
   }) => {
     await openSetup(page);
     await page.getByRole('link', { name: 'Import Files' }).focus();
-    await page.getByRole('link', { name: 'Reconciliation' }).focus();
+    await page.getByRole('link', { name: 'File-based' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('link', { name: 'Reconciliation' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(
       'aria-current',
       'page',
     );

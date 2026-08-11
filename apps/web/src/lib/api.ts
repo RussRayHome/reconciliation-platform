@@ -1,4 +1,7 @@
 import type {
+  ApprovableType,
+  ApprovalCountsByGroup,
+  ApprovalRow,
   CanonicalField,
   EntityVerificationStatus,
   ErrorCategory,
@@ -419,6 +422,59 @@ export const publishRuleVersionRequest = async (
     body: JSON.stringify({}),
   });
   return parseResponse<MatchingConfigVersion>(response);
+};
+
+export type ApprovalTab = 'pending' | 'approved' | 'rejected' | 'mine';
+
+/** Fetches one approvable type's rows for a given Approvals tab, privilege-scoped server-side. */
+export const getApprovalsRequest = async (
+  type: ApprovableType,
+  tab: ApprovalTab,
+): Promise<ApprovalRow[]> => {
+  const response = await apiFetch(
+    `/api/approvals?type=${encodeURIComponent(type)}&tab=${encodeURIComponent(tab)}`,
+  );
+  return parseResponse<ApprovalRow[]>(response);
+};
+
+/** Fetches the Approvals rail badge counts, one per rail submenu, privilege-scoped server-side. */
+export const getApprovalCountsRequest = async (): Promise<ApprovalCountsByGroup> => {
+  const response = await apiFetch('/api/approvals/counts');
+  return parseResponse<ApprovalCountsByGroup>(response);
+};
+
+/** Approves, rejects, or overrides a pending approval of any ApprovableType. Approver-only. */
+export const decideApprovalRequest = async (
+  type: ApprovableType,
+  approvalId: string,
+  status: 'APPROVED' | 'REJECTED' | 'OVERRIDDEN',
+  rationale?: string,
+): Promise<void> => {
+  const response = await apiFetch(
+    `/api/approvals/${encodeURIComponent(type)}/${encodeURIComponent(approvalId)}/decision`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, rationale }),
+    },
+  );
+  await parseResponse<unknown>(response);
+};
+
+/** Claims an unassigned pending approval of any ApprovableType as the current user. Approver-only. */
+export const claimApprovalRequest = async (
+  type: ApprovableType,
+  approvalId: string,
+): Promise<void> => {
+  const response = await apiFetch(
+    `/api/approvals/${encodeURIComponent(type)}/${encodeURIComponent(approvalId)}/claim`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+  await parseResponse<unknown>(response);
 };
 
 /** Saves (or adds a new version to) a paired GL + Bank mapping profile. */

@@ -1,4 +1,6 @@
 import type {
+  ApprovableType,
+  ApprovalGroupKey,
   BusinessField,
   ChartIdentifier,
   ErrorCategory,
@@ -736,6 +738,31 @@ export interface ApprovalHistoryEntry {
   note?: string;
   createdAt: string;
 }
+
+/** One row on the unified Approvals surface -- normalized across all six `ApprovableType`s so the UI renders one table shape regardless of subject. */
+export interface ApprovalRow {
+  id: string;
+  type: ApprovableType;
+  title: string;
+  meta?: string;
+  submitter: string;
+  approver: string | null;
+  ageHours: number;
+  versionFrom?: string;
+  versionTo?: string;
+  state: ImportApprovalStatus;
+}
+
+/** Rail badge / tab counts for the Approvals surface, scoped server-side by the viewer's privilege. */
+export interface ApprovalCounts {
+  pending: number;
+  approved: number;
+  rejected: number;
+  mySubmissions: number;
+}
+
+/** One `ApprovalCounts` per Approvals rail submenu -- response shape of `GET /api/approvals/counts`. */
+export type ApprovalCountsByGroup = Record<ApprovalGroupKey, ApprovalCounts>;
 
 /** A versioned bank/GL upload template. Stored in `reconciliation_template_definition`. */
 export interface TemplateDefinition {
