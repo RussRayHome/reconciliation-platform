@@ -28,6 +28,11 @@ x-api-environment: &api-environment
   RATE_LIMIT_USE_REDIS: ${RATE_LIMIT_USE_REDIS:-true}
   RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379}
   RATE_LIMIT_REDIS_PREFIX: ${RATE_LIMIT_REDIS_PREFIX:-recon:rate-limit:}
+  # Off by default -- every real environment (including Stage) stays fully rate-limited. Only ever
+  # set to 'true' in an env file for a deliberate, temporary test cycle (e.g. a live-load E2E run
+  # against Stage's actual API) that would otherwise trip the login limiter under concurrent
+  # workers; mirrors the same opt-out CI already applies for its own native functional-E2E runs.
+  DISABLE_API_RATE_LIMIT: ${DISABLE_API_RATE_LIMIT:-false}
   RECONCILIATION_RUN_STORE_PATH: ${RECONCILIATION_RUN_STORE_PATH:-/var/lib/reconciliation/latest-reconciliation-run.json}
   # ISSUE-050.2: without this, structured logs (login/logout/mapping-profile audit events among
   # them) only ever reach stdout -- captured by Docker's json-file driver for a while, but

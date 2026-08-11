@@ -45,15 +45,17 @@ export function resolveEnvironmentPaths(env: Record<string, unknown>): Environme
     pathname.startsWith(`/${configuredEnvironmentPathSegment}/`);
 
   // A pathname with no environment segment of its own -- bare `/`, or a real app route hit
-  // directly (e.g. `/export`, `/mapping/create`) -- gets rewritten onto the configured `dev`
-  // segment before the router (or anything else) reads location.pathname. This used to only
-  // cover the bare `/` case: any other direct load or deep link ended up with a basename
-  // (`/dev`) that never matched the un-rewritten URL, so BrowserRouter matched nothing and the
-  // app rendered blank.
+  // directly (e.g. `/export`, `/mapping/create`) -- gets rewritten onto the configured
+  // environment segment before the router (or anything else) reads location.pathname. This used
+  // to only cover the bare `/` case: any other direct load or deep link ended up with a basename
+  // (e.g. `/dev`) that never matched the un-rewritten URL, so BrowserRouter matched nothing and
+  // the app rendered blank. Originally scoped to the literal segment `dev`, which silently left
+  // every other environment-prefixed deployment (e.g. `stage`) with the same blank-page bug this
+  // was written to fix -- generalized to any configured segment.
   if (
     !routeEnvironmentPathSegment &&
     !pathnameAlreadyOnConfiguredSegment &&
-    configuredEnvironmentPathSegment.toLowerCase() === 'dev'
+    configuredEnvironmentPathSegment !== ''
   ) {
     const developmentAppPath =
       pathname === '/'
