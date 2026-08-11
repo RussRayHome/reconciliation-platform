@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'reac
 import { dashboardApiFetch } from '../lib/api';
 import { SkeletonPanel, KpiWellsSkeleton, SkeletonLines, TableSkeleton } from './Skeleton';
 import { RepoStatusSection, type RepoStatusPayload } from './RepoStatus';
+import { ComplexityPanel, type ComplexityScan } from './ComplexityPanel';
 
 /*
  * Ported from apps/web/src/components/DeveloperDashboard.tsx (the product's in-app "Developer
@@ -30,7 +31,7 @@ import { RepoStatusSection, type RepoStatusPayload } from './RepoStatus';
  * fetch rather than each screen fetching it independently.
  */
 
-type Verdict = 'pass' | 'fail' | 'warn' | 'neutral';
+export type Verdict = 'pass' | 'fail' | 'warn' | 'neutral';
 
 type TestItem = {
   name: string;
@@ -191,6 +192,7 @@ type DeveloperCheckResponse = {
     info: number;
   };
   secretScanTools?: { gitleaks: boolean; trufflehog: boolean };
+  complexityScan?: ComplexityScan;
 };
 
 type PromotionReadiness = {
@@ -323,7 +325,7 @@ const overallVerdict = (verdicts: Verdict[]): 'Healthy' | 'Degraded' | 'Failing'
   return 'Healthy';
 };
 
-function StatusPill({ verdict, label }: Readonly<{ verdict: Verdict; label: string }>) {
+export function StatusPill({ verdict, label }: Readonly<{ verdict: Verdict; label: string }>) {
   return <span className={`status-pill status-pill--${verdict}`}>{label}</span>;
 }
 
@@ -385,7 +387,7 @@ function OverviewCard({
  *  section's own internal state (e.g. CoveragePanel's "show remaining files") resets on
  *  re-expand; deliberate, keeps this wrapper simple, and matches how the per-band
  *  Show/Hide toggles inside SecretIntegrityPanel already behave. */
-function DetailPanel({
+export function DetailPanel({
   id,
   title,
   subtitle,
@@ -1313,6 +1315,7 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
   const securityCheck = findCheck(status.checks, 'Security vulnerabilities');
   const secretCheck = findCheck(status.checks, 'Secret integrity');
   const e2eCheck = findCheck(status.checks, 'E2E tests');
+  const complexityCheck = findCheck(status.checks, 'Complexity');
 
   const verdicts = {
     unit: unitVerdict(unitCheck),
@@ -1541,6 +1544,8 @@ export function DeveloperDashboard({ session }: Readonly<{ session: Session }>) 
         onActionRecorded={() => void loadSecretActions()}
       />
       <E2ePanel check={e2eCheck} />
+
+      <ComplexityPanel scan={complexityCheck?.complexityScan ?? null} />
 
       <footer className="developer-dashboard__footer">
         <span>Published {formatClock(status.generatedAt)}</span>

@@ -1,0 +1,311 @@
+@layer components {
+  /* 4-tier risk scale for the Code Health / Cyclomatic Complexity section, mapped onto tokens.css
+     rather than the original design's bespoke oklch values: low=accent (existing "pass" green),
+     moderate=bank (existing blue, already used as a status-neutral hue elsewhere), high=severity-
+     high (existing amber/orange), critical=negative (existing red). Every color/badge/bar in the
+     section resolves through riskFor() in ComplexityPanel.tsx, which reads these four names. */
+  :root {
+    --complexity-low: var(--accent);
+    --complexity-moderate: var(--bank);
+    --complexity-high: var(--severity-high);
+    --complexity-critical: var(--negative);
+  }
+
+  .bar i.bar__fill--moderate {
+    background: var(--bank);
+  }
+
+  .detail-panel--accent {
+    border-color: var(--line-strong);
+  }
+
+  .complexity__stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .complexity__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
+    gap: 1.1rem;
+    align-items: start;
+  }
+
+  .complexity__rail {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .complexity__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .complexity__breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .complexity__crumb {
+    background: none;
+    border: none;
+    padding: 0.15rem 0.3rem;
+    border-radius: var(--radius-control);
+    color: var(--text-secondary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .complexity__crumb:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+  }
+
+  .complexity__crumb-sep {
+    color: var(--text-disabled);
+    font-size: 0.78rem;
+    padding: 0 0.1rem;
+  }
+
+  .complexity__toolbar-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-shrink: 0;
+  }
+
+  .complexity__filter {
+    background: var(--bg-sunken);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    padding: 0.4rem 0.65rem;
+    color: var(--text-primary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 0.78rem;
+    width: 150px;
+  }
+
+  .complexity__risky-toggle {
+    border-radius: var(--radius-control);
+    padding: 0.4rem 0.7rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    background: var(--bg-sunken);
+    border: 1px solid var(--line-strong);
+    color: var(--text-secondary);
+  }
+
+  .complexity__risky-toggle--active {
+    background: color-mix(in srgb, var(--severity-high) 18%, transparent);
+    border-color: var(--severity-high);
+    color: var(--severity-high);
+  }
+
+  .complexity__sort-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+  }
+
+  .complexity__row {
+    cursor: pointer;
+  }
+
+  .complexity__tag {
+    color: var(--text-tertiary);
+    font-size: 0.72rem;
+  }
+
+  .complexity__detail-name {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+  }
+
+  .complexity__detail-path {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    margin-top: 0.2rem;
+  }
+
+  .complexity__score-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+
+  .complexity__score {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 2.2rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .complexity__tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+  }
+
+  .complexity__tile {
+    background: var(--bg-raised);
+    padding: 0.5rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .complexity__tile span {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+  }
+
+  .complexity__tile strong {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+  }
+
+  .complexity__buckets {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .complexity__bucket-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .complexity__bucket-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    width: 40px;
+    flex-shrink: 0;
+  }
+
+  .complexity__bucket-bar {
+    flex: 1;
+    width: auto;
+    height: 10px;
+  }
+
+  .complexity__bucket-count {
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    width: 24px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .complexity__hotspots {
+    display: grid;
+  }
+
+  .complexity__hotspot {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--line);
+    background: none;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+
+  .complexity__hotspot:last-child {
+    border-bottom: none;
+  }
+
+  .complexity__hotspot:hover {
+    background: var(--bg-raised);
+  }
+
+  .complexity__hotspot > span:first-child {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-weight: 700;
+    font-size: 0.85rem;
+    width: 24px;
+    flex-shrink: 0;
+  }
+
+  .complexity__hotspot-names {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .complexity__hotspot-names .mono {
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .complexity__hotspot-file {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .complexity__legend {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .complexity__legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+  }
+
+  .complexity__legend-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .complexity__legend-range {
+    margin-left: auto;
+    color: var(--text-tertiary);
+    text-transform: none;
+  }
+
+  @media (max-width: 980px) {
+    .complexity__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .complexity__stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}
