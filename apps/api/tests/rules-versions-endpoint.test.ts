@@ -39,6 +39,7 @@ const createFakePool = (
     activateRows: unknown[];
     listRows: unknown[];
     insertErrorCode: string;
+    approvalRequestRows: unknown[];
   }> = {},
 ): Pool => {
   const clientQuery = (text: string, _params?: unknown[]) => {
@@ -65,6 +66,28 @@ const createFakePool = (
     }
     if (text.includes('SELECT') && text.includes('FROM reconciliation_matching_config_version')) {
       return Promise.resolve({ rows: overrides.listRows ?? [] });
+    }
+    // Draft creation also opens an Approvals-queue entry (createApprovalRequest); publish also
+    // looks for one to auto-resolve (listApprovalRequests) -- see app.ts's rules/versions routes.
+    if (text.includes('INSERT INTO reconciliation_approval_request')) {
+      return Promise.resolve({
+        rows: [
+          {
+            id: 'ar-1',
+            subject_type: 'matchingRule',
+            subject_id: DRAFT_ROW.id,
+            status: 'PENDING',
+            submitted_by: 'test-user',
+            decided_by: null,
+            rationale: null,
+            requested_at: '2026-08-04T00:00:00.000Z',
+            decided_at: null,
+          },
+        ],
+      });
+    }
+    if (text.includes('SELECT') && text.includes('FROM reconciliation_approval_request')) {
+      return Promise.resolve({ rows: overrides.approvalRequestRows ?? [] });
     }
     throw new Error(`createFakePool: unexpected query: ${text}`);
   };

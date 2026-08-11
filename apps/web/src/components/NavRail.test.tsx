@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -13,6 +14,21 @@ afterEach(() => {
 
 const noop = () => {};
 
+/** Account items (Profile/Security/Billing/Notification/Preferences) render inside the footer's
+ * account menu popover, closed by default -- open it before asserting on those links. */
+const ACCOUNT_ROUTE_KEYS = new Set([
+  'accountProfile',
+  'accountSecurity',
+  'accountBilling',
+  'accountNotification',
+  'accountPreferences',
+]);
+
+async function openAccountMenu(): Promise<void> {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'Open account menu' }));
+}
+
 const defaultProps = {
   unreviewedExceptionCount: null,
   exceptions: [],
@@ -20,6 +36,8 @@ const defaultProps = {
   docsHref: '/docs',
   canAccessDocumentation: true,
   canAccessRunBook: true,
+  canApprove: false,
+  approvalCount: null,
   username: 'test.user',
   profileLabel: 'Test User',
   roleLabel: 'Superuser',
@@ -52,12 +70,13 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   importFiles: 'Import Files',
   mappingProfiles: 'Mapping Profiles',
   mappingCreate: 'Create Mapping',
+  mappingVersions: 'Mapping Versions',
   mappingRules: 'Matching Rules',
+  mappingRulesVersions: 'Rule Versions',
   mappingHistory: 'Mapping History',
-  approvalsPending: 'Pending Imports',
-  approvalsApproved: 'Approved Imports',
-  approvalsRejected: 'Rejected Imports',
-  reconSummary: 'Reconciliation',
+  approvalsPending: 'Approvals',
+  reconSummary: 'File-based',
+  probableMatches: 'Rules-based',
   exceptions: 'Exceptions',
   export: 'Reports',
   documentationRunBook: 'Run Book',
@@ -70,8 +89,13 @@ const EXPECTED_ABSENT_FROM_RAIL: Record<string, string> = {
   forgotPassword: 'pre-auth screen',
   signup: 'pre-auth screen',
   support: 'pre-auth screen',
-  probableMatches:
-    'dropped from the rail in the v3 nav restructure (commit 5f08130); the route stays reachable directly',
+  approvalsApproved:
+    'Approvals rail restructure (RailMenuMods): folded into the Approvals page tabs (Approved) instead of a separate rail link',
+  approvalsRejected:
+    'Approvals rail restructure (RailMenuMods): folded into the Approvals page tabs (Rejected) instead of a separate rail link',
+  approvalsMySubmissions:
+    'Approver-only Approvals page tab ("My submissions"), not a separate rail link',
+  approvalsPolicy: 'Reached via the Approvals page header\'s "Approval policy" button, not the rail',
 };
 
 describe('NavRail route inventory', () => {
@@ -87,8 +111,12 @@ describe('NavRail route inventory', () => {
 
   it.each(Object.entries(EXPECTED_RAIL_LINKS))(
     'renders a link to %s ("%s") with the correct href',
-    (routeKey, accessibleName) => {
+    async (routeKey, accessibleName) => {
       renderRail();
+
+      if (ACCOUNT_ROUTE_KEYS.has(routeKey)) {
+        await openAccountMenu();
+      }
 
       const link = screen.getByRole('link', { name: accessibleName });
       expect(link).toHaveAttribute('href', routePaths[routeKey as keyof typeof routePaths]);

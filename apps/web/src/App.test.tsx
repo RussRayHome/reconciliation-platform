@@ -159,6 +159,13 @@ vi.mock('./lib/api', async () => {
     getMappingProfilesRequest: vi.fn(() =>
       Promise.resolve(mockedApiState.mappingProfileNames),
     ),
+    // Mocked unconditionally for the same reason as getRulesCatalogRequest above: NavRail's
+    // Approvals badge fetches on every mount/route change, so an unmocked call here would fall
+    // through to the real `fetch` and disrupt other tests' call-order-sensitive fetch spies.
+    getApprovalCountsRequest: vi.fn(() =>
+      Promise.resolve({ pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }),
+    ),
+    getApprovalsRequest: vi.fn(() => Promise.resolve([])),
   };
 });
 
@@ -762,7 +769,7 @@ describe('App', () => {
       'aria-current',
       'page',
     );
-    expect(screen.getByRole('link', { name: /Reconciliation/i })).not.toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'File-based' })).not.toHaveAttribute(
       'aria-current',
     );
     expect(screen.getByRole('link', { name: /Exceptions/i })).not.toHaveAttribute('aria-current');
@@ -777,9 +784,9 @@ describe('App', () => {
 
     renderApp();
 
-    await user.click(screen.getByRole('link', { name: /Reconciliation/i }));
+    await user.click(screen.getByRole('link', { name: 'File-based' }));
 
-    expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -814,7 +821,7 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Review' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -846,7 +853,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
+    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
 
     return waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -873,7 +880,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
+    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
 
     await waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -890,7 +897,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
+    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading review output');
 
@@ -907,7 +914,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
+    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Backend unavailable.');
@@ -932,7 +939,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Matching Rules' })).toBeInTheDocument();
     expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
     expect(screen.getByText('Likely Miscoding')).toBeInTheDocument();
-    expect(screen.getByText('Variance thresholds')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Variance thresholds' })).toBeInTheDocument();
 
     expect(screen.queryByRole('slider')).toBeNull();
     // One whole-screen affordance, not a repeated per-row line -- exactly one occurrence.
@@ -1112,9 +1119,9 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: /Reconciliation/i }));
+    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
 
-    expect(screen.getByRole('link', { name: /Reconciliation/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'File-based' })).toBeInTheDocument();
     expect(screen.getByText('Loading review output')).toBeInTheDocument();
   });
 
@@ -1415,7 +1422,7 @@ describe('App', () => {
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -1428,7 +1435,7 @@ describe('App', () => {
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Reconciliation/i })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -1545,6 +1552,7 @@ describe('App', () => {
     expect(within(nav).getByText('rray')).toBeInTheDocument();
     expect(within(nav).getByText('SuperUser')).toBeInTheDocument();
 
+    fireEvent.click(within(nav).getByRole('button', { name: 'Open account menu' }));
     fireEvent.click(within(nav).getByRole('button', { name: 'Log out' }));
 
     expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
@@ -1564,27 +1572,28 @@ describe('App', () => {
     );
   });
 
-  it('collapses and expands the Account section, persisting the choice', () => {
+  it('opens and closes the footer account menu', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    const accountHeader = screen.getByRole('button', { name: 'Account' });
-    expect(accountHeader).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
-
-    fireEvent.click(accountHeader);
-
-    expect(accountHeader).toHaveAttribute('aria-expanded', 'false');
+    const menuToggle = screen.getByRole('button', { name: 'Open account menu' });
+    expect(menuToggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull();
-    expect(
-      globalThis.localStorage.getItem('reconciliation-platform:nav.section.account:rray'),
-    ).toBe('false');
+
+    fireEvent.click(menuToggle);
+
+    expect(screen.getByRole('button', { name: 'Close account menu' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
   });
 
   it('routes placeholder destinations to the shared coming-soon page', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }));
     fireEvent.click(screen.getByRole('link', { name: 'Profile' }));
 
     expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
@@ -1602,6 +1611,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove account' }));
 
     const dialogHeading = screen.getByRole('heading', { name: 'Remove account' });
@@ -1620,15 +1630,21 @@ describe('App', () => {
     expect(confirmButton).not.toBeDisabled();
   });
 
-  it('drops Probable matches from the rail and routes the new Approvals items', () => {
+  it('exposes Rules-based reconciliation and a single privilege-scoped Approvals rail item', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    expect(screen.queryByRole('link', { name: /Probable matches/i })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Rules-based' })).toHaveAttribute(
+      'href',
+      '/probable-matches',
+    );
+    expect(screen.queryByRole('link', { name: 'Pending Imports' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Approved Imports' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Rejected Imports' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('link', { name: 'Pending Imports' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Approvals' }));
 
-    expect(screen.getByRole('heading', { name: 'Pending Imports' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Approvals' })).toBeInTheDocument();
   });
 
   it('shows the Run Book link for admin and superuser roles', () => {

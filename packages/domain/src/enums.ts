@@ -187,6 +187,18 @@ export const importApprovalStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'OVERR
 /** Union of valid import approval statuses. */
 export type ImportApprovalStatus = (typeof importApprovalStatuses)[number];
 
+/** The six object types that flow through the unified Approvals surface (RailMenuMods design). */
+export const approvableTypes = [
+  'import',
+  'mappingProfile',
+  'matchingRule',
+  'varianceThreshold',
+  'exceptionResolution',
+  'reportDistribution',
+] as const;
+/** Union of valid approvable types. */
+export type ApprovableType = (typeof approvableTypes)[number];
+
 /** Approval status surfaced on a source file before/while it moves through the approval workflow. */
 export const sourceFileApprovalStatuses = [
   'NOT_SUBMITTED',
@@ -222,6 +234,7 @@ export interface RolePermissions {
   canAccessDocumentation: boolean;
   canAdjustSliderDefaults: boolean;
   canAccessRunBook: boolean;
+  canApprove: boolean;
 }
 
 /**
@@ -236,48 +249,56 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessDocumentation: true,
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
+    canApprove: false,
   },
   'senior-analyst': {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
+    canApprove: false,
   },
   'staff-accountant': {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
+    canApprove: false,
   },
   controller: {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
+    canApprove: true,
   },
   'vp-finance': {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
+    canApprove: true,
   },
   cfo: {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
+    canApprove: true,
   },
   admin: {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAdjustSliderDefaults: true,
     canAccessRunBook: true,
+    canApprove: true,
   },
   superuser: {
     canAccessApplication: true,
     canAccessDocumentation: true,
     canAdjustSliderDefaults: true,
     canAccessRunBook: true,
+    canApprove: true,
   },
 };
 

@@ -3,7 +3,13 @@ import type {
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
 } from '@recon/domain';
-import { businessFields, errorCategories, severityLevels, transformKinds } from '@recon/domain';
+import {
+  businessFields,
+  errorCategories,
+  severityLevels,
+  transformKinds,
+  approvableTypes,
+} from '@recon/domain';
 import type { Response } from 'express';
 import { z } from 'zod';
 
@@ -349,6 +355,21 @@ export const matchingConfigVersionDraftBodySchema = z.object({
 
 export const publishMatchingConfigVersionBodySchema = z.object({
   effectiveAt: z.string().datetime().optional(),
+});
+
+const approvalTabs = ['pending', 'approved', 'rejected', 'mine'] as const;
+
+export const approvalsQuerySchema = z.object({
+  type: z.enum(approvableTypes).catch('import'),
+  tab: z.enum(approvalTabs).catch('pending'),
+});
+
+export const approvalDecisionBodySchema = z.object({
+  status: z.enum(['APPROVED', 'REJECTED', 'OVERRIDDEN']),
+  rationale: z
+    .string()
+    .transform((value) => value.trim())
+    .optional(),
 });
 
 export const updateAliasBodySchema = z.object({

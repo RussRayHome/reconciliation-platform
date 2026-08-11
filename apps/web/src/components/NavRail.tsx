@@ -7,6 +7,7 @@ import type { ExceptionItem, RuleFamily } from '@recon/domain';
 import navRailLogo from '../assets/nav-rail-logo.png';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 import { RemoveAccountDialog } from './RemoveAccountDialog';
+import { NavRailAccountMenu } from './NavRailAccountMenu';
 import { routePaths } from '../routes/routePaths';
 import { BANK_TEMPLATE_URL, GL_TEMPLATE_URL } from '../lib/templates';
 import { useNavSectionCollapse } from '../hooks/useNavSectionCollapse';
@@ -21,14 +22,6 @@ import {
 } from '../lib/exceptionTriage';
 
 const RAIL_COLLAPSED_STORAGE_PREFIX = 'reconciliation-platform:nav-rail-collapsed';
-
-const accountItems: ReadonlyArray<{ to: string; label: string; icon: SemanticIconName }> = [
-  { to: routePaths.accountProfile, label: 'Profile', icon: 'profile' },
-  { to: routePaths.accountSecurity, label: 'Security', icon: 'security' },
-  { to: routePaths.accountBilling, label: 'Billing', icon: 'billing' },
-  { to: routePaths.accountNotification, label: 'Notification', icon: 'notification' },
-  { to: routePaths.accountPreferences, label: 'Preferences', icon: 'preferences' },
-];
 
 const loadRailCollapsed = (username: string): boolean => {
   try {
@@ -51,24 +44,11 @@ const persistRailCollapsed = (username: string, collapsed: boolean): void => {
   }
 };
 
-const computeInitials = (label: string): string => {
-  const parts = label.trim().split(/\s+/).filter(Boolean);
-
-  if (parts.length === 0) {
-    return '?';
-  }
-
-  if (parts.length === 1) {
-    return (parts[0] ?? '').slice(0, 2).toUpperCase();
-  }
-
-  return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
-};
-
 /**
- * Sticky left navigation rail: Account up top, the Import/Mapping/Approvals/Reconciliation/
- * Exceptions workflow, Reports, and a permission-gated System section, all as real routes, plus
- * saved triage views and a persistent identity/sign-out footer.
+ * Sticky left navigation rail, grouped into four pipeline-order categories -- WORK, CONFIGURE,
+ * REVIEW, ANALYZE -- plus a permission-gated System section and a footer identity/account menu.
+ * Approvals is a single privilege-scoped item here; its Pending/Approved/Rejected/My submissions
+ * state lives as page tabs on the Approvals screen, not as rail children.
  */
 export function NavRail({
   unreviewedExceptionCount,
@@ -77,6 +57,8 @@ export function NavRail({
   docsHref,
   canAccessDocumentation,
   canAccessRunBook,
+  canApprove,
+  approvalCount,
   username,
   profileLabel,
   roleLabel,
@@ -93,6 +75,10 @@ export function NavRail({
   docsHref: string;
   canAccessDocumentation: boolean;
   canAccessRunBook: boolean;
+  /** Whether this user can act as an approver -- drives the Approvals badge tone/caption. */
+  canApprove: boolean;
+  /** Count driving the Approvals badge: items awaiting my decision (approver) or my items needing attention (submitter). Null until loaded. */
+  approvalCount: number | null;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -158,45 +144,53 @@ export function NavRail({
           <span className="nav-rail__item-label">Collapse</span>
         </button>
 
-        <CollapsibleNavSection sectionId="account" label="Account" username={username}>
-          {accountItems.map((item) => (
-            <NavItemLink
-              key={item.to}
-              to={item.to}
-              label={item.label}
-              icon={item.icon}
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-          ))}
-          <button
-            type="button"
-            className="nav-rail__item"
-            title={isCollapsed ? 'Remove account' : undefined}
-            onClick={() => {
-              setIsRemoveAccountOpen(true);
-              onMobileClose();
-            }}
-          >
-            <span className="nav-rail__item-icon" aria-hidden="true">
-              <SemanticIcon name="remove" />
-            </span>
-            <span className="nav-rail__item-label">Remove account</span>
-          </button>
-        </CollapsibleNavSection>
-
-        <div className="nav-rail__group nav-rail__group--divided" aria-label="Workspace sections">
+        <NavRailCategory title="Work" first>
           <NavItemLink
             to={routePaths.importFiles}
             label="Import Files"
-            icon="setup"
+            icon="upload"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
           />
 
           <CollapsibleNavSection
+            sectionId="reconciliation"
+            label="Reconciliation"
+            icon="reports"
+            username={username}
+            bordered={false}
+          >
+            <NavItemLink
+              to={routePaths.reconSummary}
+              label="File-based"
+              icon="reports"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+            <NavItemLink
+              to={routePaths.probableMatches}
+              label="Rules-based"
+              icon="match"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+          </CollapsibleNavSection>
+
+          <NavItemLink
+            to={routePaths.exceptions}
+            label="Exceptions"
+            icon="exceptions"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+            badge={unreviewedExceptionCount}
+          />
+        </NavRailCategory>
+
+        <NavRailCategory title="Configure">
+          <CollapsibleNavSection
             sectionId="mapping"
             label="Mapping"
+            icon="architecture"
             username={username}
             bordered={false}
           >
@@ -215,43 +209,12 @@ export function NavRail({
               onNavigate={onMobileClose}
             />
             <NavItemLink
-              to={routePaths.mappingRules}
-              label="Matching Rules"
-              icon="rule"
+              to={routePaths.mappingVersions}
+              label="Mapping Versions"
+              icon="clock"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
-              count={matchingRuleTotalCount}
-              ariaLabel={
-                matchingRuleTotalCount === undefined
-                  ? 'Matching Rules'
-                  : `Matching Rules, ${matchingRuleTotalCount} rules`
-              }
             />
-            {matchingRuleFamilyCounts ? (
-              <div className="nav-rail__indent">
-                {matchingRuleFamilyCounts.map(({ family, count }) => (
-                  <MatchingRuleFilterLink
-                    key={family}
-                    label={family}
-                    count={count}
-                    search={`?family=${ruleFamilyToSlug(family)}`}
-                    isActiveFor={(searchParams) => parseRuleFamilyParam(searchParams.get('family')) === family}
-                    isCollapsed={isCollapsed}
-                    onNavigate={onMobileClose}
-                  />
-                ))}
-                {matchingRuleFixedCount !== undefined ? (
-                  <MatchingRuleFilterLink
-                    label="No adjustable metric"
-                    count={matchingRuleFixedCount}
-                    search="?tunable=false"
-                    isActiveFor={(searchParams) => parseTunableParam(searchParams.get('tunable')) === false}
-                    isCollapsed={isCollapsed}
-                    onNavigate={onMobileClose}
-                  />
-                ) : null}
-              </div>
-            ) : null}
             {!isCollapsed ? (
               <p className="nav-rail__subgroup-label">
                 <span className="nav-rail__item-icon" aria-hidden="true">
@@ -290,52 +253,88 @@ export function NavRail({
           </CollapsibleNavSection>
 
           <CollapsibleNavSection
-            sectionId="approvals"
-            label="Approvals"
+            sectionId="rules"
+            label="Rules & Variances"
+            icon="rule"
             username={username}
             bordered={false}
           >
             <NavItemLink
-              to={routePaths.approvalsPending}
-              label="Pending Imports"
-              icon="review"
+              to={routePaths.mappingRules}
+              label="Matching Rules"
+              icon="rule"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+              count={matchingRuleTotalCount}
+              ariaLabel={
+                matchingRuleTotalCount === undefined
+                  ? 'Matching Rules'
+                  : `Matching Rules, ${matchingRuleTotalCount} rules`
+              }
+            />
+            {matchingRuleFamilyCounts ? (
+              <div className="nav-rail__indent">
+                {matchingRuleFamilyCounts.map(({ family, count }) => (
+                  <MatchingRuleFilterLink
+                    key={family}
+                    label={family}
+                    count={count}
+                    search={`?family=${ruleFamilyToSlug(family)}`}
+                    isActiveFor={(searchParams) => parseRuleFamilyParam(searchParams.get('family')) === family}
+                    isCollapsed={isCollapsed}
+                    onNavigate={onMobileClose}
+                  />
+                ))}
+                {matchingRuleFixedCount !== undefined ? (
+                  <MatchingRuleFilterLink
+                    label="No adjustable metric"
+                    count={matchingRuleFixedCount}
+                    search="?tunable=false"
+                    isActiveFor={(searchParams) => parseTunableParam(searchParams.get('tunable')) === false}
+                    isCollapsed={isCollapsed}
+                    onNavigate={onMobileClose}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+            {/* Variance thresholds are edited inline on the Matching Rules screen (no separate
+                route exists yet) -- this link intentionally points at the same page. */}
+            <NavItemLink
+              to={routePaths.mappingRules}
+              label="Variance thresholds"
+              icon="exposure"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
             <NavItemLink
-              to={routePaths.approvalsApproved}
-              label="Approved Imports"
-              icon="quality"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-            <NavItemLink
-              to={routePaths.approvalsRejected}
-              label="Rejected Imports"
-              icon="missing"
+              to={routePaths.mappingRulesVersions}
+              label="Rule Versions"
+              icon="clock"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
           </CollapsibleNavSection>
+        </NavRailCategory>
 
+        <NavRailCategory title="Review">
           <NavItemLink
-            to={routePaths.reconSummary}
-            label="Reconciliation"
-            icon="reports"
+            to={routePaths.approvalsPending}
+            label="Approvals"
+            icon="review"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
+            badge={approvalCount}
+            badgeTone={canApprove ? 'attention' : 'neutral'}
+            caption={isCollapsed ? undefined : canApprove ? 'awaiting my decision' : 'my items needing attention'}
+            ariaLabel={
+              approvalCount === null || approvalCount === undefined
+                ? 'Approvals'
+                : `Approvals, ${approvalCount} ${canApprove ? 'awaiting my decision' : 'items needing my attention'}`
+            }
           />
-          <NavItemLink
-            to={routePaths.exceptions}
-            label="Exceptions"
-            icon="exceptions"
-            isCollapsed={isCollapsed}
-            onNavigate={onMobileClose}
-            badge={unreviewedExceptionCount}
-          />
-        </div>
+        </NavRailCategory>
 
-        <div className="nav-rail__group nav-rail__group--divided">
+        <NavRailCategory title="Analyze">
           <NavItemLink
             to={routePaths.export}
             label="Reports"
@@ -343,7 +342,26 @@ export function NavRail({
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
           />
-        </div>
+          {!isCollapsed && savedViewCounts.length > 0 ? (
+            <>
+              <p className="nav-rail__subgroup-label">Saved views</p>
+              {savedViewCounts.map(({ view, count }) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  className="nav-rail__saved-view"
+                  onClick={() => {
+                    onApplySavedView(view);
+                    onMobileClose();
+                  }}
+                >
+                  <span className="nav-rail__saved-view-name">{view.name}</span>
+                  <span className="nav-rail__saved-view-count">{count}</span>
+                </button>
+              ))}
+            </>
+          ) : null}
+        </NavRailCategory>
 
         <NavRailSystemLinks
           docsHref={docsHref}
@@ -354,38 +372,13 @@ export function NavRail({
           onNavigate={onMobileClose}
         />
 
-        {!isCollapsed && savedViewCounts.length > 0 ? (
-          <div className="nav-rail__section" aria-label="Saved views">
-            <p className="nav-rail__section-title">Saved views</p>
-            {savedViewCounts.map(({ view, count }) => (
-              <button
-                key={view.id}
-                type="button"
-                className="nav-rail__saved-view"
-                onClick={() => {
-                  onApplySavedView(view);
-                  onMobileClose();
-                }}
-              >
-                <span className="nav-rail__saved-view-name">{view.name}</span>
-                <span className="nav-rail__saved-view-count">{count}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="nav-rail__footer">
-          <span className="nav-rail__footer-avatar" aria-hidden="true">
-            {computeInitials(profileLabel)}
-          </span>
-          <div className="nav-rail__footer-who">
-            <span className="nav-rail__footer-name">{profileLabel}</span>
-            <span className="nav-rail__footer-role">{roleLabel}</span>
-          </div>
-          <button type="button" className="nav-rail__footer-logout" onClick={onSignOut}>
-            Log out
-          </button>
-        </div>
+        <NavRailAccountMenu
+          profileLabel={profileLabel}
+          roleLabel={roleLabel}
+          onSignOut={onSignOut}
+          onNavigate={onMobileClose}
+          onOpenRemoveAccount={() => setIsRemoveAccountOpen(true)}
+        />
       </nav>
 
       <RemoveAccountDialog
@@ -397,6 +390,27 @@ export function NavRail({
   );
 }
 
+/** Non-collapsible category wrapper (WORK/CONFIGURE/REVIEW/ANALYZE) -- always-visible label, survives rail collapse as a divider line. */
+function NavRailCategory({
+  title,
+  first = false,
+  children,
+}: Readonly<{ title: string; first?: boolean; children: ReactNode }>) {
+  return (
+    <div
+      className={
+        first
+          ? 'nav-rail__section nav-rail__section--category'
+          : 'nav-rail__section nav-rail__section--category nav-rail__section--category-divided'
+      }
+      aria-label={title}
+    >
+      <p className="nav-rail__section-title">{title}</p>
+      <div className="nav-rail__group">{children}</div>
+    </div>
+  );
+}
+
 /** Shared route-link rendering for a single rail item (used for flat items and section children). */
 function NavItemLink({
   to,
@@ -405,6 +419,8 @@ function NavItemLink({
   isCollapsed,
   indented,
   badge,
+  badgeTone = 'attention',
+  caption,
   count,
   ariaLabel,
   onNavigate,
@@ -415,6 +431,8 @@ function NavItemLink({
   isCollapsed: boolean;
   indented?: boolean;
   badge?: number | null;
+  badgeTone?: 'attention' | 'neutral';
+  caption?: string;
   count?: number;
   ariaLabel?: string;
   onNavigate: () => void;
@@ -433,9 +451,17 @@ function NavItemLink({
       <span className="nav-rail__item-icon" aria-hidden="true">
         <SemanticIcon name={icon} />
       </span>
-      <span className="nav-rail__item-label">{label}</span>
+      <span className="nav-rail__item-label-group">
+        <span className="nav-rail__item-label">{label}</span>
+        {caption ? <span className="nav-rail__item-caption">{caption}</span> : null}
+      </span>
       {badge !== null && badge !== undefined && badge > 0 ? (
-        <span className="nav-rail__badge" aria-label={`${badge} open exceptions`}>
+        <span
+          className={
+            badgeTone === 'neutral' ? 'nav-rail__badge nav-rail__badge--neutral' : 'nav-rail__badge'
+          }
+          aria-label={ariaLabel ? undefined : `${badge} ${label}`}
+        >
           {badge}
         </span>
       ) : null}
@@ -489,12 +515,14 @@ function MatchingRuleFilterLink({
 function CollapsibleNavSection({
   sectionId,
   label,
+  icon,
   username,
   bordered = true,
   children,
 }: Readonly<{
   sectionId: string;
   label: string;
+  icon?: SemanticIconName;
   username: string;
   bordered?: boolean;
   children: ReactNode;
@@ -515,6 +543,11 @@ function CollapsibleNavSection({
         aria-expanded={isOpen}
         onClick={toggle}
       >
+        {icon ? (
+          <span className="nav-rail__item-icon" aria-hidden="true">
+            <SemanticIcon name={icon} />
+          </span>
+        ) : null}
         <span className="nav-rail__section-title">{label}</span>
         <span
           className={

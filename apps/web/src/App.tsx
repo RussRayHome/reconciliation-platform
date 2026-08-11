@@ -24,6 +24,7 @@ import { SectionCard } from '@recon/ui';
 import {
   rolePermissionsByRole,
   userRoles,
+  type ApprovalCounts,
   type EntityVerificationStatus,
   type IdentityVerificationStatus,
   type ReviewerDecision,
@@ -35,6 +36,9 @@ import {
 } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
+import { ApprovalsPage } from './components/ApprovalsPage';
+import { ApprovalPolicyPage } from './components/ApprovalPolicyPage';
+import { VersionsPage } from './components/VersionsPage';
 import { ComingSoonPage } from './components/ComingSoonPage';
 import { CreateMappingScreen } from './components/CreateMappingScreen';
 import { SignupScreen } from './components/SignupScreen';
@@ -53,6 +57,7 @@ import { NavRail } from './components/NavRail';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import {
   createRuleVersionDraftRequest,
+  getApprovalCountsRequest,
   getLatestReconciliationRunRequest,
   getMappingProfilesRequest,
   getRuleVersionsRequest,
@@ -562,6 +567,7 @@ function App() {
       <ReconciliationApp
         docsHref={docsHref}
         rolePermissions={rolePermissions}
+        isAdmin={activeUser.role === 'admin' || activeUser.role === 'superuser'}
         roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
         controls={controls}
         username={activeUser.username}
@@ -579,6 +585,7 @@ function App() {
 function ReconciliationApp({
   docsHref,
   rolePermissions,
+  isAdmin,
   roleDefaultTab,
   controls,
   username,
@@ -591,6 +598,7 @@ function ReconciliationApp({
 }: Readonly<{
   docsHref: string;
   rolePermissions: RolePermissions;
+  isAdmin: boolean;
   roleDefaultTab: AppTab;
   controls: ReactNode;
   username: string;
@@ -631,6 +639,7 @@ function ReconciliationApp({
     loadSliderDefaultsUpdatedAt(),
   );
   const [ruleVersions, setRuleVersions] = useState<RuleVersionsResponse | null>(null);
+  const [approvalCounts, setApprovalCounts] = useState<ApprovalCounts | null>(null);
   const [ruleVersionActionError, setRuleVersionActionError] = useState<string | null>(null);
   const [rulesCatalogData, setRulesCatalogData] = useState<RuleCatalogResponse | null>(null);
   const [rulesCatalogError, setRulesCatalogError] = useState<string | null>(null);
@@ -665,6 +674,23 @@ function ReconciliationApp({
   useEffect(() => {
     persistSliderDefaultOverrides(varianceDefaultOverrides);
   }, [varianceDefaultOverrides]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getApprovalCountsRequest()
+      .then((counts) => {
+        if (!cancelled) {
+          setApprovalCounts(counts);
+        }
+      })
+      .catch(() => {
+        // Non-fatal: the rail badge just stays hidden until the next successful fetch.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname]);
 
   const isOnRulesRoute = location.pathname === routePaths.mappingRules;
 
@@ -1156,6 +1182,14 @@ function ReconciliationApp({
         docsHref={docsHref}
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
         canAccessRunBook={rolePermissions.canAccessRunBook}
+        canApprove={rolePermissions.canApprove}
+        approvalCount={
+          approvalCounts
+            ? rolePermissions.canApprove
+              ? approvalCounts.pending
+              : approvalCounts.rejected
+            : null
+        }
         username={username}
         profileLabel={profileLabel}
         roleLabel={roleLabel}
@@ -1326,32 +1360,34 @@ function ReconciliationApp({
                 }
               />
               <Route
-                path={routePaths.approvalsPending}
+                path={routePaths.mappingVersions}
                 element={
                   <ComingSoonPage
-                    title="Pending Imports"
-                    description="Imports awaiting approval will be reviewable here."
+                    title="Mapping Profile Versions"
+                    description="Depends on the Mapping Profiles screen itself, which isn't built yet -- coming soon."
                   />
                 }
+              />
+              <Route path={routePaths.mappingRulesVersions} element={<VersionsPage />} />
+              <Route
+                path={routePaths.approvalsPending}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
               />
               <Route
                 path={routePaths.approvalsApproved}
-                element={
-                  <ComingSoonPage
-                    title="Approved Imports"
-                    description="A record of approved imports will be reviewable here."
-                  />
-                }
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
               />
               <Route
                 path={routePaths.approvalsRejected}
-                element={
-                  <ComingSoonPage
-                    title="Rejected Imports"
-                    description="A record of rejected imports will be reviewable here."
-                  />
-                }
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
               />
+              <Route
+                path={routePaths.approvalsMySubmissions}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
+              />
+              {isAdmin ? (
+                <Route path={routePaths.approvalsPolicy} element={<ApprovalPolicyPage />} />
+              ) : null}
               <Route
                 path={routePaths.accountProfile}
                 element={

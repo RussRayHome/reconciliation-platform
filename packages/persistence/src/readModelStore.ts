@@ -1,4 +1,6 @@
 import type {
+  ApprovableType,
+  ApprovalCounts,
   ApprovalHistoryEntry,
   ErrorCategory,
   ExceptionItem,
@@ -1428,6 +1430,318 @@ export const loadApprovalHistory = async (
       note: row.note ?? undefined,
       createdAt: row.created_at,
     }));
+  });
+};
+
+/** One `reconciliation_import_approval` row joined with its source file, for the Approvals list. */
+export interface ImportApprovalListItem extends ImportApproval {
+  fileName: string;
+  sourceSystem: SourceSystem;
+}
+
+/**
+ * Filters for `listImportApprovals`. `routedToOrUnassigned` implements the approver Pending queue
+ * scoping rule from the RailMenuMods design ("everything routed to me + unassigned"); submitters
+ * instead pass `uploadedBy` to scope every tab to only what they submitted.
+ */
+export interface ListImportApprovalsFilter {
+  status?: ImportApprovalStatus;
+  uploadedBy?: string;
+  routedToOrUnassigned?: string;
+}
+
+export const listImportApprovals = async (
+  pool: Pool,
+  organizationId: string,
+  filter: ListImportApprovalsFilter,
+): Promise<ImportApprovalListItem[]> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ImportApprovalRow & { file_name: string; source_system: SourceSystem }>(
+      `SELECT ia.id, ia.source_file_id, ia.status, ia.uploaded_by, ia.approved_by, ia.rationale,
+              ia.requested_at, ia.decided_at, sf.file_name, sf.source_system
+         FROM reconciliation_import_approval ia
+         JOIN reconciliation_source_file sf ON sf.id = ia.source_file_id
+        WHERE ($1::text IS NULL OR ia.status = $1)
+          AND ($2::text IS NULL OR ia.uploaded_by = $2)
+          AND ($3::text IS NULL OR ia.approved_by = $3 OR ia.approved_by IS NULL)
+        ORDER BY ia.requested_at DESC`,
+      [filter.status ?? null, filter.uploadedBy ?? null, filter.routedToOrUnassigned ?? null],
+    );
+
+    return result.rows.map((row) => ({
+      ...mapImportApproval(row),
+      fileName: row.file_name,
+      sourceSystem: row.source_system,
+    }));
+  });
+};
+
+/** Assigns `actor` as the approver on an unclaimed pending import approval, without deciding it. */
+export const claimImportApproval = async (
+  pool: Pool,
+  organizationId: string,
+  approvalId: string,
+  actor: string,
+): Promise<ImportApproval> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ImportApprovalRow>(
+      `UPDATE reconciliation_import_approval
+          SET approved_by = $2
+        WHERE id = $1 AND status = 'PENDING' AND approved_by IS NULL
+    RETURNING id, source_file_id, status, uploaded_by, approved_by, rationale, requested_at, decided_at`,
+      [approvalId, actor],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error(`claimImportApproval: no unclaimed pending approval ${approvalId}`);
+    }
+    return mapImportApproval(row);
+  });
+};
+
+/**
+ * Approval counts for the Approvals rail badge and tab labels. Scope differs by privilege
+ * (RailMenuMods "Rows visible" rule): an approver's approved/rejected counts are org-wide (their
+ * tabs list everything decided), a submitter's are scoped to only what they submitted.
+ */
+export const getImportApprovalCounts = async (
+  pool: Pool,
+  organizationId: string,
+  username: string,
+  canApprove: boolean,
+): Promise<ApprovalCounts> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<{
+      pending: string;
+      approved: string;
+      rejected: string;
+      my_submissions: string;
+    }>(
+      canApprove
+        ? `SELECT
+             COUNT(*) FILTER (WHERE status = 'PENDING' AND (approved_by = $1 OR approved_by IS NULL)) AS pending,
+             COUNT(*) FILTER (WHERE status = 'APPROVED') AS approved,
+             COUNT(*) FILTER (WHERE status = 'REJECTED') AS rejected,
+             COUNT(*) FILTER (WHERE uploaded_by = $1) AS my_submissions
+           FROM reconciliation_import_approval`
+        : `SELECT
+             COUNT(*) FILTER (WHERE status = 'PENDING' AND uploaded_by = $1) AS pending,
+             COUNT(*) FILTER (WHERE status = 'APPROVED' AND uploaded_by = $1) AS approved,
+             COUNT(*) FILTER (WHERE status = 'REJECTED' AND uploaded_by = $1) AS rejected,
+             COUNT(*) FILTER (WHERE uploaded_by = $1) AS my_submissions
+           FROM reconciliation_import_approval`,
+      [username],
+    );
+    const row = result.rows[0];
+    return {
+      pending: Number(row?.pending ?? 0),
+      approved: Number(row?.approved ?? 0),
+      rejected: Number(row?.rejected ?? 0),
+      mySubmissions: Number(row?.my_submissions ?? 0),
+    };
+  });
+};
+
+/** The five `ApprovableType`s backed by the generic `reconciliation_approval_request` table (everything except 'import', which keeps its own dedicated table). */
+export type GenericApprovableType = Exclude<ApprovableType, 'import'>;
+
+export interface CreateApprovalRequestInput {
+  id: string;
+  subjectType: GenericApprovableType;
+  subjectId: string;
+  submittedBy: string;
+}
+
+export interface ApprovalRequestRecord {
+  id: string;
+  subjectType: GenericApprovableType;
+  subjectId: string;
+  status: ImportApprovalStatus;
+  submittedBy: string;
+  decidedBy?: string;
+  rationale?: string;
+  requestedAt: string;
+  decidedAt?: string;
+}
+
+export interface RecordApprovalRequestDecisionInput {
+  approvalRequestId: string;
+  toStatus: Extract<ImportApprovalStatus, 'APPROVED' | 'REJECTED' | 'OVERRIDDEN'>;
+  actor: string;
+  rationale?: string;
+}
+
+export interface ListApprovalRequestsFilter {
+  subjectType: GenericApprovableType;
+  status?: ImportApprovalStatus;
+  submittedBy?: string;
+  routedToOrUnassigned?: string;
+}
+
+type ApprovalRequestRow = {
+  id: string;
+  subject_type: GenericApprovableType;
+  subject_id: string;
+  status: ImportApprovalStatus;
+  submitted_by: string;
+  decided_by: string | null;
+  rationale: string | null;
+  requested_at: string;
+  decided_at: string | null;
+};
+
+const mapApprovalRequest = (row: ApprovalRequestRow): ApprovalRequestRecord => ({
+  id: row.id,
+  subjectType: row.subject_type,
+  subjectId: row.subject_id,
+  status: row.status,
+  submittedBy: row.submitted_by,
+  decidedBy: row.decided_by ?? undefined,
+  rationale: row.rationale ?? undefined,
+  requestedAt: row.requested_at,
+  decidedAt: row.decided_at ?? undefined,
+});
+
+/** Opens the approval gate for a mapping-profile / matching-rule / variance-threshold / exception-resolution / report-distribution subject. */
+export const createApprovalRequest = async (
+  pool: Pool,
+  organizationId: string,
+  input: CreateApprovalRequestInput,
+): Promise<ApprovalRequestRecord> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ApprovalRequestRow>(
+      `INSERT INTO reconciliation_approval_request (id, organization_id, subject_type, subject_id, submitted_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, subject_type, subject_id, status, submitted_by, decided_by, rationale, requested_at, decided_at`,
+      [input.id, organizationId, input.subjectType, input.subjectId, input.submittedBy],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('createApprovalRequest: INSERT returned no row');
+    }
+    return mapApprovalRequest(row);
+  });
+};
+
+/** Records an approve/reject/override decision on a generic approval request, appending to `reconciliation_approval_request_history` in the same transaction (mirrors `recordApprovalDecision`). */
+export const recordApprovalRequestDecision = async (
+  pool: Pool,
+  organizationId: string,
+  input: RecordApprovalRequestDecisionInput,
+): Promise<ApprovalRequestRecord> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const current = await client.query<ApprovalRequestRow>(
+      'SELECT status FROM reconciliation_approval_request WHERE id = $1 FOR UPDATE',
+      [input.approvalRequestId],
+    );
+    const currentRow = current.rows[0];
+    if (!currentRow) {
+      throw new Error(`reconciliation_approval_request not found: ${input.approvalRequestId}`);
+    }
+
+    const updated = await client.query<ApprovalRequestRow>(
+      `UPDATE reconciliation_approval_request
+          SET status = $2, decided_by = $3, rationale = $4, decided_at = NOW()
+        WHERE id = $1
+    RETURNING id, subject_type, subject_id, status, submitted_by, decided_by, rationale, requested_at, decided_at`,
+      [input.approvalRequestId, input.toStatus, input.actor, input.rationale ?? null],
+    );
+
+    await client.query(
+      `INSERT INTO reconciliation_approval_request_history (id, approval_request_id, organization_id, from_status, to_status, actor, note)
+       SELECT gen_random_uuid(), $1, ar.organization_id, $2, $3, $4, $5
+         FROM reconciliation_approval_request ar
+        WHERE ar.id = $1`,
+      [input.approvalRequestId, currentRow.status, input.toStatus, input.actor, input.rationale ?? null],
+    );
+
+    const row = updated.rows[0];
+    if (!row) {
+      throw new Error('recordApprovalRequestDecision: UPDATE returned no row');
+    }
+    return mapApprovalRequest(row);
+  });
+};
+
+/** Assigns `actor` as the approver on an unclaimed pending generic approval request, without deciding it. */
+export const claimApprovalRequest = async (
+  pool: Pool,
+  organizationId: string,
+  approvalRequestId: string,
+  actor: string,
+): Promise<ApprovalRequestRecord> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ApprovalRequestRow>(
+      `UPDATE reconciliation_approval_request
+          SET decided_by = $2
+        WHERE id = $1 AND status = 'PENDING' AND decided_by IS NULL
+    RETURNING id, subject_type, subject_id, status, submitted_by, decided_by, rationale, requested_at, decided_at`,
+      [approvalRequestId, actor],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error(`claimApprovalRequest: no unclaimed pending approval request ${approvalRequestId}`);
+    }
+    return mapApprovalRequest(row);
+  });
+};
+
+export const listApprovalRequests = async (
+  pool: Pool,
+  organizationId: string,
+  filter: ListApprovalRequestsFilter,
+): Promise<ApprovalRequestRecord[]> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ApprovalRequestRow>(
+      `SELECT id, subject_type, subject_id, status, submitted_by, decided_by, rationale, requested_at, decided_at
+         FROM reconciliation_approval_request
+        WHERE subject_type = $1
+          AND ($2::text IS NULL OR status = $2)
+          AND ($3::text IS NULL OR submitted_by = $3)
+          AND ($4::text IS NULL OR decided_by = $4 OR decided_by IS NULL)
+        ORDER BY requested_at DESC`,
+      [filter.subjectType, filter.status ?? null, filter.submittedBy ?? null, filter.routedToOrUnassigned ?? null],
+    );
+    return result.rows.map(mapApprovalRequest);
+  });
+};
+
+/** Approval-request counts across all five generic subject types combined, scoped by privilege like `getImportApprovalCounts`. */
+export const getApprovalRequestCounts = async (
+  pool: Pool,
+  organizationId: string,
+  username: string,
+  canApprove: boolean,
+): Promise<ApprovalCounts> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<{
+      pending: string;
+      approved: string;
+      rejected: string;
+      my_submissions: string;
+    }>(
+      canApprove
+        ? `SELECT
+             COUNT(*) FILTER (WHERE status = 'PENDING' AND (decided_by = $1 OR decided_by IS NULL)) AS pending,
+             COUNT(*) FILTER (WHERE status = 'APPROVED') AS approved,
+             COUNT(*) FILTER (WHERE status = 'REJECTED') AS rejected,
+             COUNT(*) FILTER (WHERE submitted_by = $1) AS my_submissions
+           FROM reconciliation_approval_request`
+        : `SELECT
+             COUNT(*) FILTER (WHERE status = 'PENDING' AND submitted_by = $1) AS pending,
+             COUNT(*) FILTER (WHERE status = 'APPROVED' AND submitted_by = $1) AS approved,
+             COUNT(*) FILTER (WHERE status = 'REJECTED' AND submitted_by = $1) AS rejected,
+             COUNT(*) FILTER (WHERE submitted_by = $1) AS my_submissions
+           FROM reconciliation_approval_request`,
+      [username],
+    );
+    const row = result.rows[0];
+    return {
+      pending: Number(row?.pending ?? 0),
+      approved: Number(row?.approved ?? 0),
+      rejected: Number(row?.rejected ?? 0),
+      mySubmissions: Number(row?.my_submissions ?? 0),
+    };
   });
 };
 
