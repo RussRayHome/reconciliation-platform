@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { NavLink, useLocation } from 'react-router';
+import { NavLink, useLocation, useSearchParams } from 'react-router';
 
 import type { ApprovableType, ApprovalRow } from '@recon/domain';
 
@@ -13,10 +13,11 @@ import {
 import { routePaths } from '../routes/routePaths';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 
-/** One card groups one or more `ApprovableType`s -- Matching rules and Variance thresholds share
- * a single card per the RailMenuMods design ("Matching rules & variance thresholds" is one table). */
-const CARD_GROUPS: ReadonlyArray<{
+/** One rail submenu = one approvals table. Matching Rule & Variances covers two `ApprovableType`s
+ * (they're both fields on the same versioned matching-config object, not separate entities). */
+const APPROVAL_GROUPS: ReadonlyArray<{
   key: string;
+  path: string;
   title: string;
   types: ApprovableType[];
   icon: SemanticIconName;
@@ -24,12 +25,13 @@ const CARD_GROUPS: ReadonlyArray<{
   /** True once something in the product actually opens an approval request for this type.
    * mappingProfile/exceptionResolution/reportDistribution have the API/UI plumbing but no
    * creation trigger yet (mapping profiles have no draft concept; exception resolutions and
-   * report distribution have no backing entity at all) -- their card says so explicitly instead
+   * report distribution have no backing entity at all) -- their table says so explicitly instead
    * of rendering the same "nothing pending" a genuinely-empty live queue would. */
   isLive: boolean;
 }> = [
   {
     key: 'import',
+    path: routePaths.approvalsImports,
     title: 'Imported files',
     types: ['import'],
     icon: 'upload',
@@ -38,7 +40,8 @@ const CARD_GROUPS: ReadonlyArray<{
   },
   {
     key: 'mappingProfile',
-    title: 'Mapping profiles',
+    path: routePaths.approvalsMappingProfiles,
+    title: 'Mapping Profiles',
     types: ['mappingProfile'],
     icon: 'architecture',
     tint: 'bank',
@@ -46,7 +49,8 @@ const CARD_GROUPS: ReadonlyArray<{
   },
   {
     key: 'matchingRule',
-    title: 'Matching rules & variance thresholds',
+    path: routePaths.approvalsMatchingRules,
+    title: 'Matching Rule & Variances',
     types: ['matchingRule', 'varianceThreshold'],
     icon: 'rule',
     tint: 'severity-medium',
@@ -54,7 +58,8 @@ const CARD_GROUPS: ReadonlyArray<{
   },
   {
     key: 'exceptionResolution',
-    title: 'Exception resolutions',
+    path: routePaths.approvalsExceptionResolutions,
+    title: 'Exception Resolutions',
     types: ['exceptionResolution'],
     icon: 'exceptions',
     tint: 'negative',
@@ -62,7 +67,8 @@ const CARD_GROUPS: ReadonlyArray<{
   },
   {
     key: 'reportDistribution',
-    title: 'Report distribution',
+    path: routePaths.approvalsReportDistribution,
+    title: 'Report Distribution',
     types: ['reportDistribution'],
     icon: 'reports',
     tint: 'text-disabled',
@@ -70,14 +76,8 @@ const CARD_GROUPS: ReadonlyArray<{
   },
 ];
 
-const ALL_TYPES: ApprovableType[] = CARD_GROUPS.flatMap((group) => group.types);
-
-const tabForPathname = (pathname: string): ApprovalTab => {
-  if (pathname === routePaths.approvalsApproved) return 'approved';
-  if (pathname === routePaths.approvalsRejected) return 'rejected';
-  if (pathname === routePaths.approvalsMySubmissions) return 'mine';
-  return 'pending';
-};
+const groupForPathname = (pathname: string): (typeof APPROVAL_GROUPS)[number] =>
+  APPROVAL_GROUPS.find((group) => group.path === pathname) ?? APPROVAL_GROUPS[0]!;
 
 const formatAge = (ageHours: number): string => {
   if (ageHours < 24) {
@@ -95,15 +95,19 @@ const approveLabel = (row: ApprovalRow): string => {
   return 'Approve';
 };
 
+/** One rail submenu's approvals table -- reached by clicking Imported files / Mapping Profiles /
+ * Matching Rule & Variances / Exception Resolutions / Report Distribution under the collapsible
+ * Approvals rail section. The type shown is derived from the route, not passed as a prop. */
 export function ApprovalsPage({
   canApprove,
   isAdmin,
-  username,
-}: Readonly<{ canApprove: boolean; isAdmin: boolean; username: string }>) {
+}: Readonly<{ canApprove: boolean; isAdmin: boolean }>) {
   const location = useLocation();
-  const activeTab = tabForPathname(location.pathname);
+  const group = groupForPathname(location.pathname);
+  const [searchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') as ApprovalTab | null) ?? 'pending';
 
-  const [rowsByType, setRowsByType] = useState<Record<string, ApprovalRow[]>>({});
+  const [rows, setRows] = useState<ApprovalRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -116,14 +120,11 @@ export function ApprovalsPage({
     setLoadError(null);
     setSelectedIds(new Set());
 
-    void Promise.all(ALL_TYPES.map((type) => getApprovalsRequest(type, activeTab)))
+    void Promise.all(group.types.map((type) => getApprovalsRequest(type, activeTab)))
       .then((results) => {
-        if (cancelled) return;
-        const next: Record<string, ApprovalRow[]> = {};
-        ALL_TYPES.forEach((type, index) => {
-          next[type] = results[index] ?? [];
-        });
-        setRowsByType(next);
+        if (!cancelled) {
+          setRows(results.flat());
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -139,14 +140,11 @@ export function ApprovalsPage({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, refreshToken]);
+  }, [group.key, group.types, activeTab, refreshToken]);
 
   const refresh = (): void => setRefreshToken((token) => token + 1);
 
-  const handleDecision = (
-    row: ApprovalRow,
-    status: 'APPROVED' | 'REJECTED',
-  ): void => {
+  const handleDecision = (row: ApprovalRow, status: 'APPROVED' | 'REJECTED'): void => {
     setActionError(null);
     void decideApprovalRequest(row.type, row.id, status)
       .then(refresh)
@@ -178,37 +176,38 @@ export function ApprovalsPage({
 
   const handleBulkApprove = (): void => {
     setActionError(null);
-    // Checkboxes only render on the Imports card (see showCheckboxes below), so every id here is
-    // always an import approval id -- this hardcodes 'import' rather than tracking a type per
-    // selected id.
-    void Promise.all(Array.from(selectedIds).map((id) => decideApprovalRequest('import', id, 'APPROVED')))
+    void Promise.all(
+      Array.from(selectedIds).map((id) => decideApprovalRequest(group.types[0]!, id, 'APPROVED')),
+    )
       .then(refresh)
       .catch((error: unknown) => {
         setActionError(error instanceof Error ? error.message : 'Unable to complete bulk approve.');
       });
   };
 
-  const tabs: Array<{ tab: ApprovalTab; label: string; to: string }> = canApprove
+  const tabs: Array<{ tab: ApprovalTab; label: string }> = canApprove
     ? [
-        { tab: 'pending', label: 'Pending', to: routePaths.approvalsPending },
-        { tab: 'approved', label: 'Approved', to: routePaths.approvalsApproved },
-        { tab: 'rejected', label: 'Rejected', to: routePaths.approvalsRejected },
-        { tab: 'mine', label: 'My submissions', to: routePaths.approvalsMySubmissions },
+        { tab: 'pending', label: 'Pending' },
+        { tab: 'approved', label: 'Approved' },
+        { tab: 'rejected', label: 'Rejected' },
+        { tab: 'mine', label: 'My submissions' },
       ]
     : [
-        { tab: 'pending', label: 'Submitted', to: routePaths.approvalsPending },
-        { tab: 'approved', label: 'Approved', to: routePaths.approvalsApproved },
-        { tab: 'rejected', label: 'Rejected', to: routePaths.approvalsRejected },
+        { tab: 'pending', label: 'Submitted' },
+        { tab: 'approved', label: 'Approved' },
+        { tab: 'rejected', label: 'Rejected' },
       ];
+
+  const showCheckboxes = canApprove && group.isLive && activeTab === 'pending';
 
   return (
     <div className="approvals">
       <header className="approvals__header">
         <p className="eyebrow">Review</p>
-        <h1 className="approvals__title">Approvals</h1>
+        <h1 className="approvals__title">{group.title}</h1>
         <p className="approvals__subcopy">
           {canApprove
-            ? 'Seven items waiting on your decision. Approving a versioned object promotes its draft; the live version keeps running until then.'
+            ? 'Items waiting on your decision appear below. Approving a versioned object promotes its draft; the live version keeps running until then.'
             : 'Everything you submitted, and where it stands. You can withdraw or resubmit -- approving is not yours to do.'}
         </p>
         <div className="approvals__header-actions">
@@ -231,19 +230,17 @@ export function ApprovalsPage({
       </header>
 
       <nav className="approvals__tabs" aria-label="Approval status">
-        {tabs.map(({ tab, label, to }) => (
+        {tabs.map(({ tab, label }) => (
           <NavLink
             key={tab}
-            to={to}
+            to={tab === 'pending' ? group.path : `${group.path}?tab=${tab}`}
             className={
               activeTab === tab ? 'approvals__tab approvals__tab--active' : 'approvals__tab'
             }
           >
             {label}
             {tab === activeTab && !isLoading ? (
-              <span className="approvals__tab-count">
-                {ALL_TYPES.reduce((total, type) => total + (rowsByType[type]?.length ?? 0), 0)}
-              </span>
+              <span className="approvals__tab-count">{rows.length}</span>
             ) : null}
           </NavLink>
         ))}
@@ -279,34 +276,27 @@ export function ApprovalsPage({
         <p>Loading approvals…</p>
       ) : (
         <div className="approvals__tables">
-          {CARD_GROUPS.map((group) => {
-            const rows = group.types.flatMap((type) => rowsByType[type] ?? []);
-            return (
-              <ApprovalCard
-                key={group.key}
-                title={group.title}
-                icon={group.icon}
-                tint={group.tint}
-                rows={rows}
-                isLive={group.isLive}
-                canApprove={canApprove}
-                showCheckboxes={canApprove && group.key === 'import' && activeTab === 'pending'}
-                selectedIds={selectedIds}
-                onToggleSelected={toggleSelected}
-                onApprove={(row) => handleDecision(row, 'APPROVED')}
-                onReject={(row) => handleDecision(row, 'REJECTED')}
-                onClaim={handleClaim}
-                username={username}
-              />
-            );
-          })}
+          <ApprovalTable
+            title={group.title}
+            icon={group.icon}
+            tint={group.tint}
+            rows={rows}
+            isLive={group.isLive}
+            canApprove={canApprove}
+            showCheckboxes={showCheckboxes}
+            selectedIds={selectedIds}
+            onToggleSelected={toggleSelected}
+            onApprove={(row) => handleDecision(row, 'APPROVED')}
+            onReject={(row) => handleDecision(row, 'REJECTED')}
+            onClaim={handleClaim}
+          />
         </div>
       )}
     </div>
   );
 }
 
-function ApprovalCard({
+function ApprovalTable({
   title,
   icon,
   tint,
@@ -332,7 +322,6 @@ function ApprovalCard({
   onApprove: (row: ApprovalRow) => void;
   onReject: (row: ApprovalRow) => void;
   onClaim: (row: ApprovalRow) => void;
-  username: string;
 }>) {
   const itemCountLabel = `${rows.length} ${rows.length === 1 ? 'item' : 'items'}`;
   const cardMeta = isLive ? itemCountLabel : 'Coming soon';

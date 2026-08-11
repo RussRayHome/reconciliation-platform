@@ -64,7 +64,7 @@ export function VersionsPage() {
         <p className="approvals__subcopy">
           Every published and in-progress matching-config version for your organization. Approve
           or reject a pending draft from the{' '}
-          <Link to={routePaths.approvalsPending}>Approvals</Link> queue.
+          <Link to={routePaths.approvalsMatchingRules}>Approvals</Link> queue.
         </p>
       </header>
 

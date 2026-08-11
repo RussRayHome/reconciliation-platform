@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { NavLink, useLocation } from 'react-router';
 
-import type { ExceptionItem, RuleFamily } from '@recon/domain';
+import type {
+  ApprovalCountsByGroup,
+  ApprovalGroupKey,
+  ExceptionItem,
+  RuleFamily,
+} from '@recon/domain';
 
 import navRailLogo from '../assets/nav-rail-logo.png';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
@@ -44,11 +49,24 @@ const persistRailCollapsed = (username: string, collapsed: boolean): void => {
   }
 };
 
+/** Per-submenu Approvals badge: items awaiting my decision (approver) or my items needing
+ * attention -- rejected work I need to fix and resubmit (submitter). Null until counts load. */
+const approvalBadgeCount = (
+  counts: ApprovalCountsByGroup | null,
+  key: ApprovalGroupKey,
+  canApprove: boolean,
+): number | null => {
+  if (!counts) {
+    return null;
+  }
+  return canApprove ? counts[key].pending : counts[key].rejected;
+};
+
 /**
  * Sticky left navigation rail, grouped into four pipeline-order categories -- WORK, CONFIGURE,
  * REVIEW, ANALYZE -- plus a permission-gated System section and a footer identity/account menu.
- * Approvals is a single privilege-scoped item here; its Pending/Approved/Rejected/My submissions
- * state lives as page tabs on the Approvals screen, not as rail children.
+ * Approvals is a collapsible section here, with one rail item per approvable type; clicking one
+ * opens that type's own Pending/Approved/Rejected/My submissions table.
  */
 export function NavRail({
   unreviewedExceptionCount,
@@ -58,7 +76,7 @@ export function NavRail({
   canAccessDocumentation,
   canAccessRunBook,
   canApprove,
-  approvalCount,
+  approvalCounts,
   username,
   profileLabel,
   roleLabel,
@@ -75,10 +93,10 @@ export function NavRail({
   docsHref: string;
   canAccessDocumentation: boolean;
   canAccessRunBook: boolean;
-  /** Whether this user can act as an approver -- drives the Approvals badge tone/caption. */
+  /** Whether this user can act as an approver -- drives each Approvals submenu badge's tone. */
   canApprove: boolean;
-  /** Count driving the Approvals badge: items awaiting my decision (approver) or my items needing attention (submitter). Null until loaded. */
-  approvalCount: number | null;
+  /** Per-submenu Approvals badge counts. Null until loaded. */
+  approvalCounts: ApprovalCountsByGroup | null;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -317,21 +335,60 @@ export function NavRail({
         </NavRailCategory>
 
         <NavRailCategory title="Review">
-          <NavItemLink
-            to={routePaths.approvalsPending}
+          <CollapsibleNavSection
+            sectionId="approvals"
             label="Approvals"
             icon="review"
-            isCollapsed={isCollapsed}
-            onNavigate={onMobileClose}
-            badge={approvalCount}
-            badgeTone={canApprove ? 'attention' : 'neutral'}
-            caption={isCollapsed ? undefined : canApprove ? 'awaiting my decision' : 'my items needing attention'}
-            ariaLabel={
-              approvalCount === null || approvalCount === undefined
-                ? 'Approvals'
-                : `Approvals, ${approvalCount} ${canApprove ? 'awaiting my decision' : 'items needing my attention'}`
-            }
-          />
+            username={username}
+            bordered={false}
+          >
+            <NavItemLink
+              to={routePaths.approvalsImports}
+              label="Imported files"
+              icon="upload"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+              badge={approvalBadgeCount(approvalCounts, 'import', canApprove)}
+              badgeTone={canApprove ? 'attention' : 'neutral'}
+            />
+            <NavItemLink
+              to={routePaths.approvalsMappingProfiles}
+              label="Mapping Profiles"
+              ariaLabel="Mapping Profiles approvals"
+              icon="architecture"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+              badge={approvalBadgeCount(approvalCounts, 'mappingProfile', canApprove)}
+              badgeTone={canApprove ? 'attention' : 'neutral'}
+            />
+            <NavItemLink
+              to={routePaths.approvalsMatchingRules}
+              label="Matching Rule & Variances"
+              icon="rule"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+              badge={approvalBadgeCount(approvalCounts, 'matchingRule', canApprove)}
+              badgeTone={canApprove ? 'attention' : 'neutral'}
+            />
+            <NavItemLink
+              to={routePaths.approvalsExceptionResolutions}
+              label="Exception Resolutions"
+              icon="exceptions"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+              badge={approvalBadgeCount(approvalCounts, 'exceptionResolution', canApprove)}
+              badgeTone={canApprove ? 'attention' : 'neutral'}
+            />
+            <NavItemLink
+              to={routePaths.approvalsReportDistribution}
+              label="Report Distribution"
+              icon="reports"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+              badge={approvalBadgeCount(approvalCounts, 'reportDistribution', canApprove)}
+              badgeTone={canApprove ? 'attention' : 'neutral'}
+            />
+          </CollapsibleNavSection>
         </NavRailCategory>
 
         <NavRailCategory title="Analyze">

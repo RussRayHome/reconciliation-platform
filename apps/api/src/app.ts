@@ -1,6 +1,6 @@
 import type {
   ApprovableType,
-  ApprovalCounts,
+  ApprovalCountsByGroup,
   ApprovalRow,
   ErrorCategory,
   ImportApprovalStatus,
@@ -2591,16 +2591,24 @@ export const createApp = (
     try {
       const { organizationId, username, role } = request.auth!;
       const canApprove = rolePermissionsByRole[role].canApprove;
-      const [importCounts, genericCounts] = await Promise.all([
-        getImportApprovalCounts(pool!, organizationId, username, canApprove),
-        getApprovalRequestCounts(pool!, organizationId, username, canApprove),
-      ]);
+      const [importCounts, mappingProfileCounts, matchingRuleCounts, exceptionResolutionCounts, reportDistributionCounts] =
+        await Promise.all([
+          getImportApprovalCounts(pool!, organizationId, username, canApprove),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['mappingProfile']),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
+            'matchingRule',
+            'varianceThreshold',
+          ]),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['exceptionResolution']),
+          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['reportDistribution']),
+        ]);
       response.json({
-        pending: importCounts.pending + genericCounts.pending,
-        approved: importCounts.approved + genericCounts.approved,
-        rejected: importCounts.rejected + genericCounts.rejected,
-        mySubmissions: importCounts.mySubmissions + genericCounts.mySubmissions,
-      } satisfies ApprovalCounts);
+        import: importCounts,
+        mappingProfile: mappingProfileCounts,
+        matchingRule: matchingRuleCounts,
+        exceptionResolution: exceptionResolutionCounts,
+        reportDistribution: reportDistributionCounts,
+      } satisfies ApprovalCountsByGroup);
     } catch (error) {
       next(error);
     }

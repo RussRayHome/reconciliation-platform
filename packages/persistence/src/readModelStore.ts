@@ -1706,12 +1706,13 @@ export const listApprovalRequests = async (
   });
 };
 
-/** Approval-request counts across all five generic subject types combined, scoped by privilege like `getImportApprovalCounts`. */
+/** Approval-request counts scoped to one or more generic subject types (e.g. matchingRule + varianceThreshold combined for the "Matching Rule & Variances" rail submenu), scoped by privilege like `getImportApprovalCounts`. */
 export const getApprovalRequestCounts = async (
   pool: Pool,
   organizationId: string,
   username: string,
   canApprove: boolean,
+  subjectTypes: GenericApprovableType[],
 ): Promise<ApprovalCounts> => {
   return runInTenantScope(pool, organizationId, async (client) => {
     const result = await client.query<{
@@ -1726,14 +1727,16 @@ export const getApprovalRequestCounts = async (
              COUNT(*) FILTER (WHERE status = 'APPROVED') AS approved,
              COUNT(*) FILTER (WHERE status = 'REJECTED') AS rejected,
              COUNT(*) FILTER (WHERE submitted_by = $1) AS my_submissions
-           FROM reconciliation_approval_request`
+           FROM reconciliation_approval_request
+          WHERE subject_type = ANY($2)`
         : `SELECT
              COUNT(*) FILTER (WHERE status = 'PENDING' AND submitted_by = $1) AS pending,
              COUNT(*) FILTER (WHERE status = 'APPROVED' AND submitted_by = $1) AS approved,
              COUNT(*) FILTER (WHERE status = 'REJECTED' AND submitted_by = $1) AS rejected,
              COUNT(*) FILTER (WHERE submitted_by = $1) AS my_submissions
-           FROM reconciliation_approval_request`,
-      [username],
+           FROM reconciliation_approval_request
+          WHERE subject_type = ANY($2)`,
+      [username, subjectTypes],
     );
     const row = result.rows[0];
     return {

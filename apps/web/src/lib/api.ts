@@ -1,6 +1,6 @@
 import type {
   ApprovableType,
-  ApprovalCounts,
+  ApprovalCountsByGroup,
   ApprovalRow,
   CanonicalField,
   EntityVerificationStatus,
@@ -437,10 +437,10 @@ export const getApprovalsRequest = async (
   return parseResponse<ApprovalRow[]>(response);
 };
 
-/** Fetches the Approvals rail badge / tab counts, privilege-scoped server-side. */
-export const getApprovalCountsRequest = async (): Promise<ApprovalCounts> => {
+/** Fetches the Approvals rail badge counts, one per rail submenu, privilege-scoped server-side. */
+export const getApprovalCountsRequest = async (): Promise<ApprovalCountsByGroup> => {
   const response = await apiFetch('/api/approvals/counts');
-  return parseResponse<ApprovalCounts>(response);
+  return parseResponse<ApprovalCountsByGroup>(response);
 };
 
 /** Approves, rejects, or overrides a pending approval of any ApprovableType. Approver-only. */

@@ -160,11 +160,20 @@ vi.mock('./lib/api', async () => {
       Promise.resolve(mockedApiState.mappingProfileNames),
     ),
     // Mocked unconditionally for the same reason as getRulesCatalogRequest above: NavRail's
-    // Approvals badge fetches on every mount/route change, so an unmocked call here would fall
-    // through to the real `fetch` and disrupt other tests' call-order-sensitive fetch spies.
-    getApprovalCountsRequest: vi.fn(() =>
-      Promise.resolve({ pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }),
-    ),
+    // per-submenu Approvals badges fetch on every mount/route change, so an unmocked call here
+    // would fall through to the real `fetch` and disrupt other tests' call-order-sensitive spies.
+    getApprovalCountsRequest: vi.fn(() => {
+      const emptyCounts = { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 };
+      return Promise.resolve({
+        import: emptyCounts,
+        mappingProfile: emptyCounts,
+        matchingRule: emptyCounts,
+        exceptionResolution: emptyCounts,
+        reportDistribution: emptyCounts,
+      });
+    }),
+    // ApprovalsPage fetches its table on mount; unmocked, that would fall through to the real
+    // `fetch` and disrupt other tests' call-order-sensitive fetch spies.
     getApprovalsRequest: vi.fn(() => Promise.resolve([])),
   };
 });
@@ -1630,7 +1639,7 @@ describe('App', () => {
     expect(confirmButton).not.toBeDisabled();
   });
 
-  it('exposes Rules-based reconciliation and a single privilege-scoped Approvals rail item', () => {
+  it('exposes Rules-based reconciliation and a collapsible Approvals section with five submenus', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
@@ -1642,9 +1651,26 @@ describe('App', () => {
     expect(screen.queryByRole('link', { name: 'Approved Imports' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Rejected Imports' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('link', { name: 'Approvals' }));
+    expect(screen.getByRole('link', { name: 'Imported files' })).toHaveAttribute(
+      'href',
+      '/approvals/imports',
+    );
+    expect(screen.getByRole('link', { name: 'Matching Rule & Variances' })).toHaveAttribute(
+      'href',
+      '/approvals/matching-rules',
+    );
+    expect(screen.getByRole('link', { name: 'Exception Resolutions' })).toHaveAttribute(
+      'href',
+      '/approvals/exception-resolutions',
+    );
+    expect(screen.getByRole('link', { name: 'Report Distribution' })).toHaveAttribute(
+      'href',
+      '/approvals/report-distribution',
+    );
 
-    expect(screen.getByRole('heading', { name: 'Approvals' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Imported files' }));
+
+    expect(screen.getByRole('heading', { name: 'Imported files' })).toBeInTheDocument();
   });
 
   it('shows the Run Book link for admin and superuser roles', () => {

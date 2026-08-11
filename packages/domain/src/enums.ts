@@ -199,6 +199,18 @@ export const approvableTypes = [
 /** Union of valid approvable types. */
 export type ApprovableType = (typeof approvableTypes)[number];
 
+/** The five Approvals rail submenus -- matchingRule and varianceThreshold share one submenu
+ * ("Matching Rule & Variances"), since they're both fields on the same versioned object. */
+export const approvalGroupKeys = [
+  'import',
+  'mappingProfile',
+  'matchingRule',
+  'exceptionResolution',
+  'reportDistribution',
+] as const;
+/** Union of valid approval group keys. */
+export type ApprovalGroupKey = (typeof approvalGroupKeys)[number];
+
 /** Approval status surfaced on a source file before/while it moves through the approval workflow. */
 export const sourceFileApprovalStatuses = [
   'NOT_SUBMITTED',

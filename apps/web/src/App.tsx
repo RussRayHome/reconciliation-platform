@@ -24,7 +24,7 @@ import { SectionCard } from '@recon/ui';
 import {
   rolePermissionsByRole,
   userRoles,
-  type ApprovalCounts,
+  type ApprovalCountsByGroup,
   type EntityVerificationStatus,
   type IdentityVerificationStatus,
   type ReviewerDecision,
@@ -639,7 +639,7 @@ function ReconciliationApp({
     loadSliderDefaultsUpdatedAt(),
   );
   const [ruleVersions, setRuleVersions] = useState<RuleVersionsResponse | null>(null);
-  const [approvalCounts, setApprovalCounts] = useState<ApprovalCounts | null>(null);
+  const [approvalCounts, setApprovalCounts] = useState<ApprovalCountsByGroup | null>(null);
   const [ruleVersionActionError, setRuleVersionActionError] = useState<string | null>(null);
   const [rulesCatalogData, setRulesCatalogData] = useState<RuleCatalogResponse | null>(null);
   const [rulesCatalogError, setRulesCatalogError] = useState<string | null>(null);
@@ -684,7 +684,7 @@ function ReconciliationApp({
         }
       })
       .catch(() => {
-        // Non-fatal: the rail badge just stays hidden until the next successful fetch.
+        // Non-fatal: the rail badges just stay hidden until the next successful fetch.
       });
 
     return () => {
@@ -1183,13 +1183,7 @@ function ReconciliationApp({
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
         canAccessRunBook={rolePermissions.canAccessRunBook}
         canApprove={rolePermissions.canApprove}
-        approvalCount={
-          approvalCounts
-            ? rolePermissions.canApprove
-              ? approvalCounts.pending
-              : approvalCounts.rejected
-            : null
-        }
+        approvalCounts={approvalCounts}
         username={username}
         profileLabel={profileLabel}
         roleLabel={roleLabel}
@@ -1370,20 +1364,24 @@ function ReconciliationApp({
               />
               <Route path={routePaths.mappingRulesVersions} element={<VersionsPage />} />
               <Route
-                path={routePaths.approvalsPending}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
+                path={routePaths.approvalsImports}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
               />
               <Route
-                path={routePaths.approvalsApproved}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
+                path={routePaths.approvalsMappingProfiles}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
               />
               <Route
-                path={routePaths.approvalsRejected}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
+                path={routePaths.approvalsMatchingRules}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
               />
               <Route
-                path={routePaths.approvalsMySubmissions}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} username={username} />}
+                path={routePaths.approvalsExceptionResolutions}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+              />
+              <Route
+                path={routePaths.approvalsReportDistribution}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
               />
               {isAdmin ? (
                 <Route path={routePaths.approvalsPolicy} element={<ApprovalPolicyPage />} />

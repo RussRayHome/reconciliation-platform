@@ -1,5 +1,6 @@
 import type {
   ApprovableType,
+  ApprovalGroupKey,
   BusinessField,
   ChartIdentifier,
   ErrorCategory,
@@ -759,6 +760,9 @@ export interface ApprovalCounts {
   rejected: number;
   mySubmissions: number;
 }
+
+/** One `ApprovalCounts` per Approvals rail submenu -- response shape of `GET /api/approvals/counts`. */
+export type ApprovalCountsByGroup = Record<ApprovalGroupKey, ApprovalCounts>;
 
 /** A versioned bank/GL upload template. Stored in `reconciliation_template_definition`. */
 export interface TemplateDefinition {

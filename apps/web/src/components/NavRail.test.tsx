@@ -37,7 +37,7 @@ const defaultProps = {
   canAccessDocumentation: true,
   canAccessRunBook: true,
   canApprove: false,
-  approvalCount: null,
+  approvalCounts: null,
   username: 'test.user',
   profileLabel: 'Test User',
   roleLabel: 'Superuser',
@@ -74,7 +74,11 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   mappingRules: 'Matching Rules',
   mappingRulesVersions: 'Rule Versions',
   mappingHistory: 'Mapping History',
-  approvalsPending: 'Approvals',
+  approvalsImports: 'Imported files',
+  approvalsMappingProfiles: 'Mapping Profiles approvals',
+  approvalsMatchingRules: 'Matching Rule & Variances',
+  approvalsExceptionResolutions: 'Exception Resolutions',
+  approvalsReportDistribution: 'Report Distribution',
   reconSummary: 'File-based',
   probableMatches: 'Rules-based',
   exceptions: 'Exceptions',
@@ -89,12 +93,6 @@ const EXPECTED_ABSENT_FROM_RAIL: Record<string, string> = {
   forgotPassword: 'pre-auth screen',
   signup: 'pre-auth screen',
   support: 'pre-auth screen',
-  approvalsApproved:
-    'Approvals rail restructure (RailMenuMods): folded into the Approvals page tabs (Approved) instead of a separate rail link',
-  approvalsRejected:
-    'Approvals rail restructure (RailMenuMods): folded into the Approvals page tabs (Rejected) instead of a separate rail link',
-  approvalsMySubmissions:
-    'Approver-only Approvals page tab ("My submissions"), not a separate rail link',
   approvalsPolicy: 'Reached via the Approvals page header\'s "Approval policy" button, not the rail',
 };
 
