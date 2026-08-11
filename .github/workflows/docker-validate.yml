@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-functional-${{ matrix.shard }}-failure
           path: test-results/e2e
@@ -226,7 +226,7 @@ jobs:
         # container writes there via its bind mount (compose.e2e.yaml), so it's already on the
         # runner's own filesystem by the time this step runs, same as e2e-functional's upload above.
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-visual-diff
           path: test-results/e2e
