@@ -152,6 +152,37 @@ export type E2eSpecItem = {
   artifactPath?: string;
 };
 
+/** One module in the dependency graph, normalized from dependency-cruiser's raw JSON by
+ *  scripts/ci/depcruise-scan.ts. fanIn/fanOut/instability count LOCAL dependencies only (external
+ *  packages excluded), so instability = fanOut/(fanIn+fanOut) stays consistent with the fanIn/
+ *  fanOut numbers shown next to it in the UI. */
+export type DependencyModule = {
+  name: string;
+  folder: string;
+  loc: number;
+  deps: string[];
+  fanIn: number;
+  fanOut: number;
+  instability: number;
+  cyclic: boolean;
+};
+
+/** One dependency-cruiser rule violation (from `.dependency-cruiser.cjs`'s `forbidden` rules). */
+export type DependencyViolation = {
+  id: string;
+  sev: 'error' | 'warn' | 'info';
+  from: string;
+  to: string;
+  note: string;
+};
+
+/** Whole-repo dependency graph scan as written by `scripts/ci/depcruise-scan.ts --json-out`. */
+export type DependencyScan = {
+  scannedAt: string;
+  modules: DependencyModule[];
+  violations: DependencyViolation[];
+};
+
 /** Last full run of this dashboard's own quality-gate check suite (stands in for a literal CI run). */
 export type LastCiRunKpi = {
   status: 'healthy' | 'attention-needed';
@@ -203,6 +234,7 @@ export type DeveloperCheck = {
   secretFindingsAggregate?: SecretFindingsScore;
   secretScanTools?: { gitleaks: boolean; trufflehog: boolean };
   complexityScan?: ComplexityScan;
+  dependencyScan?: DependencyScan;
   penetrationTestStatuses?: PenetrationTestStatus[];
   testItems?: TestItem[];
   lintIssues?: LintIssue[];

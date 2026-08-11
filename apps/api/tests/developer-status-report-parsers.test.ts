@@ -3,6 +3,7 @@ import {
   parseComplexityScan,
   parseCoverageSummaryJson,
   parseDbTestItems,
+  parseDependencyScan,
   parseEslintJsonIssues,
   parsePlaywrightJsonSpecs,
   parseVitestJsonTestItems,
@@ -699,6 +700,136 @@ describe('report parsers', () => {
           ],
         }),
       ).toBe(2);
+    });
+  });
+
+  describe('parseDependencyScan', () => {
+    const validScan = JSON.stringify({
+      scannedAt: '2026-08-11T00:00:00.000Z',
+      modules: [
+        {
+          name: 'apps/api/src/app',
+          folder: 'api',
+          loc: 2580,
+          deps: ['apps/api/src/services/authMiddleware'],
+          fanIn: 12,
+          fanOut: 17,
+          instability: 0.586,
+          cyclic: false,
+        },
+      ],
+      violations: [
+        { id: 'no-circular-dependencies', sev: 'warn', from: 'a', to: 'b', note: 'Violates "no-circular-dependencies" (warn).' },
+      ],
+    });
+
+    it('parses a valid scan into its typed shape', () => {
+      expect(parseDependencyScan(validScan)).toEqual({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [
+          {
+            name: 'apps/api/src/app',
+            folder: 'api',
+            loc: 2580,
+            deps: ['apps/api/src/services/authMiddleware'],
+            fanIn: 12,
+            fanOut: 17,
+            instability: 0.586,
+            cyclic: false,
+          },
+        ],
+        violations: [
+          {
+            id: 'no-circular-dependencies',
+            sev: 'warn',
+            from: 'a',
+            to: 'b',
+            note: 'Violates "no-circular-dependencies" (warn).',
+          },
+        ],
+      });
+    });
+
+    it('drops a module with no name or no folder', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [
+          { folder: 'api', loc: 1, deps: [], fanIn: 0, fanOut: 0, instability: 0, cyclic: false },
+          { name: 'a', loc: 1, deps: [], fanIn: 0, fanOut: 0, instability: 0, cyclic: false },
+        ],
+        violations: [],
+      });
+
+      expect(parseDependencyScan(scan)?.modules).toEqual([]);
+    });
+
+    it('drops a violation with an unrecognized severity', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [],
+        violations: [{ id: 'x', sev: 'catastrophic', from: 'a', to: 'b' }],
+      });
+
+      expect(parseDependencyScan(scan)?.violations).toEqual([]);
+    });
+
+    it('clamps instability into [0, 1] and treats non-numeric values as zero', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [
+          { name: 'a', folder: 'x', instability: 5 },
+          { name: 'b', folder: 'x', instability: -1 },
+          { name: 'c', folder: 'x', instability: 'lots' },
+        ],
+        violations: [],
+      });
+
+      expect(parseDependencyScan(scan)?.modules.map((m) => m.instability)).toEqual([1, 0, 0]);
+    });
+
+    it('treats missing loc/fanIn/fanOut/deps/cyclic as their zero/empty/false defaults', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [{ name: 'a', folder: 'x' }],
+        violations: [],
+      });
+
+      expect(parseDependencyScan(scan)?.modules[0]).toEqual({
+        name: 'a',
+        folder: 'x',
+        loc: 0,
+        deps: [],
+        fanIn: 0,
+        fanOut: 0,
+        instability: 0,
+        cyclic: false,
+      });
+    });
+
+    it('defaults a violation with no note to a generated one', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [],
+        violations: [{ id: 'no-circular-dependencies', sev: 'warn', from: 'a', to: 'b' }],
+      });
+
+      expect(parseDependencyScan(scan)?.violations[0]?.note).toBe('Violates "no-circular-dependencies".');
+    });
+
+    it.each([
+      ['invalid JSON', 'not json'],
+      ['JSON null', 'null'],
+      ['a JSON scalar', '7'],
+      ['a payload missing scannedAt', JSON.stringify({ modules: [] })],
+      ['a payload with a non-array modules field', JSON.stringify({ scannedAt: '2026-08-11T00:00:00.000Z', modules: 'nope' })],
+    ])('returns null for %s', (_label, input) => {
+      expect(parseDependencyScan(input)).toBeNull();
+    });
+
+    it('treats a missing violations field as an empty array', () => {
+      const scan = JSON.stringify({ scannedAt: '2026-08-11T00:00:00.000Z', modules: [] });
+
+      expect(parseDependencyScan(scan)?.violations).toEqual([]);
     });
   });
 });
