@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T02:13:06.871Z",
+  "generatedAt": "2026-08-11T14:07:02.891Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
   "packageCount": 507,
   "packages": [
@@ -1656,7 +1656,7 @@
       "license": "MIT"
     },
     {
-      "package": "rate-limit-redis@5.0.0",
+      "package": "rate-limit-redis@6.0.1",
       "license": "MIT"
     },
     {
