@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload regenerated baselines for inspection
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: regenerated-visual-baselines
           path: apps/web/tests/e2e/visual/visual-baseline.spec.ts-snapshots
