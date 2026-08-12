@@ -55,19 +55,19 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
-      migratedTableExists = await tableExists(database.pool, 'canonical_record');
+      migratedTableExists = await tableExists(database.pool, 'mapping_rule_version');
 
-      // 0046 (the current HEAD) renames normalized_record -> canonical_record -- a table-name
-      // change is directly visible in schema-baseline.sql's table listing, unlike a grant-only or
-      // RLS-only changeset (see git history on this describe block for why that distinction
-      // matters: an RLS-only rollback showed no diff at all here).
+      // 0047 (the current HEAD) creates mapping_rule_version -- a new table is directly visible in
+      // schema-baseline.sql's table listing, unlike a grant-only or RLS-only changeset (see git
+      // history on this describe block for why that distinction matters: an RLS-only rollback
+      // showed no diff at all here).
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
-      rolledBackTableExists = await tableExists(database.pool, 'canonical_record');
+      rolledBackTableExists = await tableExists(database.pool, 'mapping_rule_version');
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
-      reappliedTableExists = await tableExists(database.pool, 'canonical_record');
+      reappliedTableExists = await tableExists(database.pool, 'mapping_rule_version');
     }, 180000);
 
     afterAll(async () => {
@@ -84,11 +84,11 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses 0046 by renaming canonical_record back to normalized_record', () => {
-      // Table renames show up directly in schema-baseline.sql's table listing, so
+    it('reverses 0047 by dropping mapping_rule_version', () => {
+      // New/dropped tables show up directly in schema-baseline.sql's table listing, so
       // migratedSchema/rolledBackSchema genuinely differ here. When a future changeset lands on
-      // top of 0046, update this test to describe that changeset instead -- it is intentionally
-      // pinned to "whatever is currently the most recent changeset", not to 0046 forever (see
+      // top of 0047, update this test to describe that changeset instead -- it is intentionally
+      // pinned to "whatever is currently the most recent changeset", not to 0047 forever (see
       // 0033's git history for the last time this moved).
       expect(migratedTableExists).toBe(true);
       expect(rolledBackTableExists).toBe(false);
@@ -97,7 +97,7 @@ describe('Liquibase rollback', () => {
     });
   });
 
-  describe('rolling back twenty-one changesets (0046 down through 0026 schema-changing)', () => {
+  describe('rolling back twenty-two changesets (0047 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -109,7 +109,7 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now twenty-one changesets back from HEAD (0046): 0027 (verify-only), 0028 (adds
+      // 0026 is now twenty-two changesets back from HEAD (0047): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
@@ -119,10 +119,11 @@ describe('Liquibase rollback', () => {
       // reconciliation_user changes), 0038 (grants only), 0039 (new table, no reconciliation_user
       // changes), 0040 (new table, no reconciliation_user changes), 0041 (new tables, no
       // reconciliation_user changes), 0042/0043 (File Imports & Validation tables + RLS, no
-      // reconciliation_user changes), and 0044/0045/0046 (source_type widening, run_source_file,
-      // canonical_record rename -- none touch reconciliation_user) all sit on top of it without
-      // reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=21');
+      // reconciliation_user changes), 0044/0045/0046 (source_type widening, run_source_file,
+      // canonical_record rename -- none touch reconciliation_user), and 0047 (rule version
+      // lineage tables, no reconciliation_user changes) all sit on top of it without reversing
+      // anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=22');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

@@ -6,9 +6,9 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(1339);
+SELECT plan(1384);
 
-SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version', 'run_source_file', 'validation_issue']::name[], 'public schema contains exactly the expected tables');
+SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
 SELECT col_is_pk('public', 'canonical_record', ARRAY['id']::name[], 'canonical_record primary key');
 SELECT indexes_are('public', 'canonical_record', ARRAY['canonical_record_counterparty_id_idx', 'normalized_record_account_txn_date_idx', 'normalized_record_organization_idx', 'normalized_record_pkey', 'normalized_record_reconciliation_run_idx', 'normalized_record_signed_amount_idx']::name[], 'canonical_record has exactly the expected indexes');
@@ -281,6 +281,35 @@ SELECT is(
     WHERE con.conrelid = 'public.import_job'::regclass AND con.contype IN ('c', 'u', 'x')),
   $chk$import_job_status_check => CHECK ((status = ANY (ARRAY['QUEUED'::text, 'RUNNING'::text, 'SUCCEEDED'::text, 'FAILED'::text])))$chk$,
   'import_job check/unique/exclusion constraints'
+);
+SELECT columns_are('public', 'mapping_rule_version', ARRAY['id', 'rule_code', 'version_number', 'source_type', 'target_field', 'description', 'status', 'created_at']::name[], 'mapping_rule_version has exactly the expected columns');
+SELECT col_is_pk('public', 'mapping_rule_version', ARRAY['id']::name[], 'mapping_rule_version primary key');
+SELECT indexes_are('public', 'mapping_rule_version', ARRAY['mapping_rule_version_code_version_key', 'mapping_rule_version_pkey']::name[], 'mapping_rule_version has exactly the expected indexes');
+SELECT col_type_is('public', 'mapping_rule_version', 'id', 'uuid', 'mapping_rule_version.id is uuid');
+SELECT col_not_null('public', 'mapping_rule_version', 'id', 'mapping_rule_version.id is NOT NULL');
+SELECT col_type_is('public', 'mapping_rule_version', 'rule_code', 'text', 'mapping_rule_version.rule_code is text');
+SELECT col_not_null('public', 'mapping_rule_version', 'rule_code', 'mapping_rule_version.rule_code is NOT NULL');
+SELECT col_type_is('public', 'mapping_rule_version', 'version_number', 'integer', 'mapping_rule_version.version_number is integer');
+SELECT col_not_null('public', 'mapping_rule_version', 'version_number', 'mapping_rule_version.version_number is NOT NULL');
+SELECT col_type_is('public', 'mapping_rule_version', 'source_type', 'text', 'mapping_rule_version.source_type is text');
+SELECT col_is_null('public', 'mapping_rule_version', 'source_type', 'mapping_rule_version.source_type is nullable');
+SELECT col_type_is('public', 'mapping_rule_version', 'target_field', 'text', 'mapping_rule_version.target_field is text');
+SELECT col_is_null('public', 'mapping_rule_version', 'target_field', 'mapping_rule_version.target_field is nullable');
+SELECT col_type_is('public', 'mapping_rule_version', 'description', 'text', 'mapping_rule_version.description is text');
+SELECT col_not_null('public', 'mapping_rule_version', 'description', 'mapping_rule_version.description is NOT NULL');
+SELECT col_type_is('public', 'mapping_rule_version', 'status', 'text', 'mapping_rule_version.status is text');
+SELECT col_not_null('public', 'mapping_rule_version', 'status', 'mapping_rule_version.status is NOT NULL');
+SELECT col_type_is('public', 'mapping_rule_version', 'created_at', 'timestamp with time zone', 'mapping_rule_version.created_at is timestamp with time zone');
+SELECT col_not_null('public', 'mapping_rule_version', 'created_at', 'mapping_rule_version.created_at is NOT NULL');
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.mapping_rule_version'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$mapping_rule_version_code_version_key => UNIQUE (rule_code, version_number)
+mapping_rule_version_source_type_check => CHECK (((source_type IS NULL) OR (source_type = ANY (ARRAY['BANK'::text, 'GL'::text, 'PAYROLL'::text, 'RECEIPT'::text, 'REMITTANCE'::text, 'BILLING'::text, 'VMS'::text, 'FACTOR'::text, 'LOC'::text, 'TAX'::text, 'BENEFITS'::text, 'TIMEKEEPING'::text, 'INTERCOMPANY'::text, 'ASSIGNMENT'::text, 'LEGAL_ENTITY'::text]))))
+mapping_rule_version_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'DEPRECATED'::text])))
+mapping_rule_version_version_number_check => CHECK ((version_number > 0))$chk$,
+  'mapping_rule_version check/unique/exclusion constraints'
 );
 SELECT columns_are('public', 'reconciliation_approval_history', ARRAY['id', 'approval_id', 'from_status', 'to_status', 'actor', 'note', 'created_at', 'organization_id']::name[], 'reconciliation_approval_history has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_approval_history', ARRAY['id']::name[], 'reconciliation_approval_history primary key');
@@ -1638,9 +1667,9 @@ SELECT is(
   $chk$run_source_file_run_import_file_key => UNIQUE (reconciliation_run_id, import_file_id)$chk$,
   'run_source_file check/unique/exclusion constraints'
 );
-SELECT columns_are('public', 'validation_issue', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'severity', 'code', 'row_number', 'entry_id', 'field', 'message', 'created_at']::name[], 'validation_issue has exactly the expected columns');
+SELECT columns_are('public', 'validation_issue', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'severity', 'code', 'row_number', 'entry_id', 'field', 'message', 'created_at', 'rule_version_id']::name[], 'validation_issue has exactly the expected columns');
 SELECT col_is_pk('public', 'validation_issue', ARRAY['id']::name[], 'validation_issue primary key');
-SELECT indexes_are('public', 'validation_issue', ARRAY['validation_issue_import_file_idx', 'validation_issue_import_job_idx', 'validation_issue_organization_idx', 'validation_issue_pkey']::name[], 'validation_issue has exactly the expected indexes');
+SELECT indexes_are('public', 'validation_issue', ARRAY['validation_issue_import_file_idx', 'validation_issue_import_job_idx', 'validation_issue_organization_idx', 'validation_issue_pkey', 'validation_issue_rule_version_idx']::name[], 'validation_issue has exactly the expected indexes');
 SELECT is(
   (SELECT relrowsecurity FROM pg_class WHERE relname = 'validation_issue' AND relnamespace = 'public'::regnamespace),
   true,
@@ -1668,12 +1697,47 @@ SELECT col_type_is('public', 'validation_issue', 'message', 'text', 'validation_
 SELECT col_not_null('public', 'validation_issue', 'message', 'validation_issue.message is NOT NULL');
 SELECT col_type_is('public', 'validation_issue', 'created_at', 'timestamp with time zone', 'validation_issue.created_at is timestamp with time zone');
 SELECT col_not_null('public', 'validation_issue', 'created_at', 'validation_issue.created_at is NOT NULL');
+SELECT col_type_is('public', 'validation_issue', 'rule_version_id', 'uuid', 'validation_issue.rule_version_id is uuid');
+SELECT col_not_null('public', 'validation_issue', 'rule_version_id', 'validation_issue.rule_version_id is NOT NULL');
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
      FROM pg_constraint con
     WHERE con.conrelid = 'public.validation_issue'::regclass AND con.contype IN ('c', 'u', 'x')),
   $chk$validation_issue_severity_check => CHECK ((severity = ANY (ARRAY['ERROR'::text, 'WARNING'::text])))$chk$,
   'validation_issue check/unique/exclusion constraints'
+);
+SELECT columns_are('public', 'validation_rule_version', ARRAY['id', 'rule_code', 'version_number', 'scope', 'source_type', 'severity', 'description', 'status', 'created_at']::name[], 'validation_rule_version has exactly the expected columns');
+SELECT col_is_pk('public', 'validation_rule_version', ARRAY['id']::name[], 'validation_rule_version primary key');
+SELECT indexes_are('public', 'validation_rule_version', ARRAY['validation_rule_version_code_version_key', 'validation_rule_version_pkey']::name[], 'validation_rule_version has exactly the expected indexes');
+SELECT col_type_is('public', 'validation_rule_version', 'id', 'uuid', 'validation_rule_version.id is uuid');
+SELECT col_not_null('public', 'validation_rule_version', 'id', 'validation_rule_version.id is NOT NULL');
+SELECT col_type_is('public', 'validation_rule_version', 'rule_code', 'text', 'validation_rule_version.rule_code is text');
+SELECT col_not_null('public', 'validation_rule_version', 'rule_code', 'validation_rule_version.rule_code is NOT NULL');
+SELECT col_type_is('public', 'validation_rule_version', 'version_number', 'integer', 'validation_rule_version.version_number is integer');
+SELECT col_not_null('public', 'validation_rule_version', 'version_number', 'validation_rule_version.version_number is NOT NULL');
+SELECT col_type_is('public', 'validation_rule_version', 'scope', 'text', 'validation_rule_version.scope is text');
+SELECT col_not_null('public', 'validation_rule_version', 'scope', 'validation_rule_version.scope is NOT NULL');
+SELECT col_type_is('public', 'validation_rule_version', 'source_type', 'text', 'validation_rule_version.source_type is text');
+SELECT col_is_null('public', 'validation_rule_version', 'source_type', 'validation_rule_version.source_type is nullable');
+SELECT col_type_is('public', 'validation_rule_version', 'severity', 'text', 'validation_rule_version.severity is text');
+SELECT col_not_null('public', 'validation_rule_version', 'severity', 'validation_rule_version.severity is NOT NULL');
+SELECT col_type_is('public', 'validation_rule_version', 'description', 'text', 'validation_rule_version.description is text');
+SELECT col_not_null('public', 'validation_rule_version', 'description', 'validation_rule_version.description is NOT NULL');
+SELECT col_type_is('public', 'validation_rule_version', 'status', 'text', 'validation_rule_version.status is text');
+SELECT col_not_null('public', 'validation_rule_version', 'status', 'validation_rule_version.status is NOT NULL');
+SELECT col_type_is('public', 'validation_rule_version', 'created_at', 'timestamp with time zone', 'validation_rule_version.created_at is timestamp with time zone');
+SELECT col_not_null('public', 'validation_rule_version', 'created_at', 'validation_rule_version.created_at is NOT NULL');
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.validation_rule_version'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$validation_rule_version_code_version_key => UNIQUE (rule_code, version_number)
+validation_rule_version_scope_check => CHECK ((scope = ANY (ARRAY['SCHEMA'::text, 'FILE'::text, 'ROW'::text, 'CROSS_ROW'::text])))
+validation_rule_version_severity_check => CHECK ((severity = ANY (ARRAY['ERROR'::text, 'WARNING'::text])))
+validation_rule_version_source_type_check => CHECK (((source_type IS NULL) OR (source_type = ANY (ARRAY['BANK'::text, 'GL'::text]))))
+validation_rule_version_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'DEPRECATED'::text])))
+validation_rule_version_version_number_check => CHECK ((version_number > 0))$chk$,
+  'validation_rule_version check/unique/exclusion constraints'
 );
 SELECT fk_ok('public', 'canonical_record', ARRAY['import_file_id']::name[], 'public', 'import_file', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'canonical_record', ARRAY['import_job_id']::name[], 'public', 'import_job', ARRAY['id']::name[]);
@@ -1767,5 +1831,6 @@ SELECT fk_ok('public', 'run_source_file', ARRAY['reconciliation_run_id']::name[]
 SELECT fk_ok('public', 'validation_issue', ARRAY['import_file_id']::name[], 'public', 'import_file', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'validation_issue', ARRAY['import_job_id']::name[], 'public', 'import_job', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'validation_issue', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'validation_issue', ARRAY['rule_version_id']::name[], 'public', 'validation_rule_version', ARRAY['id']::name[]);
 
 SELECT * FROM finish();
