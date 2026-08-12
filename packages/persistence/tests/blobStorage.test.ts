@@ -17,7 +17,7 @@ const insertImportFile = async (organizationId: string): Promise<string> => {
   const id = randomUUID();
   await pool.query(
     `INSERT INTO import_file
-       (id, organization_id, original_filename, file_format, file_type, content_sha256, byte_size)
+       (id, organization_id, original_filename, file_format, source_type, content_sha256, byte_size)
      VALUES ($1, $2, 'bank.csv', 'CSV', 'BANK', $3, 0)`,
     [id, organizationId, '0'.repeat(64)],
   );

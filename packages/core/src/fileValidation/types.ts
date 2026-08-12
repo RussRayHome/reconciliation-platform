@@ -144,7 +144,10 @@ export interface RawGeneralLedgerRow {
 }
 
 /** Canonical record both formats normalize into -- the reconciliation unit. Mirrors the
- * `normalized_record` table (changeset 0042). */
+ * `canonical_record` table (changesets 0042/0046). Note: this TypeScript type keeps the
+ * `NormalizedRecord`/`sourceSystem: 'BANK'|'GL'` shape from Phase 4 unchanged -- the mapping
+ * onto `canonical_record`'s wider envelope (`source_type`, `counterparty_*`, `reference_ids`,
+ * `evidence`) happens at the persistence boundary (Phase 6, not yet built), not here. */
 export interface NormalizedRecord {
   sourceSystem: 'BANK' | 'GL';
   /** Stable id: transaction_id (bank) or `${entry_id}:${line_number}` (GL). */

@@ -17,7 +17,7 @@ import {
  * entry-level rules, ported near-verbatim from the design-handoff bundle's `reference/schema.ts`
  * -- same code names, severities, and messages, per the adjusted plan's own instruction to keep
  * this port byte-for-byte equivalent to the verified reference. The only material additions are
- * `sourceLineNumber` on each normalized record (schema.ts didn't need it; `normalized_record`,
+ * `sourceLineNumber` on each normalized record (schema.ts didn't need it; `canonical_record`,
  * changeset 0042, does) and accepting already-parsed row objects rather than reading files.
  */
 
