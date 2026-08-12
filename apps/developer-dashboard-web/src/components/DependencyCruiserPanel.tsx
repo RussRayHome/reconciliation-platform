@@ -219,56 +219,62 @@ export function DependencyCruiserPanel({ scan }: Readonly<{ scan: DependencyScan
 
           {view === 'table' ? (
             <>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Module</th>
-                    <th className="num">Loc</th>
-                    <th className="num">
-                      <button type="button" className="dependency__sort-button" onClick={() => setSort('fanIn')}>
-                        Fan-in{sort === 'fanIn' ? ' ▾' : ''}
-                      </button>
-                    </th>
-                    <th className="num">
-                      <button type="button" className="dependency__sort-button" onClick={() => setSort('fanOut')}>
-                        Fan-out{sort === 'fanOut' ? ' ▾' : ''}
-                      </button>
-                    </th>
-                    <th className="num">
-                      <button type="button" className="dependency__sort-button" onClick={() => setSort('instability')}>
-                        Instab.{sort === 'instability' ? ' ▾' : ''}
-                      </button>
-                    </th>
-                    <th />
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((module) => {
-                    const violations = violationsByModule.get(module.name) ?? [];
-                    const status = statusFor(module, violations.length > 0);
-                    return (
-                      <tr
-                        key={module.name}
-                        onMouseEnter={() => setHover(module.name)}
-                        onMouseLeave={() => setHover(null)}
-                      >
-                        <td className="mono">{module.name}</td>
-                        <td className="num">{module.loc.toLocaleString()}</td>
-                        <td className="num">{module.fanIn}</td>
-                        <td className="num">{module.fanOut}</td>
-                        <td className="num">{module.instability.toFixed(2)}</td>
-                        <td>
-                          <InstabilityBar instability={module.instability} />
-                        </td>
-                        <td>
-                          <StatusPill verdict={status.tone} label={status.label} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="detail-panel__table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Module</th>
+                      <th className="num">Loc</th>
+                      <th className="num">
+                        <button type="button" className="dependency__sort-button" onClick={() => setSort('fanIn')}>
+                          Fan-in{sort === 'fanIn' ? ' ▾' : ''}
+                        </button>
+                      </th>
+                      <th className="num">
+                        <button type="button" className="dependency__sort-button" onClick={() => setSort('fanOut')}>
+                          Fan-out{sort === 'fanOut' ? ' ▾' : ''}
+                        </button>
+                      </th>
+                      <th className="num">
+                        <button
+                          type="button"
+                          className="dependency__sort-button"
+                          onClick={() => setSort('instability')}
+                        >
+                          Instab.{sort === 'instability' ? ' ▾' : ''}
+                        </button>
+                      </th>
+                      <th />
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((module) => {
+                      const violations = violationsByModule.get(module.name) ?? [];
+                      const status = statusFor(module, violations.length > 0);
+                      return (
+                        <tr
+                          key={module.name}
+                          onMouseEnter={() => setHover(module.name)}
+                          onMouseLeave={() => setHover(null)}
+                        >
+                          <td className="mono">{module.name}</td>
+                          <td className="num">{module.loc.toLocaleString()}</td>
+                          <td className="num">{module.fanIn}</td>
+                          <td className="num">{module.fanOut}</td>
+                          <td className="num">{module.instability.toFixed(2)}</td>
+                          <td>
+                            <InstabilityBar instability={module.instability} />
+                          </td>
+                          <td>
+                            <StatusPill verdict={status.tone} label={status.label} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
               {rows.length === 0 ? <p className="detail-panel__empty">No modules in scope.</p> : null}
             </>
           ) : showMatrix ? (

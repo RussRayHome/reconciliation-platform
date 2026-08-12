@@ -199,7 +199,11 @@
     color: var(--accent);
   }
 
-  /* Detail panels: full-width, one per overview card, anchor-linked. */
+  /* Detail panels: full-width, one per overview card, anchor-linked. min-width: 0 overrides the
+     grid-item default of min-width: auto -- without it, a panel sitting in a multi-column grid
+     (e.g. dependency__grid, complexity's own layout) refuses to shrink below its widest child's
+     content (a toolbar row of chips, a table with long mono-font paths) and overflows into the
+     next column instead of wrapping/scrolling within its own box. */
   .detail-panel {
     display: grid;
     gap: 0.85rem;
@@ -208,6 +212,12 @@
     border: 1px solid var(--line);
     border-radius: var(--radius-panel);
     scroll-margin-top: 1rem;
+    min-width: 0;
+  }
+
+  /* Lets a wide table scroll horizontally within the panel instead of overflowing past it. */
+  .detail-panel__table-wrap {
+    overflow-x: auto;
   }
 
   .detail-panel__head {
