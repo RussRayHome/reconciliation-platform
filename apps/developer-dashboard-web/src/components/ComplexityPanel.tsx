@@ -336,6 +336,7 @@ export function ComplexityPanel({ scan }: Readonly<{ scan: ComplexityScan | null
       </div>
 
       <div className="complexity__grid">
+        <div className="complexity__main">
         <div className="detail-panel">
           <div className="complexity__toolbar">
             <div className="complexity__breadcrumb">
@@ -373,57 +374,59 @@ export function ComplexityPanel({ scan }: Readonly<{ scan: ComplexityScan | null
             </div>
           </div>
 
-          <table>
-            <thead>
-              <tr>
-                {headerDefs.map((header) => (
-                  <th key={header.label} className={header.key !== 'name' && header.key !== null ? 'num' : undefined}>
-                    {header.key === null ? (
-                      header.label
-                    ) : (
-                      <button
-                        type="button"
-                        className="complexity__sort-button"
-                        onClick={() => {
-                          setDir(sort === header.key && dir === 'desc' ? 'asc' : 'desc');
-                          setSort(header.key as SortKey);
-                        }}
-                      >
-                        {header.label}
-                        {sort === header.key ? (dir === 'desc' ? ' ▾' : ' ▴') : ''}
-                      </button>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const risk = riskFor(row.cc);
-                return (
-                  <tr key={row.key} onClick={row.onActivate} className="complexity__row">
-                    <td className="mono">
-                      {row.name} <span className="complexity__tag">{row.tag}</span>
-                    </td>
-                    {row.cells.map((cell, index) => (
-                      <td key={`${row.key}-cell-${index}`} className="num">
-                        {cell}
+          <div className="detail-panel__table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {headerDefs.map((header) => (
+                    <th key={header.label} className={header.key !== 'name' && header.key !== null ? 'num' : undefined}>
+                      {header.key === null ? (
+                        header.label
+                      ) : (
+                        <button
+                          type="button"
+                          className="complexity__sort-button"
+                          onClick={() => {
+                            setDir(sort === header.key && dir === 'desc' ? 'asc' : 'desc');
+                            setSort(header.key as SortKey);
+                          }}
+                        >
+                          {header.label}
+                          {sort === header.key ? (dir === 'desc' ? ' ▾' : ' ▴') : ''}
+                        </button>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const risk = riskFor(row.cc);
+                  return (
+                    <tr key={row.key} onClick={row.onActivate} className="complexity__row">
+                      <td className="mono">
+                        {row.name} <span className="complexity__tag">{row.tag}</span>
                       </td>
-                    ))}
-                    <td className="num" style={{ color: `var(--complexity-${risk.tier})` }}>
-                      {row.cc}
-                    </td>
-                    <td>
-                      <StatusPill verdict={risk.tone} label={risk.label} />
-                    </td>
-                    <td>
-                      <ComplexityBar cc={row.cc} maxCc={maxRowCc} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      {row.cells.map((cell, index) => (
+                        <td key={`${row.key}-cell-${index}`} className="num">
+                          {cell}
+                        </td>
+                      ))}
+                      <td className="num" style={{ color: `var(--complexity-${risk.tier})` }}>
+                        {row.cc}
+                      </td>
+                      <td>
+                        <StatusPill verdict={risk.tone} label={risk.label} />
+                      </td>
+                      <td>
+                        <ComplexityBar cc={row.cc} maxCc={maxRowCc} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           {rows.length === 0 ? <p className="detail-panel__empty">No matches at this level.</p> : null}
           <div className="table-results-meta">
             <span>
@@ -431,6 +434,50 @@ export function ComplexityPanel({ scan }: Readonly<{ scan: ComplexityScan | null
             </span>
             <span>{isFile ? 'method level' : path.length ? 'directory level' : 'service level'}</span>
           </div>
+        </div>
+
+        <DetailPanel id="complexity-hotspots" title="Worst offenders" subtitle="Top 6 by cc">
+          {hotspots.length === 0 ? (
+            <p className="detail-panel__empty">No functions in scope.</p>
+          ) : (
+            <div className="detail-panel__table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Function</th>
+                    <th>File</th>
+                    <th className="num">CC</th>
+                    <th>Risk</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hotspots.map((entry) => {
+                    const risk = riskFor(entry.method.cc);
+                    return (
+                      <tr
+                        key={`${entry.filePath}:${entry.method.name}:${entry.method.startLine}`}
+                        className="complexity__row"
+                        onClick={() => {
+                          setPath(entry.filePath.split('/'));
+                          setSelected({ method: entry.method, filePath: entry.filePath });
+                        }}
+                      >
+                        <td className="mono">{entry.method.name}()</td>
+                        <td className="mono complexity__hotspot-file">{entry.filePath}</td>
+                        <td className="num" style={{ color: `var(--complexity-${risk.tier})` }}>
+                          {entry.method.cc}
+                        </td>
+                        <td>
+                          <StatusPill verdict={risk.tone} label={risk.label} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </DetailPanel>
         </div>
 
         <div className="complexity__rail">
@@ -448,35 +495,6 @@ export function ComplexityPanel({ scan }: Readonly<{ scan: ComplexityScan | null
                 </div>
               ))}
             </div>
-          </DetailPanel>
-
-          <DetailPanel id="complexity-hotspots" title="Worst offenders" subtitle="Top 6 by cc">
-            {hotspots.length === 0 ? (
-              <p className="detail-panel__empty">No functions in scope.</p>
-            ) : (
-              <div className="complexity__hotspots">
-                {hotspots.map((entry) => {
-                  const risk = riskFor(entry.method.cc);
-                  return (
-                    <button
-                      type="button"
-                      key={`${entry.filePath}:${entry.method.name}:${entry.method.startLine}`}
-                      className="complexity__hotspot"
-                      onClick={() => {
-                        setPath(entry.filePath.split('/'));
-                        setSelected({ method: entry.method, filePath: entry.filePath });
-                      }}
-                    >
-                      <span style={{ color: `var(--complexity-${risk.tier})` }}>{entry.method.cc}</span>
-                      <span className="complexity__hotspot-names">
-                        <span className="mono">{entry.method.name}()</span>
-                        <span className="complexity__hotspot-file mono">{entry.filePath}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </DetailPanel>
 
           <DetailPanel id="complexity-legend" title="Thresholds" subtitle="">
