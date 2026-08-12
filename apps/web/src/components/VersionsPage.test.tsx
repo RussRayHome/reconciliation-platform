@@ -46,14 +46,14 @@ beforeEach(() => {
   mockedApi.response = null;
   mockedApi.error = null;
   mockedApi.getRuleVersionsRequest.mockReset();
-  mockedApi.getRuleVersionsRequest.mockImplementation(async () => {
-    if (mockedApi.error) throw mockedApi.error;
-    return {
+  mockedApi.getRuleVersionsRequest.mockImplementation(() => {
+    if (mockedApi.error) return Promise.reject(mockedApi.error);
+    return Promise.resolve({
       active: null,
       draft: null,
       history: mockedApi.response?.history ?? [],
       overridesAppliedToEngine: false,
-    };
+    });
   });
 });
 

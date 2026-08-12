@@ -71,9 +71,9 @@ beforeEach(() => {
   mockedApi.getApprovalsRequest.mockReset();
   mockedApi.decideApprovalRequest.mockReset();
   mockedApi.claimApprovalRequest.mockReset();
-  mockedApi.getApprovalsRequest.mockImplementation(async (type: ApprovalRow['type']) => {
-    if (mockedApi.error) throw mockedApi.error;
-    return mockedApi.rows.filter((row) => row.type === type);
+  mockedApi.getApprovalsRequest.mockImplementation((type: ApprovalRow['type']) => {
+    if (mockedApi.error) return Promise.reject(mockedApi.error);
+    return Promise.resolve(mockedApi.rows.filter((row) => row.type === type));
   });
   mockedApi.decideApprovalRequest.mockResolvedValue(undefined);
   mockedApi.claimApprovalRequest.mockResolvedValue(undefined);
