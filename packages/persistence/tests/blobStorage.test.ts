@@ -79,7 +79,7 @@ describe('PostgresBlobStorage', () => {
     expect(Buffer.compare(retrieved, bytes)).toBe(0);
   });
 
-  it('is idempotent when put is called twice for the same import_file', async () => {
+  it('rejects a second put for the same import_file -- stored bytes are immutable once written', async () => {
     if (startupError) throw startupError;
 
     const storage = new PostgresBlobStorage(pool);
@@ -90,14 +90,18 @@ describe('PostgresBlobStorage', () => {
       organizationId: defaultOrganizationId,
       bytes: Buffer.from('first version', 'utf8'),
     });
-    await storage.put({
-      importFileId,
-      organizationId: defaultOrganizationId,
-      bytes: Buffer.from('second version', 'utf8'),
-    });
 
+    await expect(
+      storage.put({
+        importFileId,
+        organizationId: defaultOrganizationId,
+        bytes: Buffer.from('second version', 'utf8'),
+      }),
+    ).rejects.toThrow();
+
+    // The original bytes must survive the rejected second write untouched.
     const retrieved = await storage.get(importFileId, defaultOrganizationId);
-    expect(retrieved.toString('utf8')).toBe('second version');
+    expect(retrieved.toString('utf8')).toBe('first version');
 
     const rowCount = await pool.query(
       'SELECT COUNT(*)::int AS count FROM import_file_content WHERE import_file_id = $1',
