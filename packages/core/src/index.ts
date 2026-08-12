@@ -1,4 +1,5 @@
 export * from './export/workbookExporter';
+export * from './fileValidation';
 export * from './matching/engine';
 export * from './matching/ruleCatalog';
 export * from './matching/similarity';

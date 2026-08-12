@@ -1,0 +1,4 @@
+transaction_id,account_id,posted_date,transaction_date,amount,currency_code,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance
+TXN-V001,ACC-1,2026-07-01,,100.00,USD,DEP,"Payroll deposit, biweekly",,,REF-1,,1000.00
+TXN-V002,ACC-1,2026-07-02,,-84.23,USD,POS,Card purchase,,,REF-2,,915.77
+TXN-V003,ACC-1,2026-07-03,,-500.00,USD,CHECK,Rent check,,CHK-1001,REF-3,,415.77
