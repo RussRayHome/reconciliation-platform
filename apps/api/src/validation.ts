@@ -173,6 +173,28 @@ export const reconciliationRunBodySchema = z.object({
   reconciliationFrequency: z.enum(['Monthly', 'Annual']).optional().catch(undefined),
 });
 
+/** POST /api/imports/runs body. Unlike reconciliationRunBodySchema above, invalid values here are
+ * rejected (400) rather than dropped: this creates a real reconciliation_run row with NOT NULL
+ * label/frequency/periodYear columns (changeset 0042), so a silently-dropped field would either
+ * fail the insert with a raw DB error or persist a run the analyst didn't actually ask for. Fields
+ * arrive as multipart/form-data strings (multer), hence the z.coerce on the numeric ones. */
+export const importRunBodySchema = z.object({
+  label: requiredTrimmedString('label is required.'),
+  accountIdentifier: z.string().optional().catch(undefined),
+  frequency: z.enum(['MONTHLY', 'ANNUAL'], {
+    message: 'frequency must be MONTHLY or ANNUAL.',
+  }),
+  periodYear: z.coerce
+    .number({ message: 'periodYear is required.' })
+    .int('periodYear must be a whole number.'),
+  periodMonth: z.coerce
+    .number()
+    .int('periodMonth must be a whole number.')
+    .min(1, 'periodMonth must be between 1 and 12.')
+    .max(12, 'periodMonth must be between 1 and 12.')
+    .optional(),
+});
+
 export const exceptionsQuerySchema = z
   .object({
     category: z.unknown().optional(),

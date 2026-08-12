@@ -34,6 +34,7 @@ import {
   listMappingProfileVersions,
   listMatchingConfigVersions,
   loadPayeeAliases,
+  PostgresImportRunStore,
   publishMatchingConfigVersion,
   recordApprovalDecision,
   recordApprovalRequestDecision,
@@ -41,6 +42,7 @@ import {
   retireMappingProfile,
   updatePayeeAlias,
   type ApprovalRequestRecord,
+  type CreateImportRunFileInput,
   type CreatePayeeAliasInput,
   type ExceptionPageFilters,
   type GenericApprovableType,
@@ -99,6 +101,7 @@ import {
   entityVerificationCheckBodySchema,
   exceptionsQuerySchema,
   identityConfirmBodySchema,
+  importRunBodySchema,
   isErrorCategory,
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
@@ -580,15 +583,20 @@ const handleFailedReconciliationRun = async (input: {
   });
 };
 
-const createUploadMiddleware = (maxUploadMb: number) =>
+/** allowedExtensions defaults to .xlsx only, matching the existing /api/reconciliation/run
+ * upload's behavior exactly. File Imports & Validation (/api/imports/runs) passes ['.xlsx',
+ * '.csv'] instead -- transaction-csv-spec.md's Bank/GL template is defined for both formats, and
+ * the File Validation Engine (packages/core/src/fileValidation) already parses both. */
+const createUploadMiddleware = (maxUploadMb: number, allowedExtensions: readonly string[] = ['.xlsx']) =>
   multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: maxUploadMb * 1024 * 1024 },
     fileFilter: (_request, file, callback) => {
+      const name = file.originalname.toLowerCase();
       const allowed =
-        acceptedMimeTypes.has(file.mimetype) || file.originalname.toLowerCase().endsWith('.xlsx');
+        acceptedMimeTypes.has(file.mimetype) || allowedExtensions.some((ext) => name.endsWith(ext));
       if (!allowed) {
-        callback(new Error('Only .xlsx files are accepted.'));
+        callback(new Error(`Only ${allowedExtensions.join('/')} files are accepted.`));
         return;
       }
 
@@ -627,7 +635,9 @@ const resolveUploadErrorStatus = (error: unknown): number => {
     return error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
   }
 
-  if (error instanceof Error && error.message === 'Only .xlsx files are accepted.') {
+  // Matches createUploadMiddleware's fileFilter rejection message for any allowedExtensions list
+  // (e.g. 'Only .xlsx files are accepted.', 'Only .xlsx/.csv files are accepted.').
+  if (error instanceof Error && /^Only .+ files are accepted\.$/.test(error.message)) {
     return 400;
   }
 
@@ -1040,6 +1050,10 @@ export const createApp = (
 ) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
+  const importUpload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'), [
+    '.xlsx',
+    '.csv',
+  ]);
   // Defaults to its own stdout-only logger (as every existing test relies on) when the caller
   // doesn't supply one. createServerRuntime (server.ts) passes its own LOG_FILE-multistreamed
   // logger here in real deployments -- without this, every per-request log line (including the
@@ -1179,10 +1193,10 @@ export const createApp = (
   // line requires a valid bearer token; a forgotten route 401s instead of silently staying open.
   app.use(createAuthMiddleware(httpLogger, () => apiRateLimiter.redisClient));
 
-  // ADR-0002 step 5: the reconciliation/aliases/mapping/rules surface additionally requires
-  // canAccessApplication.
+  // ADR-0002 step 5: the reconciliation/aliases/mapping/rules/imports surface additionally
+  // requires canAccessApplication.
   app.use(
-    ['/api/reconciliation', '/api/aliases', '/api/mapping', '/api/rules'],
+    ['/api/reconciliation', '/api/aliases', '/api/mapping', '/api/rules', '/api/imports'],
     requireApplicationAccess,
   );
 
@@ -2183,6 +2197,92 @@ export const createApp = (
     }
     return true;
   };
+
+  // ── File Imports & Validation: create/read a reconciliation_run + its Bank/GL source files ──────
+  // No routes here touch validation_issue/canonical_record yet -- this is purely T5(persistence)'s
+  // create/read surface (DRAFT status only). Submitting a run for validation is Phase 6, not built.
+  // Reuses getUploadedReconciliationFiles: both routes require the same bankFile+glFile field
+  // shape, just from importUpload (.xlsx/.csv) rather than upload (.xlsx only).
+  const toImportRunFile = (
+    role: 'BANK' | 'GL',
+    file: Express.Multer.File,
+  ): CreateImportRunFileInput => ({
+    role,
+    sourceType: role,
+    originalFilename: file.originalname,
+    fileFormat: resolveSourceFormat(file.originalname) === 'csv' ? 'CSV' : 'XLSX',
+    bytes: file.buffer,
+  });
+
+  app.post(
+    '/api/imports/runs',
+    importUpload.fields([
+      { name: 'bankFile', maxCount: 1 },
+      { name: 'glFile', maxCount: 1 },
+    ]),
+    async (request, response, next) => {
+      if (!requirePool(response)) return;
+      // requireApplicationAccess (mounted ahead of this route) guarantees request.auth here.
+      // "File reconciliation should stay with the senior Financial analyst" -- an explicit
+      // product decision, expressed as its own capability (canSubmitImportRuns) rather than an
+      // inline role-string comparison, matching the canApprove gate below.
+      if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+        response.status(403).json({ message: 'Only a senior analyst may create an import run.' });
+        return;
+      }
+
+      try {
+        const files = getUploadedReconciliationFiles((request.files ?? {}) as UploadFileMap);
+        if (!files) {
+          response.status(400).json({
+            message: 'Both bankFile and glFile must be provided as .csv or .xlsx uploads.',
+          });
+          return;
+        }
+
+        const bodyResult = importRunBodySchema.safeParse(request.body ?? {});
+        if (!bodyResult.success) {
+          respondWithValidationError(response, bodyResult.error);
+          return;
+        }
+
+        const importRunStore = new PostgresImportRunStore(pool!);
+        const summary = await importRunStore.createRun({
+          organizationId: request.auth!.organizationId,
+          label: bodyResult.data.label,
+          accountIdentifier: bodyResult.data.accountIdentifier,
+          frequency: bodyResult.data.frequency,
+          periodYear: bodyResult.data.periodYear,
+          periodMonth: bodyResult.data.periodMonth,
+          files: [toImportRunFile('BANK', files.bankFile), toImportRunFile('GL', files.glFile)],
+        });
+
+        response.status(201).json(summary);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get('/api/imports/runs/:id', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const summary = await importRunStore.getRunSummary(
+        request.auth!.organizationId,
+        request.params.id,
+      );
+
+      if (!summary) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      response.json(summary);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get('/api/aliases', async (request, response, next) => {
     if (!requirePool(response)) return;
