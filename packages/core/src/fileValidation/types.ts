@@ -224,4 +224,9 @@ export interface FileValidationOutcome {
   issues: ValidationIssue[];
   /** Rows that passed Step 3's per-row hard validation. Empty unless CELL_VALUES ran. */
   normalized: NormalizedRecord[];
+  /** Data rows the parser found, excluding the header row -- always populated, even when a
+   * structural gate stops the engine before Step 3 runs, since the parser already read every row
+   * before Step 1 checks it. Callers (import_file.row_count) use this rather than
+   * normalized.length, which only counts rows that individually passed Step 3. */
+  totalRowCount: number;
 }

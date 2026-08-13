@@ -44,17 +44,19 @@ export const validateFile = async (input: ValidateFileInput): Promise<FileValida
   const parser = parserFor(input.fileFormat);
   const { headers, rows } = await parser.parse(input.bytes);
 
+  const totalRowCount = rows.length;
+
   const gatesRun: FileValidationGate[] = ['HEADER'];
   const headerIssues = checkHeaderPresent(headers, allKnownHeaders);
   if (headerIssues.some((issue) => issue.severity === 'ERROR')) {
-    return { ok: false, gatesRun, issues: headerIssues, normalized: [] };
+    return { ok: false, gatesRun, issues: headerIssues, normalized: [], totalRowCount };
   }
 
   gatesRun.push('COLUMN_ORDER');
   const columnOrderIssues = checkColumnOrder(headers, requiredHeaders, allKnownHeaders);
   const structuralIssues = [...headerIssues, ...columnOrderIssues];
   if (columnOrderIssues.some((issue) => issue.severity === 'ERROR')) {
-    return { ok: false, gatesRun, issues: structuralIssues, normalized: [] };
+    return { ok: false, gatesRun, issues: structuralIssues, normalized: [], totalRowCount };
   }
 
   gatesRun.push('CELL_VALUES');
@@ -66,5 +68,5 @@ export const validateFile = async (input: ValidateFileInput): Promise<FileValida
   const issues = [...structuralIssues, ...rowOutcome.issues];
   const ok = !issues.some((issue) => issue.severity === 'ERROR');
 
-  return { ok, gatesRun, issues, normalized: rowOutcome.normalized };
+  return { ok, gatesRun, issues, normalized: rowOutcome.normalized, totalRowCount };
 };

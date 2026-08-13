@@ -34,7 +34,9 @@ import {
   listMappingProfileVersions,
   listMatchingConfigVersions,
   loadPayeeAliases,
+  PostgresBlobStorage,
   PostgresImportRunStore,
+  PostgresImportValidationStore,
   publishMatchingConfigVersion,
   recordApprovalDecision,
   recordApprovalRequestDecision,
@@ -53,6 +55,8 @@ import {
   type PostgresReconciliationLifecycleStore,
   type PostgresReconciliationReadModelStore,
 } from '@recon/persistence';
+import { CsvParser } from '@recon/core';
+import ExcelJS from 'exceljs';
 import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -86,6 +90,15 @@ import {
 } from './services/identityVerificationService';
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 import { logRedactOptions } from './services/logRedaction';
+import {
+  createImportValidationQueue,
+  type QueuedImportValidationJobPayload,
+  type QueuedImportValidationResult,
+} from './services/importValidationQueue';
+import {
+  runImportValidationWorkflow,
+  type ImportValidationFileBytes,
+} from './services/importValidationService';
 import {
   createReconciliationQueue,
   type QueuedReconciliationFilePayload,
@@ -345,6 +358,52 @@ const fromQueuedReconciliationFiles = (
   };
 };
 
+/** Re-encodes CSV bytes into an in-memory XLSX workbook, same header row and cell values,
+ * verbatim -- no type coercion, no reordering. Exists solely to bridge into
+ * executeReconciliation, which has no CSV path (see toReconciliationUploadFile's own comment). */
+const synthesizeXlsxFromCsv = async (bytes: Buffer): Promise<Buffer> => {
+  const { headers, rows } = await new CsvParser().parse(bytes);
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Sheet1');
+  worksheet.addRow(headers);
+  for (const row of rows) {
+    worksheet.addRow(headers.map((header) => row[header] ?? ''));
+  }
+  const binary = await workbook.xlsx.writeBuffer();
+  return Buffer.from(binary);
+};
+
+/** Same reconstruction as fromQueuedReconciliationFiles above, but for File Imports &
+ * Validation's already-stored bytes (BlobStorage.get). executeReconciliation's own parsing
+ * (parseWorkbook, packages/core/src/parsers/excelParser.ts) is XLSX-only -- it has no CSV path at
+ * all, unlike the File Validation Engine's own extension-based dispatch, since the *existing*
+ * /api/reconciliation/run route it backs has only ever accepted .xlsx uploads. Rather than
+ * teaching the matching engine about CSV (crossing back into "Rule Engineer" territory this
+ * feature was explicitly built to stay out of), a CSV source gets re-encoded into an XLSX
+ * workbook here, at the apps/api bridge point only -- neither packages/core/fileValidation nor
+ * packages/core/matching know this conversion exists. */
+const toReconciliationUploadFile = async (
+  file: ImportValidationFileBytes,
+  fieldname: 'bankFile' | 'glFile',
+): Promise<Express.Multer.File> => {
+  const isCsv = resolveSourceFormat(file.originalname) === 'csv';
+  const buffer = isCsv ? await synthesizeXlsxFromCsv(file.buffer) : file.buffer;
+  const originalname = isCsv ? file.originalname.replace(/\.csv$/i, '.xlsx') : file.originalname;
+
+  return {
+    fieldname,
+    originalname,
+    encoding: '7bit',
+    mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    size: buffer.byteLength,
+    buffer,
+    destination: '',
+    filename: originalname,
+    path: '',
+    stream: Readable.from(buffer),
+  };
+};
+
 const sanitizeQueuedReconciliationResult = (
   queuedResult: QueuedReconciliationResult,
 ): QueuedReconciliationResult => ({
@@ -531,6 +590,100 @@ const runReconciliationWorkflow = async (input: {
   };
 };
 
+/** The "trigger the existing GL<->Bank matching pipeline immediately" half of Phase 6 (submit &
+ * async validation) -- runs the *existing* atomic reconciliation flow verbatim against an import
+ * run's already-validated bytes, which is also what registers them into the older pipeline's own
+ * audit trail (reconciliation_job/reconciliation_source_file/reconciliation_source_file_content).
+ * The id that flow returns doubles as reconciliation_job.id (changeset 0048's own comment) --
+ * that's what reconciliation_run.matching_job_id links to. */
+const triggerMatchingForImportRun = async (input: {
+  files: { bankFile: ImportValidationFileBytes; glFile: ImportValidationFileBytes };
+  organizationId: string;
+  repository: InMemoryRunRepository;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+  pool?: Pool;
+  requestLog: pino.Logger;
+}): Promise<{ matchingJobId: string }> => {
+  const [bankFile, glFile] = await Promise.all([
+    toReconciliationUploadFile(input.files.bankFile, 'bankFile'),
+    toReconciliationUploadFile(input.files.glFile, 'glFile'),
+  ]);
+
+  const workflowResult = await runReconciliationWorkflow({
+    body: {},
+    files: { bankFile, glFile },
+    requestId: randomUUID(),
+    organizationId: input.organizationId,
+    requestLog: input.requestLog,
+    repository: input.repository,
+    lifecycleStore: input.lifecycleStore,
+    pool: input.pool,
+  });
+
+  return { matchingJobId: workflowResult.run.id };
+};
+
+/** processJob for the import validation queue (and the synchronous fallback when that queue is
+ * disabled, same pattern as /api/reconciliation/run's own enabled/disabled split). Requires a
+ * real pool -- only ever invoked once a submit request has already passed requirePool, so the
+ * non-null assertions below are safe, matching how the rest of this route family asserts `pool!`
+ * after its own requirePool check. */
+const processImportValidationJob = async (input: {
+  organizationId: string;
+  runId: string;
+  importJobId: string;
+  workerId: string;
+  pool: Pool;
+  repository: InMemoryRunRepository;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+  requestLog: pino.Logger;
+}): Promise<QueuedImportValidationResult> => {
+  const importValidationStore = new PostgresImportValidationStore(input.pool);
+
+  try {
+    const result = await runImportValidationWorkflow({
+      organizationId: input.organizationId,
+      runId: input.runId,
+      importJobId: input.importJobId,
+      workerId: input.workerId,
+      logger: input.requestLog,
+      blobStorage: new PostgresBlobStorage(input.pool),
+      importRunStore: new PostgresImportRunStore(input.pool),
+      importValidationStore,
+      triggerMatching: (files) =>
+        triggerMatchingForImportRun({
+          files,
+          organizationId: input.organizationId,
+          repository: input.repository,
+          lifecycleStore: input.lifecycleStore,
+          pool: input.pool,
+          requestLog: input.requestLog,
+        }),
+    });
+
+    return { status: 'completed', passed: result.passed, matchingJobId: result.matchingJobId };
+  } catch (error) {
+    await importValidationStore
+      .markJobFailed(
+        input.organizationId,
+        input.importJobId,
+        error instanceof Error ? error.message : 'Unexpected import validation failure',
+      )
+      .catch(() => undefined);
+
+    captureApiException(error, {
+      tags: { scope: 'import-validation-queue' },
+      extra: { runId: input.runId, importJobId: input.importJobId },
+    });
+
+    return {
+      status: 'failed',
+      failedAt: new Date().toISOString(),
+      reason: error instanceof Error ? error.message : 'Unexpected import validation failure',
+    };
+  }
+};
+
 const recordSuccessfulReconciliationRun = (input: {
   requestId: unknown;
   started: number;
@@ -711,6 +864,17 @@ type ReconciliationQueueConfiguration = {
   concurrency: number;
 };
 
+/** File Imports & Validation's own queue config, deliberately separate from
+ * ReconciliationQueueConfiguration above -- "we should use the best queuing tool" resolved to
+ * BullMQ but as its own queue, not sharing the existing reconciliation queue's job type. */
+type ImportValidationQueueConfiguration = {
+  enabled: boolean;
+  redisUrl: string | null;
+  queueName: string;
+  prefix: string;
+  concurrency: number;
+};
+
 const resolveRateLimitRedisConfiguration = (): {
   enabled: boolean;
   url: string | null;
@@ -822,6 +986,24 @@ const resolveReconciliationQueueConfiguration = (): ReconciliationQueueConfigura
     queueName: process.env.RECONCILIATION_QUEUE_NAME?.trim() || 'reconciliation-runs',
     prefix: process.env.RECONCILIATION_QUEUE_PREFIX?.trim() || 'recon',
     concurrency: parsePositiveInteger(process.env.RECONCILIATION_QUEUE_CONCURRENCY, 1, 8),
+  };
+};
+
+const resolveImportValidationQueueConfiguration = (): ImportValidationQueueConfiguration => {
+  const queueEnabled = parseBooleanFlag(process.env.ENABLE_IMPORT_VALIDATION_QUEUE) === true;
+  const configuredRedisUrl =
+    process.env.IMPORT_VALIDATION_QUEUE_REDIS_URL?.trim() ||
+    process.env.RECONCILIATION_QUEUE_REDIS_URL?.trim() ||
+    process.env.RATE_LIMIT_REDIS_URL?.trim() ||
+    process.env.REDIS_URL?.trim() ||
+    null;
+
+  return {
+    enabled: queueEnabled,
+    redisUrl: configuredRedisUrl,
+    queueName: process.env.IMPORT_VALIDATION_QUEUE_NAME?.trim() || 'import-validation-runs',
+    prefix: process.env.IMPORT_VALIDATION_QUEUE_PREFIX?.trim() || 'recon',
+    concurrency: parsePositiveInteger(process.env.IMPORT_VALIDATION_QUEUE_CONCURRENCY, 1, 4),
   };
 };
 
@@ -1070,6 +1252,7 @@ export const createApp = (
   const apiRateLimiter = createApiRateLimiter(httpLogger);
   const openApiSpec = buildOpenApiSpec();
   const queueConfiguration = resolveReconciliationQueueConfiguration();
+  const importValidationQueueConfiguration = resolveImportValidationQueueConfiguration();
 
   // ADR-0002 step 7: username == password in localLoginUsers, so this fallback must be
   // impossible to reach in production even by misconfiguration -- checked at startup, not at
@@ -1144,6 +1327,33 @@ export const createApp = (
         };
       }
     },
+  });
+
+  // worker-N (not a random id): if two worker processes are ever run side by side, import_job.
+  // worker_id should read as which *process* handled a job, not a fresh id per job that reveals
+  // nothing on inspection.
+  const importValidationWorkerId = `import-validation-worker-${process.pid}`;
+  const importValidationQueue = createImportValidationQueue({
+    enabled: importValidationQueueConfiguration.enabled,
+    redisUrl: importValidationQueueConfiguration.redisUrl,
+    queueName: importValidationQueueConfiguration.queueName,
+    prefix: importValidationQueueConfiguration.prefix,
+    concurrency: importValidationQueueConfiguration.concurrency,
+    logger: httpLogger,
+    processJob: (payload: QueuedImportValidationJobPayload): Promise<QueuedImportValidationResult> =>
+      processImportValidationJob({
+        organizationId: payload.organizationId,
+        runId: payload.runId,
+        importJobId: payload.importJobId,
+        workerId: importValidationWorkerId,
+        // requirePool (checked ahead of every route that can enqueue onto this queue) guarantees
+        // a real pool exists before a job is ever created, matching the non-null assertions
+        // documented on processImportValidationJob's own doc comment.
+        pool: pool!,
+        repository,
+        lifecycleStore,
+        requestLog: httpLogger,
+      }),
   });
 
   app.set('trust proxy', true);
@@ -2279,6 +2489,68 @@ export const createApp = (
       }
 
       response.json(summary);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/imports/runs/:id/submit', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    // Same gate as create -- submitting is part of the same senior-analyst-owned action, not a
+    // separate capability.
+    if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+      response.status(403).json({ message: 'Only a senior analyst may submit an import run.' });
+      return;
+    }
+
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+
+      const submitResult = await importValidationStore.submitRun(
+        organizationId,
+        runId,
+        request.auth!.username,
+      );
+
+      if (submitResult.outcome === 'not_found') {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      if (submitResult.outcome === 'invalid_state') {
+        response.status(409).json({
+          message: `Import run cannot be submitted from status ${submitResult.currentStatus}.`,
+        });
+        return;
+      }
+
+      const { importJobId } = submitResult;
+
+      if (importValidationQueue.enabled) {
+        await importValidationQueue.enqueue({ organizationId, runId, importJobId });
+        response.status(202).json({ importJobId, status: 'queued' });
+        return;
+      }
+
+      // No queue configured -- process synchronously in-request, same fallback shape
+      // /api/reconciliation/run already uses when reconciliationQueue.enabled is false.
+      const result = await processImportValidationJob({
+        organizationId,
+        runId,
+        importJobId,
+        workerId: importValidationWorkerId,
+        pool: pool!,
+        repository,
+        lifecycleStore,
+        requestLog: request.log,
+      });
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const run = await importRunStore.getRunSummary(organizationId, runId);
+
+      response.status(200).json({ importJobId, ...result, run });
     } catch (error) {
       next(error);
     }

@@ -19,6 +19,7 @@ describe('validateFile (banking)', () => {
       ok: true,
       gatesRun: ['HEADER', 'COLUMN_ORDER', 'CELL_VALUES'],
       issues: [],
+      totalRowCount: 3,
     });
     expect(outcome.normalized).toHaveLength(3);
   });
@@ -34,6 +35,9 @@ describe('validateFile (banking)', () => {
     expect(outcome.gatesRun).toEqual(['HEADER']);
     expect(outcome.issues).toEqual([expect.objectContaining({ code: 'STRUCT_HEADER_MISSING' })]);
     expect(outcome.normalized).toEqual([]);
+    // The parser still read every row before Step 1 rejected row 1 as a header -- totalRowCount
+    // reflects that, even though the engine stopped before Step 3 could normalize any of them.
+    expect(outcome.totalRowCount).toBeGreaterThan(0);
   });
 
   it('stops at Step 2 when a required column is missing -- Step 3 never runs', async () => {
@@ -78,6 +82,7 @@ describe('validateFile (banking)', () => {
     // possible: 2 of 7 rows are importable even though the file overall is not `ok`.
     expect(outcome.normalized.map((record) => record.recordId)).toEqual(['TXN-B001', 'TXN-B007']);
     expect(outcome.normalized).toHaveLength(2);
+    expect(outcome.totalRowCount).toBe(7);
   });
 });
 
