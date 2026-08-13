@@ -126,6 +126,8 @@ import {
   reviewerDecisionBodySchema,
   reviewerDecisionDeleteParamsSchema,
   reviewerDecisionDeleteQuerySchema,
+  runIssuesQuerySchema,
+  runRecordsQuerySchema,
   saveMappingProfileBodySchema,
   signupBodySchema,
   updateAliasBodySchema,
@@ -2491,6 +2493,77 @@ export const createApp = (
       }
 
       response.json(summary);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 8 review drilldown: validation_issue/canonical_record rows for a run, paginated and
+  // filterable -- GET /api/imports/runs/:id itself only returns file-level summary counts
+  // (validation_status/row_count/error_count per import_file), not the individual rows a
+  // Comptroller reviewing a PENDING_APPROVAL run would need to see. Mirrors the existing
+  // GET /api/reconciliation/:id/exceptions pagination shape (limit/offset/hasMore).
+  app.get('/api/imports/runs/:id/issues', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const queryResult = runIssuesQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        respondWithValidationError(response, queryResult.error);
+        return;
+      }
+
+      const limit = parseLimit(request.query.limit, 50, 200);
+      const offset = parseOffset(request.query.offset, 0);
+      const page = await new PostgresImportValidationStore(pool!).listRunIssues(
+        request.auth!.organizationId,
+        request.params.id,
+        limit,
+        offset,
+        {
+          severity: queryResult.data.severity as 'ERROR' | 'WARNING' | undefined,
+          code: queryResult.data.code as string | undefined,
+        },
+      );
+
+      if (!page) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      response.json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/imports/runs/:id/records', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const queryResult = runRecordsQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        respondWithValidationError(response, queryResult.error);
+        return;
+      }
+
+      const limit = parseLimit(request.query.limit, 50, 200);
+      const offset = parseOffset(request.query.offset, 0);
+      const page = await new PostgresImportValidationStore(pool!).listRunRecords(
+        request.auth!.organizationId,
+        request.params.id,
+        limit,
+        offset,
+        {
+          sourceType: queryResult.data.sourceType as string | undefined,
+          importFileId: queryResult.data.importFileId as string | undefined,
+        },
+      );
+
+      if (!page) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      response.json(page);
     } catch (error) {
       next(error);
     }

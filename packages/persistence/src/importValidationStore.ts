@@ -109,6 +109,71 @@ export interface RecordFileValidationOutcomeResult {
   warningCount: number;
 }
 
+/** One validation_issue row, for the Phase 8 review-drilldown endpoints. */
+export interface RunIssueItem {
+  id: string;
+  importFileId: string;
+  severity: ImportSeverity;
+  code: string;
+  rowNumber: number | null;
+  entryId: string | null;
+  field: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface RunIssuesFilter {
+  severity?: ImportSeverity;
+  code?: string;
+}
+
+export interface PaginatedRunIssuesResult {
+  items: RunIssueItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+/** One canonical_record row, for the Phase 8 review-drilldown endpoints. */
+export interface RunRecordItem {
+  id: string;
+  importFileId: string;
+  sourceType: string;
+  recordId: string;
+  sourceLineNumber: number;
+  account: string;
+  txnDate: string;
+  currencyCode: string;
+  signedAmount: string;
+  direction: 'INFLOW' | 'OUTFLOW';
+  magnitude: string;
+  excluded: boolean;
+  exclusionReason: string | null;
+  description: string;
+  referenceIds: unknown;
+  counterpartyType: string | null;
+  counterpartyId: string | null;
+  counterpartyName: string | null;
+  valueDate: string | null;
+  effectiveDate: string | null;
+  evidence: unknown;
+  createdAt: string;
+}
+
+export interface RunRecordsFilter {
+  sourceType?: string;
+  importFileId?: string;
+}
+
+export interface PaginatedRunRecordsResult {
+  items: RunRecordItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 /**
  * Persistence for Phase 6 (submit & async validation): the DRAFT -> VALIDATING -> (VALIDATION_
  * FAILED | PENDING_APPROVAL) transition, `import_job` lifecycle, and the `validation_issue`/
@@ -340,6 +405,183 @@ export class PostgresImportValidationStore {
         runId,
       ]),
     );
+  }
+
+  /** Paginated validation_issue rows for a run's review drilldown (Phase 8). validation_issue has
+   * no reconciliation_run_id column of its own (only import_job_id/import_file_id, changeset
+   * 0042) -- submitRun only ever creates one import_job per run today (DRAFT -> VALIDATING is a
+   * one-way gate, no resubmit path exists), but the subquery scopes by run rather than assuming
+   * that 1:1 shape, so it stays correct if a retry path is added later. Returns null when the run
+   * itself doesn't exist/isn't visible under this tenant's RLS scope, so the route can 404 instead
+   * of silently returning an empty page. */
+  async listRunIssues(
+    organizationId: string,
+    runId: string,
+    limit: number,
+    offset: number,
+    filters: RunIssuesFilter = {},
+  ): Promise<PaginatedRunIssuesResult | null> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const runResult = await client.query('SELECT 1 FROM reconciliation_run WHERE id = $1', [runId]);
+      if (runResult.rowCount === 0) {
+        return null;
+      }
+
+      const conditions = [
+        'import_job_id IN (SELECT id FROM import_job WHERE reconciliation_run_id = $1)',
+      ];
+      const filterParams: unknown[] = [runId];
+
+      if (filters.severity) {
+        filterParams.push(filters.severity);
+        conditions.push(`severity = $${filterParams.length}`);
+      }
+      if (filters.code) {
+        filterParams.push(filters.code);
+        conditions.push(`code = $${filterParams.length}`);
+      }
+
+      const whereClause = conditions.join(' AND ');
+
+      const itemsResult = await client.query<{
+        id: string;
+        import_file_id: string;
+        severity: ImportSeverity;
+        code: string;
+        row_number: number | null;
+        entry_id: string | null;
+        field: string | null;
+        message: string;
+        created_at: string;
+      }>(
+        `SELECT id, import_file_id, severity, code, row_number, entry_id, field, message, created_at
+           FROM validation_issue
+          WHERE ${whereClause}
+          ORDER BY id ASC
+          LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
+        [...filterParams, limit, offset],
+      );
+      const countResult = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM validation_issue WHERE ${whereClause}`,
+        filterParams,
+      );
+
+      const total = Number(countResult.rows[0]?.count ?? '0');
+      const items: RunIssueItem[] = itemsResult.rows.map((row) => ({
+        id: row.id,
+        importFileId: row.import_file_id,
+        severity: row.severity,
+        code: row.code,
+        rowNumber: row.row_number,
+        entryId: row.entry_id,
+        field: row.field,
+        message: row.message,
+        createdAt: row.created_at,
+      }));
+
+      return { items, total, limit, offset, hasMore: offset + items.length < total };
+    });
+  }
+
+  /** Paginated canonical_record rows for a run's review drilldown (Phase 8). Unlike
+   * validation_issue, canonical_record denormalizes reconciliation_run_id directly (changeset
+   * 0042's own comment: "purely for query convenience"), so this filters on it straight rather
+   * than going through import_job. Returns null when the run doesn't exist/isn't visible, same as
+   * listRunIssues. */
+  async listRunRecords(
+    organizationId: string,
+    runId: string,
+    limit: number,
+    offset: number,
+    filters: RunRecordsFilter = {},
+  ): Promise<PaginatedRunRecordsResult | null> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const runResult = await client.query('SELECT 1 FROM reconciliation_run WHERE id = $1', [runId]);
+      if (runResult.rowCount === 0) {
+        return null;
+      }
+
+      const conditions = ['reconciliation_run_id = $1'];
+      const filterParams: unknown[] = [runId];
+
+      if (filters.sourceType) {
+        filterParams.push(filters.sourceType);
+        conditions.push(`source_type = $${filterParams.length}`);
+      }
+      if (filters.importFileId) {
+        filterParams.push(filters.importFileId);
+        conditions.push(`import_file_id = $${filterParams.length}`);
+      }
+
+      const whereClause = conditions.join(' AND ');
+
+      const itemsResult = await client.query<{
+        id: string;
+        import_file_id: string;
+        source_type: string;
+        record_id: string;
+        source_line_number: number;
+        account: string;
+        txn_date: string;
+        currency_code: string;
+        signed_amount: string;
+        direction: 'INFLOW' | 'OUTFLOW';
+        magnitude: string;
+        excluded: boolean;
+        exclusion_reason: string | null;
+        description: string;
+        reference_ids: unknown;
+        counterparty_type: string | null;
+        counterparty_id: string | null;
+        counterparty_name: string | null;
+        value_date: string | null;
+        effective_date: string | null;
+        evidence: unknown;
+        created_at: string;
+      }>(
+        `SELECT id, import_file_id, source_type, record_id, source_line_number, account, txn_date,
+                currency_code, signed_amount, direction, magnitude, excluded, exclusion_reason,
+                description, reference_ids, counterparty_type, counterparty_id, counterparty_name,
+                value_date, effective_date, evidence, created_at
+           FROM canonical_record
+          WHERE ${whereClause}
+          ORDER BY source_line_number ASC, id ASC
+          LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
+        [...filterParams, limit, offset],
+      );
+      const countResult = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM canonical_record WHERE ${whereClause}`,
+        filterParams,
+      );
+
+      const total = Number(countResult.rows[0]?.count ?? '0');
+      const items: RunRecordItem[] = itemsResult.rows.map((row) => ({
+        id: row.id,
+        importFileId: row.import_file_id,
+        sourceType: row.source_type,
+        recordId: row.record_id,
+        sourceLineNumber: row.source_line_number,
+        account: row.account,
+        txnDate: row.txn_date,
+        currencyCode: row.currency_code,
+        signedAmount: row.signed_amount,
+        direction: row.direction,
+        magnitude: row.magnitude,
+        excluded: row.excluded,
+        exclusionReason: row.exclusion_reason,
+        description: row.description,
+        referenceIds: row.reference_ids,
+        counterpartyType: row.counterparty_type,
+        counterpartyId: row.counterparty_id,
+        counterpartyName: row.counterparty_name,
+        valueDate: row.value_date,
+        effectiveDate: row.effective_date,
+        evidence: row.evidence,
+        createdAt: row.created_at,
+      }));
+
+      return { items, total, limit, offset, hasMore: offset + items.length < total };
+    });
   }
 
   /** Single-row lookup by user_name AND organization_id -- the same narrow, already-tenant-scoped

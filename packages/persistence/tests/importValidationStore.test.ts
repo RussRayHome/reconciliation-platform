@@ -394,6 +394,198 @@ describe('PostgresImportValidationStore', () => {
     });
   });
 
+  describe('review drilldown (listRunIssues / listRunRecords)', () => {
+    /** Submits a run and records validation outcomes on both its files, so listRunIssues/
+     * listRunRecords have real cross-file data to page/filter over -- mirrors the
+     * recordFileValidationOutcome tests' own submit->load-rule-versions->record sequence. */
+    const seedRun = async (label: string) => {
+      const run = await createDraftRun({ label });
+      const store = new PostgresImportValidationStore(pool);
+      const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
+      const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
+      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const glFile = run.files.find((file) => file.role === 'GL')!;
+      const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
+
+      await store.recordFileValidationOutcome(
+        defaultOrganizationId,
+        {
+          importJobId,
+          importFileId: bankFile.importFileId,
+          reconciliationRunId: run.id,
+          totalRowCount: 2,
+          issues: [
+            { severity: 'ERROR', code: 'BANK_ID_REQUIRED', field: 'transaction_id', rowNumber: 2, message: 'missing' },
+            { severity: 'WARNING', code: 'BANK_AMOUNT_ZERO', field: 'amount', rowNumber: 1, message: 'zero' },
+          ],
+          normalized: [
+            {
+              sourceType: 'BANK',
+              recordId: 'TXN-1',
+              account: 'ACCT-1',
+              date: '2026-08-05',
+              currencyCode: 'USD',
+              signedAmount: 100,
+              direction: 'INFLOW',
+              magnitude: 100,
+              description: 'Deposit',
+              reference: 'REF-1',
+              sourceLineNumber: 1,
+              raw: { transaction_id: 'TXN-1' },
+            },
+          ],
+        },
+        ruleVersionIds,
+      );
+
+      await store.recordFileValidationOutcome(
+        defaultOrganizationId,
+        {
+          importJobId,
+          importFileId: glFile.importFileId,
+          reconciliationRunId: run.id,
+          totalRowCount: 1,
+          issues: [
+            { severity: 'ERROR', code: 'GL_ENTRY_ID_REQUIRED', field: 'entry_id', rowNumber: 1, message: 'missing' },
+          ],
+          normalized: [
+            {
+              sourceType: 'GL',
+              recordId: 'JE-1',
+              account: 'ACCT-1',
+              date: '2026-08-05',
+              currencyCode: 'USD',
+              signedAmount: 100,
+              direction: 'INFLOW',
+              magnitude: 100,
+              description: 'Journal entry',
+              sourceLineNumber: 1,
+              raw: { entry_id: 'JE-1' },
+            },
+          ],
+        },
+        ruleVersionIds,
+      );
+
+      return { run, bankFile, glFile };
+    };
+
+    describe('listRunIssues', () => {
+      it('returns null for a run that does not exist', async () => {
+        if (startupError) throw startupError;
+
+        const store = new PostgresImportValidationStore(pool);
+        const page = await store.listRunIssues(
+          defaultOrganizationId,
+          '00000000-0000-0000-0000-000000000000',
+          50,
+          0,
+        );
+        expect(page).toBeNull();
+      });
+
+      it('pages every issue across both files with total/hasMore metadata', async () => {
+        if (startupError) throw startupError;
+
+        const { run } = await seedRun('Issues Drilldown Paging');
+        const store = new PostgresImportValidationStore(pool);
+
+        const page = await store.listRunIssues(defaultOrganizationId, run.id, 2, 0);
+        expect(page).not.toBeNull();
+        expect(page!.total).toBe(3);
+        expect(page!.items).toHaveLength(2);
+        expect(page!.hasMore).toBe(true);
+
+        const secondPage = await store.listRunIssues(defaultOrganizationId, run.id, 2, 2);
+        expect(secondPage!.items).toHaveLength(1);
+        expect(secondPage!.hasMore).toBe(false);
+      });
+
+      it('filters by severity', async () => {
+        if (startupError) throw startupError;
+
+        const { run } = await seedRun('Issues Drilldown Severity Filter');
+        const store = new PostgresImportValidationStore(pool);
+
+        const page = await store.listRunIssues(defaultOrganizationId, run.id, 50, 0, {
+          severity: 'WARNING',
+        });
+        expect(page!.total).toBe(1);
+        expect(page!.items[0]?.code).toBe('BANK_AMOUNT_ZERO');
+      });
+
+      it('filters by code', async () => {
+        if (startupError) throw startupError;
+
+        const { run } = await seedRun('Issues Drilldown Code Filter');
+        const store = new PostgresImportValidationStore(pool);
+
+        const page = await store.listRunIssues(defaultOrganizationId, run.id, 50, 0, {
+          code: 'GL_ENTRY_ID_REQUIRED',
+        });
+        expect(page!.total).toBe(1);
+        expect(page!.items[0]).toMatchObject({
+          code: 'GL_ENTRY_ID_REQUIRED',
+          severity: 'ERROR',
+          field: 'entry_id',
+          rowNumber: 1,
+        });
+      });
+    });
+
+    describe('listRunRecords', () => {
+      it('returns null for a run that does not exist', async () => {
+        if (startupError) throw startupError;
+
+        const store = new PostgresImportValidationStore(pool);
+        const page = await store.listRunRecords(
+          defaultOrganizationId,
+          '00000000-0000-0000-0000-000000000000',
+          50,
+          0,
+        );
+        expect(page).toBeNull();
+      });
+
+      it('returns records from both files for the run', async () => {
+        if (startupError) throw startupError;
+
+        const { run } = await seedRun('Records Drilldown Both Files');
+        const store = new PostgresImportValidationStore(pool);
+
+        const page = await store.listRunRecords(defaultOrganizationId, run.id, 50, 0);
+        expect(page!.total).toBe(2);
+        expect(page!.items.map((item) => item.recordId).sort()).toEqual(['JE-1', 'TXN-1']);
+      });
+
+      it('filters by sourceType', async () => {
+        if (startupError) throw startupError;
+
+        const { run } = await seedRun('Records Drilldown SourceType Filter');
+        const store = new PostgresImportValidationStore(pool);
+
+        const page = await store.listRunRecords(defaultOrganizationId, run.id, 50, 0, {
+          sourceType: 'GL',
+        });
+        expect(page!.total).toBe(1);
+        expect(page!.items[0]).toMatchObject({ recordId: 'JE-1', sourceType: 'GL' });
+      });
+
+      it('filters by importFileId', async () => {
+        if (startupError) throw startupError;
+
+        const { run, bankFile } = await seedRun('Records Drilldown ImportFileId Filter');
+        const store = new PostgresImportValidationStore(pool);
+
+        const page = await store.listRunRecords(defaultOrganizationId, run.id, 50, 0, {
+          importFileId: bankFile.importFileId,
+        });
+        expect(page!.total).toBe(1);
+        expect(page!.items[0]).toMatchObject({ recordId: 'TXN-1', importFileId: bankFile.importFileId });
+      });
+    });
+  });
+
   describe('finalizeRun / recordMatchingJobId', () => {
     it('moves a passed run to PENDING_APPROVAL and the job to SUCCEEDED', async () => {
       if (startupError) throw startupError;

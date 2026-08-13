@@ -230,6 +230,59 @@ export const exceptionsQuerySchema = z
     }
   });
 
+/** Query filters for GET /api/imports/runs/:id/issues (Phase 8 review drilldown). code has no
+ * fixed enum to check against (it's an open-ended validation_rule_version.rule_code), so it's
+ * only checked for being a non-empty string, same permissiveness as reviewerId/notes below. */
+export const runIssuesQuerySchema = z
+  .object({
+    severity: z.unknown().optional(),
+    code: z.unknown().optional(),
+    limit: z.unknown().optional(),
+    offset: z.unknown().optional(),
+  })
+  .superRefine((query, ctx) => {
+    if (query.severity !== undefined && !['ERROR', 'WARNING'].includes(query.severity as string)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['severity'],
+        message: 'Unknown validation issue severity filter.',
+      });
+    }
+
+    if (query.code !== undefined && (typeof query.code !== 'string' || query.code.trim() === '')) {
+      ctx.addIssue({ code: 'custom', path: ['code'], message: 'code filter must not be empty.' });
+    }
+  });
+
+/** Query filters for GET /api/imports/runs/:id/records (Phase 8 review drilldown). */
+export const runRecordsQuerySchema = z
+  .object({
+    sourceType: z.unknown().optional(),
+    importFileId: z.unknown().optional(),
+    limit: z.unknown().optional(),
+    offset: z.unknown().optional(),
+  })
+  .superRefine((query, ctx) => {
+    if (query.sourceType !== undefined && !['BANK', 'GL'].includes(query.sourceType as string)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['sourceType'],
+        message: 'Unknown canonical record sourceType filter.',
+      });
+    }
+
+    if (
+      query.importFileId !== undefined &&
+      (typeof query.importFileId !== 'string' || query.importFileId.trim() === '')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['importFileId'],
+        message: 'importFileId filter must not be empty.',
+      });
+    }
+  });
+
 export const reviewerDecisionBodySchema = z
   .object({
     targetType: z.unknown().optional(),
