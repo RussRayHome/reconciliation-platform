@@ -2,7 +2,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { runReconciliationRequest } from './api';
+import {
+  apiFetch,
+  downloadWorkbookRequest,
+  getReconciliationRunByIdRequest,
+  identityConfirmRequest,
+  logoutRequest,
+  runReconciliationRequest,
+} from './api';
+import { clearAuthToken, setAuthToken } from './authToken';
 
 const resolveUrl = (input: RequestInfo | URL): string => {
   if (typeof input === 'string') {
@@ -157,5 +165,113 @@ describe('reconciliation API client queue polling', () => {
     expect((error as Error).message).toBe(
       'Timed out while waiting for queued reconciliation to complete.',
     );
+  });
+});
+
+describe('apiFetch', () => {
+  afterEach(() => {
+    clearAuthToken();
+    vi.restoreAllMocks();
+  });
+
+  it('calls fetch with a single argument when there is no token and no init', async () => {
+    clearAuthToken();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 200 }));
+
+    await apiFetch('/api/rules/catalog');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/rules/catalog');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('forwards init untouched when there is no token', async () => {
+    clearAuthToken();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 200 }));
+
+    await apiFetch('/api/rules/catalog', { method: 'POST' });
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/rules/catalog', { method: 'POST' });
+  });
+
+  it('attaches a bearer token header when a token is present', async () => {
+    setAuthToken('token-123');
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 200 }));
+
+    await apiFetch('/api/rules/catalog');
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get('Authorization')).toBe('Bearer token-123');
+  });
+});
+
+describe('parseResponse via request wrappers', () => {
+  afterEach(() => {
+    clearAuthToken();
+    vi.restoreAllMocks();
+  });
+
+  it('throws the server-provided message for a non-ok JSON response', async () => {
+    clearAuthToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'Run not found.' }), { status: 404 }),
+    );
+
+    await expect(getReconciliationRunByIdRequest('missing-run')).rejects.toThrow(
+      'Run not found.',
+    );
+  });
+
+  it('falls back to a generic message when a non-ok response has no JSON body', async () => {
+    clearAuthToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('not json', { status: 500 }));
+
+    await expect(getReconciliationRunByIdRequest('broken-run')).rejects.toThrow('Request failed.');
+  });
+
+  it('returns undefined for a 204 No Content response', async () => {
+    clearAuthToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    await expect(identityConfirmRequest('123456')).resolves.toBeUndefined();
+  });
+});
+
+describe('downloadWorkbookRequest', () => {
+  afterEach(() => {
+    clearAuthToken();
+    vi.restoreAllMocks();
+  });
+
+  it('throws the server-provided message when the export request fails', async () => {
+    clearAuthToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'Export not ready.' }), { status: 409 }),
+    );
+
+    await expect(downloadWorkbookRequest('run-1', 'run-1.xlsx')).rejects.toThrow(
+      'Export not ready.',
+    );
+  });
+});
+
+describe('logoutRequest', () => {
+  afterEach(() => {
+    clearAuthToken();
+    vi.restoreAllMocks();
+  });
+
+  it('clears the local token even when the server-side revoke call fails', async () => {
+    setAuthToken('token-to-clear');
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+
+    await expect(logoutRequest()).resolves.toBeUndefined();
   });
 });

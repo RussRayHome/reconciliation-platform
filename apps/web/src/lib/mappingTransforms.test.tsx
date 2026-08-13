@@ -45,6 +45,18 @@ describe('applyTransform', () => {
     expect(applyTransform('parseNumber', '(42.00)')).toBe('-42.00');
   });
 
+  it('parseNumber falls back to the trimmed original when unparseable', () => {
+    expect(applyTransform('parseNumber', '  not a number  ')).toBe('not a number');
+  });
+
+  it('parseNumber falls back to the trimmed original for parenthesized non-numeric text', () => {
+    expect(applyTransform('parseNumber', '(n/a)')).toBe('(n/a)');
+  });
+
+  it('parseNumber falls back to the trimmed original for empty input', () => {
+    expect(applyTransform('parseNumber', '   ')).toBe('');
+  });
+
   it('negate flips the sign of a parsed number', () => {
     expect(applyTransform('negate', '1250.00')).toBe('-1250.00');
   });
@@ -94,5 +106,9 @@ describe('validateSampleValue', () => {
 
   it('flags an empty-after-transform text value only when non-empty input produced nothing', () => {
     expect(validateSampleValue('text', 'Payroll')).toEqual({ valid: true });
+  });
+
+  it('accepts a non-empty enum value', () => {
+    expect(validateSampleValue('enum', 'USD')).toEqual({ valid: true });
   });
 });

@@ -124,14 +124,11 @@ export function DependencyCruiserPanel({ scan }: Readonly<{ scan: DependencyScan
   const matrixIndex = new Map(matrixModules.map((m) => [m.name, m]));
 
   return (
-    <div className="dependency">
-      <div className="developer-dashboard__section-head" id="dependencies">
-        <h2>Code health — Dependency Cruiser</h2>
-        <span className="developer-dashboard__section-sub">
-          Scanned {new Date(scan.scannedAt).toLocaleString('en-US', { hour12: false })} · dependency-cruiser
-        </span>
-      </div>
-
+    <DetailPanel
+      id="dependencies"
+      title="Code health — Dependency Cruiser"
+      subtitle={`Scanned ${new Date(scan.scannedAt).toLocaleString('en-US', { hour12: false })} · dependency-cruiser`}
+    >
       <div className="overview-cards dependency__stats">
         <div className="overview-card">
           <div className="overview-card__head">
@@ -388,6 +385,6 @@ export function DependencyCruiserPanel({ scan }: Readonly<{ scan: DependencyScan
           </div>
         </div>
       </div>
-    </div>
+    </DetailPanel>
   );
 }
