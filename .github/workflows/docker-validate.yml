@@ -98,6 +98,8 @@ jobs:
             'POSTGRES_PASSWORD=change-ci-password' \
             'POSTGRES_HOST_PORT=5432' \
             'ENABLE_PGAUDIT=false' \
+            'API_DATABASE_URL=postgresql://app_user:unused@postgres:5432/reconciliation_platform' \
+            'JWT_SECRET=unused-ci-placeholder' \
             > ci-e2e.env
           docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} up -d postgres --wait
           docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} run --rm migrate
