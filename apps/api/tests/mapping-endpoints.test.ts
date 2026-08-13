@@ -132,6 +132,11 @@ describe('GET /api/mapping/profiles', () => {
 
     expect(response.body).toEqual([]);
   });
+
+  it('returns 501 when no database is configured', async () => {
+    const app = createApp();
+    await authedApp(app).get('/api/mapping/profiles').expect(501);
+  });
 });
 
 describe('POST /api/mapping/profiles', () => {
@@ -287,6 +292,11 @@ describe('GET /api/mapping/profiles/:name (ISSUE-050.1)', () => {
     const app = createApp(undefined, undefined, undefined, createFakeDetailPool([]));
     await authedApp(app).get('/api/mapping/profiles/Nonexistent').expect(404);
   });
+
+  it('returns 501 when no database is configured', async () => {
+    const app = createApp();
+    await authedApp(app).get('/api/mapping/profiles/Anything').expect(501);
+  });
 });
 
 describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
@@ -356,5 +366,10 @@ describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
   it('returns 404 when nothing ACTIVE matched the name', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeRetirePool([]));
     await authedApp(app).post('/api/mapping/profiles/Nonexistent/retire').expect(404);
+  });
+
+  it('returns 501 when no database is configured', async () => {
+    const app = createApp();
+    await authedApp(app).post('/api/mapping/profiles/Anything/retire').expect(501);
   });
 });
