@@ -294,14 +294,11 @@ export function ComplexityPanel({ scan }: Readonly<{ scan: ComplexityScan | null
       ];
 
   return (
-    <>
-      <div className="developer-dashboard__section-head" id="complexity">
-        <h2>Code health — Cyclomatic Complexity</h2>
-        <span className="developer-dashboard__section-sub">
-          Scanned {new Date(scan.scannedAt).toLocaleString('en-US', { hour12: false })} · escomplex
-        </span>
-      </div>
-
+    <DetailPanel
+      id="complexity"
+      title="Code health — Cyclomatic Complexity"
+      subtitle={`Scanned ${new Date(scan.scannedAt).toLocaleString('en-US', { hour12: false })} · escomplex`}
+    >
       <div className="overview-cards complexity__stats">
         <div className="overview-card">
           <div className="overview-card__head">
@@ -518,6 +515,6 @@ export function ComplexityPanel({ scan }: Readonly<{ scan: ComplexityScan | null
           </DetailPanel>
         </div>
       </div>
-    </>
+    </DetailPanel>
   );
 }
