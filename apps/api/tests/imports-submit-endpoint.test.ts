@@ -255,6 +255,34 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
 
+    // Phase 12's acceptPartialImport guard queries -- narrower shapes than listRunIssues/
+    // listRunRecords's (a single import_file_id param, no runId prefix), so these must be
+    // checked before the generic FROM validation_issue/FROM canonical_record handlers below or
+    // the shared idx-based param-walking there would misread this query's one param.
+    if (text.includes('FROM validation_issue') && text.includes('code IN (')) {
+      const [importFileId] = params as [string];
+      const hasStructuralError = capturedIssues.some(
+        (row) =>
+          row.import_file_id === importFileId &&
+          row.severity === 'ERROR' &&
+          ['STRUCT_HEADER_MISSING', 'STRUCT_COLUMN_MISSING', 'STRUCT_COLUMN_ORDER'].includes(row.code),
+      );
+      return Promise.resolve({ rows: hasStructuralError ? [{ '?column?': 1 }] : [], rowCount: hasStructuralError ? 1 : 0 });
+    }
+
+    if (text.includes('COUNT(*)::text AS count FROM canonical_record') && !text.includes('source_type')) {
+      const [importFileId] = params as [string];
+      const count = capturedRecords.filter((row) => row.import_file_id === importFileId).length;
+      return Promise.resolve({ rows: [{ count: String(count) }], rowCount: 1 });
+    }
+
+    if (text.includes("UPDATE reconciliation_run SET status = 'PENDING_APPROVAL' WHERE id = $1")) {
+      const [id] = params as [string];
+      const run = runs.find((candidate) => candidate.id === id)!;
+      run.status = 'PENDING_APPROVAL';
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    }
+
     if (text.includes('FROM validation_issue')) {
       let idx = 1;
       let severity: string | undefined;
@@ -417,6 +445,14 @@ const cleanGlCsv = Buffer.from(
 const invalidBankCsv = Buffer.from(
   'TXN-9001,ACC-1,2026-07-01,100.00,USD,DEP,First row is data not a header\n' +
     'TXN-9002,ACC-1,2026-07-02,-50.00,USD,POS,Second row is also data\n',
+);
+
+// Header/column-order gates pass (matches cleanBankCsv's header exactly); row 1 is clean, row 2
+// has an unparseable amount -- a Step 3 (CELL_VALUES)-only failure, i.e. Screen 06's territory.
+const partiallyInvalidBankCsv = Buffer.from(
+  'transaction_id,account_id,posted_date,transaction_date,amount,currency_code,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance\n' +
+    'TXN-P001,ACC-1,2026-07-01,,100.00,USD,DEP,Payroll deposit,,,REF-1,,1000.00\n' +
+    'TXN-P002,ACC-1,2026-07-02,,not-a-number,USD,POS,Card purchase,,,REF-2,,915.77\n',
 );
 
 const createRun = async (
@@ -610,5 +646,140 @@ describe('GET /api/imports/runs/:id/error-report.csv (Phase 11)', () => {
     );
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe('GET /api/imports/runs/:id/files/:fileId/rows (Phase 12)', () => {
+  let pool: Pool;
+
+  beforeEach(() => {
+    pool = createFakeSubmitPool();
+  });
+
+  it('returns every row re-parsed from the stored file, annotated with its issue', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    const submitted = await authedApp(app, { role: 'senior-analyst' }).post(
+      `/api/imports/runs/${created.body.id}/submit`,
+    );
+    const bankFileId = submitted.body.run.files.find(
+      (file: { role: string }) => file.role === 'BANK',
+    ).importFileId;
+
+    const response = await authedApp(app, { role: 'senior-analyst' }).get(
+      `/api/imports/runs/${created.body.id}/files/${bankFileId}/rows`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.totalRows).toBe(2);
+    expect(response.body.errorRowCount).toBe(1);
+    expect(response.body.cleanRowCount).toBe(1);
+
+    const [row1, row2] = response.body.rows;
+    expect(row1).toMatchObject({ lineNumber: 1, status: 'IMPORT', flaggedFields: {} });
+    expect(row2.lineNumber).toBe(2);
+    expect(row2.status).toBe('SKIP');
+    expect(row2.flaggedFields.amount).toBeTruthy();
+    expect(row2.values.transaction_id).toBe('TXN-P002');
+  });
+
+  it('returns 404 for an unknown file id', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app);
+    await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
+
+    const response = await authedApp(app, { role: 'senior-analyst' }).get(
+      `/api/imports/runs/${created.body.id}/files/00000000-0000-0000-0000-000000000000/rows`,
+    );
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe('POST /api/imports/runs/:id/import (Phase 12 Screen 06)', () => {
+  let pool: Pool;
+
+  beforeEach(() => {
+    pool = createFakeSubmitPool();
+  });
+
+  it('accepts a partial-failure run, transitions to PENDING_APPROVAL, and triggers matching', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    const submitted = await authedApp(app, { role: 'senior-analyst' }).post(
+      `/api/imports/runs/${created.body.id}/submit`,
+    );
+    expect(submitted.body.run.status).toBe('VALIDATION_FAILED');
+
+    const response = await authedApp(app, { role: 'senior-analyst' })
+      .post(`/api/imports/runs/${created.body.id}/import`)
+      .send({ skipInvalidRows: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ status: 'completed', passed: true });
+    expect(response.body.matchingJobId).toBeTruthy();
+    expect(response.body.run.status).toBe('PENDING_APPROVAL');
+  });
+
+  it('returns 409 for a structurally-failed run', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app, { bankFile: invalidBankCsv, glFile: cleanGlCsv });
+    await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
+
+    const response = await authedApp(app, { role: 'senior-analyst' })
+      .post(`/api/imports/runs/${created.body.id}/import`)
+      .send({ skipInvalidRows: true });
+
+    expect(response.status).toBe(409);
+  });
+
+  it('returns 400 when skipInvalidRows is not true', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
+
+    const response = await authedApp(app, { role: 'senior-analyst' })
+      .post(`/api/imports/runs/${created.body.id}/import`)
+      .send({ skipInvalidRows: false });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 403 for a role other than senior-analyst', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
+
+    const response = await authedApp(app, { role: 'financial-analyst' })
+      .post(`/api/imports/runs/${created.body.id}/import`)
+      .send({ skipInvalidRows: true });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 404 for an unknown run id', async () => {
+    const app = appWithPool(pool);
+
+    const response = await authedApp(app, { role: 'senior-analyst' })
+      .post('/api/imports/runs/00000000-0000-0000-0000-000000000000/import')
+      .send({ skipInvalidRows: true });
+
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 409 on a second call after the run has already been accepted', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
+
+    const first = await authedApp(app, { role: 'senior-analyst' })
+      .post(`/api/imports/runs/${created.body.id}/import`)
+      .send({ skipInvalidRows: true });
+    expect(first.status).toBe(200);
+
+    const second = await authedApp(app, { role: 'senior-analyst' })
+      .post(`/api/imports/runs/${created.body.id}/import`)
+      .send({ skipInvalidRows: true });
+    expect(second.status).toBe(409);
   });
 });

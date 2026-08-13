@@ -488,6 +488,57 @@ export const downloadImportRunErrorReportRequest = async (runId: string): Promis
   URL.revokeObjectURL(url);
 };
 
+export interface ImportRowGridFlag {
+  code: string;
+  severity: 'ERROR' | 'WARNING';
+  message: string;
+}
+
+export interface ImportRowGridRow {
+  lineNumber: number;
+  values: Record<string, string>;
+  status: 'IMPORT' | 'SKIP';
+  flaggedFields: Record<string, ImportRowGridFlag>;
+  rowLevelIssues: ImportRowGridFlag[];
+}
+
+/** `GET /api/imports/runs/:id/files/:fileId/rows` response shape -- Screen 06's row grid. */
+export interface ImportRowGridResult {
+  headers: string[];
+  rows: ImportRowGridRow[];
+  totalRows: number;
+  errorRowCount: number;
+  warningRowCount: number;
+  cleanRowCount: number;
+  truncated: boolean;
+}
+
+export const getImportFileRowsRequest = async (
+  runId: string,
+  fileId: string,
+): Promise<ImportRowGridResult> => {
+  const response = await apiFetch(
+    `/api/imports/runs/${encodeURIComponent(runId)}/files/${encodeURIComponent(fileId)}/rows`,
+  );
+  return parseResponse<ImportRowGridResult>(response);
+};
+
+/** `POST /api/imports/runs/:id/import` -- Screen 06's "Import N rows & submit". Accepts a
+ * VALIDATION_FAILED run's already-passing rows and triggers matching; matching still processes
+ * the full original file (see the route's own comment on why "skip" means accept-despite, not
+ * remove-from-reconciliation). Same response shape as `submitImportRunRequest`'s completed case,
+ * reused directly rather than duplicated. */
+export const importPartialRunRequest = async (
+  runId: string,
+): Promise<Extract<SubmitImportRunResponse, { status: 'completed' }>> => {
+  const response = await apiFetch(`/api/imports/runs/${encodeURIComponent(runId)}/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ skipInvalidRows: true }),
+  });
+  return parseResponse<Extract<SubmitImportRunResponse, { status: 'completed' }>>(response);
+};
+
 /** Authenticates a user, stores the returned bearer token, and returns the login profile.
  * Deliberately uses the bare `fetch` -- there is no token yet to attach. */
 export const loginRequest = async ({

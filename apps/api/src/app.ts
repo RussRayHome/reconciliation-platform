@@ -105,6 +105,7 @@ import {
   buildErrorReportCsv,
   buildImportFileFailureDetail,
 } from './services/importFailureDetailService';
+import { buildImportRowGrid } from './services/importRowGridService';
 import {
   createReconciliationQueue,
   type QueuedReconciliationFilePayload,
@@ -121,6 +122,7 @@ import {
   exceptionsQuerySchema,
   identityConfirmBodySchema,
   importRunBodySchema,
+  importRunPartialImportBodySchema,
   isErrorCategory,
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
@@ -2626,6 +2628,45 @@ export const createApp = (
     }
   });
 
+  // Phase 12 (Screen 06): every row of one file, re-parsed from the stored original and
+  // annotated with its already-persisted issues -- see importRowGridService.ts's doc comment for
+  // why this re-parses rather than reading validation_issue alone (raw cell values were never
+  // persisted there).
+  app.get('/api/imports/runs/:id/files/:fileId/rows', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const fileId = request.params.fileId;
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const file = await importRunStore.getFileWithBytes(organizationId, runId, fileId);
+      if (!file) {
+        response.status(404).json({ message: 'Import run or file not found.' });
+        return;
+      }
+
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const issuesPage = await importValidationStore.listRunIssues(organizationId, runId, 5000, 0, {
+        importFileId: fileId,
+      });
+      if (!issuesPage) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const grid = await buildImportRowGrid({
+        bytes: file.bytes,
+        fileFormat: file.fileFormat,
+        issues: issuesPage.items,
+      });
+
+      response.json(grid);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // README §7.8: file,line,column,code,severity,message,raw_value -- one row per finding, ordered
   // by file then line then column (buildErrorReportCsv does the ordering).
   app.get('/api/imports/runs/:id/error-report.csv', async (request, response, next) => {
@@ -2729,6 +2770,97 @@ export const createApp = (
       const run = await importRunStore.getRunSummary(organizationId, runId);
 
       response.status(200).json({ importJobId, ...result, run });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 12 (Screen 06): accepts a VALIDATION_FAILED run's already-passing rows and triggers
+  // matching -- per the decided scope, matching still processes the *original* file bytes in
+  // full (the existing GL<->Bank engine has no concept of excluded rows and stays isolated from
+  // the File Validation Engine, same "Rule Engineer" boundary as toReconciliationUploadFile's own
+  // comment). "Skipping" invalid rows here means accepting the run despite them, not removing
+  // them from reconciliation -- the response/UI say so.
+  app.post('/api/imports/runs/:id/import', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+      response
+        .status(403)
+        .json({ message: 'Only a senior analyst may import a partially-valid run.' });
+      return;
+    }
+
+    try {
+      const bodyResult = importRunPartialImportBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+      if (!bodyResult.data.skipInvalidRows) {
+        response.status(400).json({
+          message:
+            'Importing without skipping invalid rows is not supported -- fix and re-upload instead.',
+        });
+        return;
+      }
+
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const importRunStore = new PostgresImportRunStore(pool!);
+
+      const acceptResult = await importValidationStore.acceptPartialImport(organizationId, runId);
+
+      if (acceptResult.outcome === 'not_found') {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+      if (acceptResult.outcome === 'invalid_state') {
+        response.status(409).json({
+          message: `Import run cannot be partially imported from status ${acceptResult.currentStatus}.`,
+        });
+        return;
+      }
+      if (acceptResult.outcome === 'structural_failure') {
+        response.status(409).json({
+          message:
+            'This run has a structural validation failure -- fix and re-upload instead of a partial import.',
+        });
+        return;
+      }
+      if (acceptResult.outcome === 'no_importable_rows') {
+        response.status(409).json({
+          message: 'At least one file has zero importable rows -- partial import is unavailable.',
+        });
+        return;
+      }
+
+      const summary = await importRunStore.getRunSummary(organizationId, runId);
+      const bankFileSummary = summary!.files.find((file) => file.role === 'BANK')!;
+      const glFileSummary = summary!.files.find((file) => file.role === 'GL')!;
+      const [bankWithBytes, glWithBytes] = await Promise.all([
+        importRunStore.getFileWithBytes(organizationId, runId, bankFileSummary.importFileId),
+        importRunStore.getFileWithBytes(organizationId, runId, glFileSummary.importFileId),
+      ]);
+
+      const { matchingJobId } = await triggerMatchingForImportRun({
+        files: {
+          bankFile: { buffer: bankWithBytes!.bytes, originalname: bankWithBytes!.originalFilename },
+          glFile: { buffer: glWithBytes!.bytes, originalname: glWithBytes!.originalFilename },
+        },
+        organizationId,
+        repository,
+        lifecycleStore,
+        pool: pool!,
+        requestLog: request.log,
+      });
+
+      await importValidationStore.recordMatchingJobId(organizationId, runId, matchingJobId);
+
+      const finalSummary = await importRunStore.getRunSummary(organizationId, runId);
+      response
+        .status(200)
+        .json({ status: 'completed', passed: true, matchingJobId, run: finalSummary });
     } catch (error) {
       next(error);
     }

@@ -75,6 +75,7 @@ import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
 import { ImportValidationFailedError, useImportRunSubmit } from './hooks/useImportRunSubmit';
 import { useImportUploadTransfer } from './hooks/useImportUploadTransfer';
+import { useImportPartialAccept } from './hooks/useImportPartialAccept';
 import { buildTransferCardProps } from './lib/importUploadProgress';
 import { ImportUploadCard } from './components/ImportUploadCard';
 import { ImportValidationFailureView } from './components/ImportValidationFailure';
@@ -91,6 +92,7 @@ import { useWatchlist } from './hooks/useWatchlist';
 type ReconciliationFrequency = 'Monthly' | 'Annual';
 type ReconciliationModel = ReturnType<typeof useImportRunSubmit>;
 type UploadTransferModel = ReturnType<typeof useImportUploadTransfer>;
+type PartialAcceptModel = ReturnType<typeof useImportPartialAccept>;
 type RunData = NonNullable<ReconciliationModel['data']>;
 /** The authenticated principal, as reported by the server (login response or /api/auth/me) --
  * ADR-0002 step 6: role travels with the session instead of being looked up from a hardcoded
@@ -662,7 +664,8 @@ function ReconciliationApp({
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const reconciliation = useImportRunSubmit();
   const uploadTransfer = useImportUploadTransfer(reconciliation);
-  const run = reconciliation.data;
+  const partialAccept = useImportPartialAccept();
+  const run = partialAccept.data ?? reconciliation.data;
   const reportRun = run ?? persistedRun;
   const reportRunExceptionIds = useMemo(
     () => new Set((reportRun?.exceptions ?? []).map((exception) => exception.id)),
@@ -1266,6 +1269,7 @@ function ReconciliationApp({
                     suggestedPeriodLabel={suggestedPeriodLabel}
                     accountIdentifier={accountIdentifier}
                     uploadTransfer={uploadTransfer}
+                    partialAccept={partialAccept}
                   />
                 }
               />
@@ -1494,6 +1498,7 @@ function SourceUploadSection({
   setReconciliationFrequency,
   suggestedPeriodLabel,
   uploadTransfer,
+  partialAccept,
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
@@ -1519,6 +1524,7 @@ function SourceUploadSection({
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
   uploadTransfer: UploadTransferModel;
+  partialAccept: PartialAcceptModel;
 }>) {
   const reconciliationLabelErrorId = 'reconciliation-label-error';
   const reconciliationLabelHintId = 'reconciliation-label-hint';
@@ -1687,6 +1693,7 @@ function SourceUploadSection({
                 setBankFile(null);
                 setGlFile(null);
               }}
+              partialAccept={partialAccept}
             />
           ) : reconciliation.error ? (
             <p className="error-banner import-screen__status" role="alert">

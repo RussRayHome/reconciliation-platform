@@ -1898,6 +1898,172 @@ describe('App', () => {
     });
   });
 
+  it('shows Screen 06 (row grid) for a partial failure and completes "Import N rows & submit"', async () => {
+    installFakeImportRunXhr();
+    const failedFile = createImportRunFile({
+      importFileId: 'file-bank-partial',
+      role: 'BANK',
+      sourceType: 'BANK',
+      originalFilename: 'bank_july.csv',
+      validationStatus: 'INVALID',
+      rowCount: 2,
+      errorCount: 1,
+    });
+    const validFile = createImportRunFile({
+      importFileId: 'file-gl-valid',
+      role: 'GL',
+      sourceType: 'GL',
+      originalFilename: 'gl.csv',
+      validationStatus: 'VALID',
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              importJobId: 'import-job-1',
+              status: 'completed',
+              passed: false,
+              run: createImportRunSummary({
+                status: 'VALIDATION_FAILED',
+                files: [validFile, failedFile],
+              }),
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (
+        url ===
+        `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              importFileId: failedFile.importFileId,
+              originalFilename: failedFile.originalFilename,
+              sourceType: 'BANK',
+              fileFormat: 'CSV',
+              validationStatus: 'INVALID',
+              rowCount: 2,
+              errorCount: 1,
+              warningCount: 0,
+              importableRowCount: 1,
+              gateSequence: [
+                { gate: 'HEADER', state: 'PASSED' },
+                { gate: 'COLUMN_ORDER', state: 'PASSED' },
+                { gate: 'CELL_VALUES', state: 'PASSED' },
+              ],
+              headerComparison: null,
+              issues: [
+                {
+                  severity: 'ERROR',
+                  code: 'BANK_AMOUNT_FORMAT',
+                  message: '"amount" is not a valid number.',
+                  field: 'amount',
+                  rowNumber: 2,
+                },
+              ],
+              issuesByCode: [{ code: 'BANK_AMOUNT_FORMAT', severity: 'ERROR', count: 1 }],
+              amountTolerance: 0.005,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (
+        url === `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/rows`
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              headers: ['transaction_id', 'amount'],
+              rows: [
+                {
+                  lineNumber: 1,
+                  values: { transaction_id: 'TXN-1', amount: '100.00' },
+                  status: 'IMPORT',
+                  flaggedFields: {},
+                  rowLevelIssues: [],
+                },
+                {
+                  lineNumber: 2,
+                  values: { transaction_id: 'TXN-2', amount: 'not-a-number' },
+                  status: 'SKIP',
+                  flaggedFields: {
+                    amount: {
+                      code: 'BANK_AMOUNT_FORMAT',
+                      severity: 'ERROR',
+                      message: '"amount" is not a valid number.',
+                    },
+                  },
+                  rowLevelIssues: [],
+                },
+              ],
+              totalRows: 2,
+              errorRowCount: 1,
+              warningRowCount: 0,
+              cleanRowCount: 1,
+              truncated: false,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/import`) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: 'completed',
+              passed: true,
+              matchingJobId: MATCHING_JOB_ID,
+              run: createImportRunSummary({ status: 'PENDING_APPROVAL', files: [validFile, failedFile] }),
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === `/api/reconciliation/${MATCHING_JOB_ID}`) {
+        return Promise.resolve(new Response(JSON.stringify(createRunResponse()), { status: 200 }));
+      }
+      throw new Error(`unexpected fetch call to ${url}`);
+    });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.csv')] },
+    });
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
+      target: { files: [new File(['gl'], 'gl.csv')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Cell validation results')).toBeInTheDocument();
+    });
+    expect(screen.getByText('TXN-1')).toBeInTheDocument();
+    expect(screen.getByText('TXN-2')).toBeInTheDocument();
+    expect(screen.getByText('All rows · 2')).toBeInTheDocument();
+    expect(screen.getByText('Errors only · 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Errors only · 1' }));
+    expect(screen.queryByText('TXN-1')).not.toBeInTheDocument();
+    expect(screen.getByText('TXN-2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All rows · 2' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1 rows & submit' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Run finished/)).toBeInTheDocument();
+    });
+  });
+
   it('rejects an unsupported file extension at selection with the exact Screen 02 code and copy, removable without ever uploading it', () => {
     setAuthenticatedUser('rray');
     renderApp();

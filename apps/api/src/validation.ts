@@ -195,6 +195,14 @@ export const importRunBodySchema = z.object({
     .optional(),
 });
 
+/** POST /api/imports/runs/:id/import body (Phase 12, Screen 06). `skipInvalidRows` is required and
+ * must be `true` -- there is no "import everything including invalid rows" mode (invalid rows
+ * have no canonical_record to import in the first place), so the field exists to make the
+ * caller's intent explicit and match the work plan's own T7.4 shape, not to select behavior. */
+export const importRunPartialImportBodySchema = z.object({
+  skipInvalidRows: z.boolean({ message: 'skipInvalidRows is required.' }),
+});
+
 export const exceptionsQuerySchema = z
   .object({
     category: z.unknown().optional(),

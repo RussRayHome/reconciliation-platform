@@ -408,6 +408,76 @@ export class PostgresImportValidationStore {
     );
   }
 
+  /** Phase 12 (Screen 06): accepts a VALIDATION_FAILED run's already-passing rows and moves it to
+   * PENDING_APPROVAL -- the caller triggers matching afterward, same as a run that passed outright
+   * (recordMatchingJobId is still the right next call). Guarded here, atomically with the FOR
+   * UPDATE lock, against the two cases Screen 06 doesn't apply to: a structural (HEADER/
+   * COLUMN_ORDER) gate failure has no per-row detail to accept, and a file with zero importable
+   * rows has nothing to accept either -- both are Screen 05/07's territory, not this one's. */
+  async acceptPartialImport(
+    organizationId: string,
+    runId: string,
+  ): Promise<
+    | { outcome: 'not_found' }
+    | { outcome: 'invalid_state'; currentStatus: string }
+    | { outcome: 'structural_failure'; importFileId: string }
+    | { outcome: 'no_importable_rows'; importFileId: string }
+    | { outcome: 'accepted' }
+  > {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const runResult = await client.query<{ status: string }>(
+        'SELECT status FROM reconciliation_run WHERE id = $1 FOR UPDATE',
+        [runId],
+      );
+      const runRow = runResult.rows[0];
+      if (!runRow) {
+        return { outcome: 'not_found' as const };
+      }
+      if (runRow.status !== 'VALIDATION_FAILED') {
+        return { outcome: 'invalid_state' as const, currentStatus: runRow.status };
+      }
+
+      const filesResult = await client.query<{ id: string; validation_status: string }>(
+        `SELECT f.id, f.validation_status
+           FROM run_source_file rsf
+           JOIN import_file f ON f.id = rsf.import_file_id
+          WHERE rsf.reconciliation_run_id = $1`,
+        [runId],
+      );
+
+      for (const file of filesResult.rows) {
+        if (file.validation_status !== 'INVALID') {
+          continue;
+        }
+
+        const structuralResult = await client.query(
+          `SELECT 1 FROM validation_issue
+            WHERE import_file_id = $1 AND severity = 'ERROR'
+              AND code IN ('STRUCT_HEADER_MISSING', 'STRUCT_COLUMN_MISSING', 'STRUCT_COLUMN_ORDER')
+            LIMIT 1`,
+          [file.id],
+        );
+        if ((structuralResult.rowCount ?? 0) > 0) {
+          return { outcome: 'structural_failure' as const, importFileId: file.id };
+        }
+
+        const importableResult = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM canonical_record WHERE import_file_id = $1`,
+          [file.id],
+        );
+        if (Number(importableResult.rows[0]?.count ?? '0') === 0) {
+          return { outcome: 'no_importable_rows' as const, importFileId: file.id };
+        }
+      }
+
+      await client.query(`UPDATE reconciliation_run SET status = 'PENDING_APPROVAL' WHERE id = $1`, [
+        runId,
+      ]);
+
+      return { outcome: 'accepted' as const };
+    });
+  }
+
   /** Paginated validation_issue rows for a run's review drilldown (Phase 8). validation_issue has
    * no reconciliation_run_id column of its own (only import_job_id/import_file_id, changeset
    * 0042) -- submitRun only ever creates one import_job per run today (DRAFT -> VALIDATING is a

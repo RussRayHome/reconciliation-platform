@@ -671,6 +671,213 @@ describe('PostgresImportValidationStore', () => {
     });
   });
 
+  describe('acceptPartialImport (Phase 12 Screen 06)', () => {
+    /** Submits a run and records outcomes on both files, ending with finalizeRun(passed: false)
+     * so the run reaches VALIDATION_FAILED -- acceptPartialImport's own precondition. The GL side
+     * always passes cleanly; `mode` controls the bank side's shape. */
+    const seedFailedRun = async (
+      label: string,
+      mode: 'partial' | 'structural' | 'zero-importable',
+    ) => {
+      // import_file dedupes by (organization_id, content_sha256, source_type) -- distinct bytes
+      // per call (not just per mode) keep each test's validation_issue rows on their own
+      // import_file_id, so an earlier test's issues can't bleed into a later one that happens to
+      // reuse the same default fixture bytes.
+      const run = await createDraftRun({
+        label,
+        files: [
+          {
+            role: 'BANK',
+            sourceType: 'BANK',
+            originalFilename: 'bank.csv',
+            fileFormat: 'CSV',
+            bytes: Buffer.from(`transaction_id,amount\nTXN-${label}-${mode},100.00\n`, 'utf8'),
+          },
+          {
+            role: 'GL',
+            sourceType: 'GL',
+            originalFilename: 'gl.csv',
+            fileFormat: 'CSV',
+            bytes: Buffer.from(`entry_id,line_number\nJE-${label}-${mode},1\n`, 'utf8'),
+          },
+        ],
+      });
+      const store = new PostgresImportValidationStore(pool);
+      const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
+      const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
+      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const glFile = run.files.find((file) => file.role === 'GL')!;
+      const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
+
+      await store.recordFileValidationOutcome(
+        defaultOrganizationId,
+        {
+          importJobId,
+          importFileId: glFile.importFileId,
+          reconciliationRunId: run.id,
+          totalRowCount: 1,
+          issues: [],
+          normalized: [
+            {
+              sourceType: 'GL',
+              recordId: 'JE-1',
+              account: 'ACCT-1',
+              date: '2026-08-05',
+              currencyCode: 'USD',
+              signedAmount: 100,
+              direction: 'INFLOW',
+              magnitude: 100,
+              description: 'Journal entry',
+              sourceLineNumber: 1,
+              raw: { entry_id: 'JE-1' },
+            },
+          ],
+        },
+        ruleVersionIds,
+      );
+
+      const bankOutcomeByMode: Record<
+        typeof mode,
+        { issues: ValidationIssueInput[]; normalized: CanonicalRecordInput[] }
+      > = {
+        partial: {
+          issues: [
+            {
+              severity: 'ERROR',
+              code: 'BANK_AMOUNT_FORMAT',
+              field: 'amount',
+              rowNumber: 3,
+              message: '"amount" is not a valid number.',
+            },
+          ],
+          normalized: [
+            {
+              sourceType: 'BANK',
+              recordId: 'TXN-1',
+              account: 'ACCT-1',
+              date: '2026-08-05',
+              currencyCode: 'USD',
+              signedAmount: 100,
+              direction: 'INFLOW',
+              magnitude: 100,
+              description: 'Deposit',
+              sourceLineNumber: 1,
+              raw: { transaction_id: 'TXN-1' },
+            },
+          ],
+        },
+        structural: {
+          issues: [
+            {
+              severity: 'ERROR',
+              code: 'STRUCT_COLUMN_MISSING',
+              field: 'currency_code',
+              message: 'Required column "currency_code" is absent.',
+            },
+          ],
+          normalized: [],
+        },
+        'zero-importable': {
+          issues: [
+            {
+              severity: 'ERROR',
+              code: 'BANK_AMOUNT_FORMAT',
+              field: 'amount',
+              rowNumber: 2,
+              message: '"amount" is not a valid number.',
+            },
+          ],
+          normalized: [],
+        },
+      };
+
+      await store.recordFileValidationOutcome(
+        defaultOrganizationId,
+        {
+          importJobId,
+          importFileId: bankFile.importFileId,
+          reconciliationRunId: run.id,
+          totalRowCount: 2,
+          ...bankOutcomeByMode[mode],
+        },
+        ruleVersionIds,
+      );
+
+      await store.finalizeRun(defaultOrganizationId, run.id, importJobId, { passed: false });
+
+      return { run, bankFile, glFile };
+    };
+
+    it('returns not_found for a nonexistent run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportValidationStore(pool);
+      const result = await store.acceptPartialImport(
+        defaultOrganizationId,
+        '00000000-0000-0000-0000-000000000000',
+      );
+      expect(result).toEqual({ outcome: 'not_found' });
+    });
+
+    it('returns invalid_state when the run is not VALIDATION_FAILED', async () => {
+      if (startupError) throw startupError;
+
+      const run = await createDraftRun({ label: 'Still Draft' });
+      const store = new PostgresImportValidationStore(pool);
+
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      expect(result).toEqual({ outcome: 'invalid_state', currentStatus: 'DRAFT' });
+    });
+
+    it('returns structural_failure when the invalid file has a STRUCT_* error', async () => {
+      if (startupError) throw startupError;
+
+      const { run, bankFile } = await seedFailedRun('Structural Failure Guard', 'structural');
+      const store = new PostgresImportValidationStore(pool);
+
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      expect(result).toEqual({ outcome: 'structural_failure', importFileId: bankFile.importFileId });
+    });
+
+    it('returns no_importable_rows when the invalid file has zero canonical_record rows', async () => {
+      if (startupError) throw startupError;
+
+      const { run, bankFile } = await seedFailedRun('Zero Importable Guard', 'zero-importable');
+      const store = new PostgresImportValidationStore(pool);
+
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      expect(result).toEqual({ outcome: 'no_importable_rows', importFileId: bankFile.importFileId });
+    });
+
+    it('accepts and moves the run to PENDING_APPROVAL when every invalid file has importable rows', async () => {
+      if (startupError) throw startupError;
+
+      const { run } = await seedFailedRun('Accepted Partial Import', 'partial');
+      const store = new PostgresImportValidationStore(pool);
+
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      expect(result).toEqual({ outcome: 'accepted' });
+
+      const runRow = await pool.query<{ status: string }>(
+        'SELECT status FROM reconciliation_run WHERE id = $1',
+        [run.id],
+      );
+      expect(runRow.rows[0]?.status).toBe('PENDING_APPROVAL');
+    });
+
+    it('returns invalid_state on a second call after the run has already been accepted', async () => {
+      if (startupError) throw startupError;
+
+      const { run } = await seedFailedRun('Double Accept Guard', 'partial');
+      const store = new PostgresImportValidationStore(pool);
+
+      await store.acceptPartialImport(defaultOrganizationId, run.id);
+      const second = await store.acceptPartialImport(defaultOrganizationId, run.id);
+
+      expect(second).toEqual({ outcome: 'invalid_state', currentStatus: 'PENDING_APPROVAL' });
+    });
+  });
+
   describe('run approvals', () => {
     describe('listRunApprovals', () => {
       it('returns PENDING_APPROVAL runs with resolved usernames', async () => {

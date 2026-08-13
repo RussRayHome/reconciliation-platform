@@ -1,10 +1,17 @@
+import { useState } from 'react';
+
 import {
   downloadImportRunErrorReportRequest,
   type ImportFailureGateSequenceEntry,
   type ImportFileFailureDetail,
+  type ImportRowGridFlag,
   type ImportRunSummary,
 } from '../lib/api';
 import { useImportFileFailureDetail } from '../hooks/useImportFileFailureDetail';
+import { useImportFileRows } from '../hooks/useImportFileRows';
+import type { useImportPartialAccept } from '../hooks/useImportPartialAccept';
+
+type PartialAcceptModel = ReturnType<typeof useImportPartialAccept>;
 
 const GATE_LABELS: Record<ImportFailureGateSequenceEntry['gate'], string> = {
   HEADER: 'Step 1 · Header row',
@@ -13,7 +20,7 @@ const GATE_LABELS: Record<ImportFailureGateSequenceEntry['gate'], string> = {
 };
 
 /**
- * Renders Screens 05/07 (README §4) for a run that failed validation -- one card per invalid
+ * Renders Screens 05/06/07 (README §4) for a run that failed validation -- one card per invalid
  * file, each fetching its own failure detail. `run` comes straight from
  * `ImportValidationFailedError.run` (useImportRunSubmit.ts), the same summary
  * `POST /api/imports/runs/:id/submit` already returned inline, so no extra round trip is needed
@@ -22,9 +29,11 @@ const GATE_LABELS: Record<ImportFailureGateSequenceEntry['gate'], string> = {
 export function ImportValidationFailureView({
   run,
   onRetryUpload,
+  partialAccept,
 }: Readonly<{
   run: ImportRunSummary;
   onRetryUpload: () => void;
+  partialAccept: PartialAcceptModel;
 }>) {
   const invalidFiles = run.files.filter((file) => file.validationStatus === 'INVALID');
 
@@ -46,6 +55,7 @@ export function ImportValidationFailureView({
           runId={run.id}
           file={file}
           onRetryUpload={onRetryUpload}
+          partialAccept={partialAccept}
         />
       ))}
     </div>
@@ -56,10 +66,12 @@ function ImportFileFailureCard({
   runId,
   file,
   onRetryUpload,
+  partialAccept,
 }: Readonly<{
   runId: string;
   file: ImportRunSummary['files'][number];
   onRetryUpload: () => void;
+  partialAccept: PartialAcceptModel;
 }>) {
   const { detail, isLoading, error } = useImportFileFailureDetail(runId, file.importFileId);
 
@@ -104,10 +116,12 @@ function ImportFileFailureCard({
   }
 
   return (
-    <PartialFailurePanel
+    <RowGridPanel
+      runId={runId}
       detail={detail}
       onDownloadErrorReport={handleDownloadErrorReport}
       onRetryUpload={onRetryUpload}
+      partialAccept={partialAccept}
     />
   );
 }
@@ -267,49 +281,241 @@ function AllRowsInvalidPanel({
   );
 }
 
-/** Neither Screen 05 nor 07: Step 3 ran and at least one row passed, but the file still has
- * ERROR-severity issues. The design's partial-import review (Screen 06) isn't built yet (Phase
- * 12), so this is an honest placeholder rather than a silent dead end. */
-function PartialFailurePanel({
+/** Screen 06 -- the row-level grid + partial import. Step 3 ran and at least one row passed.
+ * Matching still processes the full original file when "Import N rows & submit" is used (see
+ * POST /api/imports/runs/:id/import's own comment) -- the toggle/copy here says so rather than
+ * implying skipped rows are removed from reconciliation. */
+function RowGridPanel({
+  runId,
   detail,
   onDownloadErrorReport,
   onRetryUpload,
+  partialAccept,
 }: Readonly<{
+  runId: string;
   detail: ImportFileFailureDetail;
   onDownloadErrorReport: () => void;
   onRetryUpload: () => void;
+  partialAccept: PartialAcceptModel;
 }>) {
+  const { grid, isLoading, error } = useImportFileRows(runId, detail.importFileId);
+  const [filter, setFilter] = useState<'all' | 'errors' | 'warnings'>('all');
+  const [skipInvalidRows, setSkipInvalidRows] = useState(true);
+
+  if (isLoading) {
+    return (
+      <p className="status-banner" role="status" aria-live="polite">
+        Loading row-level detail for {detail.originalFilename}…
+      </p>
+    );
+  }
+
+  if (error || !grid) {
+    return (
+      <p className="error-banner" role="alert">
+        {error ?? `Couldn't load row-level detail for ${detail.originalFilename}.`}
+      </p>
+    );
+  }
+
+  const importCount = grid.warningRowCount + grid.cleanRowCount;
+  const skipCount = grid.errorRowCount;
+
+  const filteredRows = grid.rows.filter((row) => {
+    if (filter === 'errors') return row.status === 'SKIP';
+    if (filter === 'warnings') {
+      return (
+        Object.values(row.flaggedFields).some((flag) => flag.severity === 'WARNING') ||
+        row.rowLevelIssues.some((issue) => issue.severity === 'WARNING')
+      );
+    }
+    return true;
+  });
+
+  const issuesByCode = new Map<string, { code: string; severity: string; count: number }>();
+  const bumpCode = (flag: ImportRowGridFlag): void => {
+    const existing = issuesByCode.get(flag.code);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      issuesByCode.set(flag.code, { code: flag.code, severity: flag.severity, count: 1 });
+    }
+  };
+  for (const row of grid.rows) {
+    Object.values(row.flaggedFields).forEach(bumpCode);
+    row.rowLevelIssues.forEach(bumpCode);
+  }
+  const sortedCodes = [...issuesByCode.values()].sort((a, b) => b.count - a.count);
+
   return (
     <div className="import-failure-panel">
       <div className="import-failure-panel__header">
-        <p className="import-failure-panel__eyebrow">Validation failed · rejected tab</p>
+        <p className="import-failure-panel__eyebrow">
+          {detail.originalFilename} · {grid.totalRows} rows read
+        </p>
         <div className="import-failure-panel__header-row">
-          <h3 className="import-failure-panel__title">
-            {detail.originalFilename} — {detail.importableRowCount} of {detail.rowCount ?? 0} rows
-            passed
-          </h3>
+          <h3 className="import-failure-panel__title">Cell validation results</h3>
+          <div className="row-grid__count-pills">
+            <span className="row-grid__count-pill row-grid__count-pill--error">
+              {grid.errorRowCount} ERROR
+            </span>
+            <span className="row-grid__count-pill row-grid__count-pill--warning">
+              {grid.warningRowCount} WARNING
+            </span>
+            <span className="row-grid__count-pill row-grid__count-pill--clean">
+              {grid.cleanRowCount} CLEAN
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="row-grid__toolbar">
+        <fieldset className="row-grid__filter-pills">
+          <legend className="visually-hidden">Filter rows</legend>
+          <button
+            type="button"
+            className={
+              filter === 'all' ? 'row-grid__filter-pill row-grid__filter-pill--active' : 'row-grid__filter-pill'
+            }
+            onClick={() => setFilter('all')}
+          >
+            All rows · {grid.totalRows}
+          </button>
+          <button
+            type="button"
+            className={
+              filter === 'errors'
+                ? 'row-grid__filter-pill row-grid__filter-pill--active'
+                : 'row-grid__filter-pill'
+            }
+            onClick={() => setFilter('errors')}
+          >
+            Errors only · {grid.errorRowCount}
+          </button>
+          <button
+            type="button"
+            className={
+              filter === 'warnings'
+                ? 'row-grid__filter-pill row-grid__filter-pill--active'
+                : 'row-grid__filter-pill'
+            }
+            onClick={() => setFilter('warnings')}
+          >
+            Warnings · {grid.warningRowCount}
+          </button>
+        </fieldset>
+        <label className="row-grid__skip-toggle">
+          <input
+            type="checkbox"
+            checked={skipInvalidRows}
+            onChange={(event) => setSkipInvalidRows(event.target.checked)}
+          />
+          Skip invalid rows and import the remaining {importCount}
+        </label>
+      </div>
+
+      <div className="row-grid__table-scroll">
+        <table className="row-grid__table">
+          <thead>
+            <tr>
+              <th>Line</th>
+              {grid.headers.map((header) => (
+                <th key={header}>{header}</th>
+              ))}
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row, index) => (
+              <tr key={row.lineNumber} className={index % 2 === 1 ? 'row-grid__row--odd' : undefined}>
+                <td className="row-grid__line-cell">{row.lineNumber}</td>
+                {grid.headers.map((header) => {
+                  const flag = row.flaggedFields[header];
+                  const value = row.values[header];
+                  let cellText = value;
+                  if (!value) {
+                    cellText = flag ? '— required, empty —' : '';
+                  }
+                  return (
+                    <td
+                      key={header}
+                      className={flag ? 'row-grid__cell--flagged' : undefined}
+                      title={flag ? `${flag.code}: ${flag.message}` : undefined}
+                    >
+                      {cellText}
+                    </td>
+                  );
+                })}
+                <td
+                  className={
+                    row.status === 'IMPORT' ? 'row-grid__status row-grid__status--import' : 'row-grid__status row-grid__status--skip'
+                  }
+                >
+                  {row.status}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {grid.truncated ? (
+        <p className="row-grid__truncated-note">
+          Showing the first {grid.rows.length} of {grid.totalRows} rows.
+        </p>
+      ) : null}
+
+      <div className="row-grid__footer">
+        <div className="row-grid__footer-codes">
+          <p className="row-grid__footer-codes-title">Errors by code</p>
+          <div className="import-failure-empty-pills">
+            {sortedCodes.map((entry) => (
+              <span key={entry.code} className="import-failure-empty-pill">
+                {entry.code} · {entry.count}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="row-grid__footer-actions">
+          <div className="row-grid__tallies">
+            <div className="row-grid__tally">
+              <strong>{importCount}</strong>
+              <span>will import</span>
+            </div>
+            <div className="row-grid__tally">
+              <strong>{skipCount}</strong>
+              <span>will skip</span>
+            </div>
+            <div className="row-grid__tally">
+              <strong>{grid.warningRowCount}</strong>
+              <span>warnings</span>
+            </div>
+          </div>
+          <p className="row-grid__matching-note">
+            Skipped rows are audited (source line + code) but the reconciliation match still runs
+            against the full original file.
+          </p>
           <div className="import-failure-panel__actions">
             <button type="button" className="secondary-button" onClick={onDownloadErrorReport}>
               Download error report
             </button>
-            <button type="button" className="accent-button" onClick={onRetryUpload}>
+            <button type="button" className="secondary-button" onClick={onRetryUpload}>
               Fix &amp; re-upload
             </button>
+            <button
+              type="button"
+              className="accent-button"
+              disabled={!skipInvalidRows || importCount === 0 || partialAccept.isPending}
+              onClick={() => partialAccept.mutate({ runId })}
+            >
+              {partialAccept.isPending ? 'Importing…' : `Import ${importCount} rows & submit`}
+            </button>
           </div>
+          {partialAccept.error ? (
+            <p className="error-banner" role="alert">
+              {partialAccept.error.message}
+            </p>
+          ) : null}
         </div>
-      </div>
-      <div className="import-failure-panel__left">
-        <p className="import-failure-panel__note">
-          {detail.errorCount ?? 0} row(s) failed validation and {detail.importableRowCount} would be
-          importable. Reviewing and importing the valid rows individually isn't available in this
-          view yet -- download the error report for the full row-by-row breakdown, or fix the
-          source file and re-upload.
-        </p>
-        {detail.issuesByCode.map((entry) => (
-          <p key={entry.code} className="import-failure-panel__code-line">
-            {entry.code} · {entry.severity} · {entry.count}
-          </p>
-        ))}
       </div>
     </div>
   );
