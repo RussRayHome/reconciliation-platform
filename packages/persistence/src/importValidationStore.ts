@@ -188,6 +188,7 @@ export interface PaginatedRunRecordsResult {
  * specifically so a failure partway through is retryable rather than needing all-or-nothing.
  */
 export class PostgresImportValidationStore {
+  /** @param pool Postgres pool shared with the rest of the request/worker's persistence calls. */
   constructor(private readonly pool: Pool) {}
 
   /** DRAFT -> VALIDATING, stamps submitted_by/submitted_at, creates the QUEUED import_job.
@@ -239,6 +240,8 @@ export class PostgresImportValidationStore {
     });
   }
 
+  /** QUEUED -> RUNNING, stamps worker_id/started_at, bumps attempts (see the class's own doc
+   * comment for why retryable-per-attempt beats one spanning transaction). */
   async markJobRunning(organizationId: string, importJobId: string, workerId: string): Promise<void> {
     await runInTenantScope(this.pool, organizationId, (client) =>
       client.query(
@@ -250,6 +253,8 @@ export class PostgresImportValidationStore {
     );
   }
 
+  /** -> FAILED, stamps finished_at and a truncated diagnostic error_summary (see below for why
+   * it's truncated -- diagnostic text, not an audit record). */
   async markJobFailed(organizationId: string, importJobId: string, errorSummary: string): Promise<void> {
     await runInTenantScope(this.pool, organizationId, (client) =>
       client.query(

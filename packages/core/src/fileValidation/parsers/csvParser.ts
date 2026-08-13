@@ -117,7 +117,10 @@ export const parseCsvBuffer = (bytes: Buffer): ParsedFile => {
   return { headers: headerRow, rows: parsedRows };
 };
 
+/** Hand-rolled RFC 4180 CSV parser for the File Validation Engine (no `csv-parse` dependency --
+ * see the File Imports & Validation plan's own note on this tradeoff). */
 export class CsvParser implements FileParser {
+  /** Parses raw CSV bytes into the shared {headers, rows} shape (row 1 is the header row). */
   // Not async -- parseCsvBuffer is synchronous; Promise.resolve satisfies FileParser's Promise
   // return type without an empty async body (which the require-await lint rule rejects).
   parse(bytes: Buffer): Promise<ParsedFile> {

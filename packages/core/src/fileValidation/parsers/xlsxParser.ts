@@ -50,6 +50,7 @@ const stringifyCellValue = (value: ExcelJS.CellValue): string => {
  * banking/GL header lists.
  */
 export class XlsxParser implements FileParser {
+  /** Parses the first worksheet's raw bytes into the shared {headers, rows} shape. */
   async parse(bytes: Buffer): Promise<ParsedFile> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(bytes as unknown as Parameters<typeof workbook.xlsx.load>[0]);

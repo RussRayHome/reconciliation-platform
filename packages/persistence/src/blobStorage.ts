@@ -56,8 +56,11 @@ export interface BlobStorage {
  * established for the older import path.
  */
 export class PostgresBlobStorage implements BlobStorage {
+  /** @param pool Used when a call site doesn't already hold a transaction's `client`. */
   constructor(private readonly pool: Pool) {}
 
+  /** Stores `input.bytes` in `import_file_content`, keyed by `input.importFileId`. Fails on a
+   * duplicate id rather than overwriting -- see the insert's own comment for why. */
   async put(input: PutBlobInput, client?: PoolClient): Promise<PutBlobResult> {
     const sha256 = computeSha256Hex(input.bytes);
     const byteSize = input.bytes.byteLength;

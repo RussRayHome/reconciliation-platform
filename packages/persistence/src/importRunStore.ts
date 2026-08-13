@@ -82,6 +82,7 @@ interface ImportFileRow {
 export class PostgresImportRunStore {
   private readonly blobStorage: BlobStorage;
 
+  /** @param blobStorage Defaults to a `PostgresBlobStorage` over the same pool; injectable for tests. */
   constructor(
     private readonly pool: Pool,
     blobStorage?: BlobStorage,
@@ -89,6 +90,8 @@ export class PostgresImportRunStore {
     this.blobStorage = blobStorage ?? new PostgresBlobStorage(pool);
   }
 
+  /** Creates a DRAFT `reconciliation_run` and its `run_source_file` links, deduping each file's
+   * `import_file` row by content hash -- see the class's own doc comment for the full shape. */
   async createRun(input: CreateImportRunInput): Promise<ImportRunSummary> {
     return runInTenantScope(this.pool, input.organizationId, async (client) => {
       const files: ImportRunFileSummary[] = [];
@@ -195,6 +198,8 @@ export class PostgresImportRunStore {
     return insertedRow;
   }
 
+  /** Reads back a run and its files (with per-file row/error/warning counts once validated), or
+   * `null` if `runId` doesn't exist in this organization. */
   async getRunSummary(organizationId: string, runId: string): Promise<ImportRunSummary | null> {
     return runInTenantScope(this.pool, organizationId, async (client) => {
       const runResult = await client.query<{

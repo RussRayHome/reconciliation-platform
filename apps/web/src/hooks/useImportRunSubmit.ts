@@ -17,8 +17,11 @@ export type ImportRunSubmitPayload = CreateImportRunPayload & CreateImportRunOpt
  * the UI can show Screen 05/07's failure detail for the invalid file(s) rather than just a
  * generic error banner. */
 export class ImportValidationFailedError extends Error {
+  /** The run summary `submitImportRunRequest` already returned inline, carrying per-file
+   * validation status so the UI can render Screen 05/06/07 without a second round trip. */
   readonly run: ImportRunSummary;
 
+  /** @param run The run summary from the failed submit response. */
   constructor(run: ImportRunSummary) {
     super('Import run failed validation.');
     this.name = 'ImportValidationFailedError';

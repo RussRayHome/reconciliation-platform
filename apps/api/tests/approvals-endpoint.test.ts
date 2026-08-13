@@ -250,6 +250,23 @@ const createFakeApprovalsPool = (seed: {
       return Promise.resolve({ rows: [row], rowCount: 1 });
     }
 
+    // ── reconciliation_run (File Imports & Validation's approval type) ─────────────────────────────
+    // None of this suite's scenarios seed any reconciliation_run rows -- these two handlers only
+    // need to satisfy PostgresImportValidationStore.getRunApprovalCounts's own two queries
+    // (resolveUserId, then the FILTER-based count) with an always-empty answer, so
+    // GET /api/approvals/counts's merged 'import' key still resolves instead of 500ing on an
+    // unrecognized query.
+    if (text.includes('SELECT id FROM reconciliation_user')) {
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
+    if (text.includes('COUNT(*) FILTER') && text.includes('FROM reconciliation_run')) {
+      return Promise.resolve({
+        rows: [{ pending: '0', approved: '0', rejected: '0', my_submissions: '0' }],
+        rowCount: 1,
+      });
+    }
+
     throw new Error(`createFakeApprovalsPool: unexpected query: ${text}`);
   };
 
