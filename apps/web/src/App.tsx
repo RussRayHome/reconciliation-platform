@@ -74,6 +74,9 @@ import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
 import { useImportRunSubmit } from './hooks/useImportRunSubmit';
+import { useImportUploadTransfer } from './hooks/useImportUploadTransfer';
+import { buildTransferCardProps } from './lib/importUploadProgress';
+import { ImportUploadCard } from './components/ImportUploadCard';
 import {
   BANK_TEMPLATE_URL,
   BANK_TEMPLATE_XLSX_URL,
@@ -86,6 +89,7 @@ import { useWatchlist } from './hooks/useWatchlist';
 
 type ReconciliationFrequency = 'Monthly' | 'Annual';
 type ReconciliationModel = ReturnType<typeof useImportRunSubmit>;
+type UploadTransferModel = ReturnType<typeof useImportUploadTransfer>;
 type RunData = NonNullable<ReconciliationModel['data']>;
 /** The authenticated principal, as reported by the server (login response or /api/auth/me) --
  * ADR-0002 step 6: role travels with the session instead of being looked up from a hardcoded
@@ -656,6 +660,7 @@ function ReconciliationApp({
   const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const reconciliation = useImportRunSubmit();
+  const uploadTransfer = useImportUploadTransfer(reconciliation);
   const run = reconciliation.data;
   const reportRun = run ?? persistedRun;
   const reportRunExceptionIds = useMemo(
@@ -1148,7 +1153,7 @@ function ReconciliationApp({
 
     setRunStartedAtMs(Date.now());
     setNowMs(Date.now());
-    reconciliation.mutate({
+    uploadTransfer.start({
       bankFile,
       glFile,
       label: trimmedPeriodLabel,
@@ -1259,6 +1264,7 @@ function ReconciliationApp({
                     setReconciliationFrequency={setReconciliationFrequency}
                     suggestedPeriodLabel={suggestedPeriodLabel}
                     accountIdentifier={accountIdentifier}
+                    uploadTransfer={uploadTransfer}
                   />
                 }
               />
@@ -1486,6 +1492,7 @@ function SourceUploadSection({
   setGlFile,
   setReconciliationFrequency,
   suggestedPeriodLabel,
+  uploadTransfer,
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
@@ -1510,6 +1517,7 @@ function SourceUploadSection({
   setGlFile: Dispatch<SetStateAction<File | null>>;
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
+  uploadTransfer: UploadTransferModel;
 }>) {
   const reconciliationLabelErrorId = 'reconciliation-label-error';
   const reconciliationLabelHintId = 'reconciliation-label-hint';
@@ -1557,16 +1565,48 @@ function SourceUploadSection({
           onSubmit={handleSubmit}
         >
           <div className="import-screen__upload-column">
-            <SourceDropZone
-              bankFile={bankFile}
-              glFile={glFile}
-              setBankFile={setBankFile}
-              setGlFile={setGlFile}
-            />
-            <p className="source-dropzone__note">
-              Bank and GL are detected from each file name; use the slot pickers to override. Row
-              counts, date range, and excluded rows are calculated when the reconciliation runs.
-            </p>
+            {uploadTransfer.transfer.kind === 'idle' ? (
+              <>
+                <SourceDropZone
+                  bankFile={bankFile}
+                  glFile={glFile}
+                  setBankFile={setBankFile}
+                  setGlFile={setGlFile}
+                />
+                <p className="source-dropzone__note">
+                  Bank and GL are detected from each file name; use the slot pickers to override.
+                  Row counts, date range, and excluded rows are calculated when the reconciliation
+                  runs.
+                </p>
+              </>
+            ) : (
+              <div className="import-upload-card-list" aria-label="Upload progress">
+                {bankFile ? (
+                  <ImportUploadCard
+                    {...buildTransferCardProps(
+                      uploadTransfer.transfer,
+                      bankFile,
+                      'bank',
+                      0,
+                      uploadTransfer.cancel,
+                      uploadTransfer.retry,
+                    )}
+                  />
+                ) : null}
+                {glFile ? (
+                  <ImportUploadCard
+                    {...buildTransferCardProps(
+                      uploadTransfer.transfer,
+                      glFile,
+                      'gl',
+                      bankFile?.size ?? 0,
+                      uploadTransfer.cancel,
+                      uploadTransfer.retry,
+                    )}
+                  />
+                ) : null}
+              </div>
+            )}
           </div>
 
           <aside className="run-configuration-panel">

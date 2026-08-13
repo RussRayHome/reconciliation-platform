@@ -1236,7 +1236,7 @@ export const createApp = (
 ) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
-  const importUpload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'), [
+  const importUpload = createUploadMiddleware(Number(process.env.MAX_IMPORT_UPLOAD_MB ?? '50'), [
     '.xlsx',
     '.csv',
   ]);

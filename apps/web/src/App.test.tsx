@@ -499,20 +499,99 @@ const requestUrl = (input: RequestInfo | URL): string =>
   typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
 /**
+ * `createImportRunRequest` (apps/web/src/lib/api.ts) uses a real `XMLHttpRequest` rather than
+ * `fetch` for the `/api/imports/runs` upload specifically, so it can observe `xhr.upload`'s
+ * `progress` event (Screen 02's per-file progress bars) -- something `fetch` has no equivalent
+ * for. Every other call the app makes still goes through `fetch`. This fake stands in for the
+ * global `XMLHttpRequest` in that one path; `respond`/`networkError`/`abort` (via the real
+ * `.abort()` the app calls) drive it from a test, and `emitProgress` simulates upload-progress
+ * events.
+ */
+class FakeImportRunXhr {
+  static instances: FakeImportRunXhr[] = [];
+  static autoRespond = true;
+  static autoRespondStatus = 201;
+  static autoRespondBody: unknown = null;
+
+  readonly upload = new EventTarget();
+  private readonly target = new EventTarget();
+  method = '';
+  url = '';
+  readonly headers: Record<string, string> = {};
+  status = 0;
+  responseText = '';
+  body: FormData | null = null;
+
+  open(method: string, url: string): void {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader(name: string, value: string): void {
+    this.headers[name] = value;
+  }
+
+  addEventListener(type: string, handler: EventListener): void {
+    this.target.addEventListener(type, handler);
+  }
+
+  send(body: FormData): void {
+    this.body = body;
+    FakeImportRunXhr.instances.push(this);
+
+    if (FakeImportRunXhr.autoRespond) {
+      this.respond(
+        FakeImportRunXhr.autoRespondStatus,
+        FakeImportRunXhr.autoRespondBody ?? createImportRunSummary(),
+      );
+    }
+  }
+
+  abort(): void {
+    this.target.dispatchEvent(new Event('abort'));
+  }
+
+  emitProgress(loaded: number, total: number): void {
+    this.upload.dispatchEvent(Object.assign(new Event('progress'), { lengthComputable: true, loaded, total }));
+  }
+
+  respond(status: number, body: unknown): void {
+    this.status = status;
+    this.responseText = JSON.stringify(body);
+    this.target.dispatchEvent(new Event('load'));
+  }
+
+  networkError(): void {
+    this.target.dispatchEvent(new Event('error'));
+  }
+}
+
+/** Installs `FakeImportRunXhr` as `globalThis.XMLHttpRequest`, resetting its captured instances
+ * and auto-respond behavior. Restored automatically by the shared `vi.unstubAllGlobals()` in
+ * `afterEach`. */
+const installFakeImportRunXhr = (
+  { autoRespond = true, status = 201, body = null }: { autoRespond?: boolean; status?: number; body?: unknown } = {},
+): typeof FakeImportRunXhr => {
+  FakeImportRunXhr.instances = [];
+  FakeImportRunXhr.autoRespond = autoRespond;
+  FakeImportRunXhr.autoRespondStatus = status;
+  FakeImportRunXhr.autoRespondBody = body;
+  vi.stubGlobal('XMLHttpRequest', FakeImportRunXhr);
+  return FakeImportRunXhr;
+};
+
+/**
  * Mocks the full create -> submit -> fetch-report sequence `useImportRunSubmit`'s mutationFn
  * drives (apps/web/src/hooks/useImportRunSubmit.ts), so a test exercising "Submit run" doesn't
  * need to know its multi-step shape. Mirrors the synchronous (import-validation-queue-disabled)
  * fallback path -- the default in every test/dev environment here, same convention already used
  * for /api/reconciliation/run's own enabled/disabled split.
  */
-const mockImportRunSubmitFlow = (finalRun: unknown = createRunResponse()) =>
-  vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+const mockImportRunSubmitFlow = (finalRun: unknown = createRunResponse()) => {
+  installFakeImportRunXhr();
+
+  return vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = requestUrl(input);
-    if (url === '/api/imports/runs') {
-      return Promise.resolve(
-        new Response(JSON.stringify(createImportRunSummary()), { status: 201 }),
-      );
-    }
     if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
       return Promise.resolve(
         new Response(
@@ -532,6 +611,7 @@ const mockImportRunSubmitFlow = (finalRun: unknown = createRunResponse()) =>
     }
     throw new Error(`mockImportRunSubmitFlow: unexpected fetch call to ${url}`);
   });
+};
 
 // jsdom doesn't implement Element.scrollIntoView -- the TUNABLE cell's click-to-scroll calls it
 // directly (not optional-chained past the method itself), so it needs a stub here.
@@ -549,6 +629,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   storage.clear();
   mockedApiState.latestRunResponse = null;
   mockedApiState.latestRunError = null;
@@ -1291,9 +1372,7 @@ describe('App', () => {
   });
 
   it('announces mutation errors when reconciliation submission fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ message: 'Upload failed.' }), { status: 500 }),
-    );
+    installFakeImportRunXhr({ status: 500, body: { message: 'Upload failed.' } });
 
     setAuthenticatedUser('rray');
 
@@ -1314,7 +1393,7 @@ describe('App', () => {
   });
 
   it('submits the selected local files and metadata as multipart form data', async () => {
-    const fetchSpy = mockImportRunSubmitFlow();
+    mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -1346,16 +1425,15 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledWith('/api/imports/runs', expect.anything());
+      expect(FakeImportRunXhr.instances).toHaveLength(1);
     });
 
-    const createCall = fetchSpy.mock.calls.find(([url]) => url === '/api/imports/runs')!;
-    const [url, options] = createCall as [string, RequestInit];
-    expect(url).toBe('/api/imports/runs');
-    expect(options.method).toBe('POST');
-    expect(options.body).toBeInstanceOf(FormData);
+    const request = FakeImportRunXhr.instances[0]!;
+    expect(request.method).toBe('POST');
+    expect(request.url).toBe('/api/imports/runs');
+    expect(request.body).toBeInstanceOf(FormData);
 
-    const formData = options.body as FormData;
+    const formData = request.body as FormData;
     expect(formData.get('bankFile')).toBe(bankFile);
     expect(formData.get('glFile')).toBe(glFile);
     expect(formData.get('accountIdentifier')).toBe('OPERATING-001');
@@ -1365,7 +1443,7 @@ describe('App', () => {
   });
 
   it('submits selected monthly month as period label when frequency is monthly', async () => {
-    const fetchSpy = mockImportRunSubmitFlow();
+    mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -1391,12 +1469,10 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledWith('/api/imports/runs', expect.anything());
+      expect(FakeImportRunXhr.instances).toHaveLength(1);
     });
 
-    const createCall = fetchSpy.mock.calls.find(([url]) => url === '/api/imports/runs')!;
-    const [, options] = createCall as [string, RequestInit];
-    const formData = options.body as FormData;
+    const formData = FakeImportRunXhr.instances[0]!.body as FormData;
 
     expect(formData.get('frequency')).toBe('MONTHLY');
     expect(formData.get('periodMonth')).toBe('3');
@@ -1404,7 +1480,7 @@ describe('App', () => {
   });
 
   it('allows editing the prepopulated reconciliation label before submit', async () => {
-    const fetchSpy = mockImportRunSubmitFlow();
+    mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -1423,12 +1499,10 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledWith('/api/imports/runs', expect.anything());
+      expect(FakeImportRunXhr.instances).toHaveLength(1);
     });
 
-    const createCall = fetchSpy.mock.calls.find(([url]) => url === '/api/imports/runs')!;
-    const [, options] = createCall as [string, RequestInit];
-    const formData = options.body as FormData;
+    const formData = FakeImportRunXhr.instances[0]!.body as FormData;
 
     expect(formData.get('label')).toBe('Custom Monthly Label');
   });
@@ -1532,13 +1606,9 @@ describe('App', () => {
   });
 
   it('surfaces a message instead of hanging when the import run is queued for async validation', async () => {
+    installFakeImportRunXhr();
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = requestUrl(input);
-      if (url === '/api/imports/runs') {
-        return Promise.resolve(
-          new Response(JSON.stringify(createImportRunSummary()), { status: 201 }),
-        );
-      }
       if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
         return Promise.resolve(
           new Response(JSON.stringify({ importJobId: 'import-job-1', status: 'queued' }), {
@@ -1567,13 +1637,9 @@ describe('App', () => {
   });
 
   it('surfaces a message instead of hanging when the import run fails validation', async () => {
+    installFakeImportRunXhr();
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = requestUrl(input);
-      if (url === '/api/imports/runs') {
-        return Promise.resolve(
-          new Response(JSON.stringify(createImportRunSummary()), { status: 201 }),
-        );
-      }
       if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
         return Promise.resolve(
           new Response(
@@ -1604,6 +1670,130 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/failed validation/i);
+    });
+  });
+
+  it('rejects an unsupported file extension at selection with the exact Screen 02 code and copy, removable without ever uploading it', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Source workbooks'), {
+      target: { files: [new File(['%PDF-1.4'], 'june_statement.pdf')] },
+    });
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('UPLOAD_EXTENSION_UNSUPPORTED');
+    expect(alert).toHaveTextContent(
+      'Rejected at upload. Only .csv and .xlsx are accepted — format is detected by extension.',
+    );
+    expect(screen.getByText('june_statement.pdf')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(screen.queryByText('june_statement.pdf')).not.toBeInTheDocument();
+  });
+
+  it('rejects a file over the 50 MB limit at selection with the exact Screen 02 code and copy', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    const oversizedFile = new File(['gl'], 'gl_full_year_2025.xlsx');
+    Object.defineProperty(oversizedFile, 'size', { value: 78.4 * 1024 * 1024 });
+
+    fireEvent.change(screen.getByLabelText('Source workbooks'), {
+      target: { files: [oversizedFile] },
+    });
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('UPLOAD_SIZE_EXCEEDED · limit 50 MB');
+    expect(alert).toHaveTextContent(
+      'Split the export by period, or switch the run frequency to Annual and import per quarter.',
+    );
+  });
+
+  it('shows real per-file upload progress and lets Cancel abort the transfer without an error banner', async () => {
+    installFakeImportRunXhr({ autoRespond: false });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    const bankFile = new File(['bank'], 'bank.xlsx');
+    Object.defineProperty(bankFile, 'size', { value: 4_000_000 });
+    const glFile = new File(['gl'], 'gl.csv');
+    Object.defineProperty(glFile, 'size', { value: 6_000_000 });
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), { target: { files: [bankFile] } });
+    fireEvent.change(screen.getByLabelText('GL workbook'), { target: { files: [glFile] } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(FakeImportRunXhr.instances).toHaveLength(1);
+    });
+
+    const request = FakeImportRunXhr.instances[0]!;
+    // bankFile (4,000,000 B) is appended before glFile (6,000,000 B) -- 7,000,000 loaded bytes is
+    // bank's 4,000,000 (fully sent -- Stored) plus 3,000,000 of GL's 6,000,000 (exactly half).
+    fireEvent(
+      request.upload as unknown as HTMLElement,
+      Object.assign(new Event('progress'), {
+        lengthComputable: true,
+        loaded: 7_000_000,
+        total: 10_000_200,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Stored')).toBeInTheDocument();
+      expect(screen.getByText(/50% ·/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Source workbooks')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // The files stay selected -- cancelling only aborts the in-flight transfer.
+    expect(screen.getByText('bank.xlsx')).toBeInTheDocument();
+    expect(screen.getByText('gl.csv')).toBeInTheDocument();
+  });
+
+  it('surfaces a network-interruption card and resends both files from the start on Retry, not a chunk resume', async () => {
+    installFakeImportRunXhr({ autoRespond: false });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
+      target: { files: [new File(['gl'], 'gl.csv')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(FakeImportRunXhr.instances).toHaveLength(1);
+    });
+
+    FakeImportRunXhr.instances[0]!.networkError();
+
+    // Both files were part of the one combined request, so both cards surface the failure.
+    await waitFor(() => {
+      expect(screen.getAllByText('UPLOAD_NETWORK_INTERRUPTED')).toHaveLength(2);
+    });
+    expect(
+      screen.getAllByText(
+        'The transfer was interrupted. Nothing was written to the run -- retry resends both files from the start.',
+      ),
+    ).toHaveLength(2);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Retry upload' })[0]!);
+
+    await waitFor(() => {
+      expect(FakeImportRunXhr.instances).toHaveLength(2);
     });
   });
 

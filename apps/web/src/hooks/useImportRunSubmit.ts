@@ -4,11 +4,12 @@ import {
   createImportRunRequest,
   getReconciliationRunByIdRequest,
   submitImportRunRequest,
+  type CreateImportRunOptions,
   type CreateImportRunPayload,
   type ReconciliationRunResponse,
 } from '../lib/api';
 
-export type ImportRunSubmitPayload = CreateImportRunPayload;
+export type ImportRunSubmitPayload = CreateImportRunPayload & CreateImportRunOptions;
 
 /**
  * Creates a DRAFT import run, submits it, and -- once validation passes synchronously and

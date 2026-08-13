@@ -286,10 +286,26 @@ export interface CreateImportRunPayload {
   periodMonth?: number;
 }
 
+/** Bytes sent so far vs. the total request body size, reported while the combined bank+GL
+ * multipart upload is in flight (Screen 02's per-file progress bars). */
+export interface UploadProgressEvent {
+  loadedBytes: number;
+  totalBytes: number;
+}
+
+export interface CreateImportRunOptions {
+  onProgress?: (event: UploadProgressEvent) => void;
+  signal?: AbortSignal;
+}
+
 /** Creates a DRAFT import run (File Imports & Validation, Phase 5) -- Screen 01's `Submit run`
  * flow calls this, then `submitImportRunRequest`, rather than the old atomic
- * `POST /api/reconciliation/run`. */
-export const createImportRunRequest = async ({
+ * `POST /api/reconciliation/run`.
+ *
+ * Uses `XMLHttpRequest` rather than `fetch` because `fetch` has no upload-progress event --
+ * `xhr.upload`'s `progress` event is the only standard way to observe bytes sent for a multipart
+ * body still in flight, which Screen 02's per-file progress bars need. */
+export const createImportRunRequest = ({
   bankFile,
   glFile,
   label,
@@ -297,7 +313,9 @@ export const createImportRunRequest = async ({
   frequency,
   periodYear,
   periodMonth,
-}: CreateImportRunPayload): Promise<ImportRunSummary> => {
+  onProgress,
+  signal,
+}: CreateImportRunPayload & CreateImportRunOptions): Promise<ImportRunSummary> => {
   const formData = new FormData();
   formData.append('bankFile', bankFile);
   formData.append('glFile', glFile);
@@ -311,11 +329,61 @@ export const createImportRunRequest = async ({
     formData.append('periodMonth', String(periodMonth));
   }
 
-  const response = await apiFetch('/api/imports/runs', {
-    method: 'POST',
-    body: formData,
+  return new Promise<ImportRunSummary>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/imports/runs');
+
+    const token = getAuthToken();
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        onProgress?.({ loadedBytes: event.loaded, totalBytes: event.total });
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as ImportRunSummary);
+        } catch {
+          reject(new Error('The server returned an unreadable response.'));
+        }
+        return;
+      }
+
+      let message = `Import run creation failed with status ${xhr.status}.`;
+      try {
+        const body = JSON.parse(xhr.responseText) as { message?: string };
+        if (body.message) {
+          message = body.message;
+        }
+      } catch {
+        // Body wasn't JSON -- keep the status-based fallback message.
+      }
+      reject(new Error(message));
+    });
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Network error while uploading source files.'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload cancelled', 'AbortError'));
+    });
+
+    if (signal) {
+      if (signal.aborted) {
+        xhr.abort();
+        return;
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+
+    xhr.send(formData);
   });
-  return parseResponse<ImportRunSummary>(response);
 };
 
 /** `POST /api/imports/runs/:id/submit` response shape -- either queued (BullMQ enabled, no
