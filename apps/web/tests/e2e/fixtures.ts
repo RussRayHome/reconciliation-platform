@@ -26,6 +26,10 @@ const ALLOWED_CONSOLE_PATTERNS: RegExp[] = [
   // to assert the resulting error UI. The test's own assertions are the real check there; this
   // browser-level log isn't a signal of an unhandled bug the way an uncaught exception is.
   /^Failed to load resource: the server responded with a status of \d+/,
+  // Same reasoning, for a request that never reaches the server at all -- file-import-
+  // screens.spec.ts deliberately aborts the upload request (route.abort('failed')) to test
+  // Screen 02's network-failed/retry UI, which is exactly what this browser-level log records.
+  /^Failed to load resource: net::ERR_FAILED$/,
 ];
 
 /** Fails the test on any uncaught page exception or console.error, applied to every spec by

@@ -1,11 +1,14 @@
 import './containerGuard';
 
-import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
 import type { ReconciliationRunReport } from '@recon/domain';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { openSetup } from '../auth';
+import {
+  createSampleBankFileValidationWorkbook,
+  createSampleGlFileValidationWorkbook,
+} from '../fileValidationWorkbooks';
 import reconciliationRunReportFixture from './fixtures/reconciliationRunReport.json' with { type: 'json' };
 
 // Visual acceptance oracle, originally recorded for the CSS layering refactor
@@ -120,8 +123,8 @@ const waitForStableLayout = async (page: Page): Promise<void> => {
 const runReconciliation = async (page: Page): Promise<void> => {
   const currentYear = new Date().getFullYear();
   const [bankBuffer, glBuffer] = await Promise.all([
-    createSampleBankWorkbook(),
-    createSampleGlWorkbook(),
+    createSampleBankFileValidationWorkbook(),
+    createSampleGlFileValidationWorkbook(),
   ]);
 
   await openSetup(page);
@@ -139,7 +142,7 @@ const runReconciliation = async (page: Page): Promise<void> => {
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');
   await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
-  await page.getByRole('button', { name: 'Run reconciliation' }).click();
+  await page.getByRole('button', { name: 'Submit run' }).click();
   await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible({ timeout: 30_000 });
   // The Run Bar meter settles asynchronously after the run completes (3 of 4 steps —
   // the export step stays pending until Close). Wait for the settled value so every

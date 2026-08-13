@@ -37,6 +37,11 @@ const resolveLoginCandidates = (): LoginCredentials[] => {
       : [];
 
   const fallbackCredentials: LoginCredentials[] = [
+    // senior-analyst: identical permissions to bray (financial-analyst) except
+    // canSubmitImportRuns is true (packages/domain/src/enums.ts) -- a strict superset, so
+    // preferring this over bray doesn't change behavior for tests that don't touch imports, and
+    // fixes 403s for the ones (openSetup callers) that do.
+    { username: 'bray2', password: 'P@ssw0rd' },
     { username: 'bray', password: 'bray123' },
     { username: 'rray', password: 'P@ssw0rd' },
     { username: 'bray', password: 'bray' },
@@ -96,9 +101,11 @@ export const loginToApplication = async (page: Page): Promise<void> => {
   throw new Error('Unable to authenticate in e2e tests with configured or fallback credentials.');
 };
 
-/** Navigates to the workspace and opens Import Files so the upload form is interactable. */
+/** Navigates to the workspace and opens Import Files so the upload form is interactable. Screen
+ * 01's redesign (File Imports & Validation Phase 9) renamed the submit button from "Run
+ * reconciliation" to "Submit run". */
 export const openSetup = async (page: Page): Promise<void> => {
   await page.goto('/');
   await page.getByRole('link', { name: 'Import Files' }).click();
-  await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Submit run' })).toBeVisible();
 };

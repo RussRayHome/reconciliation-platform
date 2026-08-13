@@ -8,7 +8,22 @@ The format is inspired by Keep a Changelog and adapted for a versionless interna
 
 ## [Unreleased]
 
-_No notable changes recorded yet._
+### Added
+
+- `bray2` / senior-analyst seeded as a permanent dev/stage login account (`scripts/db/dev-stage/create-users.psql`, `apps/api/src/app.ts`'s local-login fallback) -- the only role besides admin/superuser that can submit an import run, needed for E2E coverage of the File Imports & Validation upload flow.
+- New changeset `0049_grant_app_user_file_import_sequences.sql` grants `app_user` `USAGE, SELECT` on the `validation_issue`/`normalized_record` BIGSERIAL sequences and adds the missing `ALTER DEFAULT PRIVILEGES ... ON SEQUENCES` clause for future tables.
+- E2E: `apps/web/tests/e2e/functional/file-import-screens.spec.ts` covers Screen 02's network-interruption/retry state and Screen 06's partial-import flow.
+- E2E: `apps/web/tests/e2e/fileValidationWorkbooks.ts` provides File-Validation-compliant bank/GL fixture builders for E2E specs, separate from `packages/test-fixtures`'s pre-File-Validation row sets.
+
+### Changed
+
+- `LIQUIBASE_IMAGE` default (`compose.yaml`, `packages/persistence/liquibase/Dockerfile`) pinned to `4.31`, matching `packages/persistence/tests/testHelpers/liquibase.ts`'s existing pin.
+
+### Fixed
+
+- `app_user` could not insert into `validation_issue` or `normalized_record` ("permission denied for sequence ..._id_seq") on any freshly migrated database: changeset `0031`'s default-privilege grant covered future tables but not sequences, so the BIGSERIAL `id` columns changeset `0042` added were never granted. This blocked every import run past the upload step. Fixed by changeset `0049`.
+- Liquibase `4.33.0`+ rejects this project's `includeAll`-loaded formatted-SQL changesets with a Pro-license error; pinning to `4.31` (already proven by the Testcontainers-based Postgres-integration suite) fixes migrations on any freshly created database.
+- E2E specs (`reconciliation.spec.ts`, `reconciliation-edge-cases.spec.ts`, `route-sweep.spec.ts`, `visual-baseline.spec.ts`, `auth.ts`) updated for Phase 9's "Run reconciliation" → "Submit run" button rename, and for the File Validation Engine's structural header requirements -- the shared `packages/test-fixtures` row sets use the pre-File-Validation header convention and no longer pass Step 1 on their own.
 
 ## [2026-06-18]
 

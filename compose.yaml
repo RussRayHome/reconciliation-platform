@@ -111,7 +111,14 @@ services:
       context: packages/persistence/liquibase
       dockerfile: Dockerfile
       args:
-        LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.33.0}
+        # 4.33.0 (and other recent releases) reject includeAll-loaded formatted-SQL changesets
+        # with "Using 'file' with formatted SQL requires a valid Liquibase Pro key" -- a Pro-
+        # gating change that breaks every changeset in this project (all loaded via
+        # changelog-master.yaml's includeAll), not something specific to this repo's SQL. 4.31
+        # runs this changelog fully OSS (verified against all 49 changesets on a fresh database)
+        # and matches packages/persistence/tests/testHelpers/liquibase.ts's own pin, which is why
+        # the Postgres-integration test suite never hit this.
+        LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.31}
     depends_on:
       postgres:
         condition: service_healthy

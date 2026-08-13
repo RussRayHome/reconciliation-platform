@@ -1,4 +1,7 @@
-ARG LIQUIBASE_IMAGE=liquibase/liquibase:4.33.0
+# See compose.yaml's LIQUIBASE_IMAGE comment: 4.33.0+ rejects includeAll-loaded formatted-SQL
+# changesets without a Pro license key. 4.31 runs this changelog fully OSS and matches
+# packages/persistence/tests/testHelpers/liquibase.ts's own pin.
+ARG LIQUIBASE_IMAGE=liquibase/liquibase:4.31
 
 FROM ${LIQUIBASE_IMAGE}
 

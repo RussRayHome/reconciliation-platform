@@ -225,6 +225,15 @@ const localLoginUsers: Record<
     lastName: '',
     role: 'financial-analyst',
   },
+  // senior-analyst, mirroring create-users.psql's real-DB seed of the same account -- bray
+  // (financial-analyst) can't submit an import run (canSubmitImportRuns), so upload/submit-flow
+  // tests need this account instead.
+  bray2: {
+    password: 'P@ssw0rd',
+    firstName: 'bray2',
+    lastName: '',
+    role: 'senior-analyst',
+  },
 };
 
 const findDecisionTarget = (
