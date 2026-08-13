@@ -903,4 +903,53 @@ export class PostgresImportValidationStore {
       return { outcome: 'decided', item: this.toRunApprovalListItem(row, usernamesById) };
     });
   }
+
+  /** README §7 item 7: "an analyst... may withdraw a submission" -- pulls a PENDING_APPROVAL run
+   * (already validated, matching already fired per this build's immediate-execution decision)
+   * back to DRAFT so the analyst can fix and resubmit. Only the run's own submitter may withdraw
+   * it -- checked here, not just at the route's role gate, since any senior-analyst passes that
+   * gate but this is a self-service action on one's own submission, not a general capability. */
+  async withdrawRunApproval(
+    organizationId: string,
+    runId: string,
+    actorUsername: string,
+  ): Promise<
+    | { outcome: 'not_found' }
+    | { outcome: 'invalid_state'; currentStatus: string }
+    | { outcome: 'not_submitter' }
+    | { outcome: 'withdrawn' }
+  > {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const actorUserId = await this.resolveUserId(client, organizationId, actorUsername);
+      if (!actorUserId) {
+        throw new Error(
+          `withdrawRunApproval: actor username "${actorUsername}" has no matching reconciliation_user row.`,
+        );
+      }
+
+      const runResult = await client.query<{ status: string; submitted_by: string | null }>(
+        'SELECT status, submitted_by FROM reconciliation_run WHERE id = $1 FOR UPDATE',
+        [runId],
+      );
+      const runRow = runResult.rows[0];
+      if (!runRow) {
+        return { outcome: 'not_found' as const };
+      }
+      if (runRow.status !== 'PENDING_APPROVAL') {
+        return { outcome: 'invalid_state' as const, currentStatus: runRow.status };
+      }
+      if (runRow.submitted_by !== actorUserId) {
+        return { outcome: 'not_submitter' as const };
+      }
+
+      await client.query(
+        `UPDATE reconciliation_run
+            SET status = 'DRAFT', submitted_by = NULL, submitted_at = NULL
+          WHERE id = $1`,
+        [runId],
+      );
+
+      return { outcome: 'withdrawn' as const };
+    });
+  }
 }

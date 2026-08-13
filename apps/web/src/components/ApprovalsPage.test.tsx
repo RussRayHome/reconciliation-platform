@@ -20,6 +20,7 @@ const mockedApi = vi.hoisted(() => ({
   getApprovalsRequest: vi.fn<typeof ApiModule.getApprovalsRequest>(),
   decideApprovalRequest: vi.fn<typeof ApiModule.decideApprovalRequest>(),
   claimApprovalRequest: vi.fn<typeof ApiModule.claimApprovalRequest>(),
+  withdrawImportRunRequest: vi.fn<typeof ApiModule.withdrawImportRunRequest>(),
 }));
 
 vi.mock('../lib/api', async () => {
@@ -29,6 +30,7 @@ vi.mock('../lib/api', async () => {
     getApprovalsRequest: mockedApi.getApprovalsRequest,
     decideApprovalRequest: mockedApi.decideApprovalRequest,
     claimApprovalRequest: mockedApi.claimApprovalRequest,
+    withdrawImportRunRequest: mockedApi.withdrawImportRunRequest,
   };
 });
 
@@ -82,12 +84,25 @@ beforeEach(() => {
   mockedApi.getApprovalsRequest.mockReset();
   mockedApi.decideApprovalRequest.mockReset();
   mockedApi.claimApprovalRequest.mockReset();
+  mockedApi.withdrawImportRunRequest.mockReset();
   mockedApi.getApprovalsRequest.mockImplementation((type: ApprovalRow['type']) => {
     if (mockedApi.error) return Promise.reject(mockedApi.error);
     return Promise.resolve(mockedApi.rows.filter((row) => row.type === type));
   });
   mockedApi.decideApprovalRequest.mockResolvedValue(undefined);
   mockedApi.claimApprovalRequest.mockResolvedValue(undefined);
+  mockedApi.withdrawImportRunRequest.mockResolvedValue({
+    id: 'run-1',
+    organizationId: 'org-1',
+    label: 'August Recon',
+    accountIdentifier: null,
+    frequency: 'MONTHLY',
+    periodYear: 2026,
+    periodMonth: 8,
+    status: 'DRAFT',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    files: [],
+  });
 });
 
 describe('ApprovalsPage', () => {
@@ -177,6 +192,53 @@ describe('ApprovalsPage', () => {
       expect(mockedApi.claimApprovalRequest).toHaveBeenCalledWith('import', 'row-1'),
     );
     await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalled());
+  });
+
+  it('withdraws a pending reconciliationRun submission for a non-approver viewer', async () => {
+    mockedApi.rows = [PENDING_ASSIGNED_RUN];
+    renderPage({ canApprove: false });
+    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+
+    mockedApi.getApprovalsRequest.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+
+    await waitFor(() =>
+      expect(mockedApi.withdrawImportRunRequest).toHaveBeenCalledWith('run-1'),
+    );
+    await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalled());
+  });
+
+  it('shows no row action for a non-approver on a non-reconciliationRun or non-pending row', async () => {
+    const decidedRun: ApprovalRow = { ...PENDING_ASSIGNED_RUN, id: 'run-2', state: 'APPROVED' };
+    mockedApi.rows = [PENDING_ASSIGNED, decidedRun];
+    renderPage({ canApprove: false });
+    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+
+    expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
+  });
+
+  it('never shows Withdraw for an approver viewer, even on a pending reconciliationRun row', async () => {
+    mockedApi.rows = [PENDING_ASSIGNED_RUN];
+    renderPage({ canApprove: true });
+    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+
+    expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
+  });
+
+  it('shows an action error when withdrawing fails, without losing the table', async () => {
+    mockedApi.rows = [PENDING_ASSIGNED_RUN];
+    mockedApi.withdrawImportRunRequest.mockRejectedValue(new Error('Only the analyst who submitted this run may withdraw it.'));
+    renderPage({ canApprove: false });
+    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Only the analyst who submitted this run may withdraw it.',
+      ),
+    );
+    expect(screen.getByText('August Recon')).toBeInTheDocument();
   });
 
   it('approves and rejects an assigned pending row, and uses the Promote label for matching-rule rows', async () => {

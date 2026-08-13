@@ -2775,6 +2775,53 @@ export const createApp = (
     }
   });
 
+  // Phase 14: README §7 item 7, "an analyst... may withdraw a submission" -- pulls a
+  // PENDING_APPROVAL run back to DRAFT. Self-service (the submitter withdrawing their own run),
+  // not a general approver action, so this lives under /api/imports/runs/:id rather than the
+  // polymorphic /api/approvals/:type/:id/* surface Phase 7 built for approver decisions.
+  app.post('/api/imports/runs/:id/withdraw', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+      response.status(403).json({ message: 'Only a senior analyst may withdraw an import run.' });
+      return;
+    }
+
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+
+      const result = await importValidationStore.withdrawRunApproval(
+        organizationId,
+        runId,
+        request.auth!.username,
+      );
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+      if (result.outcome === 'invalid_state') {
+        response.status(409).json({
+          message: `Import run cannot be withdrawn from status ${result.currentStatus}.`,
+        });
+        return;
+      }
+      if (result.outcome === 'not_submitter') {
+        response
+          .status(403)
+          .json({ message: 'Only the analyst who submitted this run may withdraw it.' });
+        return;
+      }
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const run = await importRunStore.getRunSummary(organizationId, runId);
+      response.json({ run });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Phase 12 (Screen 06): accepts a VALIDATION_FAILED run's already-passing rows and triggers
   // matching -- per the decided scope, matching still processes the *original* file bytes in
   // full (the existing GL<->Bank engine has no concept of excluded rows and stays isolated from

@@ -769,6 +769,18 @@ export const claimApprovalRequest = async (
   await parseResponse<unknown>(response);
 };
 
+/** Phase 14: pulls a PENDING_APPROVAL import run back to DRAFT (README §7 item 7, "an analyst...
+ * may withdraw a submission"). Self-service on the submitter's own run, not a decision on the
+ * polymorphic /api/approvals/:type/:id/* surface -- lives under /api/imports/runs/:id instead,
+ * same as submit/import. */
+export const withdrawImportRunRequest = async (runId: string): Promise<ImportRunSummary> => {
+  const response = await apiFetch(`/api/imports/runs/${encodeURIComponent(runId)}/withdraw`, {
+    method: 'POST',
+  });
+  const payload = await parseResponse<{ run: ImportRunSummary }>(response);
+  return payload.run;
+};
+
 /** Saves (or adds a new version to) a paired GL + Bank mapping profile. */
 export const saveMappingProfileRequest = async (
   payload: MappingProfileSavePayload,

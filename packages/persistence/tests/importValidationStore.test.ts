@@ -878,6 +878,81 @@ describe('PostgresImportValidationStore', () => {
     });
   });
 
+  describe('withdrawRunApproval (Phase 14)', () => {
+    it('returns not_found for a nonexistent run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportValidationStore(pool);
+      const result = await store.withdrawRunApproval(
+        defaultOrganizationId,
+        '00000000-0000-0000-0000-000000000000',
+        submittedByUserName,
+      );
+      expect(result).toEqual({ outcome: 'not_found' });
+    });
+
+    it('returns invalid_state when the run is not PENDING_APPROVAL', async () => {
+      if (startupError) throw startupError;
+
+      const run = await createDraftRun({ label: 'Withdraw Still Draft' });
+      const store = new PostgresImportValidationStore(pool);
+
+      const result = await store.withdrawRunApproval(
+        defaultOrganizationId,
+        run.id,
+        submittedByUserName,
+      );
+      expect(result).toEqual({ outcome: 'invalid_state', currentStatus: 'DRAFT' });
+    });
+
+    it('returns not_submitter when the actor did not submit the run', async () => {
+      if (startupError) throw startupError;
+
+      const run = await createPendingApprovalRun({ label: 'Withdraw Wrong Actor' });
+      const store = new PostgresImportValidationStore(pool);
+
+      const result = await store.withdrawRunApproval(defaultOrganizationId, run.id, approverUserName);
+      expect(result).toEqual({ outcome: 'not_submitter' });
+    });
+
+    it('withdraws the run to DRAFT and clears submitted_by/submitted_at', async () => {
+      if (startupError) throw startupError;
+
+      const run = await createPendingApprovalRun({ label: 'Withdraw Me' });
+      const store = new PostgresImportValidationStore(pool);
+
+      const result = await store.withdrawRunApproval(
+        defaultOrganizationId,
+        run.id,
+        submittedByUserName,
+      );
+      expect(result).toEqual({ outcome: 'withdrawn' });
+
+      const runRow = await pool.query<{
+        status: string;
+        submitted_by: string | null;
+        submitted_at: Date | null;
+      }>('SELECT status, submitted_by, submitted_at FROM reconciliation_run WHERE id = $1', [run.id]);
+      expect(runRow.rows[0]).toMatchObject({ status: 'DRAFT', submitted_by: null, submitted_at: null });
+    });
+
+    it('returns invalid_state on a second withdraw after the first succeeded', async () => {
+      if (startupError) throw startupError;
+
+      const run = await createPendingApprovalRun({ label: 'Withdraw Twice' });
+      const store = new PostgresImportValidationStore(pool);
+
+      await store.withdrawRunApproval(defaultOrganizationId, run.id, submittedByUserName);
+      const second = await store.withdrawRunApproval(
+        defaultOrganizationId,
+        run.id,
+        submittedByUserName,
+      );
+
+      expect(second).toEqual({ outcome: 'invalid_state', currentStatus: 'DRAFT' });
+    });
+  });
+
   describe('run approvals', () => {
     describe('listRunApprovals', () => {
       it('returns PENDING_APPROVAL runs with resolved usernames', async () => {
