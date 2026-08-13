@@ -73,10 +73,11 @@ import type { AppTab } from './lib/appCatalog';
 import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
-import { useImportRunSubmit } from './hooks/useImportRunSubmit';
+import { ImportValidationFailedError, useImportRunSubmit } from './hooks/useImportRunSubmit';
 import { useImportUploadTransfer } from './hooks/useImportUploadTransfer';
 import { buildTransferCardProps } from './lib/importUploadProgress';
 import { ImportUploadCard } from './components/ImportUploadCard';
+import { ImportValidationFailureView } from './components/ImportValidationFailure';
 import {
   BANK_TEMPLATE_URL,
   BANK_TEMPLATE_XLSX_URL,
@@ -1678,7 +1679,16 @@ function SourceUploadSection({
               Reconciliation label is required before running.
             </p>
           ) : null}
-          {reconciliation.error ? (
+          {reconciliation.error instanceof ImportValidationFailedError ? (
+            <ImportValidationFailureView
+              run={reconciliation.error.run}
+              onRetryUpload={() => {
+                reconciliation.reset();
+                setBankFile(null);
+                setGlFile(null);
+              }}
+            />
+          ) : reconciliation.error ? (
             <p className="error-banner import-screen__status" role="alert">
               {reconciliation.error.message}
             </p>

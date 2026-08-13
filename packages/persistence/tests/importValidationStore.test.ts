@@ -531,6 +531,19 @@ describe('PostgresImportValidationStore', () => {
           rowNumber: 1,
         });
       });
+
+      it('filters by importFileId (Phase 11 failure detail)', async () => {
+        if (startupError) throw startupError;
+
+        const { run, bankFile } = await seedRun('Issues Drilldown ImportFileId Filter');
+        const store = new PostgresImportValidationStore(pool);
+
+        const page = await store.listRunIssues(defaultOrganizationId, run.id, 50, 0, {
+          importFileId: bankFile.importFileId,
+        });
+        expect(page!.total).toBe(2);
+        expect(page!.items.every((item) => item.importFileId === bankFile.importFileId)).toBe(true);
+      });
     });
 
     describe('listRunRecords', () => {

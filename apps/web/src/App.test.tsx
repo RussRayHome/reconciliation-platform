@@ -492,6 +492,21 @@ const createImportRunSummary = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const createImportRunFile = (overrides: Record<string, unknown> = {}) => ({
+  importFileId: 'file-1',
+  role: 'GL',
+  sourceType: 'GL',
+  originalFilename: 'gl.csv',
+  fileFormat: 'CSV',
+  validationStatus: 'VALID',
+  byteSize: 100,
+  contentSha256: 'sha-1',
+  rowCount: 10,
+  errorCount: 0,
+  warningCount: 0,
+  ...overrides,
+});
+
 /** fetch's first parameter is `RequestInfo | URL`, not always a plain string -- String(input)
  * would use Object's default (unhelpful) stringification for a bare object shape, hence a real
  * type-narrowing helper instead. */
@@ -1636,7 +1651,7 @@ describe('App', () => {
     });
   });
 
-  it('surfaces a message instead of hanging when the import run fails validation', async () => {
+  it('surfaces a plain message when the failed run reports no invalid files (defensive fallback)', async () => {
     installFakeImportRunXhr();
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = requestUrl(input);
@@ -1670,6 +1685,216 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/failed validation/i);
+    });
+  });
+
+  it('shows Screen 05 (structure failure) with header comparison and gate sequence for a structural gate failure', async () => {
+    installFakeImportRunXhr();
+    const failedFile = createImportRunFile({
+      importFileId: 'file-gl-failed',
+      role: 'GL',
+      sourceType: 'GL',
+      originalFilename: 'gl_export_2026-08.csv',
+      validationStatus: 'INVALID',
+      rowCount: 0,
+      errorCount: 1,
+    });
+    const validFile = createImportRunFile({
+      importFileId: 'file-bank-valid',
+      role: 'BANK',
+      sourceType: 'BANK',
+      originalFilename: 'bank.xlsx',
+      fileFormat: 'XLSX',
+      validationStatus: 'VALID',
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              importJobId: 'import-job-1',
+              status: 'completed',
+              passed: false,
+              run: createImportRunSummary({
+                status: 'VALIDATION_FAILED',
+                files: [validFile, failedFile],
+              }),
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (
+        url ===
+        `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              importFileId: failedFile.importFileId,
+              originalFilename: failedFile.originalFilename,
+              sourceType: 'GL',
+              fileFormat: 'CSV',
+              validationStatus: 'INVALID',
+              rowCount: 0,
+              errorCount: 1,
+              warningCount: 0,
+              importableRowCount: 0,
+              gateSequence: [
+                { gate: 'HEADER', state: 'PASSED' },
+                { gate: 'COLUMN_ORDER', state: 'FAILED' },
+                { gate: 'CELL_VALUES', state: 'NOT_RUN' },
+              ],
+              headerComparison: [
+                { position: 1, expected: 'transaction_date', found: 'transaction_date', matches: true },
+                { position: 2, expected: 'currency_code', found: null, matches: false },
+              ],
+              issues: [
+                {
+                  severity: 'ERROR',
+                  code: 'STRUCT_COLUMN_MISSING',
+                  message: 'Required column "currency_code" is absent.',
+                  field: 'currency_code',
+                  rowNumber: null,
+                },
+              ],
+              issuesByCode: [{ code: 'STRUCT_COLUMN_MISSING', severity: 'ERROR', count: 1 }],
+              amountTolerance: 0.005,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      throw new Error(`unexpected fetch call to ${url}`);
+    });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
+      target: { files: [new File(['gl'], 'gl.csv')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('gl_export_2026-08.csv — Step 2 of 3')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/STRUCT_COLUMN_MISSING · ERROR/)).toBeInTheDocument();
+    expect(screen.getByText('Required column "currency_code" is absent.')).toBeInTheDocument();
+    expect(screen.getByText('— absent —')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 · Column order').closest('div')).toHaveTextContent('FAILED');
+    expect(screen.getByText('Step 3 · Cell values').closest('div')).toHaveTextContent('NOT RUN');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fix & re-upload' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('gl_export_2026-08.csv — Step 2 of 3')).not.toBeInTheDocument();
+    });
+    expect(screen.getAllByText('No file selected')).toHaveLength(2);
+  });
+
+  it('shows Screen 07 (all rows invalid) when every row fails Step 3 with zero rows importable', async () => {
+    installFakeImportRunXhr();
+    const failedFile = createImportRunFile({
+      importFileId: 'file-gl-failed',
+      role: 'GL',
+      sourceType: 'GL',
+      originalFilename: 'gl_export_2026-08.csv',
+      validationStatus: 'INVALID',
+      rowCount: 486,
+      errorCount: 486,
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              importJobId: 'import-job-1',
+              status: 'completed',
+              passed: false,
+              run: createImportRunSummary({
+                status: 'VALIDATION_FAILED',
+                files: [failedFile],
+              }),
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (
+        url ===
+        `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              importFileId: failedFile.importFileId,
+              originalFilename: failedFile.originalFilename,
+              sourceType: 'GL',
+              fileFormat: 'CSV',
+              validationStatus: 'INVALID',
+              rowCount: 486,
+              errorCount: 486,
+              warningCount: 0,
+              importableRowCount: 0,
+              gateSequence: [
+                { gate: 'HEADER', state: 'PASSED' },
+                { gate: 'COLUMN_ORDER', state: 'PASSED' },
+                { gate: 'CELL_VALUES', state: 'PASSED' },
+              ],
+              headerComparison: null,
+              issues: [],
+              issuesByCode: [{ code: 'GL_UNBALANCED', severity: 'ERROR', count: 486 }],
+              amountTolerance: 0.005,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/error-report.csv`) {
+        return Promise.resolve(
+          new Response('file,line,column,code,severity,message,raw_value\n', {
+            status: 200,
+            headers: { 'Content-Type': 'text/csv' },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch call to ${url}`);
+    });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
+      target: { files: [new File(['gl'], 'gl.csv')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('0 of 486 GL lines passed validation')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Every entry failed GL_UNBALANCED/)).toBeInTheDocument();
+    expect(screen.getByText('GL_UNBALANCED · 486')).toBeInTheDocument();
+    expect(screen.getByText('tolerance 0.005')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download error report' }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `/api/imports/runs/${IMPORT_RUN_ID}/error-report.csv`,
+      );
     });
   });
 

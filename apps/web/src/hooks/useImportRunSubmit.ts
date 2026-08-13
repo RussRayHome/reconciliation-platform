@@ -6,10 +6,25 @@ import {
   submitImportRunRequest,
   type CreateImportRunOptions,
   type CreateImportRunPayload,
+  type ImportRunSummary,
   type ReconciliationRunResponse,
 } from '../lib/api';
 
 export type ImportRunSubmitPayload = CreateImportRunPayload & CreateImportRunOptions;
+
+/** Thrown instead of a plain `Error` when the run was created and submitted but failed
+ * validation -- carries the run summary (already returned inline by `submitImportRunRequest`) so
+ * the UI can show Screen 05/07's failure detail for the invalid file(s) rather than just a
+ * generic error banner. */
+export class ImportValidationFailedError extends Error {
+  readonly run: ImportRunSummary;
+
+  constructor(run: ImportRunSummary) {
+    super('Import run failed validation.');
+    this.name = 'ImportValidationFailedError';
+    this.run = run;
+  }
+}
 
 /**
  * Creates a DRAFT import run, submits it, and -- once validation passes synchronously and
@@ -18,10 +33,10 @@ export type ImportRunSubmitPayload = CreateImportRunPayload & CreateImportRunOpt
  * consumer of that mutation's `{data, isPending, error}` (progress stepper, run bar, review tabs,
  * exports) keeps working unchanged.
  *
- * Two outcomes have no live-progress screen yet (Screens 02/05-07, not built until later phases):
- * a queued (async) submission, and a run that fails validation. Both surface as a thrown Error
- * through the mutation's existing `.error` rendering rather than silently doing nothing -- an
- * honest placeholder, not a full progress UI.
+ * A queued (async) submission has no live-progress screen yet (Screens 02/04/06/08, not built
+ * until later phases) and surfaces as a thrown `Error` through the mutation's existing `.error`
+ * rendering. A validation failure throws `ImportValidationFailedError` instead, carrying the run
+ * summary so `SourceUploadSection` can render the Phase 11 failure screens.
  */
 export const useImportRunSubmit = () =>
   useMutation<ReconciliationRunResponse, Error, ImportRunSubmitPayload>({
@@ -42,10 +57,7 @@ export const useImportRunSubmit = () =>
       }
 
       if (!result.passed || !result.matchingJobId) {
-        throw new Error(
-          'Import run failed validation. Row-level details aren\'t available in this view yet ' +
-            '-- check Approvals › Imported files (Rejected tab).',
-        );
+        throw new ImportValidationFailedError(result.run);
       }
 
       return getReconciliationRunByIdRequest(result.matchingJobId);

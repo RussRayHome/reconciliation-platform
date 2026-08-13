@@ -60,6 +60,23 @@ interface ImportJobRow {
  * for `!lifecycleStore`) -- otherwise this fake would also need reconciliation_job/
  * reconciliation_source_file/reconciliation_source_file_content.
  */
+interface CapturedIssueRow {
+  id: string;
+  import_file_id: string;
+  severity: 'ERROR' | 'WARNING';
+  code: string;
+  row_number: number | null;
+  entry_id: string | null;
+  field: string | null;
+  message: string;
+  created_at: string;
+}
+
+interface CapturedRecordRow {
+  import_file_id: string;
+  source_type: string;
+}
+
 const createFakeSubmitPool = () => {
   const importFiles: ImportFileRow[] = [];
   const runs: RunRow[] = [];
@@ -69,6 +86,11 @@ const createFakeSubmitPool = () => {
   const ruleVersionIdByCode = new Map(
     FILE_VALIDATION_RULES.map((rule, index) => [rule.code, `rule-version-${index}`]),
   );
+  // Phase 11: captured so GET .../failure-detail and .../error-report.csv (both read back what
+  // validation wrote) have real data to serve -- the pre-Phase-11 INSERT handlers below just
+  // acknowledged the write and discarded it, which was fine while nothing read it back.
+  const capturedIssues: CapturedIssueRow[] = [];
+  const capturedRecords: CapturedRecordRow[] = [];
 
   const query = (
     text: string,
@@ -201,11 +223,83 @@ const createFakeSubmitPool = () => {
     }
 
     if (text.includes('INSERT INTO validation_issue')) {
+      const [, , importFileId, , severity, code, rowNumber, entryId, field, message] = params as [
+        string,
+        string,
+        string,
+        string,
+        'ERROR' | 'WARNING',
+        string,
+        number | null,
+        string | null,
+        string | null,
+        string,
+      ];
+      capturedIssues.push({
+        id: `issue-${capturedIssues.length + 1}`,
+        import_file_id: importFileId,
+        severity,
+        code,
+        row_number: rowNumber,
+        entry_id: entryId,
+        field,
+        message,
+        created_at: new Date(1717200000000 + capturedIssues.length).toISOString(),
+      });
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
 
     if (text.includes('INSERT INTO canonical_record')) {
+      const [, , importFileId, , sourceType] = params as [string, string, string, string, string];
+      capturedRecords.push({ import_file_id: importFileId, source_type: sourceType });
       return Promise.resolve({ rows: [], rowCount: 1 });
+    }
+
+    if (text.includes('FROM validation_issue')) {
+      let idx = 1;
+      let severity: string | undefined;
+      let code: string | undefined;
+      let importFileId: string | undefined;
+      if (text.includes('severity = $')) severity = params[idx++] as string;
+      if (text.includes('code = $')) code = params[idx++] as string;
+      if (text.includes('import_file_id = $')) importFileId = params[idx++] as string;
+
+      const filtered = capturedIssues.filter(
+        (row) =>
+          (!severity || row.severity === severity) &&
+          (!code || row.code === code) &&
+          (!importFileId || row.import_file_id === importFileId),
+      );
+
+      if (text.startsWith('SELECT COUNT')) {
+        return Promise.resolve({ rows: [{ count: String(filtered.length) }], rowCount: 1 });
+      }
+
+      const [limit, offset] = params.slice(idx) as [number, number];
+      const page = filtered.slice(offset, offset + limit);
+      return Promise.resolve({ rows: page, rowCount: page.length });
+    }
+
+    if (text.includes('FROM canonical_record')) {
+      let idx = 1;
+      let sourceType: string | undefined;
+      let importFileId: string | undefined;
+      if (text.includes('source_type = $')) sourceType = params[idx++] as string;
+      if (text.includes('import_file_id = $')) importFileId = params[idx++] as string;
+
+      const filtered = capturedRecords.filter(
+        (row) =>
+          (!sourceType || row.source_type === sourceType) &&
+          (!importFileId || row.import_file_id === importFileId),
+      );
+
+      if (text.startsWith('SELECT COUNT')) {
+        return Promise.resolve({ rows: [{ count: String(filtered.length) }], rowCount: 1 });
+      }
+
+      const [limit, offset] = params.slice(idx) as [number, number];
+      const page = filtered.slice(offset, offset + limit);
+      return Promise.resolve({ rows: page, rowCount: page.length });
     }
 
     if (text.includes('UPDATE import_file')) {
@@ -254,9 +348,13 @@ const createFakeSubmitPool = () => {
     }
 
     if (text.includes('FROM run_source_file rsf') && text.includes('JOIN import_file')) {
-      const [reconciliationRunId] = params as [string];
+      const [reconciliationRunId, requestedFileId] = params as [string, string | undefined];
       const links = runSourceFiles
-        .filter((link) => link.reconciliation_run_id === reconciliationRunId)
+        .filter(
+          (link) =>
+            link.reconciliation_run_id === reconciliationRunId &&
+            (!text.includes('AND f.id = $2') || link.import_file_id === requestedFileId),
+        )
         .sort((a, b) => a.created_at.localeCompare(b.created_at));
       const rows = links.map((link) => {
         const file = importFiles.find((candidate) => candidate.id === link.import_file_id)!;
@@ -268,6 +366,9 @@ const createFakeSubmitPool = () => {
           validation_status: file.validation_status,
           byte_size: file.byte_size,
           content_sha256: file.content_sha256,
+          row_count: file.row_count,
+          error_count: file.error_count,
+          warning_count: file.warning_count,
           role: link.role,
         };
       });
@@ -411,5 +512,103 @@ describe('POST /api/imports/runs/:id/submit', () => {
     );
 
     expect(response.status).toBe(501);
+  });
+});
+
+describe('GET /api/imports/runs/:id/files/:fileId/failure-detail (Phase 11)', () => {
+  let pool: Pool;
+
+  beforeEach(() => {
+    pool = createFakeSubmitPool();
+  });
+
+  const submitFailingRun = async (app: ReturnType<typeof appWithPool>) => {
+    const created = await createRun(app, { bankFile: invalidBankCsv, glFile: cleanGlCsv });
+    const submitted = await authedApp(app, { role: 'senior-analyst' }).post(
+      `/api/imports/runs/${created.body.id}/submit`,
+    );
+    expect(submitted.body.run.status).toBe('VALIDATION_FAILED');
+    const failedFile = submitted.body.run.files.find(
+      (file: { validationStatus: string }) => file.validationStatus === 'INVALID',
+    );
+    return { runId: created.body.id, failedFile };
+  };
+
+  it('returns the gate sequence and header comparison for a HEADER-gate failure', async () => {
+    const app = appWithPool(pool);
+    const { runId, failedFile } = await submitFailingRun(app);
+
+    const response = await authedApp(app, { role: 'senior-analyst' }).get(
+      `/api/imports/runs/${runId}/files/${failedFile.importFileId}/failure-detail`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.gateSequence).toEqual([
+      { gate: 'HEADER', state: 'FAILED' },
+      { gate: 'COLUMN_ORDER', state: 'NOT_RUN' },
+      { gate: 'CELL_VALUES', state: 'NOT_RUN' },
+    ]);
+    expect(response.body.headerComparison).toBeTruthy();
+    expect(
+      response.body.issues.some((issue: { code: string }) => issue.code === 'STRUCT_HEADER_MISSING'),
+    ).toBe(true);
+    expect(response.body.importableRowCount).toBe(0);
+  });
+
+  it('returns 404 when the file is not part of the given run', async () => {
+    const app = appWithPool(pool);
+    const { runId } = await submitFailingRun(app);
+
+    const response = await authedApp(app, { role: 'senior-analyst' }).get(
+      `/api/imports/runs/${runId}/files/00000000-0000-0000-0000-000000000000/failure-detail`,
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for an unknown run id', async () => {
+    const app = appWithPool(pool);
+
+    const response = await authedApp(app, { role: 'senior-analyst' }).get(
+      '/api/imports/runs/00000000-0000-0000-0000-000000000000/files/some-file/failure-detail',
+    );
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe('GET /api/imports/runs/:id/error-report.csv (Phase 11)', () => {
+  let pool: Pool;
+
+  beforeEach(() => {
+    pool = createFakeSubmitPool();
+  });
+
+  it('returns a CSV with one row per finding, including the failed file\'s name', async () => {
+    const app = appWithPool(pool);
+    const created = await createRun(app, { bankFile: invalidBankCsv, glFile: cleanGlCsv });
+    await authedApp(app, { role: 'senior-analyst' }).post(
+      `/api/imports/runs/${created.body.id}/submit`,
+    );
+
+    const response = await authedApp(app, { role: 'senior-analyst' }).get(
+      `/api/imports/runs/${created.body.id}/error-report.csv`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('text/csv');
+    expect(response.text.split('\n')[0]).toBe('file,line,column,code,severity,message,raw_value');
+    expect(response.text).toContain('bank.csv');
+    expect(response.text).toContain('STRUCT_HEADER_MISSING');
+  });
+
+  it('returns 404 for an unknown run id', async () => {
+    const app = appWithPool(pool);
+
+    const response = await authedApp(app, { role: 'senior-analyst' }).get(
+      '/api/imports/runs/00000000-0000-0000-0000-000000000000/error-report.csv',
+    );
+
+    expect(response.status).toBe(404);
   });
 });

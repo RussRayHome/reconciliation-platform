@@ -219,4 +219,80 @@ describe('PostgresImportRunStore', () => {
     const crossTenantRead = await runtimeStore.getRunSummary(otherOrganizationId, created.id);
     expect(crossTenantRead).toBeNull();
   });
+
+  describe('getFileWithBytes (Phase 11 failure detail)', () => {
+    it('returns the file metadata and raw bytes exactly as stored', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const created = await store.createRun(buildRunInput({ label: 'Failure Detail Fetch' }));
+      const bankFile = created.files.find((file) => file.role === 'BANK')!;
+
+      const fetched = await store.getFileWithBytes(defaultOrganizationId, created.id, bankFile.importFileId);
+
+      expect(fetched).toMatchObject({
+        importFileId: bankFile.importFileId,
+        sourceType: 'BANK',
+        originalFilename: 'bank.csv',
+        fileFormat: 'CSV',
+      });
+      expect(Buffer.compare(fetched!.bytes, bankBytes)).toBe(0);
+    });
+
+    it('returns null when the file is not part of the given run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const runA = await store.createRun(buildRunInput({ label: 'Run A For Cross-Run Check' }));
+      const runB = await store.createRun(
+        buildRunInput({
+          label: 'Run B For Cross-Run Check',
+          files: [
+            { role: 'BANK', sourceType: 'BANK', originalFilename: 'other-bank.csv', fileFormat: 'CSV', bytes: Buffer.from('x') },
+            { role: 'GL', sourceType: 'GL', originalFilename: 'other-gl.csv', fileFormat: 'CSV', bytes: Buffer.from('y') },
+          ],
+        }),
+      );
+      const runAFile = runA.files.find((file) => file.role === 'BANK')!;
+
+      const fetched = await store.getFileWithBytes(defaultOrganizationId, runB.id, runAFile.importFileId);
+      expect(fetched).toBeNull();
+    });
+
+    it('returns null for a nonexistent run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const created = await store.createRun(buildRunInput({ label: 'For Nonexistent Run Check' }));
+      const bankFile = created.files.find((file) => file.role === 'BANK')!;
+
+      const fetched = await store.getFileWithBytes(
+        defaultOrganizationId,
+        '00000000-0000-0000-0000-000000000000',
+        bankFile.importFileId,
+      );
+      expect(fetched).toBeNull();
+    });
+
+    it('does not leak another organization\'s file bytes across the tenant boundary', async () => {
+      if (startupError) throw startupError;
+
+      const otherOrganization = await pool.query<{ id: string }>(
+        "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Import Run Store Bytes Test Org') RETURNING id",
+      );
+      const otherOrganizationId = otherOrganization.rows[0]!.id;
+
+      const adminStore = new PostgresImportRunStore(pool);
+      const created = await adminStore.createRun(buildRunInput({ label: 'Tenant Bytes Run' }));
+      const bankFile = created.files.find((file) => file.role === 'BANK')!;
+
+      const runtimeStore = new PostgresImportRunStore(runtimePool);
+      const crossTenantRead = await runtimeStore.getFileWithBytes(
+        otherOrganizationId,
+        created.id,
+        bankFile.importFileId,
+      );
+      expect(crossTenantRead).toBeNull();
+    });
+  });
 });

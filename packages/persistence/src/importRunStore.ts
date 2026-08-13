@@ -36,6 +36,13 @@ export interface ImportRunFileSummary {
   validationStatus: string;
   byteSize: number;
   contentSha256: string;
+  /** Set once validation has run for this file (Phase 6's `recordFileValidationOutcome`); null
+   * beforehand. `rowCount` is every data row the parser found, `errorCount`/`warningCount` count
+   * `validation_issue` rows by severity -- these were already persisted but not exposed until
+   * Phase 11 needed them for the structure-failure/all-rows-invalid screens. */
+  rowCount: number | null;
+  errorCount: number | null;
+  warningCount: number | null;
 }
 
 export interface ImportRunSummary {
@@ -59,6 +66,9 @@ interface ImportFileRow {
   validation_status: string;
   byte_size: string;
   content_sha256: string;
+  row_count: number | null;
+  error_count: number | null;
+  warning_count: number | null;
 }
 
 /**
@@ -94,6 +104,9 @@ export class PostgresImportRunStore {
           validationStatus: importFileRow.validation_status,
           byteSize: Number(importFileRow.byte_size),
           contentSha256: importFileRow.content_sha256,
+          rowCount: null,
+          errorCount: null,
+          warningCount: null,
         });
       }
 
@@ -208,7 +221,8 @@ export class PostgresImportRunStore {
         ImportFileRow & { role: string }
       >(
         `SELECT f.id, f.source_type, f.original_filename, f.file_format, f.validation_status,
-                f.byte_size, f.content_sha256, rsf.role
+                f.byte_size, f.content_sha256, f.row_count, f.error_count, f.warning_count,
+                rsf.role
            FROM run_source_file rsf
            JOIN import_file f ON f.id = rsf.import_file_id
           WHERE rsf.reconciliation_run_id = $1
@@ -235,7 +249,60 @@ export class PostgresImportRunStore {
           validationStatus: row.validation_status,
           byteSize: Number(row.byte_size),
           contentSha256: row.content_sha256,
+          rowCount: row.row_count,
+          errorCount: row.error_count,
+          warningCount: row.warning_count,
         })),
+      };
+    });
+  }
+
+  /** Metadata + raw bytes for one file within a run (Phase 11's structure-failure/all-rows-
+   * invalid screens re-parse the original to recover the header row, since it isn't persisted
+   * anywhere -- see `ValidationIssue`'s own comment). Scoped through `run_source_file` so a file
+   * ID from a different run can't be read this way. Null when the run doesn't exist/isn't
+   * RLS-visible, or the file isn't part of this run. */
+  async getFileWithBytes(
+    organizationId: string,
+    runId: string,
+    importFileId: string,
+  ): Promise<
+    | (Omit<ImportRunFileSummary, 'sourceType'> & {
+        sourceType: 'BANK' | 'GL';
+        bytes: Buffer;
+      })
+    | null
+  > {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const result = await client.query<ImportFileRow & { role: string }>(
+        `SELECT f.id, f.source_type, f.original_filename, f.file_format, f.validation_status,
+                f.byte_size, f.content_sha256, f.row_count, f.error_count, f.warning_count,
+                rsf.role
+           FROM run_source_file rsf
+           JOIN import_file f ON f.id = rsf.import_file_id
+          WHERE rsf.reconciliation_run_id = $1 AND f.id = $2`,
+        [runId, importFileId],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        return null;
+      }
+
+      const bytes = await this.blobStorage.get(importFileId, organizationId, client);
+
+      return {
+        importFileId: row.id,
+        role: row.role,
+        sourceType: row.source_type as 'BANK' | 'GL',
+        originalFilename: row.original_filename,
+        fileFormat: row.file_format,
+        validationStatus: row.validation_status,
+        byteSize: Number(row.byte_size),
+        contentSha256: row.content_sha256,
+        rowCount: row.row_count,
+        errorCount: row.error_count,
+        warningCount: row.warning_count,
+        bytes,
       };
     });
   }

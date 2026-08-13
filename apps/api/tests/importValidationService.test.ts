@@ -50,6 +50,9 @@ const baseRun = (): ImportRunSummary => ({
       validationStatus: 'PENDING',
       byteSize: bankCsv.byteLength,
       contentSha256: 'sha-bank',
+      rowCount: null,
+      errorCount: null,
+      warningCount: null,
     },
     {
       importFileId: 'file-gl',
@@ -60,6 +63,9 @@ const baseRun = (): ImportRunSummary => ({
       validationStatus: 'PENDING',
       byteSize: glCsv.byteLength,
       contentSha256: 'sha-gl',
+      rowCount: null,
+      errorCount: null,
+      warningCount: null,
     },
   ],
 });

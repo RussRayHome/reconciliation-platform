@@ -102,6 +102,10 @@ import {
   type ImportValidationFileBytes,
 } from './services/importValidationService';
 import {
+  buildErrorReportCsv,
+  buildImportFileFailureDetail,
+} from './services/importFailureDetailService';
+import {
   createReconciliationQueue,
   type QueuedReconciliationFilePayload,
   type QueuedReconciliationJobPayload,
@@ -2564,6 +2568,105 @@ export const createApp = (
       }
 
       response.json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 11: full failure detail for one file within a run (gate sequence, header comparison,
+  // issues) -- Screens 05/07 render from this rather than assembling it client-side from
+  // /issues + /records, since the header comparison needs a server-side re-parse of the stored
+  // original (see importFailureDetailService.ts's doc comment).
+  app.get('/api/imports/runs/:id/files/:fileId/failure-detail', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const fileId = request.params.fileId;
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const file = await importRunStore.getFileWithBytes(organizationId, runId, fileId);
+      if (!file) {
+        response.status(404).json({ message: 'Import run or file not found.' });
+        return;
+      }
+
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const [issuesPage, recordsPage] = await Promise.all([
+        importValidationStore.listRunIssues(organizationId, runId, 500, 0, {
+          importFileId: fileId,
+        }),
+        importValidationStore.listRunRecords(organizationId, runId, 1, 0, {
+          importFileId: fileId,
+        }),
+      ]);
+
+      if (!issuesPage || !recordsPage) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const detail = await buildImportFileFailureDetail({
+        importFileId: file.importFileId,
+        originalFilename: file.originalFilename,
+        sourceType: file.sourceType,
+        fileFormat: file.fileFormat,
+        validationStatus: file.validationStatus,
+        rowCount: file.rowCount,
+        errorCount: file.errorCount,
+        warningCount: file.warningCount,
+        importableRowCount: recordsPage.total,
+        bytes: file.bytes,
+        issues: issuesPage.items,
+      });
+
+      response.json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // README §7.8: file,line,column,code,severity,message,raw_value -- one row per finding, ordered
+  // by file then line then column (buildErrorReportCsv does the ordering).
+  app.get('/api/imports/runs/:id/error-report.csv', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const summary = await importRunStore.getRunSummary(organizationId, runId);
+      if (!summary) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const filenameByFileId = new Map(summary.files.map((file) => [file.importFileId, file.originalFilename]));
+
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const issuesPage = await importValidationStore.listRunIssues(organizationId, runId, 5000, 0);
+      if (!issuesPage) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const csv = buildErrorReportCsv(
+        issuesPage.items.map((issue) => ({
+          file: filenameByFileId.get(issue.importFileId) ?? issue.importFileId,
+          line: issue.rowNumber,
+          column: issue.field,
+          code: issue.code,
+          severity: issue.severity,
+          message: issue.message,
+        })),
+      );
+
+      response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      response.setHeader(
+        'Content-Disposition',
+        `attachment; filename="import-run-${runId}-error-report.csv"`,
+      );
+      response.send(csv);
     } catch (error) {
       next(error);
     }

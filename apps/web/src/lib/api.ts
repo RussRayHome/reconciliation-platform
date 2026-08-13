@@ -258,6 +258,9 @@ export interface ImportRunFileSummary {
   validationStatus: string;
   byteSize: number;
   contentSha256: string;
+  rowCount: number | null;
+  errorCount: number | null;
+  warningCount: number | null;
 }
 
 /** `GET/POST /api/imports/runs` response shape, matching `ImportRunSummary`
@@ -408,6 +411,81 @@ export const submitImportRunRequest = async (runId: string): Promise<SubmitImpor
     method: 'POST',
   });
   return parseResponse<SubmitImportRunResponse>(response);
+};
+
+/** One `validation_issue` row surfaced on the failure screens, matching
+ * `ImportFileFailureDetail['issues']` (apps/api/src/services/importFailureDetailService.ts). */
+export interface ImportFailureIssue {
+  severity: 'ERROR' | 'WARNING';
+  code: string;
+  message: string;
+  field: string | null;
+  rowNumber: number | null;
+}
+
+export interface ImportFailureHeaderComparisonRow {
+  position: number;
+  expected: string | null;
+  found: string | null;
+  matches: boolean;
+}
+
+export interface ImportFailureGateSequenceEntry {
+  gate: 'HEADER' | 'COLUMN_ORDER' | 'CELL_VALUES';
+  state: 'PASSED' | 'FAILED' | 'NOT_RUN';
+}
+
+/** `GET /api/imports/runs/:id/files/:fileId/failure-detail` response shape -- drives Screen 05
+ * (structure failure, when `headerComparison` is non-null) and Screen 07 (all rows invalid, when
+ * `headerComparison` is null and `importableRowCount` is 0). */
+export interface ImportFileFailureDetail {
+  importFileId: string;
+  originalFilename: string;
+  sourceType: 'BANK' | 'GL';
+  fileFormat: 'CSV' | 'XLSX';
+  validationStatus: string;
+  rowCount: number | null;
+  errorCount: number | null;
+  warningCount: number | null;
+  importableRowCount: number;
+  gateSequence: ImportFailureGateSequenceEntry[];
+  headerComparison: ImportFailureHeaderComparisonRow[] | null;
+  issues: ImportFailureIssue[];
+  issuesByCode: Array<{ code: string; severity: string; count: number }>;
+  amountTolerance: number;
+}
+
+export const getImportFileFailureDetailRequest = async (
+  runId: string,
+  fileId: string,
+): Promise<ImportFileFailureDetail> => {
+  const response = await apiFetch(
+    `/api/imports/runs/${encodeURIComponent(runId)}/files/${encodeURIComponent(fileId)}/failure-detail`,
+  );
+  return parseResponse<ImportFileFailureDetail>(response);
+};
+
+/** Downloads the run's error report CSV. A plain `<a href>` can't carry the bearer token, same
+ * reasoning as `downloadWorkbookRequest`. */
+export const downloadImportRunErrorReportRequest = async (runId: string): Promise<void> => {
+  const response = await apiFetch(
+    `/api/imports/runs/${encodeURIComponent(runId)}/error-report.csv`,
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({ message: 'Request failed.' }))) as {
+      message?: string;
+    };
+    throw new Error(payload.message ?? 'Request failed.');
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `import-run-${runId}-error-report.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 };
 
 /** Authenticates a user, stores the returned bearer token, and returns the login profile.

@@ -125,6 +125,7 @@ export interface RunIssueItem {
 export interface RunIssuesFilter {
   severity?: ImportSeverity;
   code?: string;
+  importFileId?: string;
 }
 
 export interface PaginatedRunIssuesResult {
@@ -439,6 +440,10 @@ export class PostgresImportValidationStore {
       if (filters.code) {
         filterParams.push(filters.code);
         conditions.push(`code = $${filterParams.length}`);
+      }
+      if (filters.importFileId) {
+        filterParams.push(filters.importFileId);
+        conditions.push(`import_file_id = $${filterParams.length}`);
       }
 
       const whereClause = conditions.join(' AND ');
