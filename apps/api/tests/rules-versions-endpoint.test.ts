@@ -119,6 +119,11 @@ describe('GET /api/rules/versions', () => {
     expect(response.body.draft).toBeNull();
     expect(response.body.history).toEqual([]);
   });
+
+  it('returns 501 when no database is configured', async () => {
+    const app = createApp(undefined, undefined, undefined, undefined);
+    await authedApp(app).get('/api/rules/versions').expect(501);
+  });
 });
 
 describe('POST /api/rules/versions/draft', () => {
@@ -162,6 +167,11 @@ describe('POST /api/rules/versions/draft', () => {
       .send({ varianceOverrides: {} })
       .expect(409);
   });
+
+  it('returns 501 when no database is configured', async () => {
+    const app = createApp(undefined, undefined, undefined, undefined);
+    await authedApp(app).post('/api/rules/versions/draft').send({ varianceOverrides: {} }).expect(501);
+  });
 });
 
 describe('POST /api/rules/versions/:id/publish', () => {
@@ -198,5 +208,10 @@ describe('POST /api/rules/versions/:id/publish', () => {
       .post('/api/rules/versions/mcv-1/publish')
       .send({ effectiveAt: 'not-a-date' })
       .expect(400);
+  });
+
+  it('returns 501 when no database is configured', async () => {
+    const app = createApp(undefined, undefined, undefined, undefined);
+    await authedApp(app).post('/api/rules/versions/mcv-1/publish').send({}).expect(501);
   });
 });

@@ -122,6 +122,23 @@ describe('toExceptionDisplay', () => {
 
     expect(display.counterpartLabel).toBe('txn-7 | N/A');
   });
+
+  it('omits the source prefix and shows N/A for a line-less, source-less counterpart', () => {
+    const display = toExceptionDisplay(
+      makeException({
+        id: 'e6',
+        ruleTrace: {
+          ruleId: 'r',
+          ruleName: 'R',
+          reason: '',
+          evidence: [],
+          counterpart: { spreadsheetFileName: 'x.xlsx' },
+        },
+      }),
+    );
+
+    expect(display.counterpartLabel).toBe('x.xlsx / N/A');
+  });
 });
 
 describe('buildFacetOptions and matchesFacets', () => {
@@ -297,6 +314,26 @@ describe('buildComparisonSides', () => {
     expect(bank).toHaveLength(1);
     expect(bank[0]?.fileName).toBe('txn-9');
   });
+
+  it('infers the counterpart as GL when the primary side is bank and no source is given', () => {
+    const { bank, gl } = buildComparisonSides(
+      makeException({
+        id: 'c3',
+        source: 'bank',
+        ruleTrace: {
+          ruleId: 'r',
+          ruleName: 'R',
+          reason: '',
+          evidence: [],
+          counterpart: { transactionId: 'txn-11' },
+        },
+      }),
+    );
+
+    expect(bank[0]?.isPrimary).toBe(true);
+    expect(gl).toHaveLength(1);
+    expect(gl[0]?.fileName).toBe('txn-11');
+  });
 });
 
 describe('buildComparisonDelta', () => {
@@ -336,6 +373,43 @@ describe('buildComparisonDelta', () => {
     );
 
     expect(delta.amountLabel).toBeNull();
+    expect(delta.dateLabel).toBeNull();
+  });
+
+  it('uses the singular "day" when the drift is exactly one day', () => {
+    const delta = buildComparisonDelta(
+      makeException({
+        id: 'd3',
+        transactionDate: '2026-03-31',
+        ruleTrace: {
+          ruleId: 'r',
+          ruleName: 'R',
+          reason: '',
+          evidence: [],
+          counterpart: { transactionDate: '2026-03-30' },
+        },
+      }),
+    );
+
+    expect(delta.dateLabel).toContain('1 day');
+    expect(delta.dateLabel).not.toContain('1 days');
+  });
+
+  it('omits the date label when either date is unparseable', () => {
+    const delta = buildComparisonDelta(
+      makeException({
+        id: 'd4',
+        transactionDate: 'not-a-date',
+        ruleTrace: {
+          ruleId: 'r',
+          ruleName: 'R',
+          reason: '',
+          evidence: [],
+          counterpart: { transactionDate: '2026-03-30' },
+        },
+      }),
+    );
+
     expect(delta.dateLabel).toBeNull();
   });
 });
