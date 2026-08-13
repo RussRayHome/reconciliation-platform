@@ -374,6 +374,29 @@
     display: none;
   }
 
+  /* Template rows offer two downloads (CSV + XLSX), so the row itself isn't a link -- only its
+     two format pills are, each pointing at that format's file. */
+  .nav-rail__item--template {
+    cursor: default;
+  }
+
+  .nav-rail__template-formats {
+    display: flex;
+    gap: 0.35rem;
+    margin-left: auto;
+  }
+
+  .nav-rail__pill--link {
+    margin-left: 0;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .nav-rail__pill--link:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
   .nav-rail__footer {
     position: relative;
     margin-top: auto;

@@ -247,6 +247,101 @@ export const getLatestReconciliationRunRequest = async (): Promise<Reconciliatio
   return parseResponse<ReconciliationRunResponse>(response);
 };
 
+/** One uploaded file's status within an import run, matching `ImportRunFileSummary`
+ * (packages/persistence/src/importRunStore.ts). */
+export interface ImportRunFileSummary {
+  importFileId: string;
+  role: string;
+  sourceType: string;
+  originalFilename: string;
+  fileFormat: 'CSV' | 'XLSX';
+  validationStatus: string;
+  byteSize: number;
+  contentSha256: string;
+}
+
+/** `GET/POST /api/imports/runs` response shape, matching `ImportRunSummary`
+ * (packages/persistence/src/importRunStore.ts). */
+export interface ImportRunSummary {
+  id: string;
+  organizationId: string;
+  label: string;
+  accountIdentifier: string | null;
+  frequency: 'MONTHLY' | 'ANNUAL';
+  periodYear: number;
+  periodMonth: number | null;
+  status: string;
+  createdAt: string;
+  files: ImportRunFileSummary[];
+}
+
+/** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. */
+export interface CreateImportRunPayload {
+  bankFile: File;
+  glFile: File;
+  label: string;
+  accountIdentifier?: string;
+  frequency: 'MONTHLY' | 'ANNUAL';
+  periodYear: number;
+  periodMonth?: number;
+}
+
+/** Creates a DRAFT import run (File Imports & Validation, Phase 5) -- Screen 01's `Submit run`
+ * flow calls this, then `submitImportRunRequest`, rather than the old atomic
+ * `POST /api/reconciliation/run`. */
+export const createImportRunRequest = async ({
+  bankFile,
+  glFile,
+  label,
+  accountIdentifier,
+  frequency,
+  periodYear,
+  periodMonth,
+}: CreateImportRunPayload): Promise<ImportRunSummary> => {
+  const formData = new FormData();
+  formData.append('bankFile', bankFile);
+  formData.append('glFile', glFile);
+  formData.append('label', label);
+  if (accountIdentifier) {
+    formData.append('accountIdentifier', accountIdentifier);
+  }
+  formData.append('frequency', frequency);
+  formData.append('periodYear', String(periodYear));
+  if (periodMonth !== undefined) {
+    formData.append('periodMonth', String(periodMonth));
+  }
+
+  const response = await apiFetch('/api/imports/runs', {
+    method: 'POST',
+    body: formData,
+  });
+  return parseResponse<ImportRunSummary>(response);
+};
+
+/** `POST /api/imports/runs/:id/submit` response shape -- either queued (BullMQ enabled, no
+ * result yet) or resolved synchronously (queue disabled, the default/local-dev fallback), in
+ * which case `passed`/`matchingJobId` are set once validation actually ran. */
+export type SubmitImportRunResponse =
+  | { importJobId: string; status: 'queued' }
+  | {
+      importJobId: string;
+      status: 'completed';
+      passed: boolean;
+      matchingJobId?: string;
+      run: ImportRunSummary;
+    }
+  | { importJobId: string; status: 'failed'; failedAt: string; reason: string };
+
+/** Submits a DRAFT import run for validation -- DRAFT -> VALIDATING, and (when the queue is
+ * disabled) runs validation synchronously in-request, same fallback pattern as
+ * `runReconciliationRequest`'s queued/synchronous split above. */
+export const submitImportRunRequest = async (runId: string): Promise<SubmitImportRunResponse> => {
+  const response = await apiFetch(`/api/imports/runs/${encodeURIComponent(runId)}/submit`, {
+    method: 'POST',
+  });
+  return parseResponse<SubmitImportRunResponse>(response);
+};
+
 /** Authenticates a user, stores the returned bearer token, and returns the login profile.
  * Deliberately uses the bare `fetch` -- there is no token yet to attach. */
 export const loginRequest = async ({

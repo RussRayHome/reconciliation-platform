@@ -475,6 +475,64 @@ const createRunResponse = () => ({
   },
 });
 
+const IMPORT_RUN_ID = 'import-run-1';
+const MATCHING_JOB_ID = 'matching-job-1';
+
+const createImportRunSummary = (overrides: Record<string, unknown> = {}) => ({
+  id: IMPORT_RUN_ID,
+  organizationId: 'test-org',
+  label: 'Monthly Recon',
+  accountIdentifier: null,
+  frequency: 'MONTHLY',
+  periodYear: new Date().getFullYear(),
+  periodMonth: 1,
+  status: 'DRAFT',
+  createdAt: '2026-08-01T00:00:00.000Z',
+  files: [],
+  ...overrides,
+});
+
+/** fetch's first parameter is `RequestInfo | URL`, not always a plain string -- String(input)
+ * would use Object's default (unhelpful) stringification for a bare object shape, hence a real
+ * type-narrowing helper instead. */
+const requestUrl = (input: RequestInfo | URL): string =>
+  typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+/**
+ * Mocks the full create -> submit -> fetch-report sequence `useImportRunSubmit`'s mutationFn
+ * drives (apps/web/src/hooks/useImportRunSubmit.ts), so a test exercising "Submit run" doesn't
+ * need to know its multi-step shape. Mirrors the synchronous (import-validation-queue-disabled)
+ * fallback path -- the default in every test/dev environment here, same convention already used
+ * for /api/reconciliation/run's own enabled/disabled split.
+ */
+const mockImportRunSubmitFlow = (finalRun: unknown = createRunResponse()) =>
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+    const url = requestUrl(input);
+    if (url === '/api/imports/runs') {
+      return Promise.resolve(
+        new Response(JSON.stringify(createImportRunSummary()), { status: 201 }),
+      );
+    }
+    if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            importJobId: 'import-job-1',
+            status: 'completed',
+            passed: true,
+            matchingJobId: MATCHING_JOB_ID,
+            run: createImportRunSummary({ status: 'PENDING_APPROVAL' }),
+          }),
+          { status: 200 },
+        ),
+      );
+    }
+    if (url === `/api/reconciliation/${MATCHING_JOB_ID}`) {
+      return Promise.resolve(new Response(JSON.stringify(finalRun), { status: 200 }));
+    }
+    throw new Error(`mockImportRunSubmitFlow: unexpected fetch call to ${url}`);
+  });
+
 // jsdom doesn't implement Element.scrollIntoView -- the TUNABLE cell's click-to-scroll calls it
 // directly (not optional-chained past the method itself), so it needs a stub here.
 const scrollIntoViewMock = vi.fn();
@@ -783,7 +841,7 @@ describe('App', () => {
     );
     expect(screen.getByRole('link', { name: /Exceptions/i })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: /Reports/i })).not.toHaveAttribute('aria-current');
-    expect(screen.getByText('Source Upload')).toBeInTheDocument();
+    expect(screen.getByText('Import source files')).toBeInTheDocument();
   });
 
   it('navigates between rail destinations via real routes and updates the active link', async () => {
@@ -808,9 +866,7 @@ describe('App', () => {
   });
 
   it('swaps Review panels via the rail and exports from Close', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
-    );
+    mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -823,7 +879,7 @@ describe('App', () => {
       target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
       expect(screen.getByText('Total reviewed')).toBeInTheDocument();
@@ -1204,9 +1260,7 @@ describe('App', () => {
   });
 
   it('uploads files and renders returned reconciliation metrics', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
-    );
+    mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -1222,7 +1276,7 @@ describe('App', () => {
       target: { value: 'OPERATING-001' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
       expect(screen.getByText(/Run finished/)).toBeInTheDocument();
@@ -1252,7 +1306,7 @@ describe('App', () => {
       target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Upload failed.');
@@ -1260,9 +1314,7 @@ describe('App', () => {
   });
 
   it('submits the selected local files and metadata as multipart form data', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
+    const fetchSpy = mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -1291,14 +1343,15 @@ describe('App', () => {
       target: { value: '2023' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith('/api/imports/runs', expect.anything());
     });
 
-    const [url, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/api/reconciliation/run');
+    const createCall = fetchSpy.mock.calls.find(([url]) => url === '/api/imports/runs')!;
+    const [url, options] = createCall as [string, RequestInit];
+    expect(url).toBe('/api/imports/runs');
     expect(options.method).toBe('POST');
     expect(options.body).toBeInstanceOf(FormData);
 
@@ -1306,14 +1359,13 @@ describe('App', () => {
     expect(formData.get('bankFile')).toBe(bankFile);
     expect(formData.get('glFile')).toBe(glFile);
     expect(formData.get('accountIdentifier')).toBe('OPERATING-001');
-    expect(formData.get('reconciliationFrequency')).toBe('Annual');
-    expect(formData.get('periodLabel')).toBe('Annual Recon for 2023');
+    expect(formData.get('frequency')).toBe('ANNUAL');
+    expect(formData.get('periodYear')).toBe('2023');
+    expect(formData.get('label')).toBe('Annual Recon for 2023');
   });
 
   it('submits selected monthly month as period label when frequency is monthly', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
+    const fetchSpy = mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -1336,23 +1388,23 @@ describe('App', () => {
       target: { value: 'March' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith('/api/imports/runs', expect.anything());
     });
 
-    const [, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const createCall = fetchSpy.mock.calls.find(([url]) => url === '/api/imports/runs')!;
+    const [, options] = createCall as [string, RequestInit];
     const formData = options.body as FormData;
 
-    expect(formData.get('reconciliationFrequency')).toBe('Monthly');
-    expect(formData.get('periodLabel')).toBe(`Monthly Recon for March ${new Date().getFullYear()}`);
+    expect(formData.get('frequency')).toBe('MONTHLY');
+    expect(formData.get('periodMonth')).toBe('3');
+    expect(formData.get('label')).toBe(`Monthly Recon for March ${new Date().getFullYear()}`);
   });
 
   it('allows editing the prepopulated reconciliation label before submit', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify(createRunResponse()), { status: 201 }));
+    const fetchSpy = mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
 
@@ -1368,16 +1420,17 @@ describe('App', () => {
       target: { value: 'Custom Monthly Label' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith('/api/imports/runs', expect.anything());
     });
 
-    const [, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const createCall = fetchSpy.mock.calls.find(([url]) => url === '/api/imports/runs')!;
+    const [, options] = createCall as [string, RequestInit];
     const formData = options.body as FormData;
 
-    expect(formData.get('periodLabel')).toBe('Custom Monthly Label');
+    expect(formData.get('label')).toBe('Custom Monthly Label');
   });
 
   it('keeps the suggested label hint visible after custom edits', () => {
@@ -1421,9 +1474,137 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'bank.xlsx'), new File(['gl'], 'gl.xlsx')] },
     });
 
-    expect(screen.getByRole('button', { name: 'Run reconciliation' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
     expect(screen.getAllByText('bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gl.xlsx').length).toBeGreaterThan(0);
+  });
+
+  it('accepts CSV workbooks alongside XLSX in the merged drop zone', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Source workbooks'), {
+      target: { files: [new File(['bank'], 'bank.csv'), new File(['gl'], 'gl.csv')] },
+    });
+
+    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
+    expect(screen.getAllByText('bank.csv').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('gl.csv').length).toBeGreaterThan(0);
+  });
+
+  it('shows Manual override when a slot picker disagrees with filename-based detection', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    // "gl-export.xlsx" auto-detects to the GL slot; forcing it into the Bank slot picker instead
+    // should flag the mismatch rather than silently accept it.
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['gl'], 'gl-export.xlsx')] },
+    });
+
+    expect(screen.getByText('Manual override')).toBeInTheDocument();
+  });
+
+  it('exposes Bank and GL template downloads from the Import source files header', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    const templatesMenu = screen
+      .getByText('Download templates', { selector: 'summary' })
+      .closest('details')!;
+    const menu = within(templatesMenu);
+    expect(menu.getByRole('link', { name: 'Bank template (CSV)' })).toHaveAttribute(
+      'href',
+      '/templates/bank-template.csv',
+    );
+    expect(menu.getByRole('link', { name: 'Bank template (XLSX)' })).toHaveAttribute(
+      'href',
+      '/templates/bank-template.xlsx',
+    );
+    expect(menu.getByRole('link', { name: 'GL template (CSV)' })).toHaveAttribute(
+      'href',
+      '/templates/gl-template.csv',
+    );
+    expect(menu.getByRole('link', { name: 'GL template (XLSX)' })).toHaveAttribute(
+      'href',
+      '/templates/gl-template.xlsx',
+    );
+  });
+
+  it('surfaces a message instead of hanging when the import run is queued for async validation', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url === '/api/imports/runs') {
+        return Promise.resolve(
+          new Response(JSON.stringify(createImportRunSummary()), { status: 201 }),
+        );
+      }
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ importJobId: 'import-job-1', status: 'queued' }), {
+            status: 202,
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch call to ${url}`);
+    });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/queued for validation/i);
+    });
+  });
+
+  it('surfaces a message instead of hanging when the import run fails validation', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url === '/api/imports/runs') {
+        return Promise.resolve(
+          new Response(JSON.stringify(createImportRunSummary()), { status: 201 }),
+        );
+      }
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              importJobId: 'import-job-1',
+              status: 'completed',
+              passed: false,
+              run: createImportRunSummary({ status: 'VALIDATION_FAILED' }),
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      throw new Error(`unexpected fetch call to ${url}`);
+    });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook'), {
+      target: { files: [new File(['bank'], 'bank.xlsx')] },
+    });
+    fireEvent.change(screen.getByLabelText('GL workbook'), {
+      target: { files: [new File(['gl'], 'gl.xlsx')] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/failed validation/i);
+    });
   });
 
   it('lands financial analysts on the Review tab', async () => {
@@ -1458,13 +1639,11 @@ describe('App', () => {
         'page',
       );
     });
-    expect(screen.getByText('Source Upload')).toBeInTheDocument();
+    expect(screen.getByText('Import source files')).toBeInTheDocument();
   });
 
   it('leads the Summary panel with the reconciliation verdict', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(createRunResponse()), { status: 201 }),
-    );
+    mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
     renderApp();
@@ -1476,7 +1655,7 @@ describe('App', () => {
       target: { files: [new File(['gl'], 'gl.xlsx')] },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run reconciliation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
       expect(screen.getByText('Unexplained residual')).toBeInTheDocument();
@@ -1500,7 +1679,7 @@ describe('App', () => {
       target: { value: '   ' },
     });
 
-    expect(screen.getByRole('button', { name: 'Run reconciliation' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Submit run' })).toBeDisabled();
     expect(
       screen.getByText('Reconciliation label is required before running.'),
     ).toBeInTheDocument();
@@ -1571,13 +1750,22 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    expect(screen.getByRole('link', { name: /Bank template/i })).toHaveAttribute(
+    const nav = within(screen.getByRole('navigation'));
+    expect(nav.getByRole('link', { name: 'Bank template CSV' })).toHaveAttribute(
       'href',
       '/templates/bank-template.csv',
     );
-    expect(screen.getByRole('link', { name: /GL template/i })).toHaveAttribute(
+    expect(nav.getByRole('link', { name: 'Bank template XLSX' })).toHaveAttribute(
+      'href',
+      '/templates/bank-template.xlsx',
+    );
+    expect(nav.getByRole('link', { name: 'GL template CSV' })).toHaveAttribute(
       'href',
       '/templates/gl-template.csv',
+    );
+    expect(nav.getByRole('link', { name: 'GL template XLSX' })).toHaveAttribute(
+      'href',
+      '/templates/gl-template.xlsx',
     );
   });
 

@@ -92,10 +92,12 @@ export function SourceDropZone({
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
       >
-        <span className="source-dropzone__prompt">Drag both XLSX workbooks here, or browse</span>
+        <span className="source-dropzone__prompt">Drag both workbooks here, or browse</span>
+        <span className="source-dropzone__hint">.csv · .xlsx — max 50 MB per file</span>
+        <span className="source-dropzone__browse-button">Choose files</span>
         <input
           type="file"
-          accept=".xlsx"
+          accept=".csv,.xlsx"
           multiple
           aria-label="Source workbooks"
           onChange={(event) => {

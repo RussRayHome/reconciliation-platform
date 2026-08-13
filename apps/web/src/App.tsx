@@ -73,13 +73,19 @@ import type { AppTab } from './lib/appCatalog';
 import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
-import { useReconciliationRun } from './hooks/useReconciliationRun';
+import { useImportRunSubmit } from './hooks/useImportRunSubmit';
+import {
+  BANK_TEMPLATE_URL,
+  BANK_TEMPLATE_XLSX_URL,
+  GL_TEMPLATE_URL,
+  GL_TEMPLATE_XLSX_URL,
+} from './lib/templates';
 import { useReviewerDecisions } from './hooks/useReviewerDecisions';
 import { useDensity } from './hooks/useDensity';
 import { useWatchlist } from './hooks/useWatchlist';
 
 type ReconciliationFrequency = 'Monthly' | 'Annual';
-type ReconciliationModel = ReturnType<typeof useReconciliationRun>;
+type ReconciliationModel = ReturnType<typeof useImportRunSubmit>;
 type RunData = NonNullable<ReconciliationModel['data']>;
 /** The authenticated principal, as reported by the server (login response or /api/auth/me) --
  * ADR-0002 step 6: role travels with the session instead of being looked up from a hardcoded
@@ -649,7 +655,7 @@ function ReconciliationApp({
   );
   const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  const reconciliation = useReconciliationRun();
+  const reconciliation = useImportRunSubmit();
   const run = reconciliation.data;
   const reportRun = run ?? persistedRun;
   const reportRunExceptionIds = useMemo(
@@ -1145,10 +1151,14 @@ function ReconciliationApp({
     reconciliation.mutate({
       bankFile,
       glFile,
-      accountIdentifier,
-      reconciliationFrequency,
-      periodLabel: trimmedPeriodLabel,
-      varianceOverrides: varianceDefaultOverrides,
+      label: trimmedPeriodLabel,
+      accountIdentifier: accountIdentifier || undefined,
+      frequency: reconciliationFrequency === 'Annual' ? 'ANNUAL' : 'MONTHLY',
+      periodYear: reconciliationFrequency === 'Annual' ? Number(annualYear) : currentYear,
+      periodMonth:
+        reconciliationFrequency === 'Annual'
+          ? undefined
+          : monthsWithinYear.indexOf(monthlyMonth) + 1,
     });
   };
 
@@ -1505,96 +1515,137 @@ function SourceUploadSection({
   const reconciliationLabelHintId = 'reconciliation-label-hint';
 
   return (
-    <SectionCard
-      title="Source Upload"
-      description="XLSX uploads only. The engine preserves original file names, line numbers, excluded rows, and normalized audit fields."
-    >
-      <form
-        id="source-upload-form"
-        className="upload-form"
-        aria-busy={reconciliation.isPending}
-        onSubmit={handleSubmit}
+    <div className="import-screen">
+      <p className="import-screen__eyebrow">Reconciliations / New run</p>
+      <SectionCard
+        title="Import source files"
+        description="CSV or XLSX. Format is detected by extension; the engine preserves original file names, source line numbers, excluded rows, and normalized audit fields."
+        actions={
+          <div className="import-screen__header-actions">
+            <details className="import-screen__templates-menu">
+              <summary className="secondary-button">Download templates</summary>
+              <div className="import-screen__templates-menu-list">
+                <a href={BANK_TEMPLATE_URL} download>
+                  Bank template (CSV)
+                </a>
+                <a href={BANK_TEMPLATE_XLSX_URL} download>
+                  Bank template (XLSX)
+                </a>
+                <a href={GL_TEMPLATE_URL} download>
+                  GL template (CSV)
+                </a>
+                <a href={GL_TEMPLATE_XLSX_URL} download>
+                  GL template (XLSX)
+                </a>
+              </div>
+            </details>
+            <button
+              type="submit"
+              form="source-upload-form"
+              className="accent-button"
+              disabled={!canSubmit}
+            >
+              {reconciliation.isPending ? 'Submitting…' : 'Submit run'}
+            </button>
+          </div>
+        }
       >
-        <SourceDropZone
-          bankFile={bankFile}
-          glFile={glFile}
-          setBankFile={setBankFile}
-          setGlFile={setGlFile}
-        />
+        <form
+          id="source-upload-form"
+          className="import-screen__body"
+          aria-busy={reconciliation.isPending}
+          onSubmit={handleSubmit}
+        >
+          <div className="import-screen__upload-column">
+            <SourceDropZone
+              bankFile={bankFile}
+              glFile={glFile}
+              setBankFile={setBankFile}
+              setGlFile={setGlFile}
+            />
+            <p className="source-dropzone__note">
+              Bank and GL are detected from each file name; use the slot pickers to override. Row
+              counts, date range, and excluded rows are calculated when the reconciliation runs.
+            </p>
+          </div>
 
-        <HelpedTextField
-          fieldId="account-identifier"
-          helpText="Optional account code shown in outputs and exports to identify which account this run belongs to."
-          inputId="account-identifier-input"
-          label="Account identifier"
-          onChange={(event) => setAccountIdentifier(event.target.value)}
-          placeholder="OPERATING-001"
-          value={accountIdentifier}
-        />
+          <aside className="run-configuration-panel">
+            <h3 className="run-configuration-panel__title">Run configuration</h3>
 
-        <HelpedFrequencyField
-          onChange={(event) =>
-            setReconciliationFrequency(event.target.value as ReconciliationFrequency)
-          }
-          value={reconciliationFrequency}
-        />
+            <HelpedTextField
+              fieldId="account-identifier"
+              helpText="Optional. Shown in outputs and exports."
+              inputId="account-identifier-input"
+              label="Account identifier"
+              onChange={(event) => setAccountIdentifier(event.target.value)}
+              placeholder="OPERATING-001"
+              value={accountIdentifier}
+            />
 
-        <ReconciliationPeriodField
-          annualYear={annualYear}
-          currentYear={currentYear}
-          monthlyMonth={monthlyMonth}
-          previousSevenYears={previousSevenYears}
-          reconciliationFrequency={reconciliationFrequency}
-          setAnnualYear={setAnnualYear}
-          setMonthlyMonth={setMonthlyMonth}
-        />
+            <div className="run-configuration-panel__row">
+              <HelpedFrequencyField
+                onChange={(event) =>
+                  setReconciliationFrequency(event.target.value as ReconciliationFrequency)
+                }
+                value={reconciliationFrequency}
+              />
 
-        <HelpedLabelField
-          hintId={reconciliationLabelHintId}
-          isInvalid={isLabelMissing}
-          labelErrorId={reconciliationLabelErrorId}
-          onChange={(event) => {
-            setIsCustomPeriodLabel(true);
-            setPeriodLabel(event.target.value);
-          }}
-          periodLabel={periodLabel}
-          suggestedPeriodLabel={suggestedPeriodLabel}
-          canResetToSuggested={isCustomPeriodLabel}
-          onResetToSuggested={() => {
-            setIsCustomPeriodLabel(false);
-            setPeriodLabel(suggestedPeriodLabel);
-          }}
-        />
+              <ReconciliationPeriodField
+                annualYear={annualYear}
+                currentYear={currentYear}
+                monthlyMonth={monthlyMonth}
+                previousSevenYears={previousSevenYears}
+                reconciliationFrequency={reconciliationFrequency}
+                setAnnualYear={setAnnualYear}
+                setMonthlyMonth={setMonthlyMonth}
+              />
+            </div>
 
-        <p className="trust-note">
-          Use only authorized XLSX exports and follow your organization&apos;s financial data
-          handling policy.
-        </p>
+            <HelpedLabelField
+              hintId={reconciliationLabelHintId}
+              isInvalid={isLabelMissing}
+              labelErrorId={reconciliationLabelErrorId}
+              onChange={(event) => {
+                setIsCustomPeriodLabel(true);
+                setPeriodLabel(event.target.value);
+              }}
+              periodLabel={periodLabel}
+              suggestedPeriodLabel={suggestedPeriodLabel}
+              canResetToSuggested={isCustomPeriodLabel}
+              onResetToSuggested={() => {
+                setIsCustomPeriodLabel(false);
+                setPeriodLabel(suggestedPeriodLabel);
+              }}
+            />
 
-        <div className="upload-actions">
-          <button type="submit" disabled={!canSubmit}>
-            {reconciliation.isPending ? 'Running reconciliation...' : 'Run reconciliation'}
-          </button>
-        </div>
+            <p className="trust-note">
+              Uploaded files are stored raw and never mutated. Validation runs on a copy.
+            </p>
+          </aside>
 
-        {reconciliation.isPending ? (
-          <p className="status-banner" role="status" aria-live="polite">
-            Reconciliation is running. Parsing, matching, and report generation are in progress.
-          </p>
-        ) : null}
+          {reconciliation.isPending ? (
+            <p className="status-banner import-screen__status" role="status" aria-live="polite">
+              Import run submitted. Validation and matching are in progress.
+            </p>
+          ) : null}
 
-        {isLabelMissing ? (
-          <p id={reconciliationLabelErrorId} className="error-banner" role="alert">
-            Reconciliation label is required before running.
-          </p>
-        ) : null}
-        {reconciliation.error ? (
-          <p className="error-banner" role="alert">
-            {reconciliation.error.message}
-          </p>
-        ) : null}
-      </form>
-    </SectionCard>
+          {isLabelMissing ? (
+            <p
+              id={reconciliationLabelErrorId}
+              className="error-banner import-screen__status"
+              role="alert"
+            >
+              Reconciliation label is required before running.
+            </p>
+          ) : null}
+          {reconciliation.error ? (
+            <p className="error-banner import-screen__status" role="alert">
+              {reconciliation.error.message}
+            </p>
+          ) : null}
+        </form>
+      </SectionCard>
+    </div>
   );
 }
 
