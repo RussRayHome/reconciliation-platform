@@ -15,7 +15,10 @@ let database: TestDatabase | undefined;
 let pool: Pool;
 let startupError: Error | null = null;
 let defaultOrganizationId: string;
+let submitterUserId: string;
+let approverUserId: string;
 const submittedByUserName = 'analyst.jane';
+const approverUserName = 'approver.alice';
 
 const bankBytes = Buffer.from('transaction_id,amount\nTXN-1,100.00\n', 'utf8');
 const glBytes = Buffer.from('entry_id,line_number\nJE-1,1\n', 'utf8');
@@ -55,6 +58,22 @@ describe('PostgresImportValidationStore', () => {
          ON CONFLICT DO NOTHING`,
         [submittedByUserName, defaultOrganizationId],
       );
+      await pool.query(
+        `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+         VALUES ($1, 'Alice', 'Approver', 'hash', 'controller', $2)
+         ON CONFLICT DO NOTHING`,
+        [approverUserName, defaultOrganizationId],
+      );
+      const submitter = await pool.query<{ id: string }>(
+        'SELECT id FROM reconciliation_user WHERE user_name = $1',
+        [submittedByUserName],
+      );
+      submitterUserId = submitter.rows[0]!.id;
+      const approver = await pool.query<{ id: string }>(
+        'SELECT id FROM reconciliation_user WHERE user_name = $1',
+        [approverUserName],
+      );
+      approverUserId = approver.rows[0]!.id;
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       console.warn(`PostgreSQL integration setup failed: ${startupError.message}`);
@@ -71,6 +90,19 @@ describe('PostgresImportValidationStore', () => {
   const createDraftRun = async (overrides: Partial<CreateImportRunInput> = {}) => {
     const runStore = new PostgresImportRunStore(pool);
     return runStore.createRun(buildRunInput(overrides));
+  };
+
+  /** Drives a run straight to PENDING_APPROVAL for approval-layer tests, bypassing the full
+   * submit/validate pipeline (already covered by the submitRun/recordFileValidationOutcome/
+   * finalizeRun tests above) -- this test block is about the approval surface itself. */
+  const createPendingApprovalRun = async (overrides: Partial<CreateImportRunInput> = {}) => {
+    const run = await createDraftRun(overrides);
+    await pool.query(
+      `UPDATE reconciliation_run SET status = 'PENDING_APPROVAL', submitted_by = $1, submitted_at = NOW()
+        WHERE id = $2`,
+      [submitterUserId, run.id],
+    );
+    return run;
   };
 
   describe('submitRun', () => {
@@ -431,6 +463,267 @@ describe('PostgresImportValidationStore', () => {
         [run.id],
       );
       expect(runRow.rows[0]?.matching_job_id).toBe(matchingJobId);
+    });
+  });
+
+  describe('run approvals', () => {
+    describe('listRunApprovals', () => {
+      it('returns PENDING_APPROVAL runs with resolved usernames', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'List Me' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const items = await store.listRunApprovals(defaultOrganizationId, {});
+        const item = items.find((candidate) => candidate.id === run.id);
+
+        expect(item).toMatchObject({
+          label: 'List Me',
+          status: 'PENDING_APPROVAL',
+          submittedByUsername: submittedByUserName,
+          decidedByUsername: null,
+        });
+      });
+
+      it('excludes DRAFT runs', async () => {
+        if (startupError) throw startupError;
+
+        const draft = await createDraftRun({ label: 'Still Draft' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const items = await store.listRunApprovals(defaultOrganizationId, {});
+        expect(items.find((candidate) => candidate.id === draft.id)).toBeUndefined();
+      });
+
+      it('filters by status', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Filter By Status' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const pendingOnly = await store.listRunApprovals(defaultOrganizationId, {
+          status: 'PENDING_APPROVAL',
+        });
+        expect(pendingOnly.some((candidate) => candidate.id === run.id)).toBe(true);
+
+        const approvedOnly = await store.listRunApprovals(defaultOrganizationId, {
+          status: 'APPROVED',
+        });
+        expect(approvedOnly.some((candidate) => candidate.id === run.id)).toBe(false);
+      });
+
+      it('scopes to submittedByUsername for "my submissions"', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Mine' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const mine = await store.listRunApprovals(defaultOrganizationId, {
+          submittedByUsername: submittedByUserName,
+        });
+        expect(mine.some((candidate) => candidate.id === run.id)).toBe(true);
+
+        const someoneElses = await store.listRunApprovals(defaultOrganizationId, {
+          submittedByUsername: approverUserName,
+        });
+        expect(someoneElses.some((candidate) => candidate.id === run.id)).toBe(false);
+      });
+
+      it('routedToOrUnassignedUsername includes unclaimed and claimed-by-me, excludes claimed-by-others', async () => {
+        if (startupError) throw startupError;
+
+        const store = new PostgresImportValidationStore(pool);
+        const unclaimed = await createPendingApprovalRun({ label: 'Unclaimed' });
+        const claimedByMe = await createPendingApprovalRun({ label: 'Claimed By Me' });
+        await store.claimRunApproval(defaultOrganizationId, claimedByMe.id, approverUserName);
+
+        const otherApproverUserName = 'approver.bob';
+        await pool.query(
+          `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+           VALUES ($1, 'Bob', 'Approver', 'hash', 'controller', $2)
+           ON CONFLICT DO NOTHING`,
+          [otherApproverUserName, defaultOrganizationId],
+        );
+        const claimedByOther = await createPendingApprovalRun({ label: 'Claimed By Other' });
+        await store.claimRunApproval(defaultOrganizationId, claimedByOther.id, otherApproverUserName);
+
+        const routed = await store.listRunApprovals(defaultOrganizationId, {
+          routedToOrUnassignedUsername: approverUserName,
+        });
+        const routedIds = routed.map((candidate) => candidate.id);
+        expect(routedIds).toContain(unclaimed.id);
+        expect(routedIds).toContain(claimedByMe.id);
+        expect(routedIds).not.toContain(claimedByOther.id);
+      });
+    });
+
+    describe('getRunApprovalCounts', () => {
+      it('as an approver, counts pending as unclaimed-or-mine but approved/rejected org-wide', async () => {
+        if (startupError) throw startupError;
+
+        const store = new PostgresImportValidationStore(pool);
+        const before = await store.getRunApprovalCounts(defaultOrganizationId, approverUserName, true);
+
+        await createPendingApprovalRun({ label: 'Counts Pending' });
+        const toApprove = await createPendingApprovalRun({ label: 'Counts Approved' });
+        await store.recordRunApprovalDecision(defaultOrganizationId, {
+          runId: toApprove.id,
+          toStatus: 'APPROVED',
+          actorUsername: approverUserName,
+        });
+
+        const after = await store.getRunApprovalCounts(defaultOrganizationId, approverUserName, true);
+        expect(after.pending).toBe(before.pending + 1);
+        expect(after.approved).toBe(before.approved + 1);
+      });
+
+      it('as a non-approver, only counts own submissions', async () => {
+        if (startupError) throw startupError;
+
+        const store = new PostgresImportValidationStore(pool);
+        const before = await store.getRunApprovalCounts(
+          defaultOrganizationId,
+          submittedByUserName,
+          false,
+        );
+
+        await createPendingApprovalRun({ label: 'Non-Approver Sees Own' });
+
+        const after = await store.getRunApprovalCounts(
+          defaultOrganizationId,
+          submittedByUserName,
+          false,
+        );
+        expect(after.pending).toBe(before.pending + 1);
+        expect(after.mySubmissions).toBe(before.mySubmissions + 1);
+      });
+    });
+
+    describe('claimRunApproval', () => {
+      it('assigns decided_by on an unclaimed pending run without deciding it', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'To Be Claimed' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const result = await store.claimRunApproval(defaultOrganizationId, run.id, approverUserName);
+        expect(result).toEqual({ outcome: 'claimed' });
+
+        const row = await pool.query<{ status: string; decided_by: string }>(
+          'SELECT status, decided_by FROM reconciliation_run WHERE id = $1',
+          [run.id],
+        );
+        expect(row.rows[0]).toMatchObject({ status: 'PENDING_APPROVAL', decided_by: approverUserId });
+      });
+
+      it('returns not_claimable when already claimed', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Already Claimed' });
+        const store = new PostgresImportValidationStore(pool);
+
+        await store.claimRunApproval(defaultOrganizationId, run.id, approverUserName);
+        const second = await store.claimRunApproval(defaultOrganizationId, run.id, submittedByUserName);
+
+        expect(second).toEqual({ outcome: 'not_claimable' });
+      });
+
+      it('throws for an actor username with no matching reconciliation_user row', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Unresolvable Actor' });
+        const store = new PostgresImportValidationStore(pool);
+
+        await expect(
+          store.claimRunApproval(defaultOrganizationId, run.id, 'no-such-user'),
+        ).rejects.toThrow(/no matching reconciliation_user row/);
+      });
+    });
+
+    describe('recordRunApprovalDecision', () => {
+      it('approves a pending run and records the decider and note', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Decide Approve' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const result = await store.recordRunApprovalDecision(defaultOrganizationId, {
+          runId: run.id,
+          toStatus: 'APPROVED',
+          actorUsername: approverUserName,
+          rationale: 'Looks good',
+        });
+
+        expect(result).toMatchObject({
+          outcome: 'decided',
+          item: {
+            id: run.id,
+            status: 'APPROVED',
+            decidedByUsername: approverUserName,
+            decisionNote: 'Looks good',
+          },
+        });
+      });
+
+      it('rejects a pending run', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Decide Reject' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const result = await store.recordRunApprovalDecision(defaultOrganizationId, {
+          runId: run.id,
+          toStatus: 'REJECTED',
+          actorUsername: approverUserName,
+        });
+
+        expect(result).toMatchObject({ outcome: 'decided', item: { status: 'REJECTED' } });
+      });
+
+      it('returns not_found for a run that is not PENDING_APPROVAL', async () => {
+        if (startupError) throw startupError;
+
+        const draft = await createDraftRun({ label: 'Not Yet Submitted' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const result = await store.recordRunApprovalDecision(defaultOrganizationId, {
+          runId: draft.id,
+          toStatus: 'APPROVED',
+          actorUsername: approverUserName,
+        });
+
+        expect(result).toEqual({ outcome: 'not_found' });
+      });
+
+      it('rejects (Postgres 23514) when the actor is also the run\'s own submitter', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Self Approval Attempt' });
+        const store = new PostgresImportValidationStore(pool);
+
+        await expect(
+          store.recordRunApprovalDecision(defaultOrganizationId, {
+            runId: run.id,
+            toStatus: 'APPROVED',
+            actorUsername: submittedByUserName,
+          }),
+        ).rejects.toMatchObject({ code: '23514' });
+      });
+
+      it('throws for an actor username with no matching reconciliation_user row', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Decide Unresolvable Actor' });
+        const store = new PostgresImportValidationStore(pool);
+
+        await expect(
+          store.recordRunApprovalDecision(defaultOrganizationId, {
+            runId: run.id,
+            toStatus: 'APPROVED',
+            actorUsername: 'no-such-user',
+          }),
+        ).rejects.toThrow(/no matching reconciliation_user row/);
+      });
     });
   });
 });

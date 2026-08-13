@@ -33,7 +33,9 @@ const APPROVAL_GROUPS: ReadonlyArray<{
     key: 'import',
     path: routePaths.approvalsImports,
     title: 'Imported files',
-    types: ['import'],
+    // 'reconciliationRun' (File Imports & Validation) merges onto the same table as 'import' --
+    // both row types render together here, same pattern as matchingRule+varianceThreshold below.
+    types: ['import', 'reconciliationRun'],
     icon: 'upload',
     tint: 'accent',
     isLive: true,
@@ -176,8 +178,15 @@ export function ApprovalsPage({
 
   const handleBulkApprove = (): void => {
     setActionError(null);
+    // Each selected row keeps its own type -- group.types[0] would be wrong here whenever a group
+    // merges more than one ApprovableType onto one table (import+reconciliationRun,
+    // matchingRule+varianceThreshold): a selected row of the second type would get decided under
+    // the first type's endpoint.
     void Promise.all(
-      Array.from(selectedIds).map((id) => decideApprovalRequest(group.types[0]!, id, 'APPROVED')),
+      Array.from(selectedIds).map((id) => {
+        const row = rows.find((candidate) => candidate.id === id);
+        return row ? decideApprovalRequest(row.type, id, 'APPROVED') : Promise.resolve();
+      }),
     )
       .then(refresh)
       .catch((error: unknown) => {

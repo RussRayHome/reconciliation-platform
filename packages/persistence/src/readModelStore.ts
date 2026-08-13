@@ -1542,8 +1542,10 @@ export const getImportApprovalCounts = async (
   });
 };
 
-/** The five `ApprovableType`s backed by the generic `reconciliation_approval_request` table (everything except 'import', which keeps its own dedicated table). */
-export type GenericApprovableType = Exclude<ApprovableType, 'import'>;
+/** The five `ApprovableType`s backed by the generic `reconciliation_approval_request` table --
+ * everything except 'import' (its own dedicated sidecar table) and 'reconciliationRun' (decided
+ * directly on reconciliation_run itself, see PostgresImportValidationStore). */
+export type GenericApprovableType = Exclude<ApprovableType, 'import' | 'reconciliationRun'>;
 
 export interface CreateApprovalRequestInput {
   id: string;

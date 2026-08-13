@@ -51,9 +51,11 @@ import {
   type ImportApprovalListItem,
   type ListApprovalRequestsFilter,
   type ListImportApprovalsFilter,
+  type ListRunApprovalsFilter,
   type PaginatedExceptionsResult,
   type PostgresReconciliationLifecycleStore,
   type PostgresReconciliationReadModelStore,
+  type RunApprovalListItem,
 } from '@recon/persistence';
 import { CsvParser } from '@recon/core';
 import ExcelJS from 'exceljs';
@@ -2876,6 +2878,22 @@ export const createApp = (
     state: item.status,
   });
 
+  // reconciliation_run has no OVERRIDDEN equivalent (see approvableTypes' own doc comment on
+  // 'reconciliationRun') -- PENDING_APPROVAL is the only status this mapping needs to translate,
+  // APPROVED/REJECTED already match ImportApprovalStatus's own spelling.
+  const toRunApprovalRow = (item: RunApprovalListItem): ApprovalRow => ({
+    id: item.id,
+    type: 'reconciliationRun',
+    title: item.label,
+    meta: `${item.frequency === 'MONTHLY' ? 'Monthly' : 'Annual'} recon · ${
+      item.periodMonth ? `${item.periodMonth}/${item.periodYear}` : item.periodYear
+    }`,
+    submitter: item.submittedByUsername,
+    approver: item.decidedByUsername,
+    ageHours: ageHoursSince(item.submittedAt),
+    state: item.status === 'PENDING_APPROVAL' ? 'PENDING' : item.status,
+  });
+
   // matchingRule and varianceThreshold both point at reconciliation_matching_config_version --
   // variance-threshold changes are a field on that same versioned object (varianceOverrides), not
   // a separate entity, so both subject types resolve their title the same way. mappingProfile,
@@ -2937,6 +2955,23 @@ export const createApp = (
         return;
       }
 
+      if (type === 'reconciliationRun') {
+        const runStatus = tabStatus === 'PENDING' ? 'PENDING_APPROVAL' : tabStatus;
+        const runFilter: ListRunApprovalsFilter =
+          tab === 'mine'
+            ? { submittedByUsername: username }
+            : canApprove
+              ? { status: runStatus, routedToOrUnassignedUsername: tab === 'pending' ? username : undefined }
+              : { status: runStatus, submittedByUsername: username };
+
+        const items = await new PostgresImportValidationStore(pool!).listRunApprovals(
+          organizationId,
+          runFilter,
+        );
+        response.json(items.map(toRunApprovalRow) satisfies ApprovalRow[]);
+        return;
+      }
+
       const genericFilter: ListApprovalRequestsFilter =
         tab === 'mine'
           ? { subjectType: type, submittedBy: username }
@@ -2963,19 +2998,39 @@ export const createApp = (
     try {
       const { organizationId, username, role } = request.auth!;
       const canApprove = rolePermissionsByRole[role].canApprove;
-      const [importCounts, mappingProfileCounts, matchingRuleCounts, exceptionResolutionCounts, reportDistributionCounts] =
-        await Promise.all([
-          getImportApprovalCounts(pool!, organizationId, username, canApprove),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['mappingProfile']),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
-            'matchingRule',
-            'varianceThreshold',
-          ]),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['exceptionResolution']),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['reportDistribution']),
-        ]);
+      const [
+        importCounts,
+        runCounts,
+        mappingProfileCounts,
+        matchingRuleCounts,
+        exceptionResolutionCounts,
+        reportDistributionCounts,
+      ] = await Promise.all([
+        getImportApprovalCounts(pool!, organizationId, username, canApprove),
+        new PostgresImportValidationStore(pool!).getRunApprovalCounts(
+          organizationId,
+          username,
+          canApprove,
+        ),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['mappingProfile']),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
+          'matchingRule',
+          'varianceThreshold',
+        ]),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['exceptionResolution']),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['reportDistribution']),
+      ]);
       response.json({
-        import: importCounts,
+        // 'reconciliationRun' shares the 'import' rail submenu (approvableTypes' own doc comment)
+        // -- its counts merge into the same badge, same pattern as matchingRule+varianceThreshold
+        // merging into the 'matchingRule' key below, just summed by hand since the two row types
+        // come from genuinely different tables/queries rather than one IN-list query.
+        import: {
+          pending: importCounts.pending + runCounts.pending,
+          approved: importCounts.approved + runCounts.approved,
+          rejected: importCounts.rejected + runCounts.rejected,
+          mySubmissions: importCounts.mySubmissions + runCounts.mySubmissions,
+        },
         mappingProfile: mappingProfileCounts,
         matchingRule: matchingRuleCounts,
         exceptionResolution: exceptionResolutionCounts,
@@ -3011,6 +3066,35 @@ export const createApp = (
           rationale: bodyResult.data.rationale,
         });
         response.json(approval);
+        return;
+      }
+
+      if (type === 'reconciliationRun') {
+        // reconciliation_run's status enum (changeset 0042) has no OVERRIDDEN value -- reject
+        // before ever touching the DB rather than letting a CHECK violation surface as a raw error.
+        if (bodyResult.data.status === 'OVERRIDDEN') {
+          response
+            .status(400)
+            .json({ message: 'An import run decision must be APPROVED or REJECTED.' });
+          return;
+        }
+
+        const result = await new PostgresImportValidationStore(pool!).recordRunApprovalDecision(
+          organizationId,
+          {
+            runId: request.params.id,
+            toStatus: bodyResult.data.status,
+            actorUsername: username,
+            rationale: bodyResult.data.rationale,
+          },
+        );
+
+        if (result.outcome === 'not_found') {
+          response.status(404).json({ message: 'Import run not found or not pending approval.' });
+          return;
+        }
+
+        response.json(result.item);
         return;
       }
 
@@ -3062,6 +3146,14 @@ export const createApp = (
         response.status(409).json({ message: 'This draft is no longer pending publish.' });
         return;
       }
+      // reconciliation_run_segregation_of_duty_check (changeset 0042): the run's own submitter
+      // tried to also decide it.
+      if ((error as { code?: string }).code === '23514') {
+        response
+          .status(409)
+          .json({ message: 'The submitter of an import run cannot also approve or reject it.' });
+        return;
+      }
       next(error);
     }
   });
@@ -3075,6 +3167,25 @@ export const createApp = (
     const type = request.params.type as ApprovableType;
     try {
       const { organizationId, username } = request.auth!;
+
+      if (type === 'reconciliationRun') {
+        const result = await new PostgresImportValidationStore(pool!).claimRunApproval(
+          organizationId,
+          request.params.id,
+          username,
+        );
+        if (result.outcome === 'not_claimable') {
+          response
+            .status(409)
+            .json({ message: 'This item was already claimed or decided by someone else.' });
+          return;
+        }
+        // The frontend discards this body and just refetches the list on success (see
+        // claimApprovalRequest in apps/web/src/lib/api.ts) -- the outcome marker is enough.
+        response.json(result);
+        return;
+      }
+
       const claimed =
         type === 'import'
           ? await claimImportApproval(pool!, organizationId, request.params.id, username)

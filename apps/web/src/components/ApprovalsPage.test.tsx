@@ -53,6 +53,17 @@ const PENDING_ASSIGNED: ApprovalRow = {
   state: 'PENDING',
 };
 
+const PENDING_ASSIGNED_RUN: ApprovalRow = {
+  id: 'run-1',
+  type: 'reconciliationRun',
+  title: 'August Recon',
+  meta: 'Monthly recon · 8/2026',
+  submitter: 'j.doe',
+  approver: 'm.ortega',
+  ageHours: 12,
+  state: 'PENDING',
+};
+
 const renderPage = (
   props: Partial<{ canApprove: boolean; isAdmin: boolean }> = {},
   path: string = routePaths.approvalsImports,
@@ -301,5 +312,31 @@ describe('ApprovalsPage', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe('bulk approve rejected by server');
+  });
+
+  it('merges import and reconciliationRun rows into one table on /approvals/imports', async () => {
+    mockedApi.rows = [PENDING_ASSIGNED, PENDING_ASSIGNED_RUN];
+    renderPage({ canApprove: true });
+
+    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    expect(screen.getByText('August Recon')).toBeTruthy();
+    expect(screen.getByText('Monthly recon · 8/2026')).toBeTruthy();
+    expect(mockedApi.getApprovalsRequest).toHaveBeenCalledWith('import', 'pending');
+    expect(mockedApi.getApprovalsRequest).toHaveBeenCalledWith('reconciliationRun', 'pending');
+  });
+
+  it('bulk-approves a mixed selection using each row\'s own type, not the group\'s first type', async () => {
+    mockedApi.rows = [PENDING_ASSIGNED, PENDING_ASSIGNED_RUN];
+    renderPage({ canApprove: true });
+    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select company_gl.xlsx' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select August Recon' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve 2 selected' }));
+
+    await waitFor(() =>
+      expect(mockedApi.decideApprovalRequest).toHaveBeenCalledWith('import', 'row-2', 'APPROVED'),
+    );
+    expect(mockedApi.decideApprovalRequest).toHaveBeenCalledWith('reconciliationRun', 'run-1', 'APPROVED');
   });
 });

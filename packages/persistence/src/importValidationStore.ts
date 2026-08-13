@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 import { runInTenantScope, runInTenantScopeAsUser } from './postgres';
 
@@ -38,6 +38,59 @@ export type SubmitRunResult =
   | { outcome: 'not_found' }
   | { outcome: 'invalid_state'; currentStatus: string }
   | { outcome: 'submitted'; importJobId: string };
+
+/** The three reconciliation_run statuses that represent an approval decision in flight or made --
+ * the other five (DRAFT/VALIDATING/VALIDATION_FAILED/RECONCILING/RECONCILED) never reach the
+ * Approvals surface, matching how reconciliation_import_approval only ever has PENDING/APPROVED/
+ * REJECTED/OVERRIDDEN rows (a run has no OVERRIDDEN equivalent -- decided_by/decided_at only ever
+ * get set once, by recordRunApprovalDecision, never overwritten after the fact). */
+export type RunApprovalStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+
+export interface RunApprovalListItem {
+  id: string;
+  label: string;
+  frequency: 'MONTHLY' | 'ANNUAL';
+  periodYear: number;
+  periodMonth: number | null;
+  status: RunApprovalStatus;
+  /** Resolved from submitted_by/decided_by (UUID FKs, changeset 0042/0024) back to
+   * reconciliation_user.user_name for display -- falls back to the raw id string if the id
+   * doesn't resolve (should not happen in practice: these ids only ever come from a prior
+   * successful submitRun/claimRunApproval/recordRunApprovalDecision resolution). */
+  submittedByUsername: string;
+  decidedByUsername: string | null;
+  decisionNote: string | null;
+  submittedAt: string;
+  decidedAt: string | null;
+}
+
+export interface ListRunApprovalsFilter {
+  status?: RunApprovalStatus;
+  submittedByUsername?: string;
+  /** RailMenuMods "everything routed to me + unassigned" pending-queue rule, same semantics as
+   * ListImportApprovalsFilter.routedToOrUnassigned. */
+  routedToOrUnassignedUsername?: string;
+}
+
+export interface RunApprovalCounts {
+  pending: number;
+  approved: number;
+  rejected: number;
+  mySubmissions: number;
+}
+
+export type ClaimRunApprovalResult = { outcome: 'claimed' } | { outcome: 'not_claimable' };
+
+export interface RecordRunApprovalDecisionInput {
+  runId: string;
+  toStatus: Extract<RunApprovalStatus, 'APPROVED' | 'REJECTED'>;
+  actorUsername: string;
+  rationale?: string;
+}
+
+export type RunApprovalDecisionResult =
+  | { outcome: 'not_found' }
+  | { outcome: 'decided'; item: RunApprovalListItem };
 
 export type FileValidationStatus = 'VALID' | 'VALID_WITH_WARNINGS' | 'INVALID';
 
@@ -287,5 +340,250 @@ export class PostgresImportValidationStore {
         runId,
       ]),
     );
+  }
+
+  /** Single-row lookup by user_name AND organization_id -- the same narrow, already-tenant-scoped
+   * shape submitRun already uses (see reconciliationUserAccessGuard.test.ts's allowlist entry for
+   * this file: never a list/filter across reconciliation_user, which has RLS fully disabled). */
+  private async resolveUserId(
+    client: PoolClient,
+    organizationId: string,
+    username: string,
+  ): Promise<string | null> {
+    const result = await client.query<{ id: string }>(
+      'SELECT id FROM reconciliation_user WHERE user_name = $1 AND organization_id = $2',
+      [username, organizationId],
+    );
+    return result.rows[0]?.id ?? null;
+  }
+
+  /** Resolves display usernames for a bounded, already-known set of ids (the submitted_by/
+   * decided_by values that came back from an already-tenant-scoped reconciliation_run query) --
+   * WHERE id = ANY(...), never an unbounded list/filter of reconciliation_user itself, same
+   * reasoning as resolveUserId above. */
+  private async resolveUsernamesByIds(
+    client: PoolClient,
+    organizationId: string,
+    ids: readonly string[],
+  ): Promise<Map<string, string>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const result = await client.query<{ id: string; user_name: string }>(
+      'SELECT id, user_name FROM reconciliation_user WHERE id = ANY($1::uuid[]) AND organization_id = $2',
+      [ids, organizationId],
+    );
+    return new Map(result.rows.map((row) => [row.id, row.user_name]));
+  }
+
+  private toRunApprovalListItem(
+    row: {
+      id: string;
+      label: string;
+      frequency: 'MONTHLY' | 'ANNUAL';
+      period_year: number;
+      period_month: number | null;
+      status: RunApprovalStatus;
+      submitted_by: string;
+      decided_by: string | null;
+      decision_note: string | null;
+      submitted_at: string;
+      decided_at: string | null;
+    },
+    usernamesById: Map<string, string>,
+  ): RunApprovalListItem {
+    return {
+      id: row.id,
+      label: row.label,
+      frequency: row.frequency,
+      periodYear: row.period_year,
+      periodMonth: row.period_month,
+      status: row.status,
+      submittedByUsername: usernamesById.get(row.submitted_by) ?? row.submitted_by,
+      decidedByUsername: row.decided_by ? (usernamesById.get(row.decided_by) ?? row.decided_by) : null,
+      decisionNote: row.decision_note,
+      submittedAt: row.submitted_at,
+      decidedAt: row.decided_at,
+    };
+  }
+
+  /** Lists reconciliation_run rows that have reached the Approvals surface (PENDING_APPROVAL/
+   * APPROVED/REJECTED only -- DRAFT/VALIDATING/VALIDATION_FAILED/RECONCILING/RECONCILED never
+   * show up here, same "only decided-relevant statuses" scoping as listImportApprovals). */
+  async listRunApprovals(
+    organizationId: string,
+    filter: ListRunApprovalsFilter,
+  ): Promise<RunApprovalListItem[]> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const submittedByUserId = filter.submittedByUsername
+        ? await this.resolveUserId(client, organizationId, filter.submittedByUsername)
+        : null;
+      const routedToOrUnassignedUserId = filter.routedToOrUnassignedUsername
+        ? await this.resolveUserId(client, organizationId, filter.routedToOrUnassignedUsername)
+        : null;
+
+      const result = await client.query<{
+        id: string;
+        label: string;
+        frequency: 'MONTHLY' | 'ANNUAL';
+        period_year: number;
+        period_month: number | null;
+        status: RunApprovalStatus;
+        submitted_by: string;
+        decided_by: string | null;
+        decision_note: string | null;
+        submitted_at: string;
+        decided_at: string | null;
+      }>(
+        `SELECT id, label, frequency, period_year, period_month, status, submitted_by, decided_by,
+                decision_note, submitted_at, decided_at
+           FROM reconciliation_run
+          WHERE status IN ('PENDING_APPROVAL', 'APPROVED', 'REJECTED')
+            AND ($1::text IS NULL OR status = $1)
+            AND ($2::uuid IS NULL OR submitted_by = $2)
+            AND ($3::uuid IS NULL OR decided_by = $3 OR decided_by IS NULL)
+          ORDER BY submitted_at DESC`,
+        [filter.status ?? null, submittedByUserId, routedToOrUnassignedUserId],
+      );
+
+      const userIds = [
+        ...new Set(
+          result.rows.flatMap((row) => [row.submitted_by, row.decided_by]).filter((id): id is string => !!id),
+        ),
+      ];
+      const usernamesById = await this.resolveUsernamesByIds(client, organizationId, userIds);
+
+      return result.rows.map((row) => this.toRunApprovalListItem(row, usernamesById));
+    });
+  }
+
+  /** Mirrors getImportApprovalCounts exactly: an approver's pending count only shows unclaimed-or
+   * -mine, but their approved/rejected counts are org-wide; a non-approver only ever sees their
+   * own submissions. */
+  async getRunApprovalCounts(
+    organizationId: string,
+    username: string,
+    canApprove: boolean,
+  ): Promise<RunApprovalCounts> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const userId = await this.resolveUserId(client, organizationId, username);
+      const result = await client.query<{
+        pending: string;
+        approved: string;
+        rejected: string;
+        my_submissions: string;
+      }>(
+        canApprove
+          ? `SELECT
+               COUNT(*) FILTER (WHERE status = 'PENDING_APPROVAL' AND (decided_by = $1 OR decided_by IS NULL)) AS pending,
+               COUNT(*) FILTER (WHERE status = 'APPROVED') AS approved,
+               COUNT(*) FILTER (WHERE status = 'REJECTED') AS rejected,
+               COUNT(*) FILTER (WHERE submitted_by = $1) AS my_submissions
+             FROM reconciliation_run`
+          : `SELECT
+               COUNT(*) FILTER (WHERE status = 'PENDING_APPROVAL' AND submitted_by = $1) AS pending,
+               COUNT(*) FILTER (WHERE status = 'APPROVED' AND submitted_by = $1) AS approved,
+               COUNT(*) FILTER (WHERE status = 'REJECTED' AND submitted_by = $1) AS rejected,
+               COUNT(*) FILTER (WHERE submitted_by = $1) AS my_submissions
+             FROM reconciliation_run`,
+        [userId],
+      );
+      const row = result.rows[0];
+      return {
+        pending: Number(row?.pending ?? 0),
+        approved: Number(row?.approved ?? 0),
+        rejected: Number(row?.rejected ?? 0),
+        mySubmissions: Number(row?.my_submissions ?? 0),
+      };
+    });
+  }
+
+  /** Assigns actor as decided_by on an unclaimed PENDING_APPROVAL run, without deciding it --
+   * mirrors claimImportApproval/claimApprovalRequest, both of which reuse their own "decider"
+   * column the exact same way rather than adding a separate claimed_by column. A later
+   * recordRunApprovalDecision overwrites decided_by with whoever actually decides (usually, but
+   * not necessarily, the same claimer), identical to how the other two claim/decide pairs behave
+   * today. Throws if actorUsername has no matching reconciliation_user row -- unlike submitRun's
+   * submitter, the decider's identity is integrity-critical here (segregation of duty), so this
+   * must fail loudly rather than silently record a NULL decider. */
+  async claimRunApproval(
+    organizationId: string,
+    runId: string,
+    actorUsername: string,
+  ): Promise<ClaimRunApprovalResult> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const actorUserId = await this.resolveUserId(client, organizationId, actorUsername);
+      if (!actorUserId) {
+        throw new Error(
+          `claimRunApproval: actor username "${actorUsername}" has no matching reconciliation_user row.`,
+        );
+      }
+
+      const result = await client.query(
+        `UPDATE reconciliation_run
+            SET decided_by = $2
+          WHERE id = $1 AND status = 'PENDING_APPROVAL' AND decided_by IS NULL
+        RETURNING id`,
+        [runId, actorUserId],
+      );
+
+      return result.rows.length > 0 ? { outcome: 'claimed' } : { outcome: 'not_claimable' };
+    });
+  }
+
+  /** Decides a PENDING_APPROVAL run. The segregation-of-duty CHECK constraint
+   * (reconciliation_run_segregation_of_duty_check, changeset 0042: decided_by IS NULL OR
+   * submitted_by IS DISTINCT FROM decided_by) can reject this UPDATE with a Postgres 23514
+   * violation when the actor is also the run's own submitter -- deliberately left uncaught here,
+   * same convention as createApprovalRequest's unique-violation (23505, readModelStore.ts's own
+   * doc comment): the route layer catches the raw error code, this layer doesn't guess at HTTP
+   * semantics. Throws (rather than returning a result variant) if actorUsername has no matching
+   * reconciliation_user row, same reasoning as claimRunApproval. */
+  async recordRunApprovalDecision(
+    organizationId: string,
+    input: RecordRunApprovalDecisionInput,
+  ): Promise<RunApprovalDecisionResult> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const actorUserId = await this.resolveUserId(client, organizationId, input.actorUsername);
+      if (!actorUserId) {
+        throw new Error(
+          `recordRunApprovalDecision: actor username "${input.actorUsername}" has no matching reconciliation_user row.`,
+        );
+      }
+
+      const result = await client.query<{
+        id: string;
+        label: string;
+        frequency: 'MONTHLY' | 'ANNUAL';
+        period_year: number;
+        period_month: number | null;
+        status: RunApprovalStatus;
+        submitted_by: string;
+        decided_by: string | null;
+        decision_note: string | null;
+        submitted_at: string;
+        decided_at: string | null;
+      }>(
+        `UPDATE reconciliation_run
+            SET status = $2, decided_by = $3, decision_note = $4, decided_at = NOW()
+          WHERE id = $1 AND status = 'PENDING_APPROVAL'
+        RETURNING id, label, frequency, period_year, period_month, status, submitted_by, decided_by,
+                  decision_note, submitted_at, decided_at`,
+        [input.runId, input.toStatus, actorUserId, input.rationale ?? null],
+      );
+
+      const row = result.rows[0];
+      if (!row) {
+        return { outcome: 'not_found' };
+      }
+
+      const usernamesById = await this.resolveUsernamesByIds(
+        client,
+        organizationId,
+        [row.submitted_by, row.decided_by].filter((id): id is string => !!id),
+      );
+
+      return { outcome: 'decided', item: this.toRunApprovalListItem(row, usernamesById) };
+    });
   }
 }
