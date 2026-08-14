@@ -18,7 +18,7 @@ RUN set -eux; \
             apt-get -y upgrade; \
             apt-get install -y --no-install-recommends locales; \
             if [ "${ENABLE_PGAUDIT}" = "true" ]; then \
-                apt-get install -y --no-install-recommends postgresql-16-pgaudit; \
+                apt-get install -y --no-install-recommends "postgresql-${PG_MAJOR}-pgaudit"; \
             fi; \
             rm -rf /var/lib/apt/lists/*; \
         fi
