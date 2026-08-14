@@ -40,11 +40,27 @@ describe('Liquibase rollback', () => {
     return result.rows[0]?.exists === true;
   };
 
+  // 0049 grants app_user privileges on two sequences -- generateSchemaBaseline only introspects
+  // tables/columns/constraints/FKs/indexes, not privileges, so a grants-only changeset produces
+  // no schema-baseline diff at all (same "no diff" caveat this describe block's own history
+  // already flagged for an RLS-only rollback). Checked directly via has_sequence_privilege
+  // instead of the text-diff approach the rest of this file uses.
+  const hasSequenceSelectPrivilege = async (pool: Pool, sequence: string): Promise<boolean> => {
+    const result = await pool.query<{ has_privilege: boolean }>(
+      `SELECT has_sequence_privilege('app_user', $1, 'SELECT') AS has_privilege`,
+      [sequence],
+    );
+    return result.rows[0]?.has_privilege === true;
+  };
+
   describe('rolling back the most recent changeset', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackSchema: string;
     let reappliedSchema: string;
+    let migratedHasPrivilege: boolean;
+    let rolledBackHasPrivilege: boolean;
+    let reappliedHasPrivilege: boolean;
 
     beforeAll(async () => {
       database = await createEmptyDatabase('recon_rollback_one');
@@ -52,16 +68,27 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
+      migratedHasPrivilege = await hasSequenceSelectPrivilege(
+        database.pool,
+        'validation_issue_id_seq',
+      );
 
-      // 0048 (the current HEAD) adds reconciliation_run.matching_job_id -- a column addition, not
-      // a new table, so this uses the same col_type_is text-diff approach as the 0026 rollback
-      // test below rather than tableExists (see git history on this describe block for why table
-      // existence doesn't always apply: an RLS-only rollback once showed no diff at all here).
+      // 0049 (the current HEAD) grants app_user sequence privileges -- see
+      // hasSequenceSelectPrivilege's own comment for why this is checked directly rather than via
+      // the schema-baseline text diff the rest of this file uses.
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
+      rolledBackHasPrivilege = await hasSequenceSelectPrivilege(
+        database.pool,
+        'validation_issue_id_seq',
+      );
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
+      reappliedHasPrivilege = await hasSequenceSelectPrivilege(
+        database.pool,
+        'validation_issue_id_seq',
+      );
     }, 180000);
 
     afterAll(async () => {
@@ -78,19 +105,17 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses 0048 by dropping reconciliation_run.matching_job_id', () => {
-      // When a future changeset lands on top of 0048, update this test to describe that changeset
+    it('reverses 0049 by revoking app_user\'s SELECT privilege on validation_issue_id_seq', () => {
+      // When a future changeset lands on top of 0049, update this test to describe that changeset
       // instead -- it is intentionally pinned to "whatever is currently the most recent
-      // changeset", not to 0048 forever (see 0033's git history for the last time this moved).
-      const columnMarker = "col_type_is('public', 'reconciliation_run', 'matching_job_id', 'uuid'";
-      expect(migratedSchema).toContain(columnMarker);
-      expect(rolledBackSchema).not.toContain(columnMarker);
-      expect(reappliedSchema).toContain(columnMarker);
-      expect(rolledBackSchema).not.toEqual(migratedSchema);
+      // changeset", not to 0049 forever (see 0033's git history for the last time this moved).
+      expect(migratedHasPrivilege).toBe(true);
+      expect(rolledBackHasPrivilege).toBe(false);
+      expect(reappliedHasPrivilege).toBe(true);
     });
   });
 
-  describe('rolling back twenty-three changesets (0048 down through 0026 schema-changing)', () => {
+  describe('rolling back twenty-four changesets (0049 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -102,7 +127,7 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now twenty-three changesets back from HEAD (0048): 0027 (verify-only), 0028 (adds
+      // 0026 is now twenty-four changesets back from HEAD (0049): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
@@ -114,10 +139,10 @@ describe('Liquibase rollback', () => {
       // reconciliation_user changes), 0042/0043 (File Imports & Validation tables + RLS, no
       // reconciliation_user changes), 0044/0045/0046 (source_type widening, run_source_file,
       // canonical_record rename -- none touch reconciliation_user), 0047 (rule version lineage
-      // tables, no reconciliation_user changes), and 0048 (reconciliation_run.matching_job_id, no
-      // reconciliation_user changes) all sit on top of it without reversing anything this test
-      // cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=23');
+      // tables, no reconciliation_user changes), 0048 (reconciliation_run.matching_job_id, no
+      // reconciliation_user changes), and 0049 (app_user sequence grants, no reconciliation_user
+      // changes) all sit on top of it without reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=24');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 
