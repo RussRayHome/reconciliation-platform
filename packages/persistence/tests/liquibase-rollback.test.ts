@@ -56,7 +56,6 @@ describe('Liquibase rollback', () => {
   describe('rolling back the most recent changeset', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
-    let rolledBackSchema: string;
     let reappliedSchema: string;
     let migratedHasPrivilege: boolean;
     let rolledBackHasPrivilege: boolean;
@@ -77,7 +76,6 @@ describe('Liquibase rollback', () => {
       // hasSequenceSelectPrivilege's own comment for why this is checked directly rather than via
       // the schema-baseline text diff the rest of this file uses.
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
-      rolledBackSchema = await generateSchemaBaseline(database.pool);
       rolledBackHasPrivilege = await hasSequenceSelectPrivilege(
         database.pool,
         'validation_issue_id_seq',
