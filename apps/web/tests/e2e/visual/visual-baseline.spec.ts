@@ -34,9 +34,15 @@ const widths = [1440, 1100, 900] as const;
 // otherwise (this is a Playwright default, not something this file previously opted out of) --
 // explicitly requesting parallel mode is what actually lets the three widths run concurrently.
 test.describe.configure({ mode: 'parallel' });
+const MOCK_MATCHING_JOB_ID = 'e2e-mock-matching-job';
+
 const mockReconciliationRun = async (page: Page): Promise<void> => {
   const fixture = reconciliationRunReportFixture as unknown as ReconciliationRunReport;
   const body = JSON.stringify(fixture);
+  // Pre-Phase-9, Screen 01's Submit called this one atomic endpoint directly. Phase 9 replaced
+  // that with the import pipeline (POST /api/imports/runs -> .../submit -> GET
+  // /api/reconciliation/:id below) -- kept mocked here too since nothing currently calls it, but
+  // removing it isn't free of risk without auditing every caller first.
   await page.route('**/api/reconciliation/run', (route) =>
     route.fulfill({ status: 201, contentType: 'application/json', body }),
   );
@@ -45,6 +51,62 @@ const mockReconciliationRun = async (page: Page): Promise<void> => {
   // real backend's last run happened to be (previously: the superuser-workspace test's run,
   // relying on serial execution order). Mocked here too so every test is self-contained.
   await page.route('**/api/reconciliation/latest', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body }),
+  );
+
+  // The actual Phase 9+ flow useImportRunSubmit.ts drives: create the DRAFT run, submit it
+  // (resolves synchronously here, matching this build's queue-disabled default), then fetch the
+  // resulting report by matchingJobId. All three were unmocked until now -- runReconciliation()
+  // was silently hitting the real backend instead of this frozen fixture, which is what made the
+  // Run Bar meter settle at 50% instead of 75% (a live run's progress-step timing doesn't match
+  // what these captures assume) and reintroduced exactly the cross-run-state race P5's own
+  // comment above says mocking was meant to eliminate.
+  await page.route('**/api/imports/runs', (route) => {
+    if (route.request().method() !== 'POST') {
+      return route.continue();
+    }
+    return route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'e2e-mock-run',
+        organizationId: 'e2e-mock-org',
+        label: 'Mocked run',
+        accountIdentifier: null,
+        frequency: 'MONTHLY',
+        periodYear: new Date().getFullYear(),
+        periodMonth: 3,
+        status: 'DRAFT',
+        createdAt: new Date(0).toISOString(),
+        files: [],
+      }),
+    });
+  });
+  await page.route('**/api/imports/runs/*/submit', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        importJobId: 'e2e-mock-job',
+        status: 'completed',
+        passed: true,
+        matchingJobId: MOCK_MATCHING_JOB_ID,
+        run: {
+          id: 'e2e-mock-run',
+          organizationId: 'e2e-mock-org',
+          label: 'Mocked run',
+          accountIdentifier: null,
+          frequency: 'MONTHLY',
+          periodYear: new Date().getFullYear(),
+          periodMonth: 3,
+          status: 'VALIDATED',
+          createdAt: new Date(0).toISOString(),
+          files: [],
+        },
+      }),
+    }),
+  );
+  await page.route(`**/api/reconciliation/${MOCK_MATCHING_JOB_ID}`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body }),
   );
 };
