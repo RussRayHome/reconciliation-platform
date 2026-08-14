@@ -66,10 +66,10 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
 };
 
 // importFiles ('/') renders SourceUploadSection, which has no heading element at all -- every
-// other e2e spec already targets its "Run reconciliation" button instead (see auth.ts's
-// openSetup), so this sweep does the same rather than inventing a heading that isn't there.
+// other e2e spec already targets its "Submit run" button instead (see auth.ts's openSetup), so
+// this sweep does the same rather than inventing a heading that isn't there.
 const IMPORT_FILES_LANDMARK_ROLE = 'button';
-const IMPORT_FILES_LANDMARK_NAME = 'Run reconciliation';
+const IMPORT_FILES_LANDMARK_NAME = 'Submit run';
 
 const accountedForKeys = [
   'importFiles',

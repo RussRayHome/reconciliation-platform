@@ -112,7 +112,12 @@ BEGIN
     FROM (VALUES
       ('rray', 'R', 'Ray', 'P@ssw0rd', 'superuser'),
       ('rray3', 'R', 'Ray3', 'P@ssw0rd', 'admin'),
-      ('bray', 'B', 'Ray', 'bray123', 'financial-analyst')
+      ('bray', 'B', 'Ray', 'bray123', 'financial-analyst'),
+      -- senior-analyst (File Imports & Validation): the only role besides admin/superuser that
+      -- can submit an import run (canSubmitImportRuns, packages/domain/src/enums.ts) -- bray
+      -- (financial-analyst) can't, so E2E specs exercising the upload/submit flow need this
+      -- account rather than reusing bray's.
+      ('bray2', 'B', 'Ray2', 'P@ssw0rd', 'senior-analyst')
     ) AS v(user_name, first_name, last_name, plain_password, role)
     CROSS JOIN (SELECT id FROM reconciliation_organization WHERE name = 'Default Organization') AS org
     ON CONFLICT (user_name) DO UPDATE
@@ -129,7 +134,7 @@ BEGIN
     SET entity_verification_status = 'verified'
     WHERE name = 'Default Organization';
 
-    RAISE NOTICE 'Application login accounts (rray, rray3, bray) seeded in reconciliation_user.';
+    RAISE NOTICE 'Application login accounts (rray, rray3, bray, bray2) seeded in reconciliation_user.';
   ELSE
     RAISE NOTICE 'reconciliation_user does not exist yet — skipping application login seed (re-run after migrations).';
   END IF;

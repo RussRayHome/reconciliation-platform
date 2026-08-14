@@ -132,3 +132,26 @@ describe('NavRail route inventory', () => {
     }
   });
 });
+
+describe('NavRail template downloads', () => {
+  it('offers both CSV and XLSX for the Bank and GL templates, each pill a distinct download link', () => {
+    renderRail();
+
+    expect(screen.getByRole('link', { name: 'Bank template CSV' })).toHaveAttribute(
+      'href',
+      '/templates/bank-template.csv',
+    );
+    expect(screen.getByRole('link', { name: 'Bank template XLSX' })).toHaveAttribute(
+      'href',
+      '/templates/bank-template.xlsx',
+    );
+    expect(screen.getByRole('link', { name: 'GL template CSV' })).toHaveAttribute(
+      'href',
+      '/templates/gl-template.csv',
+    );
+    expect(screen.getByRole('link', { name: 'GL template XLSX' })).toHaveAttribute(
+      'href',
+      '/templates/gl-template.xlsx',
+    );
+  });
+});

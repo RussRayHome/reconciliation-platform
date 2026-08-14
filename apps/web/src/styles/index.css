@@ -21,6 +21,7 @@
 @import './components/hero.css';
 @import './components/tabs.css';
 @import './components/upload.css';
+@import './components/import-failure.css';
 @import './components/run-bar.css';
 @import './components/progress.css';
 @import './components/rules.css';

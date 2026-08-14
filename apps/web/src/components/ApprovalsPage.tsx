@@ -8,6 +8,7 @@ import {
   claimApprovalRequest,
   decideApprovalRequest,
   getApprovalsRequest,
+  withdrawImportRunRequest,
   type ApprovalTab,
 } from '../lib/api';
 import { routePaths } from '../routes/routePaths';
@@ -33,7 +34,9 @@ const APPROVAL_GROUPS: ReadonlyArray<{
     key: 'import',
     path: routePaths.approvalsImports,
     title: 'Imported files',
-    types: ['import'],
+    // 'reconciliationRun' (File Imports & Validation) merges onto the same table as 'import' --
+    // both row types render together here, same pattern as matchingRule+varianceThreshold below.
+    types: ['import', 'reconciliationRun'],
     icon: 'upload',
     tint: 'accent',
     isLive: true,
@@ -162,6 +165,15 @@ export function ApprovalsPage({
       });
   };
 
+  const handleWithdraw = (row: ApprovalRow): void => {
+    setActionError(null);
+    void withdrawImportRunRequest(row.id)
+      .then(refresh)
+      .catch((error: unknown) => {
+        setActionError(error instanceof Error ? error.message : 'Unable to withdraw this submission.');
+      });
+  };
+
   const toggleSelected = (id: string): void => {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -176,8 +188,15 @@ export function ApprovalsPage({
 
   const handleBulkApprove = (): void => {
     setActionError(null);
+    // Each selected row keeps its own type -- group.types[0] would be wrong here whenever a group
+    // merges more than one ApprovableType onto one table (import+reconciliationRun,
+    // matchingRule+varianceThreshold): a selected row of the second type would get decided under
+    // the first type's endpoint.
     void Promise.all(
-      Array.from(selectedIds).map((id) => decideApprovalRequest(group.types[0]!, id, 'APPROVED')),
+      Array.from(selectedIds).map((id) => {
+        const row = rows.find((candidate) => candidate.id === id);
+        return row ? decideApprovalRequest(row.type, id, 'APPROVED') : Promise.resolve();
+      }),
     )
       .then(refresh)
       .catch((error: unknown) => {
@@ -289,6 +308,7 @@ export function ApprovalsPage({
             onApprove={(row) => handleDecision(row, 'APPROVED')}
             onReject={(row) => handleDecision(row, 'REJECTED')}
             onClaim={handleClaim}
+            onWithdraw={handleWithdraw}
           />
         </div>
       )}
@@ -309,6 +329,7 @@ function ApprovalTable({
   onApprove,
   onReject,
   onClaim,
+  onWithdraw,
 }: Readonly<{
   title: string;
   icon: SemanticIconName;
@@ -322,6 +343,7 @@ function ApprovalTable({
   onApprove: (row: ApprovalRow) => void;
   onReject: (row: ApprovalRow) => void;
   onClaim: (row: ApprovalRow) => void;
+  onWithdraw: (row: ApprovalRow) => void;
 }>) {
   const itemCountLabel = `${rows.length} ${rows.length === 1 ? 'item' : 'items'}`;
   const cardMeta = isLive ? itemCountLabel : 'Coming soon';
@@ -377,37 +399,81 @@ function ApprovalTable({
               </span>
               <span className="approvals__row-age">{formatAge(row.ageHours)}</span>
               <span className="approvals__row-actions">
-                {!canApprove ? null : row.approver === null ? (
-                  <button
-                    type="button"
-                    className="secondary-button approvals__row-action"
-                    onClick={() => onClaim(row)}
-                  >
-                    Claim to review
-                  </button>
-                ) : row.state === 'PENDING' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="secondary-button approvals__row-action"
-                      onClick={() => onReject(row)}
-                    >
-                      Reject
-                    </button>
-                    <button
-                      type="button"
-                      className="approvals__row-action"
-                      onClick={() => onApprove(row)}
-                    >
-                      {approveLabel(row)}
-                    </button>
-                  </>
-                ) : null}
+                <RowActions
+                  row={row}
+                  canApprove={canApprove}
+                  onApprove={onApprove}
+                  onReject={onReject}
+                  onClaim={onClaim}
+                  onWithdraw={onWithdraw}
+                />
               </span>
             </div>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/** The one action available for a row, by viewer role and row state -- pulled out of
+ * ApprovalTable's row markup as its own component (rather than a nested ternary) so each branch
+ * reads as its own case. Non-approvers only ever see "Withdraw," and only on their own pending
+ * reconciliationRun submissions (README §7 item 7); approvers see claim/reject/approve as before. */
+function RowActions({
+  row,
+  canApprove,
+  onApprove,
+  onReject,
+  onClaim,
+  onWithdraw,
+}: Readonly<{
+  row: ApprovalRow;
+  canApprove: boolean;
+  onApprove: (row: ApprovalRow) => void;
+  onReject: (row: ApprovalRow) => void;
+  onClaim: (row: ApprovalRow) => void;
+  onWithdraw: (row: ApprovalRow) => void;
+}>) {
+  if (!canApprove) {
+    if (row.type !== 'reconciliationRun' || row.state !== 'PENDING') {
+      return null;
+    }
+    return (
+      <button
+        type="button"
+        className="secondary-button approvals__row-action"
+        onClick={() => onWithdraw(row)}
+      >
+        Withdraw
+      </button>
+    );
+  }
+
+  if (row.approver === null) {
+    return (
+      <button
+        type="button"
+        className="secondary-button approvals__row-action"
+        onClick={() => onClaim(row)}
+      >
+        Claim to review
+      </button>
+    );
+  }
+
+  if (row.state !== 'PENDING') {
+    return null;
+  }
+
+  return (
+    <>
+      <button type="button" className="secondary-button approvals__row-action" onClick={() => onReject(row)}>
+        Reject
+      </button>
+      <button type="button" className="approvals__row-action" onClick={() => onApprove(row)}>
+        {approveLabel(row)}
+      </button>
+    </>
   );
 }

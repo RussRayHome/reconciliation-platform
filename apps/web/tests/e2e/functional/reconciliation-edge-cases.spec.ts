@@ -1,26 +1,24 @@
-import {
-  createAllExceptionsBankWorkbook,
-  createAllExceptionsGlWorkbook,
-  createSampleBankWorkbook,
-  createSampleGlWorkbook,
-  createWorkbookFromRows,
-  amountMismatchBankRows,
-  amountMismatchGlRows,
-  bankHeaderOnlyRows,
-  duplicateInBankBankRows,
-  duplicateInBankGlRows,
-  invalidDataBankRows,
-  invalidDataGlRows,
-  missingFromGlBankRows,
-  missingFromGlGlRows,
-  glHeaderOnlyRows,
-  timingDifferenceBankRows,
-  timingDifferenceGlRows,
-} from '@recon/test-fixtures';
+import { createWorkbookFromRows } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup } from '../auth';
+import {
+  amountMismatchBankFileValidationRows,
+  amountMismatchGlFileValidationRows,
+  bankHeaderOnlyFileValidationRows,
+  createAllExceptionsBankFileValidationWorkbook,
+  createAllExceptionsGlFileValidationWorkbook,
+  createSampleBankFileValidationWorkbook,
+  createSampleGlFileValidationWorkbook,
+  duplicateInBankBankFileValidationRows,
+  duplicateInBankGlFileValidationRows,
+  glHeaderOnlyFileValidationRows,
+  missingFromGlBankFileValidationRows,
+  missingFromGlGlFileValidationRows,
+  timingDifferenceBankFileValidationRows,
+  timingDifferenceGlFileValidationRows,
+} from '../fileValidationWorkbooks';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -70,7 +68,7 @@ async function runReconciliation(
     await page.getByLabel('Reconciliation label').fill(label);
   }
 
-  await page.getByRole('button', { name: 'Run reconciliation' }).click();
+  await page.getByRole('button', { name: 'Submit run' }).click();
   // A completed run lands on the Review stage, Summary view.
   await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
 }
@@ -96,48 +94,53 @@ function exceptionRow(page: Page, displayName: string) {
 test.describe('form validation', () => {
   test('submit button is disabled before any files are uploaded', async ({ page }) => {
     await openSetup(page);
-    await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Submit run' })).toBeDisabled();
   });
 
   test('submit button remains disabled with only the bank file uploaded', async ({ page }) => {
-    const bankBuffer = await createSampleBankWorkbook();
+    const bankBuffer = await createSampleBankFileValidationWorkbook();
     await openSetup(page);
     await page.locator('#bank-workbook-input').setInputFiles({
       name: 'bank.xlsx',
       mimeType: XLSX_MIME,
       buffer: bankBuffer,
     });
-    await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Submit run' })).toBeDisabled();
   });
 
   test('submit button is enabled once both files are present and label is populated', async ({
     page,
   }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Submit run' })).toBeEnabled();
   });
 
   test('submit button is disabled again when the reconciliation label is cleared', async ({
     page,
   }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
     await page.getByLabel('Reconciliation label').fill('');
-    await expect(page.getByRole('button', { name: 'Run reconciliation' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Submit run' })).toBeDisabled();
   });
 
-  test('uploading a non-xlsx file shows an error after submission', async ({ page }) => {
+  // Since Phase 10, .csv is a valid extension -- this junk content now passes client-side
+  // gating and hits the File Validation Engine's Step 1 (STRUCT_HEADER_MISSING) instead of a
+  // generic upload-time alert.
+  test('uploading a file with unrecognized content shows a structural validation error', async ({
+    page,
+  }) => {
     const fakeBuffer = Buffer.from('col1,col2\nval1,val2');
-    const bankBuffer = await createSampleBankWorkbook();
+    const bankBuffer = await createSampleBankFileValidationWorkbook();
     await openSetup(page);
     await page.locator('#bank-workbook-input').setInputFiles({
       name: 'bank.xlsx',
@@ -149,8 +152,8 @@ test.describe('form validation', () => {
       mimeType: 'text/csv',
       buffer: fakeBuffer,
     });
-    await page.getByRole('button', { name: 'Run reconciliation' }).click();
-    await expect(page.getByRole('alert')).toBeVisible();
+    await page.getByRole('button', { name: 'Submit run' }).click();
+    await expect(page.getByText('STRUCT_HEADER_MISSING')).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -170,8 +173,8 @@ test.describe('annual reconciliation frequency', () => {
 
   test('annual reconciliation run completes and shows results', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer, { frequency: 'Annual' });
     await expect(page.getByText('Total reviewed')).toBeVisible();
@@ -183,8 +186,8 @@ test.describe('annual reconciliation frequency', () => {
 test.describe('exception category detection', () => {
   test('Missing from GL scenario surfaces the correct exception category', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createWorkbookFromRows(missingFromGlBankRows),
-      createWorkbookFromRows(missingFromGlGlRows),
+      createWorkbookFromRows(missingFromGlBankFileValidationRows),
+      createWorkbookFromRows(missingFromGlGlFileValidationRows),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
@@ -192,8 +195,8 @@ test.describe('exception category detection', () => {
 
   test('Amount Mismatch scenario surfaces the correct exception category', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createWorkbookFromRows(amountMismatchBankRows),
-      createWorkbookFromRows(amountMismatchGlRows),
+      createWorkbookFromRows(amountMismatchBankFileValidationRows),
+      createWorkbookFromRows(amountMismatchGlFileValidationRows),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(exceptionSummaryCell(page, 'Amount Mismatch')).toBeVisible();
@@ -201,8 +204,8 @@ test.describe('exception category detection', () => {
 
   test('Duplicate in Bank scenario surfaces the correct exception category', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createWorkbookFromRows(duplicateInBankBankRows),
-      createWorkbookFromRows(duplicateInBankGlRows),
+      createWorkbookFromRows(duplicateInBankBankFileValidationRows),
+      createWorkbookFromRows(duplicateInBankGlFileValidationRows),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(exceptionSummaryCell(page, 'Duplicate in Bank')).toBeVisible();
@@ -210,22 +213,33 @@ test.describe('exception category detection', () => {
 
   test('Timing Difference scenario surfaces the correct exception category', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createWorkbookFromRows(timingDifferenceBankRows),
-      createWorkbookFromRows(timingDifferenceGlRows),
+      createWorkbookFromRows(timingDifferenceBankFileValidationRows),
+      createWorkbookFromRows(timingDifferenceGlFileValidationRows),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(exceptionSummaryCell(page, 'Timing Difference')).toBeVisible();
   });
 
-  test('Invalid or Missing Data scenario surfaces the correct exception category', async ({
+  // Pre-File-Validation, a row with a blank required field (e.g. no posted_date) still reached
+  // the old matching engine, which flagged it as a downstream "Invalid or Missing Data"
+  // exception. The File Validation Engine now rejects that row before matching ever runs
+  // (BANK_POSTED_DATE_REQUIRED, Step 3) -- with only one row in the file, zero rows survive
+  // validation, so the run never reaches the Review stage at all. This asserts the new,
+  // upstream behavior instead of the old downstream category.
+  test('a row with missing required data fails validation before matching runs', async ({
     page,
   }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createWorkbookFromRows(invalidDataBankRows),
-      createWorkbookFromRows(invalidDataGlRows),
+      createWorkbookFromRows([
+        ['transaction_id', 'account_id', 'posted_date', 'amount', 'currency_code', 'transaction_type', 'description'],
+        ['TXN-5001', 'OPERATING-001', '', '-250.00', 'USD', 'PAYMENT', 'WIRE WITHOUT DATE'],
+      ]),
+      createSampleGlFileValidationWorkbook(),
     ]);
-    await runReconciliation(page, bankBuffer, glBuffer);
-    await expect(exceptionSummaryCell(page, 'Invalid or Missing Data')).toBeVisible();
+    await openSetup(page);
+    await setWorkbookFiles(page, bankBuffer, glBuffer);
+    await page.getByRole('button', { name: 'Submit run' }).click();
+    await expect(page.getByText('BANK_POSTED_DATE_REQUIRED').first()).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -234,8 +248,8 @@ test.describe('exception category detection', () => {
 test.describe('combined all-exceptions workbook', () => {
   test('exception triage is populated after running all-exceptions fixture', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createAllExceptionsBankWorkbook(),
-      createAllExceptionsGlWorkbook(),
+      createAllExceptionsBankFileValidationWorkbook(),
+      createAllExceptionsGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await openExceptions(page);
@@ -246,8 +260,8 @@ test.describe('combined all-exceptions workbook', () => {
     page,
   }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createAllExceptionsBankWorkbook(),
-      createAllExceptionsGlWorkbook(),
+      createAllExceptionsBankFileValidationWorkbook(),
+      createAllExceptionsGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
@@ -261,8 +275,8 @@ test.describe('combined all-exceptions workbook', () => {
 test.describe('exception triage interaction', () => {
   test.beforeEach(async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createAllExceptionsBankWorkbook(),
-      createAllExceptionsGlWorkbook(),
+      createAllExceptionsBankFileValidationWorkbook(),
+      createAllExceptionsGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await openExceptions(page);
@@ -320,8 +334,8 @@ test.describe('stage navigation', () => {
     page,
   }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(
@@ -332,8 +346,8 @@ test.describe('stage navigation', () => {
 
   test('Review opens on the Summary view by default after a run', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
@@ -348,8 +362,8 @@ test.describe('stage navigation', () => {
   // which is what this now verifies, rather than a rail link that no longer exists.
   test('Probable matches view is reachable via direct navigation', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await page.goto('/probable-matches');
@@ -358,8 +372,8 @@ test.describe('stage navigation', () => {
 
   test('Export stage exposes the export artifacts', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
@@ -376,8 +390,8 @@ test.describe('stage navigation', () => {
 test.describe('export artifacts', () => {
   test.beforeEach(async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
@@ -412,8 +426,8 @@ test.describe('session persistence', () => {
   }) => {
     test.setTimeout(120_000);
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
 
@@ -438,12 +452,12 @@ test.describe('session persistence', () => {
 test.describe('edge cases', () => {
   test('header-only workbooks (no data rows) complete without a crash', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createWorkbookFromRows(bankHeaderOnlyRows),
-      createWorkbookFromRows(glHeaderOnlyRows),
+      createWorkbookFromRows(bankHeaderOnlyFileValidationRows),
+      createWorkbookFromRows(glHeaderOnlyFileValidationRows),
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByRole('button', { name: 'Run reconciliation' }).click();
+    await page.getByRole('button', { name: 'Submit run' }).click();
     // Either the run completes to the Review summary, or a server error alert appears.
     await expect(page.getByText('Total reviewed').or(page.getByRole('alert'))).toBeVisible({
       timeout: 30_000,
@@ -452,19 +466,19 @@ test.describe('edge cases', () => {
 
   test('running a second reconciliation replaces the previous run results', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer, { label: 'First Run March' });
 
     const [bank2, gl2] = await Promise.all([
-      createWorkbookFromRows(missingFromGlBankRows),
-      createWorkbookFromRows(missingFromGlGlRows),
+      createWorkbookFromRows(missingFromGlBankFileValidationRows),
+      createWorkbookFromRows(missingFromGlGlFileValidationRows),
     ]);
     await page.getByRole('link', { name: 'Import Files' }).click();
     await setWorkbookFiles(page, bank2, gl2);
     await page.getByLabel('Reconciliation label').fill('Second Run April');
-    await page.getByRole('button', { name: 'Run reconciliation' }).click();
+    await page.getByRole('button', { name: 'Submit run' }).click();
 
     await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
     await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
@@ -485,12 +499,12 @@ test.describe('edge cases', () => {
 
   test('account identifier is optional — run succeeds without it', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
-      createSampleBankWorkbook(),
-      createSampleGlWorkbook(),
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByRole('button', { name: 'Run reconciliation' }).click();
+    await page.getByRole('button', { name: 'Submit run' }).click();
     await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
   });
 

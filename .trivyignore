@@ -54,3 +54,13 @@ CVE-2025-59250 exp:2026-09-01
 # bundling a patched driver version.
 CVE-2026-42198 exp:2026-11-01
 CVE-2026-54291 exp:2026-11-01
+
+# CVE-2025-49146 (pgjdbc insecure auth in channel binding, fixed upstream in 42.7.7): found
+# 2026-08-13 against liquibase/liquibase:4.31 (see compose.yaml's LIQUIBASE_IMAGE comment --
+# 4.31 is pinned to avoid a separate Pro-license regression in 4.33.0+, which is also the first
+# Liquibase release to bundle a patched pgjdbc; no version found that has both fixed at once).
+# Low real-world exposure here: only exploitable when a client requires channelBinding=required
+# (not configured anywhere in this project), and the migrate container only ever talks to
+# Postgres over Docker's private internal network, never anything public. Revisit in 90 days --
+# a newer Liquibase minor/patch release may resolve the Pro-license issue without the CVE.
+CVE-2025-49146 exp:2026-11-11

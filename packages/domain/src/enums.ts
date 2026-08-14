@@ -187,9 +187,18 @@ export const importApprovalStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'OVERR
 /** Union of valid import approval statuses. */
 export type ImportApprovalStatus = (typeof importApprovalStatuses)[number];
 
-/** The six object types that flow through the unified Approvals surface (RailMenuMods design). */
+/** The seven object types that flow through the unified Approvals surface (RailMenuMods design).
+ * 'reconciliationRun' (File Imports & Validation, changeset 0042) is a third backing pattern,
+ * neither the dedicated `reconciliation_import_approval` sidecar table 'import' uses nor the
+ * generic polymorphic `reconciliation_approval_request` table the other five use -- the entity
+ * already carries its own submitted_by/decided_by/decision_note columns and a DB-level
+ * segregation-of-duty CHECK, so it's decided directly on reconciliation_run itself (see
+ * PostgresImportValidationStore's recordRunApprovalDecision/claimRunApproval). It shares the
+ * 'import' rail submenu (approvalGroupKeys below), not a submenu of its own -- both row types
+ * render together on the same /approvals/imports page. */
 export const approvableTypes = [
   'import',
+  'reconciliationRun',
   'mappingProfile',
   'matchingRule',
   'varianceThreshold',
@@ -247,6 +256,13 @@ export interface RolePermissions {
   canAdjustSliderDefaults: boolean;
   canAccessRunBook: boolean;
   canApprove: boolean;
+  /** File Imports & Validation: who may submit a reconciliation_run (upload Bank/GL files and
+   *  start a run). Restricted to senior-analyst per an explicit product decision ("file
+   *  reconciliation should stay with the senior Financial analyst") plus the two platform-operator
+   *  roles, which hold every other capability in this table unconditionally. Approver roles
+   *  (controller/vp-finance/cfo) are deliberately excluded -- they sit on the other side of this
+   *  workflow's segregation of duty (reconciliation_run_segregation_of_duty_check, changeset 0042). */
+  canSubmitImportRuns: boolean;
 }
 
 /**
@@ -262,6 +278,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
     canApprove: false,
+    canSubmitImportRuns: false,
   },
   'senior-analyst': {
     canAccessApplication: true,
@@ -269,6 +286,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
     canApprove: false,
+    canSubmitImportRuns: true,
   },
   'staff-accountant': {
     canAccessApplication: true,
@@ -276,6 +294,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
     canApprove: false,
+    canSubmitImportRuns: false,
   },
   controller: {
     canAccessApplication: true,
@@ -283,6 +302,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
     canApprove: true,
+    canSubmitImportRuns: false,
   },
   'vp-finance': {
     canAccessApplication: true,
@@ -290,6 +310,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
     canApprove: true,
+    canSubmitImportRuns: false,
   },
   cfo: {
     canAccessApplication: true,
@@ -297,6 +318,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: false,
     canAccessRunBook: false,
     canApprove: true,
+    canSubmitImportRuns: false,
   },
   admin: {
     canAccessApplication: true,
@@ -304,6 +326,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: true,
     canAccessRunBook: true,
     canApprove: true,
+    canSubmitImportRuns: true,
   },
   superuser: {
     canAccessApplication: true,
@@ -311,6 +334,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAdjustSliderDefaults: true,
     canAccessRunBook: true,
     canApprove: true,
+    canSubmitImportRuns: true,
   },
 };
 

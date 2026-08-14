@@ -247,6 +247,298 @@ export const getLatestReconciliationRunRequest = async (): Promise<Reconciliatio
   return parseResponse<ReconciliationRunResponse>(response);
 };
 
+/** One uploaded file's status within an import run, matching `ImportRunFileSummary`
+ * (packages/persistence/src/importRunStore.ts). */
+export interface ImportRunFileSummary {
+  importFileId: string;
+  role: string;
+  sourceType: string;
+  originalFilename: string;
+  fileFormat: 'CSV' | 'XLSX';
+  validationStatus: string;
+  byteSize: number;
+  contentSha256: string;
+  rowCount: number | null;
+  errorCount: number | null;
+  warningCount: number | null;
+}
+
+/** `GET/POST /api/imports/runs` response shape, matching `ImportRunSummary`
+ * (packages/persistence/src/importRunStore.ts). */
+export interface ImportRunSummary {
+  id: string;
+  organizationId: string;
+  label: string;
+  accountIdentifier: string | null;
+  frequency: 'MONTHLY' | 'ANNUAL';
+  periodYear: number;
+  periodMonth: number | null;
+  status: string;
+  createdAt: string;
+  files: ImportRunFileSummary[];
+}
+
+/** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. */
+export interface CreateImportRunPayload {
+  bankFile: File;
+  glFile: File;
+  label: string;
+  accountIdentifier?: string;
+  frequency: 'MONTHLY' | 'ANNUAL';
+  periodYear: number;
+  periodMonth?: number;
+}
+
+/** Bytes sent so far vs. the total request body size, reported while the combined bank+GL
+ * multipart upload is in flight (Screen 02's per-file progress bars). */
+export interface UploadProgressEvent {
+  loadedBytes: number;
+  totalBytes: number;
+}
+
+export interface CreateImportRunOptions {
+  onProgress?: (event: UploadProgressEvent) => void;
+  signal?: AbortSignal;
+}
+
+/** Creates a DRAFT import run (File Imports & Validation, Phase 5) -- Screen 01's `Submit run`
+ * flow calls this, then `submitImportRunRequest`, rather than the old atomic
+ * `POST /api/reconciliation/run`.
+ *
+ * Uses `XMLHttpRequest` rather than `fetch` because `fetch` has no upload-progress event --
+ * `xhr.upload`'s `progress` event is the only standard way to observe bytes sent for a multipart
+ * body still in flight, which Screen 02's per-file progress bars need. */
+export const createImportRunRequest = ({
+  bankFile,
+  glFile,
+  label,
+  accountIdentifier,
+  frequency,
+  periodYear,
+  periodMonth,
+  onProgress,
+  signal,
+}: CreateImportRunPayload & CreateImportRunOptions): Promise<ImportRunSummary> => {
+  const formData = new FormData();
+  formData.append('bankFile', bankFile);
+  formData.append('glFile', glFile);
+  formData.append('label', label);
+  if (accountIdentifier) {
+    formData.append('accountIdentifier', accountIdentifier);
+  }
+  formData.append('frequency', frequency);
+  formData.append('periodYear', String(periodYear));
+  if (periodMonth !== undefined) {
+    formData.append('periodMonth', String(periodMonth));
+  }
+
+  return new Promise<ImportRunSummary>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/imports/runs');
+
+    const token = getAuthToken();
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        onProgress?.({ loadedBytes: event.loaded, totalBytes: event.total });
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as ImportRunSummary);
+        } catch {
+          reject(new Error('The server returned an unreadable response.'));
+        }
+        return;
+      }
+
+      let message = `Import run creation failed with status ${xhr.status}.`;
+      try {
+        const body = JSON.parse(xhr.responseText) as { message?: string };
+        if (body.message) {
+          message = body.message;
+        }
+      } catch {
+        // Body wasn't JSON -- keep the status-based fallback message.
+      }
+      reject(new Error(message));
+    });
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Network error while uploading source files.'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload cancelled', 'AbortError'));
+    });
+
+    if (signal) {
+      if (signal.aborted) {
+        xhr.abort();
+        return;
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+
+    xhr.send(formData);
+  });
+};
+
+/** `POST /api/imports/runs/:id/submit` response shape -- either queued (BullMQ enabled, no
+ * result yet) or resolved synchronously (queue disabled, the default/local-dev fallback), in
+ * which case `passed`/`matchingJobId` are set once validation actually ran. */
+export type SubmitImportRunResponse =
+  | { importJobId: string; status: 'queued' }
+  | {
+      importJobId: string;
+      status: 'completed';
+      passed: boolean;
+      matchingJobId?: string;
+      run: ImportRunSummary;
+    }
+  | { importJobId: string; status: 'failed'; failedAt: string; reason: string };
+
+/** Submits a DRAFT import run for validation -- DRAFT -> VALIDATING, and (when the queue is
+ * disabled) runs validation synchronously in-request, same fallback pattern as
+ * `runReconciliationRequest`'s queued/synchronous split above. */
+export const submitImportRunRequest = async (runId: string): Promise<SubmitImportRunResponse> => {
+  const response = await apiFetch(`/api/imports/runs/${encodeURIComponent(runId)}/submit`, {
+    method: 'POST',
+  });
+  return parseResponse<SubmitImportRunResponse>(response);
+};
+
+/** One `validation_issue` row surfaced on the failure screens, matching
+ * `ImportFileFailureDetail['issues']` (apps/api/src/services/importFailureDetailService.ts). */
+export interface ImportFailureIssue {
+  severity: 'ERROR' | 'WARNING';
+  code: string;
+  message: string;
+  field: string | null;
+  rowNumber: number | null;
+}
+
+export interface ImportFailureHeaderComparisonRow {
+  position: number;
+  expected: string | null;
+  found: string | null;
+  matches: boolean;
+}
+
+export interface ImportFailureGateSequenceEntry {
+  gate: 'HEADER' | 'COLUMN_ORDER' | 'CELL_VALUES';
+  state: 'PASSED' | 'FAILED' | 'NOT_RUN';
+}
+
+/** `GET /api/imports/runs/:id/files/:fileId/failure-detail` response shape -- drives Screen 05
+ * (structure failure, when `headerComparison` is non-null) and Screen 07 (all rows invalid, when
+ * `headerComparison` is null and `importableRowCount` is 0). */
+export interface ImportFileFailureDetail {
+  importFileId: string;
+  originalFilename: string;
+  sourceType: 'BANK' | 'GL';
+  fileFormat: 'CSV' | 'XLSX';
+  validationStatus: string;
+  rowCount: number | null;
+  errorCount: number | null;
+  warningCount: number | null;
+  importableRowCount: number;
+  gateSequence: ImportFailureGateSequenceEntry[];
+  headerComparison: ImportFailureHeaderComparisonRow[] | null;
+  issues: ImportFailureIssue[];
+  issuesByCode: Array<{ code: string; severity: string; count: number }>;
+  amountTolerance: number;
+}
+
+export const getImportFileFailureDetailRequest = async (
+  runId: string,
+  fileId: string,
+): Promise<ImportFileFailureDetail> => {
+  const response = await apiFetch(
+    `/api/imports/runs/${encodeURIComponent(runId)}/files/${encodeURIComponent(fileId)}/failure-detail`,
+  );
+  return parseResponse<ImportFileFailureDetail>(response);
+};
+
+/** Downloads the run's error report CSV. A plain `<a href>` can't carry the bearer token, same
+ * reasoning as `downloadWorkbookRequest`. */
+export const downloadImportRunErrorReportRequest = async (runId: string): Promise<void> => {
+  const response = await apiFetch(
+    `/api/imports/runs/${encodeURIComponent(runId)}/error-report.csv`,
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({ message: 'Request failed.' }))) as {
+      message?: string;
+    };
+    throw new Error(payload.message ?? 'Request failed.');
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `import-run-${runId}-error-report.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
+
+export interface ImportRowGridFlag {
+  code: string;
+  severity: 'ERROR' | 'WARNING';
+  message: string;
+}
+
+export interface ImportRowGridRow {
+  lineNumber: number;
+  values: Record<string, string>;
+  status: 'IMPORT' | 'SKIP';
+  flaggedFields: Record<string, ImportRowGridFlag>;
+  rowLevelIssues: ImportRowGridFlag[];
+}
+
+/** `GET /api/imports/runs/:id/files/:fileId/rows` response shape -- Screen 06's row grid. */
+export interface ImportRowGridResult {
+  headers: string[];
+  rows: ImportRowGridRow[];
+  totalRows: number;
+  errorRowCount: number;
+  warningRowCount: number;
+  cleanRowCount: number;
+  truncated: boolean;
+}
+
+export const getImportFileRowsRequest = async (
+  runId: string,
+  fileId: string,
+): Promise<ImportRowGridResult> => {
+  const response = await apiFetch(
+    `/api/imports/runs/${encodeURIComponent(runId)}/files/${encodeURIComponent(fileId)}/rows`,
+  );
+  return parseResponse<ImportRowGridResult>(response);
+};
+
+/** `POST /api/imports/runs/:id/import` -- Screen 06's "Import N rows & submit". Accepts a
+ * VALIDATION_FAILED run's already-passing rows and triggers matching; matching still processes
+ * the full original file (see the route's own comment on why "skip" means accept-despite, not
+ * remove-from-reconciliation). Same response shape as `submitImportRunRequest`'s completed case,
+ * reused directly rather than duplicated. */
+export const importPartialRunRequest = async (
+  runId: string,
+): Promise<Extract<SubmitImportRunResponse, { status: 'completed' }>> => {
+  const response = await apiFetch(`/api/imports/runs/${encodeURIComponent(runId)}/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ skipInvalidRows: true }),
+  });
+  return parseResponse<Extract<SubmitImportRunResponse, { status: 'completed' }>>(response);
+};
+
 /** Authenticates a user, stores the returned bearer token, and returns the login profile.
  * Deliberately uses the bare `fetch` -- there is no token yet to attach. */
 export const loginRequest = async ({
@@ -475,6 +767,18 @@ export const claimApprovalRequest = async (
     },
   );
   await parseResponse<unknown>(response);
+};
+
+/** Phase 14: pulls a PENDING_APPROVAL import run back to DRAFT (README §7 item 7, "an analyst...
+ * may withdraw a submission"). Self-service on the submitter's own run, not a decision on the
+ * polymorphic /api/approvals/:type/:id/* surface -- lives under /api/imports/runs/:id instead,
+ * same as submit/import. */
+export const withdrawImportRunRequest = async (runId: string): Promise<ImportRunSummary> => {
+  const response = await apiFetch(`/api/imports/runs/${encodeURIComponent(runId)}/withdraw`, {
+    method: 'POST',
+  });
+  const payload = await parseResponse<{ run: ImportRunSummary }>(response);
+  return payload.run;
 };
 
 /** Saves (or adds a new version to) a paired GL + Bank mapping profile. */

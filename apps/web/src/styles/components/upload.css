@@ -24,6 +24,24 @@
     font-weight: 600;
   }
 
+  .source-dropzone__hint {
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+  }
+
+  .source-dropzone__browse-button {
+    justify-self: center;
+    margin-top: 0.2rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
   .source-dropzone__slots {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -62,23 +80,106 @@
     color: var(--muted);
   }
 
-  .upload-form {
+  .import-screen {
     display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
   }
 
-  .upload-form .field-group {
-    display: grid;
-    gap: 0.45rem;
-  }
-
-  .upload-form label {
+  .import-screen__eyebrow {
+    margin: 0;
+    padding: 0 0.1rem;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
     font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .import-screen__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .import-screen__templates-menu {
+    position: relative;
+  }
+
+  .import-screen__templates-menu > summary {
+    list-style: none;
+  }
+
+  .import-screen__templates-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .import-screen__templates-menu-list {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    z-index: 5;
+    display: grid;
+    gap: 0.15rem;
+    min-width: 190px;
+    padding: 0.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    background: var(--bg-surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .import-screen__templates-menu-list a {
+    padding: 0.4rem 0.5rem;
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    text-decoration: none;
+  }
+
+  .import-screen__templates-menu-list a:hover {
+    background: var(--bg-raised);
+  }
+
+  .import-screen__body {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    align-items: start;
+    gap: 1.5rem;
+  }
+
+  .import-screen__upload-column {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .import-screen__status {
+    grid-column: 1 / -1;
+  }
+
+  .run-configuration-panel {
+    display: grid;
+    gap: 1.1rem;
+    padding: 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--bg-surface);
+  }
+
+  .run-configuration-panel__title {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  .run-configuration-panel__row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
   }
 
   .trust-note {
-    grid-column: 1 / -1;
     margin: 0;
     padding: 0.75rem 0.85rem;
     border-radius: 12px;
@@ -86,14 +187,6 @@
     background: var(--accent-soft);
     color: var(--text-primary);
     font-size: 0.9rem;
-  }
-
-  .upload-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    align-items: center;
-    grid-column: 1 / -1;
   }
 
   .error-banner {
@@ -114,5 +207,143 @@
     color: var(--accent);
     font-weight: 600;
     border: 1px solid var(--accent-soft-border);
+  }
+
+  .source-dropzone__rejected-list,
+  .import-upload-card-list {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .import-upload-card {
+    display: grid;
+    gap: 0.6rem;
+    padding: 0.9rem 1.05rem;
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--line);
+  }
+
+  .import-upload-card--uploading {
+    border-color: var(--line-strong);
+  }
+
+  .import-upload-card--rejected {
+    background: var(--negative-soft);
+    border-color: var(--negative-soft-border);
+  }
+
+  .import-upload-card--network-failed {
+    background: var(--severity-high-soft);
+    border-color: var(--severity-high-soft-border);
+  }
+
+  .import-upload-card__row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.6rem;
+  }
+
+  .import-upload-card__name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .import-upload-card__meta {
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+  }
+
+  .import-upload-card__right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  .import-upload-card__percent {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+
+  .import-upload-card--uploading .import-upload-card__percent {
+    color: var(--text-primary);
+  }
+
+  .import-upload-card__status {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .import-upload-card__code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--negative);
+  }
+
+  .import-upload-card--network-failed .import-upload-card__code {
+    color: var(--severity-high);
+  }
+
+  .import-upload-card__body {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+  }
+
+  .import-upload-card__bar {
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-sunken);
+    overflow: hidden;
+  }
+
+  .import-upload-card__bar-fill {
+    height: 100%;
+    border-radius: var(--radius-pill);
+  }
+
+  .import-upload-card__bar-fill--stored {
+    width: 100%;
+    background: var(--accent);
+  }
+
+  .import-upload-card__bar-fill--uploading {
+    background: var(--bank);
+  }
+
+  .import-upload-card .secondary-button {
+    min-height: 30px;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.78rem;
+  }
+
+  .import-upload-card__ghost-button {
+    min-height: 30px;
+    padding: 0.3rem 0.75rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--negative-soft-border);
+    background: transparent;
+    color: var(--negative);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .import-upload-card__retry-button {
+    min-height: 30px;
+    padding: 0.3rem 0.85rem;
+    border-radius: var(--radius-pill);
+    border: 0;
+    background: var(--severity-high);
+    color: var(--bg-sunken);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
   }
 }

@@ -34,6 +34,9 @@ import {
   listMappingProfileVersions,
   listMatchingConfigVersions,
   loadPayeeAliases,
+  PostgresBlobStorage,
+  PostgresImportRunStore,
+  PostgresImportValidationStore,
   publishMatchingConfigVersion,
   recordApprovalDecision,
   recordApprovalRequestDecision,
@@ -41,16 +44,21 @@ import {
   retireMappingProfile,
   updatePayeeAlias,
   type ApprovalRequestRecord,
+  type CreateImportRunFileInput,
   type CreatePayeeAliasInput,
   type ExceptionPageFilters,
   type GenericApprovableType,
   type ImportApprovalListItem,
   type ListApprovalRequestsFilter,
   type ListImportApprovalsFilter,
+  type ListRunApprovalsFilter,
   type PaginatedExceptionsResult,
   type PostgresReconciliationLifecycleStore,
   type PostgresReconciliationReadModelStore,
+  type RunApprovalListItem,
 } from '@recon/persistence';
+import { CsvParser } from '@recon/core';
+import ExcelJS from 'exceljs';
 import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -85,6 +93,20 @@ import {
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 import { logRedactOptions } from './services/logRedaction';
 import {
+  createImportValidationQueue,
+  type QueuedImportValidationJobPayload,
+  type QueuedImportValidationResult,
+} from './services/importValidationQueue';
+import {
+  runImportValidationWorkflow,
+  type ImportValidationFileBytes,
+} from './services/importValidationService';
+import {
+  buildErrorReportCsv,
+  buildImportFileFailureDetail,
+} from './services/importFailureDetailService';
+import { buildImportRowGrid } from './services/importRowGridService';
+import {
   createReconciliationQueue,
   type QueuedReconciliationFilePayload,
   type QueuedReconciliationJobPayload,
@@ -99,6 +121,8 @@ import {
   entityVerificationCheckBodySchema,
   exceptionsQuerySchema,
   identityConfirmBodySchema,
+  importRunBodySchema,
+  importRunPartialImportBodySchema,
   isErrorCategory,
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
@@ -108,6 +132,8 @@ import {
   reviewerDecisionBodySchema,
   reviewerDecisionDeleteParamsSchema,
   reviewerDecisionDeleteQuerySchema,
+  runIssuesQuerySchema,
+  runRecordsQuerySchema,
   saveMappingProfileBodySchema,
   signupBodySchema,
   updateAliasBodySchema,
@@ -198,6 +224,15 @@ const localLoginUsers: Record<
     firstName: 'bray',
     lastName: '',
     role: 'financial-analyst',
+  },
+  // senior-analyst, mirroring create-users.psql's real-DB seed of the same account -- bray
+  // (financial-analyst) can't submit an import run (canSubmitImportRuns), so upload/submit-flow
+  // tests need this account instead.
+  bray2: {
+    password: 'P@ssw0rd',
+    firstName: 'bray2',
+    lastName: '',
+    role: 'senior-analyst',
   },
 };
 
@@ -339,6 +374,52 @@ const fromQueuedReconciliationFiles = (
       path: '',
       stream: Readable.from(glBuffer),
     },
+  };
+};
+
+/** Re-encodes CSV bytes into an in-memory XLSX workbook, same header row and cell values,
+ * verbatim -- no type coercion, no reordering. Exists solely to bridge into
+ * executeReconciliation, which has no CSV path (see toReconciliationUploadFile's own comment). */
+const synthesizeXlsxFromCsv = async (bytes: Buffer): Promise<Buffer> => {
+  const { headers, rows } = await new CsvParser().parse(bytes);
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Sheet1');
+  worksheet.addRow(headers);
+  for (const row of rows) {
+    worksheet.addRow(headers.map((header) => row[header] ?? ''));
+  }
+  const binary = await workbook.xlsx.writeBuffer();
+  return Buffer.from(binary);
+};
+
+/** Same reconstruction as fromQueuedReconciliationFiles above, but for File Imports &
+ * Validation's already-stored bytes (BlobStorage.get). executeReconciliation's own parsing
+ * (parseWorkbook, packages/core/src/parsers/excelParser.ts) is XLSX-only -- it has no CSV path at
+ * all, unlike the File Validation Engine's own extension-based dispatch, since the *existing*
+ * /api/reconciliation/run route it backs has only ever accepted .xlsx uploads. Rather than
+ * teaching the matching engine about CSV (crossing back into "Rule Engineer" territory this
+ * feature was explicitly built to stay out of), a CSV source gets re-encoded into an XLSX
+ * workbook here, at the apps/api bridge point only -- neither packages/core/fileValidation nor
+ * packages/core/matching know this conversion exists. */
+const toReconciliationUploadFile = async (
+  file: ImportValidationFileBytes,
+  fieldname: 'bankFile' | 'glFile',
+): Promise<Express.Multer.File> => {
+  const isCsv = resolveSourceFormat(file.originalname) === 'csv';
+  const buffer = isCsv ? await synthesizeXlsxFromCsv(file.buffer) : file.buffer;
+  const originalname = isCsv ? file.originalname.replace(/\.csv$/i, '.xlsx') : file.originalname;
+
+  return {
+    fieldname,
+    originalname,
+    encoding: '7bit',
+    mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    size: buffer.byteLength,
+    buffer,
+    destination: '',
+    filename: originalname,
+    path: '',
+    stream: Readable.from(buffer),
   };
 };
 
@@ -528,6 +609,100 @@ const runReconciliationWorkflow = async (input: {
   };
 };
 
+/** The "trigger the existing GL<->Bank matching pipeline immediately" half of Phase 6 (submit &
+ * async validation) -- runs the *existing* atomic reconciliation flow verbatim against an import
+ * run's already-validated bytes, which is also what registers them into the older pipeline's own
+ * audit trail (reconciliation_job/reconciliation_source_file/reconciliation_source_file_content).
+ * The id that flow returns doubles as reconciliation_job.id (changeset 0048's own comment) --
+ * that's what reconciliation_run.matching_job_id links to. */
+const triggerMatchingForImportRun = async (input: {
+  files: { bankFile: ImportValidationFileBytes; glFile: ImportValidationFileBytes };
+  organizationId: string;
+  repository: InMemoryRunRepository;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+  pool?: Pool;
+  requestLog: pino.Logger;
+}): Promise<{ matchingJobId: string }> => {
+  const [bankFile, glFile] = await Promise.all([
+    toReconciliationUploadFile(input.files.bankFile, 'bankFile'),
+    toReconciliationUploadFile(input.files.glFile, 'glFile'),
+  ]);
+
+  const workflowResult = await runReconciliationWorkflow({
+    body: {},
+    files: { bankFile, glFile },
+    requestId: randomUUID(),
+    organizationId: input.organizationId,
+    requestLog: input.requestLog,
+    repository: input.repository,
+    lifecycleStore: input.lifecycleStore,
+    pool: input.pool,
+  });
+
+  return { matchingJobId: workflowResult.run.id };
+};
+
+/** processJob for the import validation queue (and the synchronous fallback when that queue is
+ * disabled, same pattern as /api/reconciliation/run's own enabled/disabled split). Requires a
+ * real pool -- only ever invoked once a submit request has already passed requirePool, so the
+ * non-null assertions below are safe, matching how the rest of this route family asserts `pool!`
+ * after its own requirePool check. */
+const processImportValidationJob = async (input: {
+  organizationId: string;
+  runId: string;
+  importJobId: string;
+  workerId: string;
+  pool: Pool;
+  repository: InMemoryRunRepository;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+  requestLog: pino.Logger;
+}): Promise<QueuedImportValidationResult> => {
+  const importValidationStore = new PostgresImportValidationStore(input.pool);
+
+  try {
+    const result = await runImportValidationWorkflow({
+      organizationId: input.organizationId,
+      runId: input.runId,
+      importJobId: input.importJobId,
+      workerId: input.workerId,
+      logger: input.requestLog,
+      blobStorage: new PostgresBlobStorage(input.pool),
+      importRunStore: new PostgresImportRunStore(input.pool),
+      importValidationStore,
+      triggerMatching: (files) =>
+        triggerMatchingForImportRun({
+          files,
+          organizationId: input.organizationId,
+          repository: input.repository,
+          lifecycleStore: input.lifecycleStore,
+          pool: input.pool,
+          requestLog: input.requestLog,
+        }),
+    });
+
+    return { status: 'completed', passed: result.passed, matchingJobId: result.matchingJobId };
+  } catch (error) {
+    await importValidationStore
+      .markJobFailed(
+        input.organizationId,
+        input.importJobId,
+        error instanceof Error ? error.message : 'Unexpected import validation failure',
+      )
+      .catch(() => undefined);
+
+    captureApiException(error, {
+      tags: { scope: 'import-validation-queue' },
+      extra: { runId: input.runId, importJobId: input.importJobId },
+    });
+
+    return {
+      status: 'failed',
+      failedAt: new Date().toISOString(),
+      reason: error instanceof Error ? error.message : 'Unexpected import validation failure',
+    };
+  }
+};
+
 const recordSuccessfulReconciliationRun = (input: {
   requestId: unknown;
   started: number;
@@ -580,15 +755,20 @@ const handleFailedReconciliationRun = async (input: {
   });
 };
 
-const createUploadMiddleware = (maxUploadMb: number) =>
+/** allowedExtensions defaults to .xlsx only, matching the existing /api/reconciliation/run
+ * upload's behavior exactly. File Imports & Validation (/api/imports/runs) passes ['.xlsx',
+ * '.csv'] instead -- transaction-csv-spec.md's Bank/GL template is defined for both formats, and
+ * the File Validation Engine (packages/core/src/fileValidation) already parses both. */
+const createUploadMiddleware = (maxUploadMb: number, allowedExtensions: readonly string[] = ['.xlsx']) =>
   multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: maxUploadMb * 1024 * 1024 },
     fileFilter: (_request, file, callback) => {
+      const name = file.originalname.toLowerCase();
       const allowed =
-        acceptedMimeTypes.has(file.mimetype) || file.originalname.toLowerCase().endsWith('.xlsx');
+        acceptedMimeTypes.has(file.mimetype) || allowedExtensions.some((ext) => name.endsWith(ext));
       if (!allowed) {
-        callback(new Error('Only .xlsx files are accepted.'));
+        callback(new Error(`Only ${allowedExtensions.join('/')} files are accepted.`));
         return;
       }
 
@@ -627,7 +807,9 @@ const resolveUploadErrorStatus = (error: unknown): number => {
     return error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
   }
 
-  if (error instanceof Error && error.message === 'Only .xlsx files are accepted.') {
+  // Matches createUploadMiddleware's fileFilter rejection message for any allowedExtensions list
+  // (e.g. 'Only .xlsx files are accepted.', 'Only .xlsx/.csv files are accepted.').
+  if (error instanceof Error && /^Only .+ files are accepted\.$/.test(error.message)) {
     return 400;
   }
 
@@ -694,6 +876,17 @@ type ApiRateLimiter = {
 };
 
 type ReconciliationQueueConfiguration = {
+  enabled: boolean;
+  redisUrl: string | null;
+  queueName: string;
+  prefix: string;
+  concurrency: number;
+};
+
+/** File Imports & Validation's own queue config, deliberately separate from
+ * ReconciliationQueueConfiguration above -- "we should use the best queuing tool" resolved to
+ * BullMQ but as its own queue, not sharing the existing reconciliation queue's job type. */
+type ImportValidationQueueConfiguration = {
   enabled: boolean;
   redisUrl: string | null;
   queueName: string;
@@ -812,6 +1005,24 @@ const resolveReconciliationQueueConfiguration = (): ReconciliationQueueConfigura
     queueName: process.env.RECONCILIATION_QUEUE_NAME?.trim() || 'reconciliation-runs',
     prefix: process.env.RECONCILIATION_QUEUE_PREFIX?.trim() || 'recon',
     concurrency: parsePositiveInteger(process.env.RECONCILIATION_QUEUE_CONCURRENCY, 1, 8),
+  };
+};
+
+const resolveImportValidationQueueConfiguration = (): ImportValidationQueueConfiguration => {
+  const queueEnabled = parseBooleanFlag(process.env.ENABLE_IMPORT_VALIDATION_QUEUE) === true;
+  const configuredRedisUrl =
+    process.env.IMPORT_VALIDATION_QUEUE_REDIS_URL?.trim() ||
+    process.env.RECONCILIATION_QUEUE_REDIS_URL?.trim() ||
+    process.env.RATE_LIMIT_REDIS_URL?.trim() ||
+    process.env.REDIS_URL?.trim() ||
+    null;
+
+  return {
+    enabled: queueEnabled,
+    redisUrl: configuredRedisUrl,
+    queueName: process.env.IMPORT_VALIDATION_QUEUE_NAME?.trim() || 'import-validation-runs',
+    prefix: process.env.IMPORT_VALIDATION_QUEUE_PREFIX?.trim() || 'recon',
+    concurrency: parsePositiveInteger(process.env.IMPORT_VALIDATION_QUEUE_CONCURRENCY, 1, 4),
   };
 };
 
@@ -1040,6 +1251,10 @@ export const createApp = (
 ) => {
   const app = express();
   const upload = createUploadMiddleware(Number(process.env.MAX_UPLOAD_MB ?? '10'));
+  const importUpload = createUploadMiddleware(Number(process.env.MAX_IMPORT_UPLOAD_MB ?? '50'), [
+    '.xlsx',
+    '.csv',
+  ]);
   // Defaults to its own stdout-only logger (as every existing test relies on) when the caller
   // doesn't supply one. createServerRuntime (server.ts) passes its own LOG_FILE-multistreamed
   // logger here in real deployments -- without this, every per-request log line (including the
@@ -1056,6 +1271,7 @@ export const createApp = (
   const apiRateLimiter = createApiRateLimiter(httpLogger);
   const openApiSpec = buildOpenApiSpec();
   const queueConfiguration = resolveReconciliationQueueConfiguration();
+  const importValidationQueueConfiguration = resolveImportValidationQueueConfiguration();
 
   // ADR-0002 step 7: username == password in localLoginUsers, so this fallback must be
   // impossible to reach in production even by misconfiguration -- checked at startup, not at
@@ -1132,6 +1348,33 @@ export const createApp = (
     },
   });
 
+  // worker-N (not a random id): if two worker processes are ever run side by side, import_job.
+  // worker_id should read as which *process* handled a job, not a fresh id per job that reveals
+  // nothing on inspection.
+  const importValidationWorkerId = `import-validation-worker-${process.pid}`;
+  const importValidationQueue = createImportValidationQueue({
+    enabled: importValidationQueueConfiguration.enabled,
+    redisUrl: importValidationQueueConfiguration.redisUrl,
+    queueName: importValidationQueueConfiguration.queueName,
+    prefix: importValidationQueueConfiguration.prefix,
+    concurrency: importValidationQueueConfiguration.concurrency,
+    logger: httpLogger,
+    processJob: (payload: QueuedImportValidationJobPayload): Promise<QueuedImportValidationResult> =>
+      processImportValidationJob({
+        organizationId: payload.organizationId,
+        runId: payload.runId,
+        importJobId: payload.importJobId,
+        workerId: importValidationWorkerId,
+        // requirePool (checked ahead of every route that can enqueue onto this queue) guarantees
+        // a real pool exists before a job is ever created, matching the non-null assertions
+        // documented on processImportValidationJob's own doc comment.
+        pool: pool!,
+        repository,
+        lifecycleStore,
+        requestLog: httpLogger,
+      }),
+  });
+
   app.set('trust proxy', true);
   app.use(
     helmet({
@@ -1179,10 +1422,10 @@ export const createApp = (
   // line requires a valid bearer token; a forgotten route 401s instead of silently staying open.
   app.use(createAuthMiddleware(httpLogger, () => apiRateLimiter.redisClient));
 
-  // ADR-0002 step 5: the reconciliation/aliases/mapping/rules surface additionally requires
-  // canAccessApplication.
+  // ADR-0002 step 5: the reconciliation/aliases/mapping/rules/imports surface additionally
+  // requires canAccessApplication.
   app.use(
-    ['/api/reconciliation', '/api/aliases', '/api/mapping', '/api/rules'],
+    ['/api/reconciliation', '/api/aliases', '/api/mapping', '/api/rules', '/api/imports'],
     requireApplicationAccess,
   );
 
@@ -2184,6 +2427,501 @@ export const createApp = (
     return true;
   };
 
+  // ── File Imports & Validation: create/read a reconciliation_run + its Bank/GL source files ──────
+  // No routes here touch validation_issue/canonical_record yet -- this is purely T5(persistence)'s
+  // create/read surface (DRAFT status only). Submitting a run for validation is Phase 6, not built.
+  // Reuses getUploadedReconciliationFiles: both routes require the same bankFile+glFile field
+  // shape, just from importUpload (.xlsx/.csv) rather than upload (.xlsx only).
+  const toImportRunFile = (
+    role: 'BANK' | 'GL',
+    file: Express.Multer.File,
+  ): CreateImportRunFileInput => ({
+    role,
+    sourceType: role,
+    originalFilename: file.originalname,
+    fileFormat: resolveSourceFormat(file.originalname) === 'csv' ? 'CSV' : 'XLSX',
+    bytes: file.buffer,
+  });
+
+  app.post(
+    '/api/imports/runs',
+    importUpload.fields([
+      { name: 'bankFile', maxCount: 1 },
+      { name: 'glFile', maxCount: 1 },
+    ]),
+    async (request, response, next) => {
+      if (!requirePool(response)) return;
+      // requireApplicationAccess (mounted ahead of this route) guarantees request.auth here.
+      // "File reconciliation should stay with the senior Financial analyst" -- an explicit
+      // product decision, expressed as its own capability (canSubmitImportRuns) rather than an
+      // inline role-string comparison, matching the canApprove gate below.
+      if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+        response.status(403).json({ message: 'Only a senior analyst may create an import run.' });
+        return;
+      }
+
+      try {
+        const files = getUploadedReconciliationFiles((request.files ?? {}) as UploadFileMap);
+        if (!files) {
+          response.status(400).json({
+            message: 'Both bankFile and glFile must be provided as .csv or .xlsx uploads.',
+          });
+          return;
+        }
+
+        const bodyResult = importRunBodySchema.safeParse(request.body ?? {});
+        if (!bodyResult.success) {
+          respondWithValidationError(response, bodyResult.error);
+          return;
+        }
+
+        const importRunStore = new PostgresImportRunStore(pool!);
+        const summary = await importRunStore.createRun({
+          organizationId: request.auth!.organizationId,
+          label: bodyResult.data.label,
+          accountIdentifier: bodyResult.data.accountIdentifier,
+          frequency: bodyResult.data.frequency,
+          periodYear: bodyResult.data.periodYear,
+          periodMonth: bodyResult.data.periodMonth,
+          files: [toImportRunFile('BANK', files.bankFile), toImportRunFile('GL', files.glFile)],
+        });
+
+        response.status(201).json(summary);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get('/api/imports/runs/:id', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const summary = await importRunStore.getRunSummary(
+        request.auth!.organizationId,
+        request.params.id,
+      );
+
+      if (!summary) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      response.json(summary);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 8 review drilldown: validation_issue/canonical_record rows for a run, paginated and
+  // filterable -- GET /api/imports/runs/:id itself only returns file-level summary counts
+  // (validation_status/row_count/error_count per import_file), not the individual rows a
+  // Comptroller reviewing a PENDING_APPROVAL run would need to see. Mirrors the existing
+  // GET /api/reconciliation/:id/exceptions pagination shape (limit/offset/hasMore).
+  app.get('/api/imports/runs/:id/issues', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const queryResult = runIssuesQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        respondWithValidationError(response, queryResult.error);
+        return;
+      }
+
+      const limit = parseLimit(request.query.limit, 50, 200);
+      const offset = parseOffset(request.query.offset, 0);
+      const page = await new PostgresImportValidationStore(pool!).listRunIssues(
+        request.auth!.organizationId,
+        request.params.id,
+        limit,
+        offset,
+        {
+          severity: queryResult.data.severity as 'ERROR' | 'WARNING' | undefined,
+          code: queryResult.data.code as string | undefined,
+        },
+      );
+
+      if (!page) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      response.json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/imports/runs/:id/records', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const queryResult = runRecordsQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        respondWithValidationError(response, queryResult.error);
+        return;
+      }
+
+      const limit = parseLimit(request.query.limit, 50, 200);
+      const offset = parseOffset(request.query.offset, 0);
+      const page = await new PostgresImportValidationStore(pool!).listRunRecords(
+        request.auth!.organizationId,
+        request.params.id,
+        limit,
+        offset,
+        {
+          sourceType: queryResult.data.sourceType as string | undefined,
+          importFileId: queryResult.data.importFileId as string | undefined,
+        },
+      );
+
+      if (!page) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      response.json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 11: full failure detail for one file within a run (gate sequence, header comparison,
+  // issues) -- Screens 05/07 render from this rather than assembling it client-side from
+  // /issues + /records, since the header comparison needs a server-side re-parse of the stored
+  // original (see importFailureDetailService.ts's doc comment).
+  app.get('/api/imports/runs/:id/files/:fileId/failure-detail', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const fileId = request.params.fileId;
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const file = await importRunStore.getFileWithBytes(organizationId, runId, fileId);
+      if (!file) {
+        response.status(404).json({ message: 'Import run or file not found.' });
+        return;
+      }
+
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const [issuesPage, recordsPage] = await Promise.all([
+        importValidationStore.listRunIssues(organizationId, runId, 500, 0, {
+          importFileId: fileId,
+        }),
+        importValidationStore.listRunRecords(organizationId, runId, 1, 0, {
+          importFileId: fileId,
+        }),
+      ]);
+
+      if (!issuesPage || !recordsPage) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const detail = await buildImportFileFailureDetail({
+        importFileId: file.importFileId,
+        originalFilename: file.originalFilename,
+        sourceType: file.sourceType,
+        fileFormat: file.fileFormat,
+        validationStatus: file.validationStatus,
+        rowCount: file.rowCount,
+        errorCount: file.errorCount,
+        warningCount: file.warningCount,
+        importableRowCount: recordsPage.total,
+        bytes: file.bytes,
+        issues: issuesPage.items,
+      });
+
+      response.json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 12 (Screen 06): every row of one file, re-parsed from the stored original and
+  // annotated with its already-persisted issues -- see importRowGridService.ts's doc comment for
+  // why this re-parses rather than reading validation_issue alone (raw cell values were never
+  // persisted there).
+  app.get('/api/imports/runs/:id/files/:fileId/rows', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const fileId = request.params.fileId;
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const file = await importRunStore.getFileWithBytes(organizationId, runId, fileId);
+      if (!file) {
+        response.status(404).json({ message: 'Import run or file not found.' });
+        return;
+      }
+
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const issuesPage = await importValidationStore.listRunIssues(organizationId, runId, 5000, 0, {
+        importFileId: fileId,
+      });
+      if (!issuesPage) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const grid = await buildImportRowGrid({
+        bytes: file.bytes,
+        fileFormat: file.fileFormat,
+        issues: issuesPage.items,
+      });
+
+      response.json(grid);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // README §7.8: file,line,column,code,severity,message,raw_value -- one row per finding, ordered
+  // by file then line then column (buildErrorReportCsv does the ordering).
+  app.get('/api/imports/runs/:id/error-report.csv', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const summary = await importRunStore.getRunSummary(organizationId, runId);
+      if (!summary) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const filenameByFileId = new Map(summary.files.map((file) => [file.importFileId, file.originalFilename]));
+
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const issuesPage = await importValidationStore.listRunIssues(organizationId, runId, 5000, 0);
+      if (!issuesPage) {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      const csv = buildErrorReportCsv(
+        issuesPage.items.map((issue) => ({
+          file: filenameByFileId.get(issue.importFileId) ?? issue.importFileId,
+          line: issue.rowNumber,
+          column: issue.field,
+          code: issue.code,
+          severity: issue.severity,
+          message: issue.message,
+        })),
+      );
+
+      response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      response.setHeader(
+        'Content-Disposition',
+        `attachment; filename="import-run-${runId}-error-report.csv"`,
+      );
+      response.send(csv);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/imports/runs/:id/submit', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    // Same gate as create -- submitting is part of the same senior-analyst-owned action, not a
+    // separate capability.
+    if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+      response.status(403).json({ message: 'Only a senior analyst may submit an import run.' });
+      return;
+    }
+
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+
+      const submitResult = await importValidationStore.submitRun(
+        organizationId,
+        runId,
+        request.auth!.username,
+      );
+
+      if (submitResult.outcome === 'not_found') {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+
+      if (submitResult.outcome === 'invalid_state') {
+        response.status(409).json({
+          message: `Import run cannot be submitted from status ${submitResult.currentStatus}.`,
+        });
+        return;
+      }
+
+      const { importJobId } = submitResult;
+
+      if (importValidationQueue.enabled) {
+        await importValidationQueue.enqueue({ organizationId, runId, importJobId });
+        response.status(202).json({ importJobId, status: 'queued' });
+        return;
+      }
+
+      // No queue configured -- process synchronously in-request, same fallback shape
+      // /api/reconciliation/run already uses when reconciliationQueue.enabled is false.
+      const result = await processImportValidationJob({
+        organizationId,
+        runId,
+        importJobId,
+        workerId: importValidationWorkerId,
+        pool: pool!,
+        repository,
+        lifecycleStore,
+        requestLog: request.log,
+      });
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const run = await importRunStore.getRunSummary(organizationId, runId);
+
+      response.status(200).json({ importJobId, ...result, run });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 14: README §7 item 7, "an analyst... may withdraw a submission" -- pulls a
+  // PENDING_APPROVAL run back to DRAFT. Self-service (the submitter withdrawing their own run),
+  // not a general approver action, so this lives under /api/imports/runs/:id rather than the
+  // polymorphic /api/approvals/:type/:id/* surface Phase 7 built for approver decisions.
+  app.post('/api/imports/runs/:id/withdraw', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+      response.status(403).json({ message: 'Only a senior analyst may withdraw an import run.' });
+      return;
+    }
+
+    try {
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+
+      const result = await importValidationStore.withdrawRunApproval(
+        organizationId,
+        runId,
+        request.auth!.username,
+      );
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+      if (result.outcome === 'invalid_state') {
+        response.status(409).json({
+          message: `Import run cannot be withdrawn from status ${result.currentStatus}.`,
+        });
+        return;
+      }
+      if (result.outcome === 'not_submitter') {
+        response
+          .status(403)
+          .json({ message: 'Only the analyst who submitted this run may withdraw it.' });
+        return;
+      }
+
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const run = await importRunStore.getRunSummary(organizationId, runId);
+      response.json({ run });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Phase 12 (Screen 06): accepts a VALIDATION_FAILED run's already-passing rows and triggers
+  // matching -- per the decided scope, matching still processes the *original* file bytes in
+  // full (the existing GL<->Bank engine has no concept of excluded rows and stays isolated from
+  // the File Validation Engine, same "Rule Engineer" boundary as toReconciliationUploadFile's own
+  // comment). "Skipping" invalid rows here means accepting the run despite them, not removing
+  // them from reconciliation -- the response/UI say so.
+  app.post('/api/imports/runs/:id/import', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
+      response
+        .status(403)
+        .json({ message: 'Only a senior analyst may import a partially-valid run.' });
+      return;
+    }
+
+    try {
+      const bodyResult = importRunPartialImportBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+      if (!bodyResult.data.skipInvalidRows) {
+        response.status(400).json({
+          message:
+            'Importing without skipping invalid rows is not supported -- fix and re-upload instead.',
+        });
+        return;
+      }
+
+      const organizationId = request.auth!.organizationId;
+      const runId = request.params.id;
+      const importValidationStore = new PostgresImportValidationStore(pool!);
+      const importRunStore = new PostgresImportRunStore(pool!);
+
+      const acceptResult = await importValidationStore.acceptPartialImport(organizationId, runId);
+
+      if (acceptResult.outcome === 'not_found') {
+        response.status(404).json({ message: 'Import run not found.' });
+        return;
+      }
+      if (acceptResult.outcome === 'invalid_state') {
+        response.status(409).json({
+          message: `Import run cannot be partially imported from status ${acceptResult.currentStatus}.`,
+        });
+        return;
+      }
+      if (acceptResult.outcome === 'structural_failure') {
+        response.status(409).json({
+          message:
+            'This run has a structural validation failure -- fix and re-upload instead of a partial import.',
+        });
+        return;
+      }
+      if (acceptResult.outcome === 'no_importable_rows') {
+        response.status(409).json({
+          message: 'At least one file has zero importable rows -- partial import is unavailable.',
+        });
+        return;
+      }
+
+      const summary = await importRunStore.getRunSummary(organizationId, runId);
+      const bankFileSummary = summary!.files.find((file) => file.role === 'BANK')!;
+      const glFileSummary = summary!.files.find((file) => file.role === 'GL')!;
+      const [bankWithBytes, glWithBytes] = await Promise.all([
+        importRunStore.getFileWithBytes(organizationId, runId, bankFileSummary.importFileId),
+        importRunStore.getFileWithBytes(organizationId, runId, glFileSummary.importFileId),
+      ]);
+
+      const { matchingJobId } = await triggerMatchingForImportRun({
+        files: {
+          bankFile: { buffer: bankWithBytes!.bytes, originalname: bankWithBytes!.originalFilename },
+          glFile: { buffer: glWithBytes!.bytes, originalname: glWithBytes!.originalFilename },
+        },
+        organizationId,
+        repository,
+        lifecycleStore,
+        pool: pool!,
+        requestLog: request.log,
+      });
+
+      await importValidationStore.recordMatchingJobId(organizationId, runId, matchingJobId);
+
+      const finalSummary = await importRunStore.getRunSummary(organizationId, runId);
+      response
+        .status(200)
+        .json({ status: 'completed', passed: true, matchingJobId, run: finalSummary });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/aliases', async (request, response, next) => {
     if (!requirePool(response)) return;
     try {
@@ -2504,6 +3242,22 @@ export const createApp = (
     state: item.status,
   });
 
+  // reconciliation_run has no OVERRIDDEN equivalent (see approvableTypes' own doc comment on
+  // 'reconciliationRun') -- PENDING_APPROVAL is the only status this mapping needs to translate,
+  // APPROVED/REJECTED already match ImportApprovalStatus's own spelling.
+  const toRunApprovalRow = (item: RunApprovalListItem): ApprovalRow => ({
+    id: item.id,
+    type: 'reconciliationRun',
+    title: item.label,
+    meta: `${item.frequency === 'MONTHLY' ? 'Monthly' : 'Annual'} recon · ${
+      item.periodMonth ? `${item.periodMonth}/${item.periodYear}` : item.periodYear
+    }`,
+    submitter: item.submittedByUsername,
+    approver: item.decidedByUsername,
+    ageHours: ageHoursSince(item.submittedAt),
+    state: item.status === 'PENDING_APPROVAL' ? 'PENDING' : item.status,
+  });
+
   // matchingRule and varianceThreshold both point at reconciliation_matching_config_version --
   // variance-threshold changes are a field on that same versioned object (varianceOverrides), not
   // a separate entity, so both subject types resolve their title the same way. mappingProfile,
@@ -2565,6 +3319,23 @@ export const createApp = (
         return;
       }
 
+      if (type === 'reconciliationRun') {
+        const runStatus = tabStatus === 'PENDING' ? 'PENDING_APPROVAL' : tabStatus;
+        const runFilter: ListRunApprovalsFilter =
+          tab === 'mine'
+            ? { submittedByUsername: username }
+            : canApprove
+              ? { status: runStatus, routedToOrUnassignedUsername: tab === 'pending' ? username : undefined }
+              : { status: runStatus, submittedByUsername: username };
+
+        const items = await new PostgresImportValidationStore(pool!).listRunApprovals(
+          organizationId,
+          runFilter,
+        );
+        response.json(items.map(toRunApprovalRow) satisfies ApprovalRow[]);
+        return;
+      }
+
       const genericFilter: ListApprovalRequestsFilter =
         tab === 'mine'
           ? { subjectType: type, submittedBy: username }
@@ -2591,19 +3362,39 @@ export const createApp = (
     try {
       const { organizationId, username, role } = request.auth!;
       const canApprove = rolePermissionsByRole[role].canApprove;
-      const [importCounts, mappingProfileCounts, matchingRuleCounts, exceptionResolutionCounts, reportDistributionCounts] =
-        await Promise.all([
-          getImportApprovalCounts(pool!, organizationId, username, canApprove),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['mappingProfile']),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
-            'matchingRule',
-            'varianceThreshold',
-          ]),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['exceptionResolution']),
-          getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['reportDistribution']),
-        ]);
+      const [
+        importCounts,
+        runCounts,
+        mappingProfileCounts,
+        matchingRuleCounts,
+        exceptionResolutionCounts,
+        reportDistributionCounts,
+      ] = await Promise.all([
+        getImportApprovalCounts(pool!, organizationId, username, canApprove),
+        new PostgresImportValidationStore(pool!).getRunApprovalCounts(
+          organizationId,
+          username,
+          canApprove,
+        ),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['mappingProfile']),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
+          'matchingRule',
+          'varianceThreshold',
+        ]),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['exceptionResolution']),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['reportDistribution']),
+      ]);
       response.json({
-        import: importCounts,
+        // 'reconciliationRun' shares the 'import' rail submenu (approvableTypes' own doc comment)
+        // -- its counts merge into the same badge, same pattern as matchingRule+varianceThreshold
+        // merging into the 'matchingRule' key below, just summed by hand since the two row types
+        // come from genuinely different tables/queries rather than one IN-list query.
+        import: {
+          pending: importCounts.pending + runCounts.pending,
+          approved: importCounts.approved + runCounts.approved,
+          rejected: importCounts.rejected + runCounts.rejected,
+          mySubmissions: importCounts.mySubmissions + runCounts.mySubmissions,
+        },
         mappingProfile: mappingProfileCounts,
         matchingRule: matchingRuleCounts,
         exceptionResolution: exceptionResolutionCounts,
@@ -2639,6 +3430,35 @@ export const createApp = (
           rationale: bodyResult.data.rationale,
         });
         response.json(approval);
+        return;
+      }
+
+      if (type === 'reconciliationRun') {
+        // reconciliation_run's status enum (changeset 0042) has no OVERRIDDEN value -- reject
+        // before ever touching the DB rather than letting a CHECK violation surface as a raw error.
+        if (bodyResult.data.status === 'OVERRIDDEN') {
+          response
+            .status(400)
+            .json({ message: 'An import run decision must be APPROVED or REJECTED.' });
+          return;
+        }
+
+        const result = await new PostgresImportValidationStore(pool!).recordRunApprovalDecision(
+          organizationId,
+          {
+            runId: request.params.id,
+            toStatus: bodyResult.data.status,
+            actorUsername: username,
+            rationale: bodyResult.data.rationale,
+          },
+        );
+
+        if (result.outcome === 'not_found') {
+          response.status(404).json({ message: 'Import run not found or not pending approval.' });
+          return;
+        }
+
+        response.json(result.item);
         return;
       }
 
@@ -2690,6 +3510,14 @@ export const createApp = (
         response.status(409).json({ message: 'This draft is no longer pending publish.' });
         return;
       }
+      // reconciliation_run_segregation_of_duty_check (changeset 0042): the run's own submitter
+      // tried to also decide it.
+      if ((error as { code?: string }).code === '23514') {
+        response
+          .status(409)
+          .json({ message: 'The submitter of an import run cannot also approve or reject it.' });
+        return;
+      }
       next(error);
     }
   });
@@ -2703,6 +3531,25 @@ export const createApp = (
     const type = request.params.type as ApprovableType;
     try {
       const { organizationId, username } = request.auth!;
+
+      if (type === 'reconciliationRun') {
+        const result = await new PostgresImportValidationStore(pool!).claimRunApproval(
+          organizationId,
+          request.params.id,
+          username,
+        );
+        if (result.outcome === 'not_claimable') {
+          response
+            .status(409)
+            .json({ message: 'This item was already claimed or decided by someone else.' });
+          return;
+        }
+        // The frontend discards this body and just refetches the list on success (see
+        // claimApprovalRequest in apps/web/src/lib/api.ts) -- the outcome marker is enough.
+        response.json(result);
+        return;
+      }
+
       const claimed =
         type === 'import'
           ? await claimImportApproval(pool!, organizationId, request.params.id, username)

@@ -14,7 +14,12 @@ import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 import { RemoveAccountDialog } from './RemoveAccountDialog';
 import { NavRailAccountMenu } from './NavRailAccountMenu';
 import { routePaths } from '../routes/routePaths';
-import { BANK_TEMPLATE_URL, GL_TEMPLATE_URL } from '../lib/templates';
+import {
+  BANK_TEMPLATE_URL,
+  BANK_TEMPLATE_XLSX_URL,
+  GL_TEMPLATE_URL,
+  GL_TEMPLATE_XLSX_URL,
+} from '../lib/templates';
 import { useNavSectionCollapse } from '../hooks/useNavSectionCollapse';
 import { parseRuleFamilyParam, parseTunableParam, ruleFamilyToSlug } from '../lib/ruleFilters';
 import {
@@ -242,24 +247,48 @@ export function NavRail({
               </p>
             ) : null}
             <div className="nav-rail__indent">
-              <a
-                className="nav-rail__item"
-                href={BANK_TEMPLATE_URL}
-                download
-                title={isCollapsed ? 'Bank template' : undefined}
-              >
+              <div className="nav-rail__item nav-rail__item--template" title={isCollapsed ? 'Bank template' : undefined}>
                 <span className="nav-rail__item-label">Bank template</span>
-                <span className="nav-rail__pill">CSV</span>
-              </a>
-              <a
-                className="nav-rail__item"
-                href={GL_TEMPLATE_URL}
-                download
-                title={isCollapsed ? 'GL template' : undefined}
-              >
+                <span className="nav-rail__template-formats">
+                  <a
+                    className="nav-rail__pill nav-rail__pill--link"
+                    href={BANK_TEMPLATE_URL}
+                    download
+                    aria-label="Bank template CSV"
+                  >
+                    CSV
+                  </a>
+                  <a
+                    className="nav-rail__pill nav-rail__pill--link"
+                    href={BANK_TEMPLATE_XLSX_URL}
+                    download
+                    aria-label="Bank template XLSX"
+                  >
+                    XLSX
+                  </a>
+                </span>
+              </div>
+              <div className="nav-rail__item nav-rail__item--template" title={isCollapsed ? 'GL template' : undefined}>
                 <span className="nav-rail__item-label">GL template</span>
-                <span className="nav-rail__pill">CSV</span>
-              </a>
+                <span className="nav-rail__template-formats">
+                  <a
+                    className="nav-rail__pill nav-rail__pill--link"
+                    href={GL_TEMPLATE_URL}
+                    download
+                    aria-label="GL template CSV"
+                  >
+                    CSV
+                  </a>
+                  <a
+                    className="nav-rail__pill nav-rail__pill--link"
+                    href={GL_TEMPLATE_XLSX_URL}
+                    download
+                    aria-label="GL template XLSX"
+                  >
+                    XLSX
+                  </a>
+                </span>
+              </div>
             </div>
             <NavItemLink
               to={routePaths.mappingHistory}
