@@ -745,10 +745,25 @@ export interface MatchEngineResult {
  *   matches a known alias pattern, boosting match confidence where raw text similarity
  *   would otherwise be below threshold.
  */
+/** Fires once per candidate as the classification loop disposes of it, `undefined` unless a
+ * caller actually wants the detail (apps/api only supplies one when LOG_LEVEL=debug). Bounded by
+ * candidate count (already the post-filter output of rankCandidates), not the O(bank x gl) raw
+ * comparison count -- packages/core stays logger-free, this is the seam a caller uses to emit
+ * its own "row, rule, result" fault-finding log line. */
+export type CandidateOutcomeObserver = (
+  candidate: MatchCandidate,
+  disposition:
+    | 'SkippedAlreadyMatched'
+    | 'SkippedAlreadyReviewed'
+    | 'AmbiguousReview'
+    | MatchDisposition,
+) => void;
+
 export const reconcileMatches = (
   transactions: NormalizedTransaction[],
   config: MatchingConfig,
   aliases: PayeeAlias[] = [],
+  onCandidateOutcome?: CandidateOutcomeObserver,
 ): MatchEngineResult => {
   const activeTransactions = transactions.filter(
     (transaction) => !transaction.isExcluded && transaction.dataQualityIssues.length === 0,
@@ -783,6 +798,7 @@ export const reconcileMatches = (
       exactMatchedBank.has(candidate.bankTransactionId) ||
       exactMatchedGl.has(candidate.glTransactionId)
     ) {
+      onCandidateOutcome?.(candidate, 'SkippedAlreadyMatched');
       continue;
     }
 
@@ -809,6 +825,7 @@ export const reconcileMatches = (
         reviewedBank.has(candidate.bankTransactionId) ||
         reviewedGl.has(candidate.glTransactionId)
       ) {
+        onCandidateOutcome?.(candidate, 'SkippedAlreadyReviewed');
         continue;
       }
 
@@ -821,6 +838,7 @@ export const reconcileMatches = (
       matchResults.push(ambiguousResult);
       reviewedBank.add(candidate.bankTransactionId);
       reviewedGl.add(candidate.glTransactionId);
+      onCandidateOutcome?.(candidate, 'AmbiguousReview');
       continue;
     }
 
@@ -847,6 +865,7 @@ export const reconcileMatches = (
       matchResults.push(result);
       exactMatchedBank.add(candidate.bankTransactionId);
       exactMatchedGl.add(candidate.glTransactionId);
+      onCandidateOutcome?.(candidate, disposition);
       continue;
     }
 
@@ -855,6 +874,7 @@ export const reconcileMatches = (
       reviewedBank.has(candidate.bankTransactionId) ||
       reviewedGl.has(candidate.glTransactionId)
     ) {
+      onCandidateOutcome?.(candidate, 'SkippedAlreadyReviewed');
       continue;
     }
 
@@ -864,6 +884,7 @@ export const reconcileMatches = (
     matchResults.push(result);
     reviewedBank.add(candidate.bankTransactionId);
     reviewedGl.add(candidate.glTransactionId);
+    onCandidateOutcome?.(candidate, disposition);
   }
 
   return {

@@ -1,0 +1,95 @@
+# Local Dev/Stage log aggregation -- deliberately a separate compose project from the app stack
+# (compose.yaml/compose.dev.yaml/compose.stage.yaml). Not referenced by any CI workflow, not
+# started by `npm run docker:deploy`, no depends_on relationship with the app in either direction.
+# Promtail discovers and tails every container on this Docker host via the Docker Engine API
+# (socket-mounted read-only below) -- it does not need to join the app's `edge`/`app`/`data`
+# networks (`app`/`data` are `internal: true` in compose.yaml), and no app service definition
+# needs to change for this to work.
+#
+# Usage:
+#   docker compose -f compose.observability.yaml up -d
+#   open http://localhost:3000   (Grafana, Loki datasource pre-provisioned)
+#
+# Example LogQL queries (Explore tab, or a dashboard panel):
+#   {compose_project="reconciliation-platform-dev"} | json | jti="<session-uuid>"
+#   {compose_project="reconciliation-platform-dev", compose_service="api"} | json | jti="<session-uuid>"
+
+name: recon-observability
+
+services:
+  loki:
+    image: grafana/loki:3.3.2
+    command: ['-config.file=/etc/loki/loki-config.yaml']
+    restart: unless-stopped
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - recon-observability-loki-data:/loki
+    ports:
+      - '${OBSERVABILITY_LOKI_PORT:-3100}:3100'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3100/ready || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    command: ['-config.file=/etc/promtail/promtail-config.yaml']
+    restart: unless-stopped
+    depends_on:
+      loki:
+        condition: service_healthy
+    volumes:
+      - ./observability/promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - recon-observability-promtail-positions:/tmp
+      # Read-only: Promtail only ever needs to discover containers and stream their logs, never
+      # start/stop/inspect-write anything.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - '${OBSERVABILITY_PROMTAIL_PORT:-9080}:9080'
+    healthcheck:
+      # grafana/promtail's image has neither wget nor curl (Debian-based, but minimal) --
+      # verified directly against the running container. bash's /dev/tcp pseudo-device sends a
+      # raw HTTP request without needing either -- but /bin/sh on this image is dash, which
+      # doesn't support /dev/tcp, so bash must be invoked explicitly rather than via CMD-SHELL
+      # (which runs through sh).
+      test:
+        [
+          'CMD',
+          'bash',
+          '-c',
+          'exec 3<>/dev/tcp/127.0.0.1/9080 && printf "GET /ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && head -1 <&3 | grep -q "200 OK"',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    restart: unless-stopped
+    depends_on:
+      loki:
+        condition: service_healthy
+    environment:
+      # Local debugging tool only -- not exposed beyond localhost, no real credentials behind it.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: 'Editor'
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - recon-observability-grafana-data:/var/lib/grafana
+    ports:
+      - '${OBSERVABILITY_GRAFANA_PORT:-3000}:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/api/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  recon-observability-loki-data:
+  recon-observability-promtail-positions:
+  recon-observability-grafana-data:

@@ -26,9 +26,15 @@ export interface RowValidationOutcome {
   normalized: NormalizedRecord[];
 }
 
+/** Fires once per validation issue found, `undefined` unless a caller actually wants the detail
+ * (e.g. apps/api only supplies one when LOG_LEVEL=debug) -- packages/core stays logger-free, this
+ * is the seam a caller uses to emit its own fault-finding log line per row/rule outcome. */
+export type RowIssueObserver = (issue: ValidationIssue) => void;
+
 export const validateBankingRows = (
   rows: RawBankingRow[],
   opts: ValidationOptions = {},
+  onIssue?: RowIssueObserver,
 ): RowValidationOutcome => {
   const options = { ...DEFAULT_VALIDATION_OPTIONS, ...opts };
   const issues: ValidationIssue[] = [];
@@ -41,11 +47,15 @@ export const validateBankingRows = (
     const rowNumber = index + 1;
     let hardError = false;
     const err = (code: string, field: string, message: string): void => {
-      issues.push({ severity: 'ERROR', code, field, rowNumber, message });
+      const issue: ValidationIssue = { severity: 'ERROR', code, field, rowNumber, message };
+      issues.push(issue);
+      onIssue?.(issue);
       hardError = true;
     };
     const warn = (code: string, field: string, message: string): void => {
-      issues.push({ severity: 'WARNING', code, field, rowNumber, message });
+      const issue: ValidationIssue = { severity: 'WARNING', code, field, rowNumber, message };
+      issues.push(issue);
+      onIssue?.(issue);
     };
 
     if (isBlank(row.transaction_id)) {
@@ -164,11 +174,13 @@ export const validateBankingRows = (
   });
 
   if (options.singleCurrency && currencies.size > 1) {
-    issues.push({
+    const issue: ValidationIssue = {
       severity: 'ERROR',
       code: 'BANK_MULTI_CURRENCY',
       message: `File mixes currencies: ${[...currencies].join(', ')}. Expected a single currency.`,
-    });
+    };
+    issues.push(issue);
+    onIssue?.(issue);
   }
 
   const allHaveBalance = rows.length > 0 && rows.every((row) => !isBlank(row.running_balance));
@@ -181,13 +193,15 @@ export const validateBankingRows = (
       const amount = parseDecimal(currentRow.amount, options.currencyMinorUnits);
       if (previous === null || current === null || amount === null) continue;
       if (Math.abs(previous + amount - current) > options.amountTolerance) {
-        issues.push({
+        const issue: ValidationIssue = {
           severity: 'ERROR',
           code: 'BANK_BALANCE_CONTINUITY',
           field: 'running_balance',
           rowNumber: index + 1,
           message: `running_balance break: ${previous} + (${amount}) != ${current}`,
-        });
+        };
+        issues.push(issue);
+        onIssue?.(issue);
       }
     }
   }
@@ -198,6 +212,7 @@ export const validateBankingRows = (
 export const validateGeneralLedgerRows = (
   rows: RawGeneralLedgerRow[],
   opts: ValidationOptions = {},
+  onIssue?: RowIssueObserver,
 ): RowValidationOutcome => {
   const options = { ...DEFAULT_VALIDATION_OPTIONS, ...opts };
   const issues: ValidationIssue[] = [];
@@ -211,7 +226,16 @@ export const validateGeneralLedgerRows = (
     const rowNumber = index + 1;
     let hardError = false;
     const err = (code: string, field: string, message: string): void => {
-      issues.push({ severity: 'ERROR', code, field, rowNumber, entryId: row.entry_id, message });
+      const issue: ValidationIssue = {
+        severity: 'ERROR',
+        code,
+        field,
+        rowNumber,
+        entryId: row.entry_id,
+        message,
+      };
+      issues.push(issue);
+      onIssue?.(issue);
       hardError = true;
     };
 
@@ -240,14 +264,16 @@ export const validateGeneralLedgerRows = (
       if (!isIsoDate(row.posting_date!)) {
         err('GL_POSTING_DATE_FORMAT', 'posting_date', 'posting_date must be YYYY-MM-DD');
       } else if (isIsoDate(row.transaction_date) && row.posting_date! < row.transaction_date) {
-        issues.push({
+        const issue: ValidationIssue = {
           severity: 'WARNING',
           code: 'GL_POSTING_BEFORE_TXN',
           field: 'posting_date',
           rowNumber,
           entryId: row.entry_id,
           message: 'posting_date is before transaction_date',
-        });
+        };
+        issues.push(issue);
+        onIssue?.(issue);
       }
     }
 
@@ -323,11 +349,13 @@ export const validateGeneralLedgerRows = (
   });
 
   if (options.singleCurrency && currencies.size > 1) {
-    issues.push({
+    const issue: ValidationIssue = {
       severity: 'ERROR',
       code: 'GL_MULTI_CURRENCY',
       message: `File mixes currencies: ${[...currencies].join(', ')}`,
-    });
+    };
+    issues.push(issue);
+    onIssue?.(issue);
   }
 
   for (const [entryId, lines] of byEntry) {
@@ -347,25 +375,29 @@ export const validateGeneralLedgerRows = (
       const lineNumber = (row.line_number || '').trim();
       if (lineNumber) {
         if (seenLineNumbers.has(lineNumber)) {
-          issues.push({
+          const issue: ValidationIssue = {
             severity: 'ERROR',
             code: 'GL_LINE_NO_DUPLICATE',
             field: 'line_number',
             entryId,
             message: `Duplicate line_number ${lineNumber} in entry ${entryId}`,
-          });
+          };
+          issues.push(issue);
+          onIssue?.(issue);
         }
         seenLineNumbers.add(lineNumber);
       }
     }
 
     if (Math.abs(totalDebit - totalCredit) > options.amountTolerance) {
-      issues.push({
+      const issue: ValidationIssue = {
         severity: 'ERROR',
         code: 'GL_UNBALANCED',
         entryId,
         message: `Entry ${entryId} is unbalanced: debits ${totalDebit.toFixed(2)} != credits ${totalCredit.toFixed(2)}`,
-      });
+      };
+      issues.push(issue);
+      onIssue?.(issue);
     }
   }
 

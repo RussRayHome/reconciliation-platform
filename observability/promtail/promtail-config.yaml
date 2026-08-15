@@ -1,0 +1,42 @@
+# Discovers and tails every container's logs via the Docker Engine API (socket-mounted, read-only
+# -- see compose.observability.yaml) rather than bind-mounting Docker's raw log directory, so this
+# works the same way on Docker Desktop (macOS/Windows) as on native Linux Docker.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Docker Compose already stamps every container with its project/service name -- reuse those
+      # labels rather than inventing new ones, so one Promtail instance naturally separates
+      # reconciliation-platform-dev / -stage / any ad hoc CI project without extra config.
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'compose_project'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'compose_service'
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+    pipeline_stages:
+      # Parse JSON log lines (every pino logger in apps/api already emits structured JSON) so
+      # `jti`, `action`, `correlationId`, etc. are queryable via `| json | jti="<uuid>"` at query
+      # time. Deliberately NOT promoted to Loki labels -- jti is per-session/high-cardinality,
+      # and Loki labels are meant to stay low-cardinality (compose_project/service/container/level
+      # above are the only labels). nginx's access log (once re-enabled, see apps/web/nginx.conf)
+      # is plain text, not JSON -- the `json` stage below silently no-ops on non-JSON lines rather
+      # than erroring, so this same pipeline is safe to share across every container.
+      - json:
+          expressions:
+            level: level
+      - labels:
+          level:

@@ -116,6 +116,7 @@ type MockLogger = {
   info: ReturnType<typeof vi.fn>;
   debug: ReturnType<typeof vi.fn>;
   error: ReturnType<typeof vi.fn>;
+  isLevelEnabled: ReturnType<typeof vi.fn>;
 };
 
 let childLogger: MockLogger;
@@ -157,6 +158,7 @@ describe('executeReconciliation', () => {
       info: vi.fn(),
       debug: vi.fn(),
       error: vi.fn(),
+      isLevelEnabled: vi.fn(() => false),
     };
 
     pinoMock.mockReturnValue({
@@ -164,6 +166,7 @@ describe('executeReconciliation', () => {
       info: vi.fn(),
       debug: vi.fn(),
       error: vi.fn(),
+      isLevelEnabled: vi.fn(() => false),
     });
 
     resolveReconciliationConfigMock.mockReturnValue(defaultConfig);

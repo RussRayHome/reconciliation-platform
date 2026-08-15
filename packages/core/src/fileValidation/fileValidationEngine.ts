@@ -1,7 +1,7 @@
 import { CsvParser } from './parsers/csvParser';
 import type { FileParser } from './parsers/fileParser';
 import { XlsxParser } from './parsers/xlsxParser';
-import { validateBankingRows, validateGeneralLedgerRows } from './rowValidators';
+import { validateBankingRows, validateGeneralLedgerRows, type RowIssueObserver } from './rowValidators';
 import { checkColumnOrder, checkHeaderPresent } from './structuralGates';
 import {
   BANKING_HEADERS,
@@ -20,6 +20,10 @@ export interface ValidateFileInput {
   fileFormat: 'CSV' | 'XLSX';
   fileType: 'BANK' | 'GL';
   options?: ValidationOptions;
+  /** Fires once per validation issue found on any row/file-level check, `undefined` by default.
+   * A caller (apps/api) supplies one only when DEBUG-level fault-finding detail is wanted --
+   * this module never depends on a logger itself. */
+  onIssue?: RowIssueObserver;
 }
 
 const parserFor = (fileFormat: 'CSV' | 'XLSX'): FileParser =>
@@ -62,8 +66,8 @@ export const validateFile = async (input: ValidateFileInput): Promise<FileValida
   gatesRun.push('CELL_VALUES');
   const rowOutcome =
     input.fileType === 'BANK'
-      ? validateBankingRows(rows as unknown as RawBankingRow[], input.options)
-      : validateGeneralLedgerRows(rows as unknown as RawGeneralLedgerRow[], input.options);
+      ? validateBankingRows(rows as unknown as RawBankingRow[], input.options, input.onIssue)
+      : validateGeneralLedgerRows(rows as unknown as RawGeneralLedgerRow[], input.options, input.onIssue);
 
   const issues = [...structuralIssues, ...rowOutcome.issues];
   const ok = !issues.some((issue) => issue.severity === 'ERROR');

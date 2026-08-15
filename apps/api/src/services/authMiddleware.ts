@@ -21,6 +21,12 @@ declare global {
   namespace Express {
     interface Request {
       auth?: AuthenticatedPrincipal;
+      /** Set directly by the login route right after minting a token -- `auth` is never
+       * populated for that one request (login is a PUBLIC_ROUTE, this middleware skips it
+       * entirely), so it's the only session id source pino-http's `customProps` (app.ts) has
+       * available for that request's own completion line. Every other request gets its session
+       * id from `auth.jti` instead once this middleware has run. */
+      sessionId?: string;
     }
   }
 }
@@ -102,6 +108,10 @@ export const createAuthMiddleware = (
           lastName: payload.lastName,
           jti: payload.jti,
         };
+        // Every downstream request.log.*() call (route handlers, workflow functions) now carries
+        // the session id automatically. pino-http's own bookend lines (received/completed) don't
+        // re-read this binding at finish time -- see the `customProps` config in app.ts for those.
+        request.log = request.log.child({ jti: payload.jti });
         next();
       })
       .catch(next);

@@ -10,6 +10,10 @@ export type QueuedReconciliationFilePayload = {
 
 export type QueuedReconciliationJobPayload = {
   requestId: string;
+  /** Session id (JWT `jti`) of whoever submitted this run, so the worker -- which runs outside
+   * the original request's lifecycle and has no `request.log` to inherit -- can still bind it
+   * onto every log line it emits while processing the job. */
+  sessionId?: string;
   organizationId: string;
   body: Record<string, unknown>;
   files: {
