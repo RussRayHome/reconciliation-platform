@@ -1,0 +1,75 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Session activity, in order (fill in jti above)",
+      "gridPos": { "h": 22, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "Time", "desc": false }]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "cellOptions": { "type": "auto" }, "inspect": false }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Line" },
+            "properties": [{ "id": "custom.width", "value": 600 }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{compose_project=\"$environment\"} | json | jti=\"$jti\"",
+          "queryType": "range",
+          "direction": "forward",
+          "maxLines": 5000
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["session-logging"],
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "type": "query",
+        "label": "Compose project",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "query": "label_values(compose_project)", "refId": "environment" },
+        "refresh": 2,
+        "sort": 1,
+        "current": { "text": "reconciliation-platform-dev", "value": "reconciliation-platform-dev" },
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "jti",
+        "type": "textbox",
+        "label": "Session id (jti)",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Session Log Explorer",
+  "uid": "session-log-explorer",
+  "version": 1,
+  "weekStart": ""
+}
