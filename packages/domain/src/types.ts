@@ -645,6 +645,9 @@ export interface LoginEvent {
   eventType: LoginEventType;
   failureReason: string | null;
   ipAddress: string | null;
+  /** Session id (JWT `jti`). Null for LOGIN_FAILURE -- no token is ever minted for a failed
+   * attempt, so there is no session to record. */
+  sessionId: string | null;
   createdAt: string;
 }
 

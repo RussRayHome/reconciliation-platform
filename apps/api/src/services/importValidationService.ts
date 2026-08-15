@@ -1,4 +1,4 @@
-import type { NormalizedRecord } from '@recon/core';
+import type { NormalizedRecord, RowIssueObserver } from '@recon/core';
 import { validateFile } from '@recon/core';
 import type {
   BlobStorage,
@@ -115,11 +115,25 @@ export const runImportValidationWorkflow = async (
     passed: boolean;
   }> = [];
 
+  const debugEnabled = input.logger.isLevelEnabled('debug');
+
   for (const file of run.files) {
     const fileType = assertBankOrGl(file);
     const bytes = await input.blobStorage.get(file.importFileId, input.organizationId);
 
-    const outcome = await validateFile({ bytes, fileFormat: file.fileFormat, fileType });
+    const onIssue: RowIssueObserver | undefined = debugEnabled
+      ? (issue) =>
+          input.logger.debug({
+            action: 'import-validation.row.issue',
+            runId: input.runId,
+            importJobId: input.importJobId,
+            importFileId: file.importFileId,
+            role: file.role,
+            ...issue,
+          })
+      : undefined;
+
+    const outcome = await validateFile({ bytes, fileFormat: file.fileFormat, fileType, onIssue });
 
     const recorded = await input.importValidationStore.recordFileValidationOutcome(
       input.organizationId,
