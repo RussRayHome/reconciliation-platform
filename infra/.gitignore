@@ -2,5 +2,7 @@ dist/
 node_modules/
 cdk.out/
 .last-snapshot
+.last-snapshot.*
+cdk.context.json
 *.js
 *.d.ts

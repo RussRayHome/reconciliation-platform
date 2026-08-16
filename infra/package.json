@@ -4,12 +4,17 @@
   "private": true,
   "scripts": {
     "build": "tsc --noEmit",
+    "test": "vitest run",
     "cdk": "cdk",
+    "infra:bootstrap": "bash scripts/bootstrap.sh",
     "infra:up": "bash scripts/rebuild.sh",
     "infra:down": "bash scripts/teardown.sh",
     "infra:push": "bash scripts/push-images.sh",
     "infra:diff": "npx cdk diff",
-    "infra:synth": "npx cdk synth"
+    "infra:synth": "npx cdk synth",
+    "infra:dr:snapshot": "bash scripts/dr-snapshot-copy.sh",
+    "infra:dr:failover": "bash scripts/dr-failover.sh",
+    "infra:smoke-test": "tsx scripts/smoke-test.ts"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.260.0",
@@ -19,6 +24,7 @@
     "@types/node": "^26.0.1",
     "aws-cdk": "^2.1128.1",
     "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }
