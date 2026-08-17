@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@recon/domain": "0.1.0",
-    "pg": "^8.22.0",
+    "pg": "^8.23.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
