@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T11:29:50.075Z",
+  "generatedAt": "2026-08-17T12:00:47.911Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
   "packageCount": 524,
   "packages": [
@@ -800,7 +800,7 @@
       "license": "UNKNOWN"
     },
     {
-      "package": "bullmq@5.81.3",
+      "package": "bullmq@6.0.9",
       "license": "MIT"
     },
     {
@@ -916,7 +916,7 @@
       "license": "MIT"
     },
     {
-      "package": "cron-parser@4.9.0",
+      "package": "cron-parser@5.7.0",
       "license": "MIT"
     },
     {
