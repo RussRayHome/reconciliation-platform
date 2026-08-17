@@ -85,8 +85,11 @@ export class EphemeralStack extends cdk.Stack {
       databaseName: DB_NAME,
       storageEncrypted: true,
       multiAz: false,
-      // No automated backups — snapshots are taken manually before teardown
-      backupRetention: cdk.Duration.days(0),
+      // Manual snapshots (teardown.sh, dr-snapshot-copy.sh) are the primary DR mechanism, but a
+      // 1-day automated-backup window costs nothing extra at this instance size and is a safety
+      // net against any destroy path that skips the manual snapshot step (e.g. a bare
+      // `cdk destroy` instead of teardown.sh, or a stack update that replaces the instance).
+      backupRetention: cdk.Duration.days(1),
       deletionProtection: false,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     };
@@ -339,15 +342,17 @@ export class EphemeralStack extends cdk.Stack {
     // concurrent uploads don't slow down": as either queue backs up, ECS adds worker tasks to
     // drain it, then scales back down once it clears. Two independent target-tracking policies
     // (one per queue) on the same scalable target -- ECS satisfies whichever wants more capacity.
-    // targetValue (messages) is a proposed starting point, easy to tune once there's real traffic.
+    // targetValue (messages) is a proposed starting point -- pass -c workerScalingTarget=<n> to
+    // tune per-deploy once there's real traffic, without a code change.
+    const workerScalingTarget = Number(this.node.tryGetContext('workerScalingTarget') ?? 10);
     const workerScaling = workerService.autoScaleTaskCount({ minCapacity: 1, maxCapacity: 5 });
     workerScaling.scaleToTrackCustomMetric('ReconciliationBacklogScaling', {
       metric: persistent.reconciliationQueue.metricApproximateNumberOfMessagesVisible(),
-      targetValue: 10,
+      targetValue: workerScalingTarget,
     });
     workerScaling.scaleToTrackCustomMetric('ImportValidationBacklogScaling', {
       metric: persistent.importValidationQueue.metricApproximateNumberOfMessagesVisible(),
-      targetValue: 10,
+      targetValue: workerScalingTarget,
     });
 
     new cdk.CfnOutput(this, 'AppUrl', {
