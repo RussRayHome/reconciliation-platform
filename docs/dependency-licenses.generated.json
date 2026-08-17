@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-17T12:27:45.716Z",
+  "generatedAt": "2026-08-17T17:04:56.037Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 507,
+  "packageCount": 506,
   "packages": [
     {
       "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.3",
@@ -32,7 +32,7 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@ioredis/commands@1.10.0",
+      "package": "@ioredis/commands@2.0.0",
       "license": "MIT"
     },
     {
@@ -1236,7 +1236,7 @@
       "license": "ISC"
     },
     {
-      "package": "ioredis@5.11.1",
+      "package": "ioredis@6.0.0",
       "license": "MIT"
     },
     {
@@ -1709,10 +1709,6 @@
     },
     {
       "package": "redis-errors@1.2.0",
-      "license": "MIT"
-    },
-    {
-      "package": "redis-parser@3.0.0",
       "license": "MIT"
     },
     {
