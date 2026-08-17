@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-08-17T17:04:56.037Z",
+  "generatedAt": "2026-08-17T21:18:21.131Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
   "packageCount": 506,
   "packages": [
     {
-      "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.3",
+      "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.4",
       "license": "MIT"
     },
     {
@@ -424,23 +424,23 @@
       "license": "BSD-3-Clause"
     },
     {
-      "package": "@redis/bloom@6.2.0",
+      "package": "@redis/bloom@6.2.1",
       "license": "MIT"
     },
     {
-      "package": "@redis/client@6.2.0",
+      "package": "@redis/client@6.2.1",
       "license": "MIT"
     },
     {
-      "package": "@redis/json@6.2.0",
+      "package": "@redis/json@6.2.1",
       "license": "MIT"
     },
     {
-      "package": "@redis/search@6.2.0",
+      "package": "@redis/search@6.2.1",
       "license": "MIT"
     },
     {
-      "package": "@redis/time-series@6.2.0",
+      "package": "@redis/time-series@6.2.1",
       "license": "MIT"
     },
     {
@@ -448,11 +448,11 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser-utils@10.69.0",
+      "package": "@sentry/browser-utils@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser@10.69.0",
+      "package": "@sentry/browser@10.70.0",
       "license": "MIT"
     },
     {
@@ -460,39 +460,39 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/core@10.69.0",
+      "package": "@sentry/core@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/feedback@10.69.0",
+      "package": "@sentry/feedback@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/node-core@10.69.0",
+      "package": "@sentry/node-core@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/node@10.69.0",
+      "package": "@sentry/node@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/opentelemetry@10.69.0",
+      "package": "@sentry/opentelemetry@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/react@10.69.0",
+      "package": "@sentry/react@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay-canvas@10.69.0",
+      "package": "@sentry/replay-canvas@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay@10.69.0",
+      "package": "@sentry/replay@10.70.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/server-utils@10.69.0",
+      "package": "@sentry/server-utils@10.70.0",
       "license": "MIT"
     },
     {
@@ -612,7 +612,7 @@
       "license": "MIT"
     },
     {
-      "package": "@types/node@26.1.2",
+      "package": "@types/node@26.2.0",
       "license": "MIT"
     },
     {
@@ -644,11 +644,11 @@
       "license": "MIT"
     },
     {
-      "package": "@xyflow/react@12.11.2",
+      "package": "@xyflow/react@12.11.3",
       "license": "MIT"
     },
     {
-      "package": "@xyflow/system@0.0.79",
+      "package": "@xyflow/system@0.0.80",
       "license": "MIT"
     },
     {
@@ -772,7 +772,7 @@
       "license": "UNKNOWN"
     },
     {
-      "package": "bullmq@6.0.9",
+      "package": "bullmq@6.1.1",
       "license": "MIT"
     },
     {
@@ -880,7 +880,7 @@
       "license": "MIT"
     },
     {
-      "package": "cron-parser@5.7.0",
+      "package": "cron-parser@5.8.1",
       "license": "MIT"
     },
     {
@@ -1568,7 +1568,7 @@
       "license": "MIT"
     },
     {
-      "package": "pg-protocol@1.15.0",
+      "package": "pg-protocol@1.16.0",
       "license": "MIT"
     },
     {
@@ -1576,7 +1576,7 @@
       "license": "MIT"
     },
     {
-      "package": "pg@8.22.0",
+      "package": "pg@8.23.0",
       "license": "MIT"
     },
     {
@@ -1712,7 +1712,7 @@
       "license": "MIT"
     },
     {
-      "package": "redis@6.2.0",
+      "package": "redis@6.2.1",
       "license": "MIT"
     },
     {
