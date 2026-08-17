@@ -165,15 +165,41 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .nav-rail__badge--neutral {
+    border: 1px solid var(--line-strong);
+    background: var(--bg-surface);
+    color: var(--text-tertiary);
+  }
+
   .nav-rail--collapsed .nav-rail__badge {
     position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 8px;
-    height: 8px;
-    padding: 0;
+    top: 2px;
+    right: 2px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: var(--radius-pill);
+    font-size: 0.62rem;
+  }
+
+  .nav-rail__item-label-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+  }
+
+  .nav-rail__item-caption {
     overflow: hidden;
-    font-size: 0;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.62rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-rail--collapsed .nav-rail__item-caption {
+    display: none;
   }
 
   .nav-rail__section {
@@ -182,6 +208,11 @@
   }
 
   .nav-rail__section--system {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .nav-rail__section--category-divided {
     padding-top: 0.75rem;
     border-top: 1px solid var(--line);
   }
@@ -343,7 +374,31 @@
     display: none;
   }
 
+  /* Template rows offer two downloads (CSV + XLSX), so the row itself isn't a link -- only its
+     two format pills are, each pointing at that format's file. */
+  .nav-rail__item--template {
+    cursor: default;
+  }
+
+  .nav-rail__template-formats {
+    display: flex;
+    gap: 0.35rem;
+    margin-left: auto;
+  }
+
+  .nav-rail__pill--link {
+    margin-left: 0;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .nav-rail__pill--link:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
   .nav-rail__footer {
+    position: relative;
     margin-top: auto;
     display: flex;
     align-items: center;
@@ -390,29 +445,50 @@
     white-space: nowrap;
   }
 
-  .nav-rail__footer-logout {
+  .nav-rail__footer-menu-toggle {
     flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
     min-height: 0;
-    border: 0;
-    border-radius: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
     background: transparent;
-    color: var(--accent);
-    font-size: 0.72rem;
-    font-weight: 500;
-    white-space: nowrap;
+    color: var(--text-tertiary);
     cursor: pointer;
   }
 
-  .nav-rail__footer-logout:hover {
+  .nav-rail__footer-menu-toggle:hover {
     background: var(--bg-surface);
-    color: var(--accent-hover);
+    color: var(--text-primary);
+  }
+
+  .nav-rail__account-menu {
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    right: 0;
+    left: 0;
+    z-index: 9;
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.4rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-raised, 0 8px 24px rgba(0, 0, 0, 0.32));
   }
 
   .nav-rail--collapsed .nav-rail__footer-who,
-  .nav-rail--collapsed .nav-rail__footer-logout,
   .nav-rail--collapsed .nav-rail__subgroup-label,
   .nav-rail--collapsed .nav-rail__indent {
     display: none;
+  }
+
+  .nav-rail--collapsed .nav-rail__account-menu {
+    left: -0.25rem;
+    right: auto;
+    width: 200px;
   }
 
   @media (max-width: 880px) {

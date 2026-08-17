@@ -14,6 +14,7 @@ x-api-environment: &api-environment
   LOG_LEVEL: ${LOG_LEVEL:-info}
   DEBUG_RECONCILIATION: ${DEBUG_RECONCILIATION:-false}
   MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+  MAX_IMPORT_UPLOAD_MB: ${MAX_IMPORT_UPLOAD_MB:-50}
   RECON_PERSISTENCE_BACKEND: ${RECON_PERSISTENCE_BACKEND:-postgres}
   # Required, not defaulted (ISSUE-006): a missing env file or a `docker compose up` without
   # --env-file must fail loudly rather than have the API silently connect as the migration/owner
@@ -28,6 +29,11 @@ x-api-environment: &api-environment
   RATE_LIMIT_USE_REDIS: ${RATE_LIMIT_USE_REDIS:-true}
   RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379}
   RATE_LIMIT_REDIS_PREFIX: ${RATE_LIMIT_REDIS_PREFIX:-recon:rate-limit:}
+  # Off by default -- every real environment (including Stage) stays fully rate-limited. Only ever
+  # set to 'true' in an env file for a deliberate, temporary test cycle (e.g. a live-load E2E run
+  # against Stage's actual API) that would otherwise trip the login limiter under concurrent
+  # workers; mirrors the same opt-out CI already applies for its own native functional-E2E runs.
+  DISABLE_API_RATE_LIMIT: ${DISABLE_API_RATE_LIMIT:-false}
   RECONCILIATION_RUN_STORE_PATH: ${RECONCILIATION_RUN_STORE_PATH:-/var/lib/reconciliation/latest-reconciliation-run.json}
   # ISSUE-050.2: without this, structured logs (login/logout/mapping-profile audit events among
   # them) only ever reach stdout -- captured by Docker's json-file driver for a while, but
@@ -105,7 +111,14 @@ services:
       context: packages/persistence/liquibase
       dockerfile: Dockerfile
       args:
-        LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.33.0}
+        # 4.33.0 (and other recent releases) reject includeAll-loaded formatted-SQL changesets
+        # with "Using 'file' with formatted SQL requires a valid Liquibase Pro key" -- a Pro-
+        # gating change that breaks every changeset in this project (all loaded via
+        # changelog-master.yaml's includeAll), not something specific to this repo's SQL. 4.31
+        # runs this changelog fully OSS (verified against all 49 changesets on a fresh database)
+        # and matches packages/persistence/tests/testHelpers/liquibase.ts's own pin, which is why
+        # the Postgres-integration test suite never hit this.
+        LIQUIBASE_IMAGE: ${LIQUIBASE_IMAGE:-liquibase/liquibase:4.31}
     depends_on:
       postgres:
         condition: service_healthy

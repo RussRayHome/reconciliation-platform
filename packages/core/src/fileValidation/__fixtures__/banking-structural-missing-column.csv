@@ -1,0 +1,2 @@
+transaction_id,account_id,posted_date,transaction_date,amount,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance
+TXN-S001,ACC-1,2026-07-01,,100.00,DEP,Missing the required currency_code column entirely,,,REF-1,,1000.00

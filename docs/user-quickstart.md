@@ -6,10 +6,11 @@ This guide is for analysts and reviewers who need to run reconciliation and revi
 
 Prepare these items first:
 
-- a bank workbook in `.xlsx` format
-- a GL workbook in `.xlsx` format
+- a bank workbook in `.csv` or `.xlsx` format (max 50 MB)
+- a GL workbook in `.csv` or `.xlsx` format (max 50 MB)
 - files that cover the same account and period
 - access to the reconciliation web app
+- a senior analyst, admin, or superuser account -- other roles can view results but cannot submit an import run
 
 Optional but helpful:
 
@@ -30,11 +31,22 @@ If the page does not load, ask a maintainer to start or verify the environment.
 
 ## 3. Run a reconciliation
 
-1. Go to the Upload workspace.
-2. Select the bank workbook as `bankFile`.
-3. Select the GL workbook as `qboFile`.
-4. Enter optional context fields (account, frequency, period).
-5. Run reconciliation and wait for processing to finish.
+1. Go to the **Import Files** workspace.
+2. Drag both workbooks onto the drop zone, or browse and select them. Bank and GL are detected
+   from each file name; use the slot pickers to override if detection guesses wrong.
+3. Enter optional context fields (account identifier, frequency, period, label).
+4. Select **Submit run** and wait for processing to finish.
+
+If either file fails validation, you land on a review screen instead of the results:
+
+- **Structural failure** -- the header row doesn't match the expected columns. Fix the export and
+  re-upload.
+- **Partial import** -- some rows failed validation but others are usable. Review the flagged
+  rows, then choose to import the valid rows and skip the rest, or fix and re-upload the whole
+  file.
+- **All rows invalid** -- nothing in the file is usable. Fix the export and re-upload.
+
+A **Download error report** button is available on every validation-failure screen.
 
 ## 4. Read the output quickly
 
@@ -86,8 +98,15 @@ Use this workbook for downstream approval, handoff, and audit evidence.
 
 ### Upload is rejected
 
-- Confirm each file is `.xlsx`.
+- Confirm each file is `.csv` or `.xlsx` and under 50 MB.
 - Re-export from source system if the workbook is corrupted or password-protected.
+
+### Submit run is disabled or "Only a senior analyst may create an import run"
+
+- Both files must be selected and the reconciliation label must be filled in before Submit run
+  enables.
+- Submitting an import run requires a senior analyst, admin, or superuser account -- ask a
+  maintainer to change your role if you need to submit runs regularly.
 
 ### Results do not look right
 

@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import type { Construct } from 'constructs';
@@ -25,6 +26,13 @@ export class PersistentStack extends cdk.Stack {
   readonly taskRole: iam.Role;
   /** Secret containing persisted database credentials used by runtime stacks. */
   readonly dbSecret: secretsmanager.Secret;
+  /** Shared ECS container log group. Lives here, not in EphemeralStack, so the write grant to
+   * executionRole (also defined here) stays a same-stack reference -- granting write access to a
+   * log group owned by EphemeralStack while EphemeralStack's task definitions already depend on
+   * this stack's executionRole creates a circular stack dependency (ReconEphemeralStack needs
+   * executionRole from ReconPersistentStack; the log-group grant would need ReconPersistentStack
+   * to reference a resource from ReconEphemeralStack). */
+  readonly logGroup: logs.LogGroup;
 
   /**
    * Creates the persistent baseline infrastructure resources for the platform.
@@ -81,6 +89,14 @@ export class PersistentStack extends cdk.Stack {
     });
     this.dbSecret.grantRead(this.taskRole);
     this.dbSecret.grantRead(this.executionRole);
+
+    // Container log group -- see the field's own doc comment for why this lives here rather
+    // than in EphemeralStack (which creates the task definitions that write to it).
+    this.logGroup = new logs.LogGroup(this, 'LogGroup', {
+      logGroupName: `/ecs/${APP}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
     // Outputs — ECR push URIs printed after `cdk deploy ReconPersistentStack`
     new cdk.CfnOutput(this, 'ApiRepoUri', { value: this.apiRepo.repositoryUri });

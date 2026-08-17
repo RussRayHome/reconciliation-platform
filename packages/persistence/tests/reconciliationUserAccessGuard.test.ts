@@ -33,6 +33,16 @@ const RLS_EXCLUDED_TABLES: Record<string, ReadonlySet<string>> = {
     // reconciliation_login_event's own RLS exclusion by comparison -- no query of
     // reconciliation_user happens in this file.
     'packages/persistence/src/readModelStore.ts',
+    // PostgresImportValidationStore: resolveUserId (used by submitRun/claimRunApproval/
+    // recordRunApprovalDecision) is a single-row lookup filtered on user_name AND organization_id
+    // together, narrower than the login lookup above, never a list/filter across users.
+    // resolveUsernamesByIds (used by listRunApprovals/recordRunApprovalDecision, Phase 7's
+    // approval surface) is the one query here that touches more than one row -- but it is a
+    // `WHERE id = ANY($ids)` batch resolution bounded to exactly the submitted_by/decided_by ids
+    // that already came back from a prior, RLS-protected reconciliation_run query, plus
+    // organization_id, never an independent list/filter of reconciliation_user driven by
+    // unbounded or client-supplied criteria.
+    'packages/persistence/src/importValidationStore.ts',
   ]),
   reconciliation_login_event: new Set([
     // recordLoginEvent: a single INSERT per authentication event, never a SELECT/list. See its

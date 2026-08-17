@@ -1,9 +1,15 @@
 import type {
+  ComplexityMethod,
+  ComplexityNode,
+  ComplexityScan,
   CoverageBenchmark,
   CoverageBenchmarkKey,
   CoverageFileEntry,
   CoverageMetrics,
   DbTestItem,
+  DependencyModule,
+  DependencyScan,
+  DependencyViolation,
   DeveloperCheck,
   E2eSpecItem,
   LintIssue,
@@ -1069,4 +1075,150 @@ export const parseCoverageSummaryJson = (
   }
 
   return entries.sort((left, right) => left.lines - right.lines);
+};
+
+const normalizeComplexityMethod = (value: unknown): ComplexityMethod | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const source = value as Record<string, unknown>;
+  const name = readOptionalText(source.name);
+  if (!name) return null;
+
+  return {
+    name,
+    cc: toNonNegativeInteger(source.cc),
+    lines: toNonNegativeInteger(source.lines),
+    params: toNonNegativeInteger(source.params),
+    startLine: toNonNegativeInteger(source.startLine),
+  };
+};
+
+const normalizeComplexityNode = (value: unknown): ComplexityNode | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const source = value as Record<string, unknown>;
+  const name = readOptionalText(source.name);
+  if (!name) return null;
+
+  if (source.type === 'file') {
+    const methods = Array.isArray(source.methods)
+      ? source.methods
+          .map(normalizeComplexityMethod)
+          .filter((method): method is ComplexityMethod => method !== null)
+      : [];
+    return { type: 'file', name, lines: toNonNegativeInteger(source.lines), methods };
+  }
+
+  if (source.type === 'dir') {
+    const children = Array.isArray(source.children)
+      ? source.children
+          .map(normalizeComplexityNode)
+          .filter((child): child is ComplexityNode => child !== null)
+      : [];
+    return { type: 'dir', name, children };
+  }
+
+  return null;
+};
+
+/**
+ * Parses `scripts/escomplex-analysis.ts --json-out`'s ComplexityScan JSON. This app controls both
+ * the writer and this reader, but the payload still crosses a CI-artifact boundary (upload/
+ * download, possibly a stale run), so it's normalized defensively like every other check's parser
+ * here rather than trusted as `as ComplexityScan`.
+ */
+export const parseComplexityScan = (jsonRaw: string): ComplexityScan | null => {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(jsonRaw);
+  } catch {
+    return null;
+  }
+
+  if (typeof payload !== 'object' || payload === null) return null;
+  const source = payload as Record<string, unknown>;
+  const scannedAt = readOptionalText(source.scannedAt);
+  const root = normalizeComplexityNode(source.root);
+  if (!scannedAt || !root) return null;
+
+  return { scannedAt, root };
+};
+
+/** Counts every method across a complexity tree, recursively. */
+export const countComplexityMethods = (node: ComplexityNode): number =>
+  node.type === 'file'
+    ? node.methods.length
+    : node.children.reduce((sum, child) => sum + countComplexityMethods(child), 0);
+
+const SEVERITY_VALUES = new Set(['error', 'warn', 'info']);
+
+const normalizeDependencyModule = (value: unknown): DependencyModule | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const source = value as Record<string, unknown>;
+  const name = readOptionalText(source.name);
+  const folder = readOptionalText(source.folder);
+  if (!name || !folder) return null;
+
+  const deps = Array.isArray(source.deps)
+    ? source.deps.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const instability = typeof source.instability === 'number' && Number.isFinite(source.instability) ? source.instability : 0;
+
+  return {
+    name,
+    folder,
+    loc: toNonNegativeInteger(source.loc),
+    deps,
+    fanIn: toNonNegativeInteger(source.fanIn),
+    fanOut: toNonNegativeInteger(source.fanOut),
+    instability: Math.min(1, Math.max(0, instability)),
+    cyclic: source.cyclic === true,
+  };
+};
+
+const normalizeDependencyViolation = (value: unknown): DependencyViolation | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const source = value as Record<string, unknown>;
+  const id = readOptionalText(source.id);
+  const from = readOptionalText(source.from);
+  const to = readOptionalText(source.to);
+  const rawSev = readOptionalText(source.sev);
+  if (!id || !from || !to || !rawSev || !SEVERITY_VALUES.has(rawSev)) return null;
+
+  return {
+    id,
+    sev: rawSev as DependencyViolation['sev'],
+    from,
+    to,
+    note: readOptionalText(source.note) ?? `Violates "${id}".`,
+  };
+};
+
+/**
+ * Parses `scripts/ci/depcruise-scan.ts --json-out`'s DependencyScan JSON. This app controls both
+ * the writer and this reader, but the payload still crosses a CI-artifact boundary, so it's
+ * normalized defensively like every other check's parser here rather than trusted as `as
+ * DependencyScan` -- mirrors parseComplexityScan's reasoning.
+ */
+export const parseDependencyScan = (jsonRaw: string): DependencyScan | null => {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(jsonRaw);
+  } catch {
+    return null;
+  }
+
+  if (typeof payload !== 'object' || payload === null) return null;
+  const source = payload as Record<string, unknown>;
+  const scannedAt = readOptionalText(source.scannedAt);
+  if (!scannedAt || !Array.isArray(source.modules)) return null;
+
+  const modules = source.modules
+    .map(normalizeDependencyModule)
+    .filter((module): module is DependencyModule => module !== null);
+  const violations = Array.isArray(source.violations)
+    ? source.violations
+        .map(normalizeDependencyViolation)
+        .filter((violation): violation is DependencyViolation => violation !== null)
+    : [];
+
+  return { scannedAt, modules, violations };
 };

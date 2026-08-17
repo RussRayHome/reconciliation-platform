@@ -63,10 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -76,7 +76,7 @@ jobs:
           npm run test:unit -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/unit/unit-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit
           path: .ci-out/unit
@@ -86,10 +86,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -99,7 +99,7 @@ jobs:
           npm run test:integration:dashboard -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/integration/integration-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration
           path: .ci-out/integration
@@ -109,10 +109,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -121,7 +121,7 @@ jobs:
           npx tsx scripts/ci/run-check.ts --name "Postgres DB tests" --meta .ci-out/postgres/meta.json --
           npm run test:postgres -- --reporter=json --outputFile.json=.ci-out/postgres/postgres-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: postgres
           path: .ci-out/postgres
@@ -131,10 +131,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -144,7 +144,7 @@ jobs:
         if: always()
         run: npm run lint -- --format json --output-file .ci-out/lint/lint-results.json || true
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint
           path: .ci-out/lint
@@ -154,17 +154,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - run: npm ci
       - run: npx tsx scripts/ci/run-check.ts --name "Static analysis (typecheck)" --meta .ci-out/typecheck/meta.json -- npm run typecheck
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: typecheck
           path: .ci-out/typecheck
@@ -174,10 +174,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -186,20 +186,76 @@ jobs:
       - if: always()
         run: mkdir -p .ci-out/coverage && cp coverage/coverage-summary.json .ci-out/coverage/coverage-summary.json || true
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: .ci-out/coverage
+          if-no-files-found: warn
+
+  complexity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      # analyze:complexity:json writes .ci-out/complexity/scan.json itself (--json-out) and still
+      # exits non-zero on a threshold violation, same as `npm run analyze:complexity` always has
+      # locally -- meta.json below faithfully records that real exitCode/ok. The `|| true` is
+      # deliberate and temporary: this check is brand new and nobody has triaged the repo's
+      # existing violations yet (at least one is already known: SemanticIcon.tsx), so this job
+      # must not go red for pre-existing debt nobody asked it to flag as a build break. Remove
+      # `|| true` once that burn-in triage is done and the team wants this to gate for real -- see
+      # the matching aggregate-dashboard-status.ts comment, which must be reverted at the same time.
+      - run: npx tsx scripts/ci/run-check.ts --name "Complexity" --meta .ci-out/complexity/meta.json -- npm run analyze:complexity:json || true
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: complexity
+          path: .ci-out/complexity
+          if-no-files-found: warn
+
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      # analyze:deps:json (scripts/ci/depcruise-scan.ts) writes .ci-out/dependencies/scan.json
+      # itself and still exits non-zero on an error-severity dependency-cruiser violation, same
+      # as `npm run analyze:deps` always has locally -- meta.json below faithfully records that
+      # real exitCode/ok. The `|| true` is deliberate and temporary, same reasoning as the
+      # `complexity` job: this check is brand new and nobody has agreed this dashboard should gate
+      # on it yet, so it must not go red the first time a real violation shows up. Remove `|| true`
+      # once the team wants this to gate for real -- see the matching aggregate-dashboard-
+      # status.ts comment, which must be reverted at the same time.
+      - run: npx tsx scripts/ci/run-check.ts --name "Dependencies" --meta .ci-out/dependencies/meta.json -- npm run analyze:deps:json || true
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependencies
+          path: .ci-out/dependencies
           if-no-files-found: warn
 
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -224,7 +280,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/security/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security
           path: .ci-out/security
@@ -234,11 +290,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
           fetch-depth: 0 # gitleaks/trufflehog scan full git history, not just the checked-out tree
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -275,7 +331,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/secrets/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: secrets
           path: .ci-out/secrets
@@ -304,42 +360,60 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # ALLOW_LOCAL_LOGIN_FALLBACK: this runtime has no real Postgres (in-memory backend, via
-      # Playwright's own webServer), so apps/web/tests/e2e/auth.ts's fallback credentials
-      # (rray/rray, bray/bray, rray3/rray3) are the only login path available -- without this,
-      # app.ts rejects every attempt before the fallback logic ever runs. Safe by design, not just
-      # by convention: app.ts refuses to start with this set in a production runtime at all
-      # (ADR-0002 step 7).
-      #
+      # File Imports & Validation (Phase 6+) has no in-memory fallback for the import pipeline --
+      # unlike the older atomic /api/reconciliation/run route, POST /api/imports/runs always needs
+      # a real Postgres connection. This job used to run against an in-memory backend
+      # (ALLOW_LOCAL_LOGIN_FALLBACK) matching the old route's own fallback; that stopped being
+      # sufficient once Screen 01 (Phase 9) made the import pipeline the default landing flow. Same
+      # fix as docker-validate.yml's e2e-functional job -- see that file's own comment for the full
+      # reasoning; kept in sync here since this is a separate job in a separate workflow.
+      - name: Start Postgres and run migrations
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'POSTGRES_DB=reconciliation_platform' \
+            'POSTGRES_USER=recon_app' \
+            'POSTGRES_PASSWORD=change-ci-password' \
+            'POSTGRES_HOST_PORT=5432' \
+            'ENABLE_PGAUDIT=false' \
+            'API_DATABASE_URL=unused' \
+            'JWT_SECRET=unused-ci-placeholder' \
+            > ci-e2e.env
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} up -d postgres --wait
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} run --rm migrate
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} exec -T postgres \
+            psql -U recon_app -d reconciliation_platform < scripts/db/dev-stage/create-users.psql
       # DISABLE_API_RATE_LIMIT: the route-sweep and signup specs (ISSUE-026/ISSUE-033) each do
       # real logins in sequence -- against a local Postgres, this reproducibly tripped the API's
       # 120-requests/minute rate limit (a real 429 on /api/auth/me, confirmed via the failing
       # run's network trace) once total e2e request volume crossed that threshold. The limiter is
-      # generic Express middleware applying regardless of persistence backend, so the same risk
-      # exists here even though CI's in-memory backend takes a different login path
-      # (ALLOW_LOCAL_LOGIN_FALLBACK, not real Postgres auth). Safe to disable for this job
-      # specifically: DISABLE_API_RATE_LIMIT has no production-safety guard of its own, but this
-      # env var only ever reaches the ephemeral webServer this job spawns for itself, never a
-      # deployed instance.
+      # generic Express middleware applying regardless of persistence backend. Safe to disable for
+      # this job specifically: DISABLE_API_RATE_LIMIT has no production-safety guard of its own,
+      # but this env var only ever reaches the ephemeral webServer this job spawns for itself,
+      # never a deployed instance.
+      #
+      # DATABASE_URL points the native webServer (Playwright's own `dev:api:test`, not a Docker
+      # container) at the postgres service just started above, as app_user (least-privilege
+      # runtime role, changeset 0031).
       - run: >
           npx tsx scripts/ci/run-check.ts --name "E2E functional tests (shard ${{ matrix.shard }}/4)" --meta .ci-out/e2e/meta.json --
           npm run test:e2e:functional -- --reporter=list,json
           --shard=${{ matrix.shard }}/4
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
-          ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
+          DATABASE_URL: postgresql://app_user:P%40ssw0rd@localhost:5432/reconciliation_platform
           DISABLE_API_RATE_LIMIT: 'true'
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-functional-${{ matrix.shard }}
           path: .ci-out/e2e
@@ -352,10 +426,10 @@ jobs:
     # sharding across multiple runners would just mean N cold container builds instead of one.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -392,7 +466,7 @@ jobs:
           # doesn't declare this itself, so it must be passed through from the invoking shell here.
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e-visual/e2e-results.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-visual
           path: .ci-out/e2e-visual
@@ -400,7 +474,7 @@ jobs:
 
   aggregate:
     needs:
-      [unit, integration, postgres, lint, typecheck, coverage, security, secrets, e2e-functional, e2e-visual]
+      [unit, integration, postgres, lint, typecheck, coverage, complexity, dependencies, security, secrets, e2e-functional, e2e-visual]
     if: always() # publish whatever succeeded even if one or more check jobs failed or timed out
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -419,77 +493,87 @@ jobs:
       contents: write
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
           fetch-depth: 0 # full history -- commitsThisWeek/branch-compare/tag lookups need it
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - run: npm ci
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: unit
           path: .ci-artifacts/unit
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: integration
           path: .ci-artifacts/integration
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: postgres
           path: .ci-artifacts/postgres
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: lint
           path: .ci-artifacts/lint
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: typecheck
           path: .ci-artifacts/typecheck
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: coverage
           path: .ci-artifacts/coverage
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: complexity
+          path: .ci-artifacts/complexity
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: dependencies
+          path: .ci-artifacts/dependencies
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: security
           path: .ci-artifacts/security
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: secrets
           path: .ci-artifacts/secrets
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: e2e-functional-1
           path: .ci-artifacts/e2e-functional-1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: e2e-functional-2
           path: .ci-artifacts/e2e-functional-2
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: e2e-functional-3
           path: .ci-artifacts/e2e-functional-3
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: e2e-functional-4
           path: .ci-artifacts/e2e-functional-4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: e2e-visual
@@ -517,7 +601,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-status-${{ env.TARGET_BRANCH }}
           path: dashboard-status/${{ env.TARGET_BRANCH }}.json

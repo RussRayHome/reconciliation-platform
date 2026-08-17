@@ -24,6 +24,7 @@ import { SectionCard } from '@recon/ui';
 import {
   rolePermissionsByRole,
   userRoles,
+  type ApprovalCountsByGroup,
   type EntityVerificationStatus,
   type IdentityVerificationStatus,
   type ReviewerDecision,
@@ -35,6 +36,9 @@ import {
 } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
+import { ApprovalsPage } from './components/ApprovalsPage';
+import { ApprovalPolicyPage } from './components/ApprovalPolicyPage';
+import { VersionsPage } from './components/VersionsPage';
 import { ComingSoonPage } from './components/ComingSoonPage';
 import { CreateMappingScreen } from './components/CreateMappingScreen';
 import { SignupScreen } from './components/SignupScreen';
@@ -53,6 +57,7 @@ import { NavRail } from './components/NavRail';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import {
   createRuleVersionDraftRequest,
+  getApprovalCountsRequest,
   getLatestReconciliationRunRequest,
   getMappingProfilesRequest,
   getRuleVersionsRequest,
@@ -68,13 +73,26 @@ import type { AppTab } from './lib/appCatalog';
 import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
-import { useReconciliationRun } from './hooks/useReconciliationRun';
+import { ImportValidationFailedError, useImportRunSubmit } from './hooks/useImportRunSubmit';
+import { useImportUploadTransfer } from './hooks/useImportUploadTransfer';
+import { useImportPartialAccept } from './hooks/useImportPartialAccept';
+import { buildTransferCardProps } from './lib/importUploadProgress';
+import { ImportUploadCard } from './components/ImportUploadCard';
+import { ImportValidationFailureView } from './components/ImportValidationFailure';
+import {
+  BANK_TEMPLATE_URL,
+  BANK_TEMPLATE_XLSX_URL,
+  GL_TEMPLATE_URL,
+  GL_TEMPLATE_XLSX_URL,
+} from './lib/templates';
 import { useReviewerDecisions } from './hooks/useReviewerDecisions';
 import { useDensity } from './hooks/useDensity';
 import { useWatchlist } from './hooks/useWatchlist';
 
 type ReconciliationFrequency = 'Monthly' | 'Annual';
-type ReconciliationModel = ReturnType<typeof useReconciliationRun>;
+type ReconciliationModel = ReturnType<typeof useImportRunSubmit>;
+type UploadTransferModel = ReturnType<typeof useImportUploadTransfer>;
+type PartialAcceptModel = ReturnType<typeof useImportPartialAccept>;
 type RunData = NonNullable<ReconciliationModel['data']>;
 /** The authenticated principal, as reported by the server (login response or /api/auth/me) --
  * ADR-0002 step 6: role travels with the session instead of being looked up from a hardcoded
@@ -562,6 +580,7 @@ function App() {
       <ReconciliationApp
         docsHref={docsHref}
         rolePermissions={rolePermissions}
+        isAdmin={activeUser.role === 'admin' || activeUser.role === 'superuser'}
         roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
         controls={controls}
         username={activeUser.username}
@@ -579,6 +598,7 @@ function App() {
 function ReconciliationApp({
   docsHref,
   rolePermissions,
+  isAdmin,
   roleDefaultTab,
   controls,
   username,
@@ -591,6 +611,7 @@ function ReconciliationApp({
 }: Readonly<{
   docsHref: string;
   rolePermissions: RolePermissions;
+  isAdmin: boolean;
   roleDefaultTab: AppTab;
   controls: ReactNode;
   username: string;
@@ -631,6 +652,7 @@ function ReconciliationApp({
     loadSliderDefaultsUpdatedAt(),
   );
   const [ruleVersions, setRuleVersions] = useState<RuleVersionsResponse | null>(null);
+  const [approvalCounts, setApprovalCounts] = useState<ApprovalCountsByGroup | null>(null);
   const [ruleVersionActionError, setRuleVersionActionError] = useState<string | null>(null);
   const [rulesCatalogData, setRulesCatalogData] = useState<RuleCatalogResponse | null>(null);
   const [rulesCatalogError, setRulesCatalogError] = useState<string | null>(null);
@@ -640,8 +662,10 @@ function ReconciliationApp({
   );
   const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  const reconciliation = useReconciliationRun();
-  const run = reconciliation.data;
+  const reconciliation = useImportRunSubmit();
+  const uploadTransfer = useImportUploadTransfer(reconciliation);
+  const partialAccept = useImportPartialAccept();
+  const run = partialAccept.data ?? reconciliation.data;
   const reportRun = run ?? persistedRun;
   const reportRunExceptionIds = useMemo(
     () => new Set((reportRun?.exceptions ?? []).map((exception) => exception.id)),
@@ -665,6 +689,23 @@ function ReconciliationApp({
   useEffect(() => {
     persistSliderDefaultOverrides(varianceDefaultOverrides);
   }, [varianceDefaultOverrides]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getApprovalCountsRequest()
+      .then((counts) => {
+        if (!cancelled) {
+          setApprovalCounts(counts);
+        }
+      })
+      .catch(() => {
+        // Non-fatal: the rail badges just stay hidden until the next successful fetch.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname]);
 
   const isOnRulesRoute = location.pathname === routePaths.mappingRules;
 
@@ -1116,13 +1157,17 @@ function ReconciliationApp({
 
     setRunStartedAtMs(Date.now());
     setNowMs(Date.now());
-    reconciliation.mutate({
+    uploadTransfer.start({
       bankFile,
       glFile,
-      accountIdentifier,
-      reconciliationFrequency,
-      periodLabel: trimmedPeriodLabel,
-      varianceOverrides: varianceDefaultOverrides,
+      label: trimmedPeriodLabel,
+      accountIdentifier: accountIdentifier || undefined,
+      frequency: reconciliationFrequency === 'Annual' ? 'ANNUAL' : 'MONTHLY',
+      periodYear: reconciliationFrequency === 'Annual' ? Number(annualYear) : currentYear,
+      periodMonth:
+        reconciliationFrequency === 'Annual'
+          ? undefined
+          : monthsWithinYear.indexOf(monthlyMonth) + 1,
     });
   };
 
@@ -1156,6 +1201,8 @@ function ReconciliationApp({
         docsHref={docsHref}
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
         canAccessRunBook={rolePermissions.canAccessRunBook}
+        canApprove={rolePermissions.canApprove}
+        approvalCounts={approvalCounts}
         username={username}
         profileLabel={profileLabel}
         roleLabel={roleLabel}
@@ -1221,6 +1268,8 @@ function ReconciliationApp({
                     setReconciliationFrequency={setReconciliationFrequency}
                     suggestedPeriodLabel={suggestedPeriodLabel}
                     accountIdentifier={accountIdentifier}
+                    uploadTransfer={uploadTransfer}
+                    partialAccept={partialAccept}
                   />
                 }
               />
@@ -1326,32 +1375,38 @@ function ReconciliationApp({
                 }
               />
               <Route
-                path={routePaths.approvalsPending}
+                path={routePaths.mappingVersions}
                 element={
                   <ComingSoonPage
-                    title="Pending Imports"
-                    description="Imports awaiting approval will be reviewable here."
+                    title="Mapping Profile Versions"
+                    description="Depends on the Mapping Profiles screen itself, which isn't built yet -- coming soon."
                   />
                 }
+              />
+              <Route path={routePaths.mappingRulesVersions} element={<VersionsPage />} />
+              <Route
+                path={routePaths.approvalsImports}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
               />
               <Route
-                path={routePaths.approvalsApproved}
-                element={
-                  <ComingSoonPage
-                    title="Approved Imports"
-                    description="A record of approved imports will be reviewable here."
-                  />
-                }
+                path={routePaths.approvalsMappingProfiles}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
               />
               <Route
-                path={routePaths.approvalsRejected}
-                element={
-                  <ComingSoonPage
-                    title="Rejected Imports"
-                    description="A record of rejected imports will be reviewable here."
-                  />
-                }
+                path={routePaths.approvalsMatchingRules}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
               />
+              <Route
+                path={routePaths.approvalsExceptionResolutions}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+              />
+              <Route
+                path={routePaths.approvalsReportDistribution}
+                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+              />
+              {isAdmin ? (
+                <Route path={routePaths.approvalsPolicy} element={<ApprovalPolicyPage />} />
+              ) : null}
               <Route
                 path={routePaths.accountProfile}
                 element={
@@ -1442,6 +1497,8 @@ function SourceUploadSection({
   setGlFile,
   setReconciliationFrequency,
   suggestedPeriodLabel,
+  uploadTransfer,
+  partialAccept,
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
@@ -1466,101 +1523,186 @@ function SourceUploadSection({
   setGlFile: Dispatch<SetStateAction<File | null>>;
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
+  uploadTransfer: UploadTransferModel;
+  partialAccept: PartialAcceptModel;
 }>) {
   const reconciliationLabelErrorId = 'reconciliation-label-error';
   const reconciliationLabelHintId = 'reconciliation-label-hint';
 
   return (
-    <SectionCard
-      title="Source Upload"
-      description="XLSX uploads only. The engine preserves original file names, line numbers, excluded rows, and normalized audit fields."
-    >
-      <form
-        id="source-upload-form"
-        className="upload-form"
-        aria-busy={reconciliation.isPending}
-        onSubmit={handleSubmit}
+    <div className="import-screen">
+      <p className="import-screen__eyebrow">Reconciliations / New run</p>
+      <SectionCard
+        title="Import source files"
+        description="CSV or XLSX. Format is detected by extension; the engine preserves original file names, source line numbers, excluded rows, and normalized audit fields."
+        actions={
+          <div className="import-screen__header-actions">
+            <details className="import-screen__templates-menu">
+              <summary className="secondary-button">Download templates</summary>
+              <div className="import-screen__templates-menu-list">
+                <a href={BANK_TEMPLATE_URL} download>
+                  Bank template (CSV)
+                </a>
+                <a href={BANK_TEMPLATE_XLSX_URL} download>
+                  Bank template (XLSX)
+                </a>
+                <a href={GL_TEMPLATE_URL} download>
+                  GL template (CSV)
+                </a>
+                <a href={GL_TEMPLATE_XLSX_URL} download>
+                  GL template (XLSX)
+                </a>
+              </div>
+            </details>
+            <button
+              type="submit"
+              form="source-upload-form"
+              className="accent-button"
+              disabled={!canSubmit}
+            >
+              {reconciliation.isPending ? 'Submitting…' : 'Submit run'}
+            </button>
+          </div>
+        }
       >
-        <SourceDropZone
-          bankFile={bankFile}
-          glFile={glFile}
-          setBankFile={setBankFile}
-          setGlFile={setGlFile}
-        />
+        <form
+          id="source-upload-form"
+          className="import-screen__body"
+          aria-busy={reconciliation.isPending}
+          onSubmit={handleSubmit}
+        >
+          <div className="import-screen__upload-column">
+            {uploadTransfer.transfer.kind === 'idle' ? (
+              <>
+                <SourceDropZone
+                  bankFile={bankFile}
+                  glFile={glFile}
+                  setBankFile={setBankFile}
+                  setGlFile={setGlFile}
+                />
+                <p className="source-dropzone__note">
+                  Bank and GL are detected from each file name; use the slot pickers to override.
+                  Row counts, date range, and excluded rows are calculated when the reconciliation
+                  runs.
+                </p>
+              </>
+            ) : (
+              <div className="import-upload-card-list" aria-label="Upload progress">
+                {bankFile ? (
+                  <ImportUploadCard
+                    {...buildTransferCardProps(
+                      uploadTransfer.transfer,
+                      bankFile,
+                      'bank',
+                      0,
+                      uploadTransfer.cancel,
+                      uploadTransfer.retry,
+                    )}
+                  />
+                ) : null}
+                {glFile ? (
+                  <ImportUploadCard
+                    {...buildTransferCardProps(
+                      uploadTransfer.transfer,
+                      glFile,
+                      'gl',
+                      bankFile?.size ?? 0,
+                      uploadTransfer.cancel,
+                      uploadTransfer.retry,
+                    )}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
 
-        <HelpedTextField
-          fieldId="account-identifier"
-          helpText="Optional account code shown in outputs and exports to identify which account this run belongs to."
-          inputId="account-identifier-input"
-          label="Account identifier"
-          onChange={(event) => setAccountIdentifier(event.target.value)}
-          placeholder="OPERATING-001"
-          value={accountIdentifier}
-        />
+          <aside className="run-configuration-panel">
+            <h3 className="run-configuration-panel__title">Run configuration</h3>
 
-        <HelpedFrequencyField
-          onChange={(event) =>
-            setReconciliationFrequency(event.target.value as ReconciliationFrequency)
-          }
-          value={reconciliationFrequency}
-        />
+            <HelpedTextField
+              fieldId="account-identifier"
+              helpText="Optional. Shown in outputs and exports."
+              inputId="account-identifier-input"
+              label="Account identifier"
+              onChange={(event) => setAccountIdentifier(event.target.value)}
+              placeholder="OPERATING-001"
+              value={accountIdentifier}
+            />
 
-        <ReconciliationPeriodField
-          annualYear={annualYear}
-          currentYear={currentYear}
-          monthlyMonth={monthlyMonth}
-          previousSevenYears={previousSevenYears}
-          reconciliationFrequency={reconciliationFrequency}
-          setAnnualYear={setAnnualYear}
-          setMonthlyMonth={setMonthlyMonth}
-        />
+            <div className="run-configuration-panel__row">
+              <HelpedFrequencyField
+                onChange={(event) =>
+                  setReconciliationFrequency(event.target.value as ReconciliationFrequency)
+                }
+                value={reconciliationFrequency}
+              />
 
-        <HelpedLabelField
-          hintId={reconciliationLabelHintId}
-          isInvalid={isLabelMissing}
-          labelErrorId={reconciliationLabelErrorId}
-          onChange={(event) => {
-            setIsCustomPeriodLabel(true);
-            setPeriodLabel(event.target.value);
-          }}
-          periodLabel={periodLabel}
-          suggestedPeriodLabel={suggestedPeriodLabel}
-          canResetToSuggested={isCustomPeriodLabel}
-          onResetToSuggested={() => {
-            setIsCustomPeriodLabel(false);
-            setPeriodLabel(suggestedPeriodLabel);
-          }}
-        />
+              <ReconciliationPeriodField
+                annualYear={annualYear}
+                currentYear={currentYear}
+                monthlyMonth={monthlyMonth}
+                previousSevenYears={previousSevenYears}
+                reconciliationFrequency={reconciliationFrequency}
+                setAnnualYear={setAnnualYear}
+                setMonthlyMonth={setMonthlyMonth}
+              />
+            </div>
 
-        <p className="trust-note">
-          Use only authorized XLSX exports and follow your organization&apos;s financial data
-          handling policy.
-        </p>
+            <HelpedLabelField
+              hintId={reconciliationLabelHintId}
+              isInvalid={isLabelMissing}
+              labelErrorId={reconciliationLabelErrorId}
+              onChange={(event) => {
+                setIsCustomPeriodLabel(true);
+                setPeriodLabel(event.target.value);
+              }}
+              periodLabel={periodLabel}
+              suggestedPeriodLabel={suggestedPeriodLabel}
+              canResetToSuggested={isCustomPeriodLabel}
+              onResetToSuggested={() => {
+                setIsCustomPeriodLabel(false);
+                setPeriodLabel(suggestedPeriodLabel);
+              }}
+            />
 
-        <div className="upload-actions">
-          <button type="submit" disabled={!canSubmit}>
-            {reconciliation.isPending ? 'Running reconciliation...' : 'Run reconciliation'}
-          </button>
-        </div>
+            <p className="trust-note">
+              Uploaded files are stored raw and never mutated. Validation runs on a copy.
+            </p>
+          </aside>
 
-        {reconciliation.isPending ? (
-          <p className="status-banner" role="status" aria-live="polite">
-            Reconciliation is running. Parsing, matching, and report generation are in progress.
-          </p>
-        ) : null}
+          {reconciliation.isPending ? (
+            <p className="status-banner import-screen__status" role="status" aria-live="polite">
+              Import run submitted. Validation and matching are in progress.
+            </p>
+          ) : null}
 
-        {isLabelMissing ? (
-          <p id={reconciliationLabelErrorId} className="error-banner" role="alert">
-            Reconciliation label is required before running.
-          </p>
-        ) : null}
-        {reconciliation.error ? (
-          <p className="error-banner" role="alert">
-            {reconciliation.error.message}
-          </p>
-        ) : null}
-      </form>
-    </SectionCard>
+          {isLabelMissing ? (
+            <p
+              id={reconciliationLabelErrorId}
+              className="error-banner import-screen__status"
+              role="alert"
+            >
+              Reconciliation label is required before running.
+            </p>
+          ) : null}
+          {reconciliation.error instanceof ImportValidationFailedError ? (
+            <ImportValidationFailureView
+              run={reconciliation.error.run}
+              onRetryUpload={() => {
+                reconciliation.reset();
+                setBankFile(null);
+                setGlFile(null);
+              }}
+              partialAccept={partialAccept}
+            />
+          ) : reconciliation.error ? (
+            <p className="error-banner import-screen__status" role="alert">
+              {reconciliation.error.message}
+            </p>
+          ) : null}
+        </form>
+      </SectionCard>
+    </div>
   );
 }
 

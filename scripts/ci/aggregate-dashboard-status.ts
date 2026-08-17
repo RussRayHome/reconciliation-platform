@@ -14,9 +14,12 @@ import { promisify } from 'node:util';
 
 import {
   buildCoverageBenchmarks,
+  countComplexityMethods,
   parseAuditSummary,
+  parseComplexityScan,
   parseCoverageSummaryJson,
   parseDbTestItems,
+  parseDependencyScan,
   parseEslintJsonIssues,
   parsePlaywrightJsonSpecs,
   parseSecretMetadata,
@@ -466,7 +469,7 @@ const collectRepoStatusBranches = async (): Promise<RepoStatusBranch[]> => {
     .map((line) => line.slice('origin/'.length))
     .filter((name) => name.length > 0 && !NON_FEATURE_BRANCHES.has(name));
 
-  const openPrs = await execFileAsync('gh', [
+  const openPrsPromise = execFileAsync('gh', [
     'pr',
     'list',
     '--state',
@@ -479,12 +482,35 @@ const collectRepoStatusBranches = async (): Promise<RepoStatusBranch[]> => {
       console.log(`[aggregate-dashboard-status] gh pr list (repo status branches) failed: ${describeError(error)}`);
       return [];
     });
+
+  // Branches left over after a squash merge never rejoin dev's commit history, so a raw
+  // ahead-of-dev diff sees them as permanently "in flight" even though the PR is done. Their
+  // only remaining state is "needs deletion," which isn't this section's concern.
+  const mergedBranchNamesPromise = execFileAsync('gh', [
+    'pr',
+    'list',
+    '--state',
+    'merged',
+    '--json',
+    'headRefName',
+    '--limit',
+    '200',
+  ], { cwd: repoRoot, timeout: 8000 })
+    .then((result) => new Set((JSON.parse(result.stdout?.toString() ?? '[]') as Array<{ headRefName: string }>).map((pr) => pr.headRefName)))
+    .catch((error: unknown) => {
+      console.log(`[aggregate-dashboard-status] gh pr list --state merged (repo status branches) failed: ${describeError(error)}`);
+      return new Set<string>();
+    });
+
+  const [openPrs, mergedBranchNames] = await Promise.all([openPrsPromise, mergedBranchNamesPromise]);
   const prByBranch = new Map(openPrs.map((pr) => [pr.headRefName, pr]));
 
   const now = Date.now();
 
   const branches = await Promise.all(
-    branchNames.map(async (name): Promise<RepoStatusBranch | null> => {
+    branchNames
+      .filter((name) => !mergedBranchNames.has(name))
+      .map(async (name): Promise<RepoStatusBranch | null> => {
       const counts = await readGitCommandOutput([
         'rev-list',
         '--left-right',
@@ -844,6 +870,63 @@ const run = async (): Promise<void> => {
     coverageFiles,
   };
 
+  // --- Complexity ---
+  const complexityMeta = readCheckMeta('complexity', 'Complexity');
+  const complexityScanRaw = readText(join(artifactsDir, 'complexity', 'scan.json'));
+  const complexityScan = complexityScanRaw ? parseComplexityScan(complexityScanRaw) : null;
+  // Burn-in: `ok` is "did the scan itself run and parse", not "zero threshold violations" --
+  // complexityMeta.ok/exitCode reflect the latter (escomplex-analysis.ts's own per-function gate,
+  // same one `npm run analyze:complexity` has always enforced locally), and this check is brand
+  // new with nobody having triaged the repo's existing violations yet. Once that triage happens
+  // and the team wants this to gate for real, switch back to `ok: complexityMeta.ok` here AND
+  // remove the matching `|| true` in dashboard-status.yml's complexity job at the same time --
+  // otherwise a real scan crash would report ok:true from the meta.json fallback while this stays
+  // silent about it.
+  const complexity: DeveloperCheck = {
+    name: complexityMeta.name,
+    command: complexityMeta.command,
+    ok: complexityScan !== null,
+    exitCode: complexityMeta.exitCode,
+    durationMs: complexityMeta.durationMs,
+    summary: complexityScan
+      ? `${countComplexityMethods(complexityScan.root)} methods analyzed${complexityMeta.ok ? '' : ' (threshold violations present -- informational during burn-in)'}`
+      : 'Complexity scan unavailable for this run.',
+    details:
+      complexityScan !== null
+        ? 'See job log for full output.'
+        : 'Scan did not produce parseable output -- see job log.',
+    areaLabel: 'Complexity',
+    complexityScan: complexityScan ?? undefined,
+  };
+
+  // --- Dependencies ---
+  const dependenciesMeta = readCheckMeta('dependencies', 'Dependencies');
+  const dependencyScanRaw = readText(join(artifactsDir, 'dependencies', 'scan.json'));
+  const dependencyScan = dependencyScanRaw ? parseDependencyScan(dependencyScanRaw) : null;
+  // Burn-in: `ok` is "did the scan run and parse", not "zero dependency-cruiser violations" --
+  // dependenciesMeta.ok/exitCode reflect the latter (depcruise-scan.ts's own error-severity gate,
+  // same one `npm run analyze:deps` has always enforced locally), and this check is brand new
+  // with nobody having agreed the dashboard should gate on it yet. Revert to
+  // `ok: dependenciesMeta.ok` (and remove the matching `|| true` in dashboard-status.yml's
+  // `dependencies` job at the same time) once the team wants this to gate for real.
+  const errorViolationCount = dependencyScan?.violations.filter((v) => v.sev === 'error').length ?? 0;
+  const dependencies: DeveloperCheck = {
+    name: dependenciesMeta.name,
+    command: dependenciesMeta.command,
+    ok: dependencyScan !== null,
+    exitCode: dependenciesMeta.exitCode,
+    durationMs: dependenciesMeta.durationMs,
+    summary: dependencyScan
+      ? `${dependencyScan.modules.length} modules, ${dependencyScan.violations.length} violation(s)${errorViolationCount > 0 ? ` (${errorViolationCount} error -- informational during burn-in)` : ''}`
+      : 'Dependency scan unavailable for this run.',
+    details:
+      dependencyScan !== null
+        ? 'See job log for full output.'
+        : 'Scan did not produce parseable output -- see job log.',
+    areaLabel: 'Dependencies',
+    dependencyScan: dependencyScan ?? undefined,
+  };
+
   // --- Security ---
   const securityMeta = readCheckMeta('security', 'Security vulnerabilities');
   const securityOutput = readText(join(artifactsDir, 'security', 'security-output.txt')) ?? '';
@@ -900,7 +983,19 @@ const run = async (): Promise<void> => {
     e2eSpecs,
   };
 
-  const checks = [unitTests, integrationTests, postgresTests, lint, typecheck, coverage, security, secrets, e2e];
+  const checks = [
+    unitTests,
+    integrationTests,
+    postgresTests,
+    lint,
+    typecheck,
+    coverage,
+    complexity,
+    dependencies,
+    security,
+    secrets,
+    e2e,
+  ];
   const failedChecks = checks.filter((c) => !c.ok).length;
   const passedChecks = checks.length - failedChecks;
   const totalDurationMs = checks.reduce((sum, c) => sum + c.durationMs, 0);

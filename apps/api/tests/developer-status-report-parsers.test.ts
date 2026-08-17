@@ -1,6 +1,9 @@
 import {
+  countComplexityMethods,
+  parseComplexityScan,
   parseCoverageSummaryJson,
   parseDbTestItems,
+  parseDependencyScan,
   parseEslintJsonIssues,
   parsePlaywrightJsonSpecs,
   parseVitestJsonTestItems,
@@ -546,6 +549,287 @@ describe('report parsers', () => {
       const report = JSON.stringify({ 'a.ts': null, 'b.ts': 'nope' });
 
       expect(parseCoverageSummaryJson(report)).toEqual([]);
+    });
+  });
+
+  describe('parseComplexityScan', () => {
+    const validScan = JSON.stringify({
+      scannedAt: '2026-08-11T00:00:00.000Z',
+      root: {
+        type: 'dir',
+        name: 'reconciliation-platform',
+        children: [
+          {
+            type: 'dir',
+            name: 'packages',
+            children: [
+              {
+                type: 'file',
+                name: 'engine.ts',
+                lines: 120,
+                methods: [{ name: 'run', cc: 12, lines: 60, params: 3, startLine: 10 }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    it('parses a valid scan into its typed tree', () => {
+      expect(parseComplexityScan(validScan)).toEqual({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        root: {
+          type: 'dir',
+          name: 'reconciliation-platform',
+          children: [
+            {
+              type: 'dir',
+              name: 'packages',
+              children: [
+                {
+                  type: 'file',
+                  name: 'engine.ts',
+                  lines: 120,
+                  methods: [{ name: 'run', cc: 12, lines: 60, params: 3, startLine: 10 }],
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+
+    it('drops a method entry with no name', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        root: {
+          type: 'file',
+          name: 'a.ts',
+          lines: 10,
+          methods: [{ cc: 5, lines: 5, params: 0, startLine: 1 }],
+        },
+      });
+
+      expect(parseComplexityScan(scan)?.root).toMatchObject({ methods: [] });
+    });
+
+    it('drops a tree node with an unrecognized type', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        root: {
+          type: 'dir',
+          name: 'root',
+          children: [{ type: 'symlink', name: 'weird' }],
+        },
+      });
+
+      expect(parseComplexityScan(scan)?.root).toMatchObject({ children: [] });
+    });
+
+    it('treats missing or non-numeric method fields as zero', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        root: {
+          type: 'file',
+          name: 'a.ts',
+          lines: 10,
+          methods: [{ name: 'f', cc: 'lots' }],
+        },
+      });
+
+      expect(parseComplexityScan(scan)?.root).toMatchObject({
+        methods: [{ name: 'f', cc: 0, lines: 0, params: 0, startLine: 0 }],
+      });
+    });
+
+    it.each([
+      ['invalid JSON', 'not json'],
+      ['JSON null', 'null'],
+      ['a JSON scalar', '7'],
+      ['a payload missing scannedAt', JSON.stringify({ root: { type: 'file', name: 'a.ts', lines: 1, methods: [] } })],
+      ['a payload missing root', JSON.stringify({ scannedAt: '2026-08-11T00:00:00.000Z' })],
+      ['a root with no name', JSON.stringify({ scannedAt: '2026-08-11T00:00:00.000Z', root: { type: 'dir', children: [] } })],
+    ])('returns null for %s', (_label, input) => {
+      expect(parseComplexityScan(input)).toBeNull();
+    });
+  });
+
+  describe('countComplexityMethods', () => {
+    it('counts methods across nested directories', () => {
+      const root: Parameters<typeof countComplexityMethods>[0] = {
+        type: 'dir',
+        name: 'root',
+        children: [
+          {
+            type: 'dir',
+            name: 'nested',
+            children: [
+              {
+                type: 'file',
+                name: 'a.ts',
+                lines: 10,
+                methods: [{ name: 'f', cc: 1, lines: 1, params: 0, startLine: 1 }],
+              },
+            ],
+          },
+          {
+            type: 'file',
+            name: 'b.ts',
+            lines: 5,
+            methods: [{ name: 'g', cc: 1, lines: 1, params: 0, startLine: 1 }],
+          },
+        ],
+      };
+
+      expect(countComplexityMethods(root)).toBe(2);
+    });
+
+    it('returns zero for an empty directory', () => {
+      expect(countComplexityMethods({ type: 'dir', name: 'empty', children: [] })).toBe(0);
+    });
+
+    it('counts a lone file node directly', () => {
+      expect(
+        countComplexityMethods({
+          type: 'file',
+          name: 'a.ts',
+          lines: 5,
+          methods: [
+            { name: 'f', cc: 1, lines: 1, params: 0, startLine: 1 },
+            { name: 'g', cc: 1, lines: 1, params: 0, startLine: 5 },
+          ],
+        }),
+      ).toBe(2);
+    });
+  });
+
+  describe('parseDependencyScan', () => {
+    const validScan = JSON.stringify({
+      scannedAt: '2026-08-11T00:00:00.000Z',
+      modules: [
+        {
+          name: 'apps/api/src/app',
+          folder: 'api',
+          loc: 2580,
+          deps: ['apps/api/src/services/authMiddleware'],
+          fanIn: 12,
+          fanOut: 17,
+          instability: 0.586,
+          cyclic: false,
+        },
+      ],
+      violations: [
+        { id: 'no-circular-dependencies', sev: 'warn', from: 'a', to: 'b', note: 'Violates "no-circular-dependencies" (warn).' },
+      ],
+    });
+
+    it('parses a valid scan into its typed shape', () => {
+      expect(parseDependencyScan(validScan)).toEqual({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [
+          {
+            name: 'apps/api/src/app',
+            folder: 'api',
+            loc: 2580,
+            deps: ['apps/api/src/services/authMiddleware'],
+            fanIn: 12,
+            fanOut: 17,
+            instability: 0.586,
+            cyclic: false,
+          },
+        ],
+        violations: [
+          {
+            id: 'no-circular-dependencies',
+            sev: 'warn',
+            from: 'a',
+            to: 'b',
+            note: 'Violates "no-circular-dependencies" (warn).',
+          },
+        ],
+      });
+    });
+
+    it('drops a module with no name or no folder', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [
+          { folder: 'api', loc: 1, deps: [], fanIn: 0, fanOut: 0, instability: 0, cyclic: false },
+          { name: 'a', loc: 1, deps: [], fanIn: 0, fanOut: 0, instability: 0, cyclic: false },
+        ],
+        violations: [],
+      });
+
+      expect(parseDependencyScan(scan)?.modules).toEqual([]);
+    });
+
+    it('drops a violation with an unrecognized severity', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [],
+        violations: [{ id: 'x', sev: 'catastrophic', from: 'a', to: 'b' }],
+      });
+
+      expect(parseDependencyScan(scan)?.violations).toEqual([]);
+    });
+
+    it('clamps instability into [0, 1] and treats non-numeric values as zero', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [
+          { name: 'a', folder: 'x', instability: 5 },
+          { name: 'b', folder: 'x', instability: -1 },
+          { name: 'c', folder: 'x', instability: 'lots' },
+        ],
+        violations: [],
+      });
+
+      expect(parseDependencyScan(scan)?.modules.map((m) => m.instability)).toEqual([1, 0, 0]);
+    });
+
+    it('treats missing loc/fanIn/fanOut/deps/cyclic as their zero/empty/false defaults', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [{ name: 'a', folder: 'x' }],
+        violations: [],
+      });
+
+      expect(parseDependencyScan(scan)?.modules[0]).toEqual({
+        name: 'a',
+        folder: 'x',
+        loc: 0,
+        deps: [],
+        fanIn: 0,
+        fanOut: 0,
+        instability: 0,
+        cyclic: false,
+      });
+    });
+
+    it('defaults a violation with no note to a generated one', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [],
+        violations: [{ id: 'no-circular-dependencies', sev: 'warn', from: 'a', to: 'b' }],
+      });
+
+      expect(parseDependencyScan(scan)?.violations[0]?.note).toBe('Violates "no-circular-dependencies".');
+    });
+
+    it.each([
+      ['invalid JSON', 'not json'],
+      ['JSON null', 'null'],
+      ['a JSON scalar', '7'],
+      ['a payload missing scannedAt', JSON.stringify({ modules: [] })],
+      ['a payload with a non-array modules field', JSON.stringify({ scannedAt: '2026-08-11T00:00:00.000Z', modules: 'nope' })],
+    ])('returns null for %s', (_label, input) => {
+      expect(parseDependencyScan(input)).toBeNull();
+    });
+
+    it('treats a missing violations field as an empty array', () => {
+      const scan = JSON.stringify({ scannedAt: '2026-08-11T00:00:00.000Z', modules: [] });
+
+      expect(parseDependencyScan(scan)?.violations).toEqual([]);
     });
   });
 });

@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* Self-hosted (see fonts.css for why this replaced a Google Fonts @import) -- same reasoning as
+   apps/web/src/styles/fonts.css, copied rather than shared per this file's own note below. */
+@import './fonts.css';
 
 /*
  * Copied from apps/web/src/styles (tokens.css, base.css, patterns/badges.css, patterns/tables.css,
@@ -16,6 +18,8 @@
 
 @import './components/developer.css';
 @import './components/repo-status.css';
+@import './components/complexity.css';
+@import './components/dependency.css';
 
 @layer components {
   .developer-dashboard-login {

@@ -363,6 +363,78 @@ describe('reconciliation API', () => {
     });
   });
 
+  it('applies varianceOverrides sent as a JSON string, filtering non-numeric values', async () => {
+    const app = createApp();
+    const [bankBuffer, glBuffer] = await Promise.all([
+      createSampleBankWorkbook(),
+      createSampleGlWorkbook(),
+    ]);
+
+    const response = await authedApp(app)
+      .post('/api/reconciliation/run')
+      .field(
+        'varianceOverrides',
+        JSON.stringify({ wireFeeTolerance: 500, notANumber: 'nope', alsoBad: null }),
+      )
+      .attach('bankFile', bankBuffer, {
+        filename: 'bank.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+
+    expect(response.body.appliedVarianceOverrides).toEqual({ wireFeeTolerance: 500 });
+  });
+
+  it('ignores a malformed varianceOverrides JSON string rather than failing the run', async () => {
+    const app = createApp();
+    const [bankBuffer, glBuffer] = await Promise.all([
+      createSampleBankWorkbook(),
+      createSampleGlWorkbook(),
+    ]);
+
+    const response = await authedApp(app)
+      .post('/api/reconciliation/run')
+      .field('varianceOverrides', '{not valid json')
+      .attach('bankFile', bankBuffer, {
+        filename: 'bank.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+
+    expect(response.body.appliedVarianceOverrides).toBeUndefined();
+  });
+
+  it('drops a varianceOverrides object whose values are all non-numeric', async () => {
+    const app = createApp();
+    const [bankBuffer, glBuffer] = await Promise.all([
+      createSampleBankWorkbook(),
+      createSampleGlWorkbook(),
+    ]);
+
+    const response = await authedApp(app)
+      .post('/api/reconciliation/run')
+      .field('varianceOverrides', JSON.stringify({ notANumber: 'nope' }))
+      .attach('bankFile', bankBuffer, {
+        filename: 'bank.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .attach('glFile', glBuffer, {
+        filename: 'gl.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+
+    expect(response.body.appliedVarianceOverrides).toBeUndefined();
+  });
+
   it('handles non-standard bank headers for account 5703 without cascading invalid amount errors', async () => {
     const app = createApp();
     const [bankBuffer, glBuffer] = await Promise.all([
@@ -1182,6 +1254,36 @@ describe('reconciliation API', () => {
     vi.stubEnv('NODE_ENV', 'production');
 
     expect(() => createApp()).toThrow(/ALLOW_LOCAL_LOGIN_FALLBACK/);
+  });
+
+  it('rejects local fallback login with the wrong password for a known fallback username', async () => {
+    // authenticateWithLocalUsers's `localUser?.password !== password` check -- the "flag enabled
+    // but credentials wrong" branch, distinct from "flag not enabled at all" below.
+    vi.stubEnv('ALLOW_LOCAL_LOGIN_FALLBACK', 'true');
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'rray', password: 'not-the-right-password' })
+      .expect(401);
+
+    expect((response.body as { message: string }).message).toBe(
+      'The user or password does not match.',
+    );
+  });
+
+  it('rejects local fallback login for a username with no fallback entry at all', async () => {
+    vi.stubEnv('ALLOW_LOCAL_LOGIN_FALLBACK', 'true');
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'nobody-registered', password: 'anything' })
+      .expect(401);
+
+    expect((response.body as { message: string }).message).toBe(
+      'The user or password does not match.',
+    );
   });
 
   it('rejects local fallback login when the flag is not enabled', async () => {

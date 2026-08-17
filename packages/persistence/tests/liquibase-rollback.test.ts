@@ -45,9 +45,6 @@ describe('Liquibase rollback', () => {
     let migratedSchema: string;
     let rolledBackSchema: string;
     let reappliedSchema: string;
-    let migratedTableExists: boolean;
-    let rolledBackTableExists: boolean;
-    let reappliedTableExists: boolean;
 
     beforeAll(async () => {
       database = await createEmptyDatabase('recon_rollback_one');
@@ -55,15 +52,16 @@ describe('Liquibase rollback', () => {
 
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
-      migratedTableExists = await tableExists(database.pool, 'reconciliation_login_event');
 
+      // 0050 (the current HEAD) adds reconciliation_login_event.session_id -- checked via the
+      // same schema-baseline text diff the rest of this file uses, since (unlike 0049's
+      // grants-only content) it's an ordinary column/index change generateSchemaBaseline already
+      // introspects.
       runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
-      rolledBackTableExists = await tableExists(database.pool, 'reconciliation_login_event');
 
       runLiquibase(containerId, database.name, 'update');
       reappliedSchema = await generateSchemaBaseline(database.pool);
-      reappliedTableExists = await tableExists(database.pool, 'reconciliation_login_event');
     }, 180000);
 
     afterAll(async () => {
@@ -80,23 +78,29 @@ describe('Liquibase rollback', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
-    it('reverses changeset 0040 by dropping the reconciliation_login_event table', () => {
-      // 0040 (the most recent changeset as of this test) creates reconciliation_login_event
-      // from scratch; its rollback drops it (CASCADE, though nothing yet references it). Table
-      // creation/removal shows up directly in schema-baseline.sql's table listing, so
-      // migratedSchema/rolledBackSchema genuinely differ here, unlike 0038's grant-only
-      // rollback. When a future changeset lands on top of 0040, update this test to describe
-      // that changeset instead -- it is intentionally pinned to "whatever is currently the most
-      // recent changeset", not to 0040 forever (see 0033's git history for the last time this
-      // moved).
-      expect(migratedTableExists).toBe(true);
-      expect(rolledBackTableExists).toBe(false);
-      expect(reappliedTableExists).toBe(true);
-      expect(rolledBackSchema).not.toEqual(migratedSchema);
+    it('reverses 0050 by dropping reconciliation_login_event.session_id and its index', () => {
+      // When a future changeset lands on top of 0050, update this test to describe that
+      // changeset instead -- it is intentionally pinned to "whatever is currently the most
+      // recent changeset", not to 0050 forever (see 0033's git history for the last time this
+      // moved, and 0049's for the time before that).
+      expect(migratedSchema).toContain(
+        "col_type_is('public', 'reconciliation_login_event', 'session_id', 'uuid'",
+      );
+      expect(migratedSchema).toContain('reconciliation_login_event_session_idx');
+
+      expect(rolledBackSchema).not.toContain(
+        "col_type_is('public', 'reconciliation_login_event', 'session_id', 'uuid'",
+      );
+      expect(rolledBackSchema).not.toContain('reconciliation_login_event_session_idx');
+
+      expect(reappliedSchema).toContain(
+        "col_type_is('public', 'reconciliation_login_event', 'session_id', 'uuid'",
+      );
+      expect(reappliedSchema).toContain('reconciliation_login_event_session_idx');
     });
   });
 
-  describe('rolling back fifteen changesets (0040 down through 0026 schema-changing)', () => {
+  describe('rolling back twenty-five changesets (0050 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -108,7 +112,7 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now fifteen changesets back from HEAD (0040): 0027 (verify-only), 0028 (adds
+      // 0026 is now twenty-five changesets back from HEAD (0050): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
@@ -116,9 +120,15 @@ describe('Liquibase rollback', () => {
       // everything else in this range, which is correct and untested by the assertions below
       // since they only look at password/password_hash/role), 0035-0037 (new tables, no
       // reconciliation_user changes), 0038 (grants only), 0039 (new table, no reconciliation_user
-      // changes), and 0040 (new table, no reconciliation_user changes) all sit on top of it
-      // without reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=15');
+      // changes), 0040 (new table, no reconciliation_user changes), 0041 (new tables, no
+      // reconciliation_user changes), 0042/0043 (File Imports & Validation tables + RLS, no
+      // reconciliation_user changes), 0044/0045/0046 (source_type widening, run_source_file,
+      // canonical_record rename -- none touch reconciliation_user), 0047 (rule version lineage
+      // tables, no reconciliation_user changes), 0048 (reconciliation_run.matching_job_id, no
+      // reconciliation_user changes), 0049 (app_user sequence grants, no reconciliation_user
+      // changes), and 0050 (reconciliation_login_event.session_id, no reconciliation_user
+      // changes) all sit on top of it without reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=25');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

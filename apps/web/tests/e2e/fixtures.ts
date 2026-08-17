@@ -1,5 +1,23 @@
 import { test as base, expect } from '@playwright/test';
 
+// Mirrors apps/web/src/lib/environmentPath.ts's own prefixing so pathname assertions match what
+// the app actually rewrites bare/deep-link URLs to when the target build was compiled with
+// VITE_ENVIRONMENT_PATH_SEGMENT set (e.g. Stage's Docker image, which builds with 'stage'). Unset
+// for the suite's default target (a native, unprefixed dev server) -- see playwright.config.ts.
+const environmentPathSegment = (process.env.PLAYWRIGHT_ENVIRONMENT_PATH_SEGMENT ?? '')
+  .trim()
+  .replace(/^\/+|\/+$/g, '');
+
+/** The pathname the app will actually settle on after loading `routePath`, accounting for the
+ * target build's environment-segment rewrite (see environmentPath.ts). Use this wherever a test
+ * asserts on `new URL(page.url()).pathname` for a route reached via a bare/absolute `page.goto`. */
+export function expectedPathname(routePath: string): string {
+  if (!environmentPathSegment) {
+    return routePath;
+  }
+  return routePath === '/' ? `/${environmentPathSegment}` : `/${environmentPathSegment}${routePath}`;
+}
+
 // Console messages that are expected noise rather than defects. Keep this list short --
 // each entry needs a reason, discovered empirically, not added speculatively.
 const ALLOWED_CONSOLE_PATTERNS: RegExp[] = [
@@ -8,6 +26,10 @@ const ALLOWED_CONSOLE_PATTERNS: RegExp[] = [
   // to assert the resulting error UI. The test's own assertions are the real check there; this
   // browser-level log isn't a signal of an unhandled bug the way an uncaught exception is.
   /^Failed to load resource: the server responded with a status of \d+/,
+  // Same reasoning, for a request that never reaches the server at all -- file-import-
+  // screens.spec.ts deliberately aborts the upload request (route.abort('failed')) to test
+  // Screen 02's network-failed/retry UI, which is exactly what this browser-level log records.
+  /^Failed to load resource: net::ERR_FAILED$/,
 ];
 
 /** Fails the test on any uncaught page exception or console.error, applied to every spec by

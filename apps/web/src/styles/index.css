@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* Self-hosted (see fonts.css for why this replaced a Google Fonts @import). */
+@import './fonts.css';
 
 /* The layer order declaration lives at the top of tokens.css (the first import):
    Vite's postcss-import rejects @import statements that follow an @layer
@@ -20,6 +21,7 @@
 @import './components/hero.css';
 @import './components/tabs.css';
 @import './components/upload.css';
+@import './components/import-failure.css';
 @import './components/run-bar.css';
 @import './components/progress.css';
 @import './components/rules.css';
@@ -36,6 +38,7 @@
 @import './components/access-denied.css';
 @import './components/account.css';
 @import './components/mapping.css';
+@import './components/approvals.css';
 /* Cross-component responsive/reduced-motion overrides — must stay last:
    they win same-specificity ties against every component file above. */
 @import './components/responsive.css';

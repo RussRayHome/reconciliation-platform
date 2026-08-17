@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, test } from '../fixtures';
+import { expect, expectedPathname, test } from '../fixtures';
 import { loginToApplication } from '../auth';
 import { routePaths } from '../../../src/routes/routePaths';
 
@@ -28,9 +28,13 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   mappingCreate: { heading: ['Create Mapping', 'Verification required'] },
   mappingRules: { heading: 'Matching Rules' },
   mappingHistory: { heading: 'Mapping History' },
-  approvalsPending: { heading: 'Pending Imports' },
-  approvalsApproved: { heading: 'Approved Imports' },
-  approvalsRejected: { heading: 'Rejected Imports' },
+  mappingVersions: { heading: 'Mapping Profile Versions' },
+  mappingRulesVersions: { heading: 'Matching Rule Versions' },
+  approvalsImports: { heading: 'Imported files' },
+  approvalsMappingProfiles: { heading: 'Mapping Profiles' },
+  approvalsMatchingRules: { heading: 'Matching Rule & Variances' },
+  approvalsExceptionResolutions: { heading: 'Exception Resolutions' },
+  approvalsReportDistribution: { heading: 'Report Distribution' },
   accountProfile: { heading: 'Profile' },
   accountSecurity: { heading: 'Security' },
   accountBilling: { heading: 'Billing' },
@@ -48,6 +52,11 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
 // redirect-tolerant pattern as importFiles below.
 const RUN_BOOK_HEADING = 'Run Book';
 
+// approvalsPolicy's <Route> is likewise only registered when the logged-in account is admin or
+// superuser (App.tsx: `{isAdmin ? <Route .../> : null}`) -- same conditional-existence situation
+// and same fixed-credential-order caveat as documentationRunBook above.
+const APPROVAL_POLICY_HEADING = 'Approval policy';
+
 /** Pre-auth routes, reachable without logging in. */
 const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   login: { heading: 'Log in' },
@@ -57,14 +66,15 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
 };
 
 // importFiles ('/') renders SourceUploadSection, which has no heading element at all -- every
-// other e2e spec already targets its "Run reconciliation" button instead (see auth.ts's
-// openSetup), so this sweep does the same rather than inventing a heading that isn't there.
+// other e2e spec already targets its "Submit run" button instead (see auth.ts's openSetup), so
+// this sweep does the same rather than inventing a heading that isn't there.
 const IMPORT_FILES_LANDMARK_ROLE = 'button';
-const IMPORT_FILES_LANDMARK_NAME = 'Run reconciliation';
+const IMPORT_FILES_LANDMARK_NAME = 'Submit run';
 
 const accountedForKeys = [
   'importFiles',
   'documentationRunBook',
+  'approvalsPolicy',
   ...Object.keys(PUBLIC_ROUTES),
   ...Object.keys(AUTHENTICATED_ROUTES),
 ].sort();
@@ -91,7 +101,9 @@ test.describe('route sweep', () => {
       await page.goto(routePaths[routeKey as keyof typeof routePaths]);
 
       await expectHeadingSoft(page, heading);
-      expect(new URL(page.url()).pathname).toBe(routePaths[routeKey as keyof typeof routePaths]);
+      expect(new URL(page.url()).pathname).toBe(
+        expectedPathname(routePaths[routeKey as keyof typeof routePaths]),
+      );
     });
   }
 
@@ -160,7 +172,7 @@ test.describe('route sweep', () => {
           // The unmatched-route fallback silently redirects to importFiles -- confirming the URL
           // stayed on this route is what actually catches that failure mode, since a redirected
           // page can still happen to render *a* heading.
-          expect.soft(new URL(page.url()).pathname).toBe(path);
+          expect.soft(new URL(page.url()).pathname).toBe(expectedPathname(path));
         });
       }
 
@@ -184,7 +196,32 @@ test.describe('route sweep', () => {
         expect.soft(result).not.toBeNull();
 
         if (result === 'runBook') {
-          expect.soft(new URL(page.url()).pathname).toBe(routePaths.documentationRunBook);
+          expect.soft(new URL(page.url()).pathname).toBe(
+            expectedPathname(routePaths.documentationRunBook),
+          );
+        }
+      });
+
+      await test.step(`approvalsPolicy (${routePaths.approvalsPolicy})`, async () => {
+        await page.goto(routePaths.approvalsPolicy);
+
+        // Same either-outcome-is-correct reasoning as documentationRunBook above.
+        const result = await Promise.race([
+          page
+            .getByRole('heading', { name: APPROVAL_POLICY_HEADING })
+            .waitFor({ state: 'visible', timeout: 60_000 })
+            .then(() => 'approvalPolicy' as const),
+          page
+            .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
+            .waitFor({ state: 'visible', timeout: 60_000 })
+            .then(() => 'redirectedToImportFiles' as const),
+        ]).catch(() => null);
+        expect.soft(result).not.toBeNull();
+
+        if (result === 'approvalPolicy') {
+          expect.soft(new URL(page.url()).pathname).toBe(
+            expectedPathname(routePaths.approvalsPolicy),
+          );
         }
       });
     });

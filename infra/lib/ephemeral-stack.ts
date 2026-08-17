@@ -2,10 +2,9 @@ import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import type { Construct } from 'constructs';
-import { APP, API_PORT, DB_NAME, WEB_PORT } from './config.js';
+import { APP, API_PORT, DB_NAME, DB_USER, WEB_PORT } from './config.js';
 import type { PersistentStack } from './persistent-stack.js';
 
 interface EphemeralStackProps extends cdk.StackProps {
@@ -80,15 +79,26 @@ export class EphemeralStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     };
 
+    // Deliberately fromPassword(), not fromSecret(): fromSecret() has the RDS L2 construct call
+    // secret.attach(this) internally, creating a SecretTargetAttachment as a child of
+    // persistent.dbSecret (i.e. owned by PersistentStack) that references this Database
+    // instance's ref (owned by EphemeralStack) -- since EphemeralStack already depends on
+    // PersistentStack for the secret/roles, that reverse reference is a circular stack
+    // dependency. fromPassword() resolves the exact same SecretValue token into
+    // MasterUserPassword (so the "CDK rotates the master password to match the persisted secret"
+    // behavior above is unchanged) without ever setting Credentials.secret, so attach() never
+    // fires. The only thing lost is the formal secret<->instance attachment metadata, which only
+    // matters for Secrets Manager's automatic rotation tooling -- not configured here.
+    const dbPassword = persistent.dbSecret.secretValueFromJson('password');
     const db = snapshotId
       ? new rds.DatabaseInstanceFromSnapshot(this, 'Database', {
           ...dbCommonProps,
           snapshotIdentifier: snapshotId,
-          credentials: rds.SnapshotCredentials.fromSecret(persistent.dbSecret),
+          credentials: rds.SnapshotCredentials.fromPassword(dbPassword),
         })
       : new rds.DatabaseInstance(this, 'Database', {
           ...dbCommonProps,
-          credentials: rds.Credentials.fromSecret(persistent.dbSecret),
+          credentials: rds.Credentials.fromPassword(DB_USER, dbPassword),
         });
 
     // ECS Cluster
@@ -97,11 +107,9 @@ export class EphemeralStack extends cdk.Stack {
       clusterName: `${APP}-cluster`,
     });
 
-    const logGroup = new logs.LogGroup(this, 'LogGroup', {
-      logGroupName: `/ecs/${APP}`,
-      retention: logs.RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
+    // Shared log group lives on PersistentStack -- see its own doc comment for why (avoids a
+    // circular stack dependency with the executionRole this stack already pulls from there).
+    const logGroup = persistent.logGroup;
 
     // API task definition — DB_HOST/DB_PORT/DB_NAME are plaintext env vars; DB_USERNAME/DB_PASSWORD
     // come from Secrets Manager. Update packages/config to assemble API_DATABASE_URL from these.

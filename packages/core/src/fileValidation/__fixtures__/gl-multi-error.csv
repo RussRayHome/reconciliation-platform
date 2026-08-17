@@ -1,0 +1,7 @@
+entry_id,line_number,transaction_date,posting_date,account_code,account_name,description,debit_amount,credit_amount,currency_code,reference,entity,department,location,source
+JE-1,1,2026-07-01,,1000,Cash,"Office rent, July",500.00,,USD,REF-1,,,,GJ
+JE-1,2,2026-07-01,,6000,Rent Expense,Office rent,,500.00,USD,REF-1,,,,GJ
+JE-2,1,2026-07-02,,1000,Cash,Deposit,300.00,,USD,REF-2,,,,GJ
+JE-2,2,2026-07-02,,4000,Revenue,,,290.00,USD,REF-2,,,,GJ
+JE-3,1,2026-07-03,,1000,Cash,Payment received,150.00,,USD,REF-3,,,,GJ
+JE-3,1,2026-07-03,,4000,Revenue,Payment received,,150.00,USD,REF-3,,,,GJ

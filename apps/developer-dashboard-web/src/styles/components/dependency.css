@@ -1,0 +1,233 @@
+@layer components {
+  /* Shared with complexity.css's own copy of this rule when both land -- dependency-cruiser's
+     instability bar and the Cyclomatic Complexity section's "moderate" tier both want a blue
+     fill on the existing coverage micro-bar, and neither section's stylesheet should have to
+     depend on the other existing. Identical duplicate rule if both ship; harmless. */
+  .bar i.bar__fill--moderate {
+    background: var(--bank);
+  }
+
+  .dependency__stats {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .dependency__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
+    gap: 1.1rem;
+    align-items: start;
+  }
+
+  .dependency__rail {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .dependency__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .dependency__chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .dependency__chip {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    background: var(--bg-sunken);
+    color: var(--text-secondary);
+  }
+
+  .dependency__chip--active {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border-color: var(--text-tertiary);
+  }
+
+  .dependency__toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-shrink: 0;
+  }
+
+  .dependency__view-switch {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-sunken);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    padding: 2px;
+  }
+
+  .dependency__view-button {
+    border: none;
+    border-radius: 5px;
+    padding: 0.3rem 0.65rem;
+    cursor: pointer;
+    font-size: 0.72rem;
+    background: transparent;
+    color: var(--text-tertiary);
+  }
+
+  .dependency__view-button--active {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+  }
+
+  .dependency__hover-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+  }
+
+  .dependency__sort-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+  }
+
+  .dependency__matrix-wrap {
+    padding: 1rem;
+    overflow-x: auto;
+  }
+
+  .dependency__matrix-cols {
+    display: flex;
+    align-items: flex-end;
+    margin-bottom: 0.4rem;
+  }
+
+  .dependency__matrix-gutter {
+    width: 176px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dependency__matrix-row-index {
+    font-size: 0.65rem;
+    color: var(--text-disabled);
+    width: 16px;
+    flex-shrink: 0;
+  }
+
+  .dependency__matrix-col-index {
+    width: 24px;
+    text-align: center;
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .dependency__matrix-row {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    border-radius: 3px;
+  }
+
+  .dependency__matrix-cell {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .dependency__matrix-dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    display: block;
+  }
+
+  .dependency__legend {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.9rem;
+    padding-left: 176px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    flex-wrap: wrap;
+  }
+
+  .dependency__legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .dependency__legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  .dependency__violations {
+    display: grid;
+  }
+
+  .dependency__violation {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--line);
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .dependency__violation:last-child {
+    border-bottom: none;
+  }
+
+  .dependency__violation-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dependency__violation-from {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+  }
+
+  .dependency__violation-note {
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+  }
+
+  @media (max-width: 980px) {
+    .dependency__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dependency__stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}

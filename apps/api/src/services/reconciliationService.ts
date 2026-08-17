@@ -5,6 +5,7 @@ import {
   normalizeTransactions,
   reconcileMatches,
   parseWorkbook,
+  type CandidateOutcomeObserver,
 } from '@recon/core';
 import {
   defaultReconciliationConfig,
@@ -39,6 +40,12 @@ interface UploadedFile {
  */
 export interface ExecuteReconciliationInput {
   correlationId: string;
+  /** Session id (JWT `jti`) of whoever triggered this run, so the entire matching-phase log
+   * narrative can be filtered alongside everything else that happened in the same session --
+   * this module's logger is deliberately independent of request.log (see serviceLogger below,
+   * this function is also reachable from a bare queue worker with no request object), so the
+   * session id has to be threaded in explicitly rather than picked up automatically. */
+  sessionId?: string;
   runId?: string;
   /** ADR-0001 step 6: threaded to every lifecycleStore call so each write transaction can set
    * the RLS tenant GUC. Required whenever `lifecycleStore` is provided. */
@@ -53,6 +60,24 @@ export interface ExecuteReconciliationInput {
   aliases?: PayeeAlias[];
 }
 
+/** Fault-finding detail for the vetting phase, LOG_LEVEL=debug only -- undefined (not a no-op)
+ * when debug isn't enabled, so the O(bank x gl) scoring loop this feeds from pays zero per-pair
+ * overhead in normal operation; gated on the same logger instance that will do the emitting, so
+ * the gate and the emission can never drift out of sync with each other. */
+const buildCandidateOutcomeObserver = (log: pino.Logger): CandidateOutcomeObserver | undefined =>
+  log.isLevelEnabled('debug')
+    ? (candidate, disposition) =>
+        log.debug({
+          action: 'service.match.candidate.outcome',
+          bankTransactionId: candidate.bankTransactionId,
+          glTransactionId: candidate.glTransactionId,
+          ruleName: candidate.ruleName,
+          score: candidate.score,
+          confidence: candidate.confidence,
+          disposition,
+        })
+    : undefined;
+
 /**
  * Parses the uploaded bank and GL workbooks, resolves reconciliation config,
  * executes the shared matching pipeline, and returns a completed run payload.
@@ -62,6 +87,7 @@ export interface ExecuteReconciliationInput {
  */
 export const executeReconciliation = async ({
   correlationId,
+  sessionId,
   runId: providedRunId,
   organizationId,
   lifecycleStore,
@@ -73,7 +99,7 @@ export const executeReconciliation = async ({
   periodLabel,
   aliases = [],
 }: ExecuteReconciliationInput): Promise<ReconciliationRun> => {
-  const log = serviceLogger.child({ correlationId, accountIdentifier });
+  const log = serviceLogger.child({ correlationId, sessionId, accountIdentifier });
   const t0 = Date.now();
 
   log.info({
@@ -250,7 +276,12 @@ export const executeReconciliation = async ({
     }
 
     const matchStart = Date.now();
-    matching = reconcileMatches(normalizedTransactions, config.matching, aliases);
+    matching = reconcileMatches(
+      normalizedTransactions,
+      config.matching,
+      aliases,
+      buildCandidateOutcomeObserver(log),
+    );
     const matchResultsByDisposition = matching.matchResults.reduce<Record<string, number>>(
       (acc, result) => {
         acc[result.disposition] = (acc[result.disposition] ?? 0) + 1;
