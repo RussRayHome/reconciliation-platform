@@ -127,6 +127,47 @@ describe('EphemeralStack', () => {
       MinCapacity: 1,
       MaxCapacity: 5,
     });
+    // Default scaling target is 10 messages when -c workerScalingTarget isn't passed.
+    template.hasResourceProperties('AWS::ApplicationAutoScaling::ScalingPolicy', {
+      TargetTrackingScalingPolicyConfiguration: Match.objectLike({ TargetValue: 10 }),
+    });
+  });
+
+  it('honors -c workerScalingTarget to override the default backlog scaling target', () => {
+    const app = new cdk.App({ context: { workerScalingTarget: '25' } });
+    const persistent = new PersistentStack(app, 'TestPersistentStack', {
+      env: { account: ACCOUNT, region: 'us-east-2' },
+    });
+    const ephemeral = new EphemeralStack(app, 'TestEphemeralStack', {
+      env: { account: ACCOUNT, region: 'us-east-2' },
+      persistent,
+    });
+    const template = Template.fromStack(ephemeral);
+
+    const json = template.toJSON();
+    const targetValues = Object.values(json.Resources)
+      .filter((r: any) => r.Type === 'AWS::ApplicationAutoScaling::ScalingPolicy')
+      .map(
+        (r: any) => r.Properties.TargetTrackingScalingPolicyConfiguration.TargetValue,
+      );
+    expect(targetValues).toEqual([25, 25]);
+  });
+
+  it('gives RDS a 1-day automated backup window as a safety net alongside manual snapshots', () => {
+    const app = new cdk.App();
+    const persistent = new PersistentStack(app, 'TestPersistentStack', {
+      env: { account: ACCOUNT, region: 'us-east-2' },
+    });
+    const ephemeral = new EphemeralStack(app, 'TestEphemeralStack', {
+      env: { account: ACCOUNT, region: 'us-east-2' },
+      persistent,
+    });
+    const template = Template.fromStack(ephemeral);
+
+    template.hasResourceProperties('AWS::RDS::DBInstance', {
+      BackupRetentionPeriod: 1,
+      DeletionProtection: false,
+    });
   });
 
   it('synths all three DR regions together without a circular dependency (PR #129 regression)', () => {

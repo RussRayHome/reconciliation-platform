@@ -114,6 +114,14 @@ describe('PersistentStack', () => {
     });
   });
 
+  it('retains container logs for three months, not the one-week default', () => {
+    const template = synth();
+    template.hasResourceProperties('AWS::Logs::LogGroup', {
+      LogGroupName: '/ecs/recon',
+      RetentionInDays: 90,
+    });
+  });
+
   it('creates a separate worker task role from the API task role', () => {
     const template = synth();
     template.resourceCountIs('AWS::IAM::Role', 3); // execution + API task + worker task

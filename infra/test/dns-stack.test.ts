@@ -34,6 +34,7 @@ describe('DnsStack', () => {
       AliasTarget: Match.objectLike({
         DNSName: 'my-alb-123.us-east-2.elb.amazonaws.com',
         HostedZoneId: 'Z3AADJGX6KTTL2',
+        EvaluateTargetHealth: true,
       }),
     });
   });
