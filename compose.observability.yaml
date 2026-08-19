@@ -1,20 +1,36 @@
-# Local Dev/Stage log aggregation -- deliberately a separate compose project from the app stack
-# (compose.yaml/compose.dev.yaml/compose.stage.yaml). Not referenced by any CI workflow, not
+# Local Dev/Stage log+metrics aggregation -- deliberately a separate compose project from the app
+# stack (compose.yaml/compose.dev.yaml/compose.stage.yaml). Not referenced by any CI workflow, not
 # started by `npm run docker:deploy`, no depends_on relationship with the app in either direction.
 # Promtail discovers and tails every container on this Docker host via the Docker Engine API
 # (socket-mounted read-only below) -- it does not need to join the app's `edge`/`app`/`data`
 # networks (`app`/`data` are `internal: true` in compose.yaml), and no app service definition
 # needs to change for this to work.
 #
+# Prometheus is the one exception -- scraping HTTP metrics genuinely requires network reachability
+# to the target, unlike Promtail's socket-based log tailing. It joins the app stack's own `app`
+# network (declared `external` below, referencing the real Dev deploy's network by name) purely to
+# reach `api:4000/api/metrics` -- still no `depends_on`/build coupling in either direction, and
+# still nothing in the app stack needs to change or know this exists. Requires the real Dev stack
+# (`reconciliation-platform-dev`, via `npm run docker:deploy`) to already be running -- Prometheus
+# will just show its target as down otherwise, which doesn't block anything else in this file.
+#
 # Usage:
 #   docker compose -f compose.observability.yaml up -d
-#   open http://localhost:3000   (Grafana, Loki datasource pre-provisioned)
+#   open http://localhost:3000   (Grafana; Loki + Prometheus datasources pre-provisioned)
 #
 # Example LogQL queries (Explore tab, or a dashboard panel):
 #   {compose_project="reconciliation-platform-dev"} | json | jti="<session-uuid>"
 #   {compose_project="reconciliation-platform-dev", compose_service="api"} | json | jti="<session-uuid>"
 
 name: recon-observability
+
+networks:
+  # References the real Dev deploy's `app` network by its actual Compose-generated name
+  # (`${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}_app` in compose.yaml) -- override
+  # APP_NETWORK_NAME to point this at a different stack (e.g. an isolated test deploy) instead.
+  recon-app:
+    name: ${APP_NETWORK_NAME:-reconciliation-platform-dev_app}
+    external: true
 
 services:
   loki:
@@ -66,11 +82,34 @@ services:
       retries: 10
       start_period: 10s
 
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    networks:
+      - default
+      - recon-app
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - recon-observability-prometheus-data:/prometheus
+    ports:
+      - '${OBSERVABILITY_PROMETHEUS_PORT:-9090}:9090'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:9090/-/ready || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   grafana:
     image: grafana/grafana-oss:11.4.0
     restart: unless-stopped
     depends_on:
       loki:
+        condition: service_healthy
+      prometheus:
         condition: service_healthy
     environment:
       # Local debugging tool only -- not exposed beyond localhost, no real credentials behind it.
@@ -93,3 +132,4 @@ volumes:
   recon-observability-loki-data:
   recon-observability-promtail-positions:
   recon-observability-grafana-data:
+  recon-observability-prometheus-data:
