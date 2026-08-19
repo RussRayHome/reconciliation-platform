@@ -24,3 +24,32 @@ services:
       # (macOS) node_modules, which would be binary-incompatible (Chromium, native deps).
       - /app/node_modules
     command: npm run test:e2e:visual
+
+  functional-e2e:
+    build:
+      context: .
+      dockerfile: docker/e2e-functional.Dockerfile
+    # Same defense-in-depth reasoning as visual-e2e above: always a one-shot `run --rm`, never a
+    # standing service.
+    profiles:
+      - e2e-functional
+    environment:
+      # Bare names (no value): pass the invoking shell's own values through unchanged, same
+      # pattern as visual-e2e's PLAYWRIGHT_JSON_OUTPUT_NAME passthrough above. DATABASE_URL must
+      # point at the `postgres` service by its compose network hostname, not localhost -- this
+      # container is not the host, so the port mapped out to the host's localhost isn't reachable
+      # here. Both workflow files' e2e-functional jobs set these as step-level env vars, and this
+      # service must run joined to the same compose project (`-p ...`) that already started
+      # compose.yaml's `postgres`/`migrate` services, so it lands on that project's shared
+      # `default` network and can resolve `postgres` by name.
+      - DATABASE_URL
+      - DISABLE_API_RATE_LIMIT
+      - PLAYWRIGHT_JSON_OUTPUT_NAME
+    volumes:
+      # Same bind-mount + anonymous-volume node_modules shadow as visual-e2e above -- see that
+      # service's comments for the two gotchas this depends on the workflow step order to avoid
+      # (host npm ci before the container run; host mkdir -p of any output dir the container will
+      # write into, before the container run).
+      - .:/app
+      - /app/node_modules
+    command: npm run test:e2e:functional
