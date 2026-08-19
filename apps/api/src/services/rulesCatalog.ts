@@ -14,7 +14,7 @@ export const RULES_CATALOG_METRIC_IDS: ReadonlySet<string> = new Set(
 );
 
 /**
- * Whether `executeReconciliation` actually applies the active matching-config version's
+ * Whether the reconciliation pipeline actually applies the active matching-config version's
  * `varianceOverrides` to a live reconciliation run. False until that Phase 0 engine-wiring work
  * ships — flip this once it does. Every consumer of `RuleVersionsResponse` treats this as the
  * single source of truth for whether an ACTIVE version's overrides are more than cosmetic.

@@ -640,6 +640,26 @@ const renderApp = () =>
     </QueryClientProvider>,
   );
 
+/** Fills all three Screen 02 upload slots -- both bank filenames must start with digits followed
+ * by "-"/"_" (Issue #141's account-filename convention) or `SourceDropZone` rejects them before
+ * they ever reach state. Defaults are interchangeable stand-ins for tests that don't care about
+ * file identity; pass overrides for tests that assert on specific bytes/names. */
+const fillUploadInputs = ({
+  bankFileA = new File(['bank-a'], '1111_bank.xlsx'),
+  bankFileB = new File(['bank-b'], '2222_bank.xlsx'),
+  glFile = new File(['gl'], 'gl.xlsx'),
+}: { bankFileA?: File; bankFileB?: File; glFile?: File } = {}): void => {
+  fireEvent.change(screen.getByLabelText('Bank workbook (Account A)'), {
+    target: { files: [bankFileA] },
+  });
+  fireEvent.change(screen.getByLabelText('Bank workbook (Account B)'), {
+    target: { files: [bankFileB] },
+  });
+  fireEvent.change(screen.getByLabelText('GL workbook'), {
+    target: { files: [glFile] },
+  });
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -968,12 +988,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1128,7 +1143,16 @@ describe('App', () => {
     // try to interact with," it's that no override value can be submitted while this shows.
     expect(screen.queryByRole('slider')).toBeNull();
     expect(screen.getByText('defaultReconciliationConfig')).toBeInTheDocument();
-    expect(screen.getByText('executeReconciliation')).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => {
+        const hasText = (node: Element | null) =>
+          Boolean(node?.textContent?.includes('threaded into the reconciliation pipeline'));
+        return (
+          hasText(element) &&
+          Array.from(element?.children ?? []).every((child) => !hasText(child))
+        );
+      }),
+    ).toBeInTheDocument();
   });
 
   it('renders the rule grid with distinct TUNABLE treatment per rule, ASSIGNED TO chips, and a matching footer count', async () => {
@@ -1321,12 +1345,7 @@ describe('App', () => {
     expect(screen.getByText('Process Progress')).toBeInTheDocument();
     expect((overallMeter as HTMLProgressElement).value).toBe(0);
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
 
     expect((overallMeter as HTMLProgressElement).value).toBe(50);
   });
@@ -1362,12 +1381,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
     });
@@ -1393,12 +1407,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1414,19 +1423,17 @@ describe('App', () => {
 
     renderApp();
 
-    const bankFile = new File(['bank-data'], 'bank.xlsx', {
+    const bankFileA = new File(['bank-a-data'], '1111_bank.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const bankFileB = new File(['bank-b-data'], '2222_bank.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
     const glFile = new File(['gl-data'], 'gl.xlsx', {
       type: 'application/octet-stream',
     });
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [bankFile] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [glFile] },
-    });
+    fillUploadInputs({ bankFileA, bankFileB, glFile });
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
     });
@@ -1449,7 +1456,8 @@ describe('App', () => {
     expect(request.body).toBeInstanceOf(FormData);
 
     const formData = request.body as FormData;
-    expect(formData.get('bankFile')).toBe(bankFile);
+    expect(formData.get('bankFileA')).toBe(bankFileA);
+    expect(formData.get('bankFileB')).toBe(bankFileB);
     expect(formData.get('glFile')).toBe(glFile);
     expect(formData.get('accountIdentifier')).toBe('OPERATING-001');
     expect(formData.get('frequency')).toBe('ANNUAL');
@@ -1464,19 +1472,7 @@ describe('App', () => {
 
     renderApp();
 
-    const bankFile = new File(['bank-data'], 'bank.xlsx', {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const glFile = new File(['gl-data'], 'gl.xlsx', {
-      type: 'application/octet-stream',
-    });
-
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [bankFile] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [glFile] },
-    });
+    fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
       target: { value: 'March' },
     });
@@ -1501,12 +1497,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank-data'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl-data'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: 'Custom Monthly Label' },
     });
@@ -1560,11 +1551,18 @@ describe('App', () => {
     renderApp();
 
     fireEvent.change(screen.getByLabelText('Source workbooks'), {
-      target: { files: [new File(['bank'], 'bank.xlsx'), new File(['gl'], 'gl.xlsx')] },
+      target: {
+        files: [
+          new File(['bank-a'], '1111_bank.xlsx'),
+          new File(['bank-b'], '2222_bank.xlsx'),
+          new File(['gl'], 'gl.xlsx'),
+        ],
+      },
     });
 
     expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
-    expect(screen.getAllByText('bank.xlsx').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1111_bank.xlsx').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2222_bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gl.xlsx').length).toBeGreaterThan(0);
   });
 
@@ -1573,11 +1571,18 @@ describe('App', () => {
     renderApp();
 
     fireEvent.change(screen.getByLabelText('Source workbooks'), {
-      target: { files: [new File(['bank'], 'bank.csv'), new File(['gl'], 'gl.csv')] },
+      target: {
+        files: [
+          new File(['bank-a'], '1111_bank.csv'),
+          new File(['bank-b'], '2222_bank.csv'),
+          new File(['gl'], 'gl.csv'),
+        ],
+      },
     });
 
     expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
-    expect(screen.getAllByText('bank.csv').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1111_bank.csv').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2222_bank.csv').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gl.csv').length).toBeGreaterThan(0);
   });
 
@@ -1585,10 +1590,12 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    // "gl-export.xlsx" auto-detects to the GL slot; forcing it into the Bank slot picker instead
-    // should flag the mismatch rather than silently accept it.
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['gl'], 'gl-export.xlsx')] },
+    // "4321_gl-export.xlsx" auto-detects to the GL slot (and satisfies the bank account-filename
+    // convention so the override check itself is what's under test here, not the filename gate);
+    // forcing it into the Bank Account A slot picker instead should flag the mismatch rather than
+    // silently accept it.
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account A)'), {
+      target: { files: [new File(['gl'], '4321_gl-export.xlsx')] },
     });
 
     expect(screen.getByText('Manual override')).toBeInTheDocument();
@@ -1637,12 +1644,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1674,12 +1676,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1701,7 +1698,7 @@ describe('App', () => {
     });
     const validFile = createImportRunFile({
       importFileId: 'file-bank-valid',
-      role: 'BANK',
+      role: 'BANK_MERGED',
       sourceType: 'BANK',
       originalFilename: 'bank.xlsx',
       fileFormat: 'XLSX',
@@ -1773,12 +1770,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.csv')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1796,7 +1788,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.queryByText('gl_export_2026-08.csv — Step 2 of 3')).not.toBeInTheDocument();
     });
-    expect(screen.getAllByText('No file selected')).toHaveLength(2);
+    expect(screen.getAllByText('No file selected')).toHaveLength(3);
   });
 
   it('shows Screen 07 (all rows invalid) when every row fails Step 3 with zero rows importable', async () => {
@@ -1873,12 +1865,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.csv')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1902,7 +1889,7 @@ describe('App', () => {
     installFakeImportRunXhr();
     const failedFile = createImportRunFile({
       importFileId: 'file-bank-partial',
-      role: 'BANK',
+      role: 'BANK_MERGED',
       sourceType: 'BANK',
       originalFilename: 'bank_july.csv',
       validationStatus: 'INVALID',
@@ -2034,12 +2021,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.csv')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.csv')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2102,19 +2084,37 @@ describe('App', () => {
     );
   });
 
+  it('rejects a bank file whose name has no leading account-number prefix, at selection', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account A)'), {
+      target: { files: [new File(['bank'], 'checking-account.csv')] },
+    });
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('UPLOAD_BANK_FILENAME_INVALID');
+    expect(alert).toHaveTextContent(
+      'Bank file names must start with the account number (or its last 4 digits) followed by "-" or "_", e.g. "4321_bank-export.csv".',
+    );
+    // Rejected -- never assigned into the slot, so all three remain empty.
+    expect(screen.getAllByText('No file selected')).toHaveLength(3);
+  });
+
   it('shows real per-file upload progress and lets Cancel abort the transfer without an error banner', async () => {
     installFakeImportRunXhr({ autoRespond: false });
 
     setAuthenticatedUser('rray');
     renderApp();
 
-    const bankFile = new File(['bank'], 'bank.xlsx');
-    Object.defineProperty(bankFile, 'size', { value: 4_000_000 });
+    const bankFileA = new File(['bank-a'], '1111_bank-a.xlsx');
+    Object.defineProperty(bankFileA, 'size', { value: 2_000_000 });
+    const bankFileB = new File(['bank-b'], '2222_bank-b.xlsx');
+    Object.defineProperty(bankFileB, 'size', { value: 2_000_000 });
     const glFile = new File(['gl'], 'gl.csv');
     Object.defineProperty(glFile, 'size', { value: 6_000_000 });
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), { target: { files: [bankFile] } });
-    fireEvent.change(screen.getByLabelText('GL workbook'), { target: { files: [glFile] } });
+    fillUploadInputs({ bankFileA, bankFileB, glFile });
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2123,8 +2123,9 @@ describe('App', () => {
     });
 
     const request = FakeImportRunXhr.instances[0]!;
-    // bankFile (4,000,000 B) is appended before glFile (6,000,000 B) -- 7,000,000 loaded bytes is
-    // bank's 4,000,000 (fully sent -- Stored) plus 3,000,000 of GL's 6,000,000 (exactly half).
+    // bankFileA (2,000,000 B) then bankFileB (2,000,000 B) are appended before glFile
+    // (6,000,000 B) -- 7,000,000 loaded bytes is both bank files fully sent (Stored) plus
+    // 3,000,000 of GL's 6,000,000 (exactly half).
     fireEvent(
       request.upload as unknown as HTMLElement,
       Object.assign(new Event('progress'), {
@@ -2135,7 +2136,7 @@ describe('App', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Stored')).toBeInTheDocument();
+      expect(screen.getAllByText('Stored')).toHaveLength(2);
       expect(screen.getByText(/50% ·/)).toBeInTheDocument();
     });
 
@@ -2146,22 +2147,18 @@ describe('App', () => {
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     // The files stay selected -- cancelling only aborts the in-flight transfer.
-    expect(screen.getByText('bank.xlsx')).toBeInTheDocument();
+    expect(screen.getByText('1111_bank-a.xlsx')).toBeInTheDocument();
+    expect(screen.getByText('2222_bank-b.xlsx')).toBeInTheDocument();
     expect(screen.getByText('gl.csv')).toBeInTheDocument();
   });
 
-  it('surfaces a network-interruption card and resends both files from the start on Retry, not a chunk resume', async () => {
+  it('surfaces a network-interruption card and resends all files from the start on Retry, not a chunk resume', async () => {
     installFakeImportRunXhr({ autoRespond: false });
 
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.csv')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2171,15 +2168,16 @@ describe('App', () => {
 
     FakeImportRunXhr.instances[0]!.networkError();
 
-    // Both files were part of the one combined request, so both cards surface the failure.
+    // All three files were part of the one combined request, so all three cards surface the
+    // failure.
     await waitFor(() => {
-      expect(screen.getAllByText('UPLOAD_NETWORK_INTERRUPTED')).toHaveLength(2);
+      expect(screen.getAllByText('UPLOAD_NETWORK_INTERRUPTED')).toHaveLength(3);
     });
     expect(
       screen.getAllByText(
-        'The transfer was interrupted. Nothing was written to the run -- retry resends both files from the start.',
+        'The transfer was interrupted. Nothing was written to the run -- retry resends all files from the start.',
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Retry upload' })[0]!);
 
@@ -2229,12 +2227,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2250,12 +2243,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook'), {
-      target: { files: [new File(['bank'], 'bank.xlsx')] },
-    });
-    fireEvent.change(screen.getByLabelText('GL workbook'), {
-      target: { files: [new File(['gl'], 'gl.xlsx')] },
-    });
+    fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: '   ' },
     });

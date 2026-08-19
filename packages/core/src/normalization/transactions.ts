@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import type {
   NormalizedTransaction,
@@ -7,47 +7,8 @@ import type {
   SourceSystem,
 } from '@recon/domain';
 
-import { buildComparisonTokens, normalizeText } from './text';
-
-const parseNumber = (value: string | undefined): number | null => {
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const isParenthesesNegative = /^\(.*\)$/.test(trimmed);
-  const hasTrailingMinus = /-$/.test(trimmed);
-  const directionMatch = /\b(CR|DR)\b$/i.exec(trimmed);
-
-  const unsigned = trimmed
-    .replaceAll(/[,$\s]/g, '')
-    .replaceAll(/[()]/g, '')
-    .replaceAll(/\b(CR|DR)\b/gi, '')
-    .replaceAll(/[^0-9.+-]/g, '');
-
-  if (!unsigned || unsigned === '-' || unsigned === '+') {
-    return null;
-  }
-
-  const parsed = Number(unsigned.replace(/-$/, ''));
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-
-  const directionToken = directionMatch?.[1]?.toUpperCase();
-  let directionalSign = 1;
-  if (directionToken === 'DR') {
-    directionalSign = -1;
-  }
-  const explicitNumericSign = parsed < 0 ? -1 : 1;
-  const numericSign = isParenthesesNegative || hasTrailingMinus ? -1 : explicitNumericSign;
-
-  return Math.abs(parsed) * directionalSign * numericSign;
-};
+import { parseAmount as parseNumber } from './amount';
+import { buildComparisonTokens, buildContextFingerprint, normalizeText } from './text';
 
 const parseDate = (value: string | undefined): string | undefined => {
   if (!value) {
@@ -99,11 +60,6 @@ const computeSignedAmount = (
     credit,
   };
 };
-
-const buildFingerprint = (parts: Array<string | number | undefined | null>): string =>
-  createHash('sha1')
-    .update(parts.filter((part) => part !== undefined && part !== null).join('|'))
-    .digest('hex');
 
 /**
  * Transforms raw parsed spreadsheet rows into normalized transaction objects ready for matching.
@@ -183,7 +139,7 @@ export const normalizeTransactions = (
       isExcluded: row.excluded,
       exclusionReason: row.exclusionReason,
       isZeroAmount: amount === 0,
-      contextFingerprint: buildFingerprint([
+      contextFingerprint: buildContextFingerprint([
         row.source,
         transactionDate,
         amount,

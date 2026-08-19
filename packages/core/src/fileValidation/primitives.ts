@@ -1,7 +1,11 @@
+import { parseAmount as parseAmountLenient } from '../normalization/amount';
+
 /**
- * Primitive parsers/validators ported near-verbatim from the design-handoff bundle's
- * `reference/schema.ts` -- kept byte-for-byte equivalent in behavior since that file is the
- * verified reference implementation this feature is built against.
+ * Primitive parsers/validators for the File Validation Engine (transaction-csv-spec.md).
+ * Dates stay strict ISO-8601 only. Amounts (Issue #137) share the same lenient parser as the
+ * matching pathway's normalization step (`normalization/amount.ts`) -- currency symbols,
+ * thousands-comma separators, parentheses-negatives, trailing minus, and CR/DR suffixes are all
+ * standard, unambiguous accounting notation, not a loosening of rigor.
  */
 
 /** Strict ISO 8601 calendar date, YYYY-MM-DD. */
@@ -18,23 +22,9 @@ export const isIsoDate = (value: string): boolean => {
   );
 };
 
-/** ISO 4217 shape check (3 uppercase letters). Pair with a real code list in production. */
-export const isIso4217 = (value: string): boolean => /^[A-Z]{3}$/.test(value);
-
-/**
- * Parses a plain decimal string. Rejects currency symbols, thousands separators, whitespace, and
- * blanks. Returns null on any non-conforming input. Accepts an optional leading '-' and up to
- * `minorUnits` decimal places.
- */
-export const parseDecimal = (value: string, minorUnits = 2): number | null => {
-  if (value == null) return null;
-  const trimmed = value.trim();
-  if (trimmed === '') return null;
-  const pattern = new RegExp(`^-?\\d+(?:\\.\\d{1,${minorUnits}})?$`);
-  if (!pattern.test(trimmed)) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
-};
+/** Parses a monetary amount, accepting standard accounting notation. Returns null on anything
+ * that doesn't resolve to a real number (blank, stray symbols with no digits, etc.). */
+export const parseAmount = (value: string | undefined): number | null => parseAmountLenient(value);
 
 export const isBlank = (value: string | undefined): boolean => value == null || value.trim() === '';
 

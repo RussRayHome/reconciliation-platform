@@ -1,6 +1,9 @@
+import { createWorkbookFromRows } from '@recon/test-fixtures';
+
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup } from '../auth';
 import {
+  bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
   createSampleGlFileValidationWorkbook,
 } from '../fileValidationWorkbooks';
@@ -23,10 +26,17 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   await loginToApplication(page);
   await openSetup(page);
 
+  const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
+
   await page.locator('#bank-workbook-input').setInputFiles({
-    name: 'bank.xlsx',
+    name: '1111_bank.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankBuffer,
+  });
+  await page.locator('#bank-workbook-b-input').setInputFiles({
+    name: '2222_bank.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: bankAccountBBuffer,
   });
   await page.locator('#gl-workbook-input').setInputFiles({
     name: 'gl.xlsx',

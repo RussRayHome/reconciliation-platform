@@ -1,2 +1,2 @@
-TXN-9001,ACC-1,2026-07-01,100.00,USD,DEP,First row is data not a header
-TXN-9002,ACC-1,2026-07-02,-50.00,USD,POS,Second row is also data
+1,First row is data not a header,100.00,1000.00
+2,Second row is also data,-50.00,950.00

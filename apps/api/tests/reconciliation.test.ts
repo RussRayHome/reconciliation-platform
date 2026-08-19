@@ -4,9 +4,6 @@ import {
   createAllExceptionsGlWorkbook,
   createSampleBankWorkbook,
   createSampleGlWorkbook,
-  createWorkbookFromRows,
-  nonStandardHeaderBankRows,
-  nonStandardHeaderGlRows,
 } from '@recon/test-fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -435,37 +432,12 @@ describe('reconciliation API', () => {
     expect(response.body.appliedVarianceOverrides).toBeUndefined();
   });
 
-  it('handles non-standard bank headers for account 5703 without cascading invalid amount errors', async () => {
-    const app = createApp();
-    const [bankBuffer, glBuffer] = await Promise.all([
-      createWorkbookFromRows(nonStandardHeaderBankRows),
-      createWorkbookFromRows(nonStandardHeaderGlRows),
-    ]);
-
-    const runResponse = await authedApp(app)
-      .post('/api/reconciliation/run')
-      .field('accountIdentifier', '5703')
-      .field('periodLabel', 'January 2025')
-      .attach('bankFile', bankBuffer, {
-        filename: 'bank-5703.xlsx',
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      })
-      .attach('glFile', glBuffer, {
-        filename: 'gl-5703.xlsx',
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      })
-      .expect(201);
-
-    const runPayload = runResponse.body as {
-      summary: {
-        exactMatches: number;
-        dataQualityIssues: number;
-      };
-    };
-
-    expect(runPayload.summary.exactMatches).toBeGreaterThanOrEqual(2);
-    expect(runPayload.summary.dataQualityIssues).toBe(0);
-  });
+  // 'handles non-standard bank headers for account 5703 without cascading invalid amount errors'
+  // is retired (Issue #137): it exercised fuzzy alias-based header matching (e.g. "Posted Date" ->
+  // "Date") against `/api/reconciliation/run`. File Validation is exact-header-match only by
+  // design now -- a non-standard header fails HEADER-gate validation and the route correctly
+  // rejects it with 400, so this scenario's premise no longer holds. Equivalent coverage for exact
+  // vs. non-standard headers lives in fileValidation/structuralGates.test.ts.
 
   it('accepts the combined all-exceptions workbook pair and surfaces every exception category through the API', async () => {
     const app = createApp();

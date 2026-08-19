@@ -1,10 +1,6 @@
-import { isBlank, isIso4217, isIsoDate, parseDecimal, todayIso } from './primitives';
+import { isBlank, isIsoDate, parseAmount, todayIso } from './primitives';
 import {
-  bankTransactionTypes,
   DEFAULT_VALIDATION_OPTIONS,
-  INFLOW_TYPES,
-  OUTFLOW_TYPES,
-  type BankTransactionType,
   type NormalizedRecord,
   type RawBankingRow,
   type RawGeneralLedgerRow,
@@ -14,11 +10,7 @@ import {
 
 /**
  * Step 3 of the ordered engine (transaction-csv-spec.md §4.1-§4.4): per-field, file-level, and
- * entry-level rules, ported near-verbatim from the design-handoff bundle's `reference/schema.ts`
- * -- same code names, severities, and messages, per the adjusted plan's own instruction to keep
- * this port byte-for-byte equivalent to the verified reference. The only material additions are
- * `sourceLineNumber` on each normalized record (schema.ts didn't need it; `canonical_record`,
- * changeset 0042, does) and accepting already-parsed row objects rather than reading files.
+ * cross-row rules for the canonical Bank/GL schema.
  */
 
 export interface RowValidationOutcome {
@@ -26,9 +18,8 @@ export interface RowValidationOutcome {
   normalized: NormalizedRecord[];
 }
 
-/** Fires once per validation issue found, `undefined` unless a caller actually wants the detail
- * (e.g. apps/api only supplies one when LOG_LEVEL=debug) -- packages/core stays logger-free, this
- * is the seam a caller uses to emit its own fault-finding log line per row/rule outcome. */
+/** Fires once per validation issue, for a caller that wants DEBUG-level fault-finding detail
+ * (apps/api's importValidationService) without this module depending on a logger itself. */
 export type RowIssueObserver = (issue: ValidationIssue) => void;
 
 export const validateBankingRows = (
@@ -39,8 +30,7 @@ export const validateBankingRows = (
   const options = { ...DEFAULT_VALIDATION_OPTIONS, ...opts };
   const issues: ValidationIssue[] = [];
   const normalized: NormalizedRecord[] = [];
-  const seenIds = new Set<string>();
-  const currencies = new Set<string>();
+  const seenSequenceNumbers = new Set<string>();
   const today = todayIso();
 
   rows.forEach((row, index) => {
@@ -52,153 +42,106 @@ export const validateBankingRows = (
       onIssue?.(issue);
       hardError = true;
     };
-    const warn = (code: string, field: string, message: string): void => {
-      const issue: ValidationIssue = { severity: 'WARNING', code, field, rowNumber, message };
-      issues.push(issue);
-      onIssue?.(issue);
-    };
 
-    if (isBlank(row.transaction_id)) {
-      err('BANK_ID_REQUIRED', 'transaction_id', 'transaction_id is required');
-    } else if (seenIds.has(row.transaction_id)) {
-      err('BANK_ID_DUPLICATE', 'transaction_id', `Duplicate transaction_id "${row.transaction_id}"`);
-    } else {
-      seenIds.add(row.transaction_id);
+    if (isBlank(row.Date)) {
+      err('BANK_DATE_REQUIRED', 'Date', 'Date is required');
+    } else if (!isIsoDate(row.Date)) {
+      err('BANK_DATE_FORMAT', 'Date', `Date must be YYYY-MM-DD, got "${row.Date}"`);
+    } else if (options.rejectFutureDates && row.Date > today) {
+      err('BANK_DATE_FUTURE', 'Date', `Date is in the future: ${row.Date}`);
     }
 
-    if (isBlank(row.account_id)) {
-      err('BANK_ACCOUNT_REQUIRED', 'account_id', 'account_id is required');
+    if (isBlank(row.Description)) {
+      err('BANK_DESCRIPTION_REQUIRED', 'Description', 'Description is required');
     }
 
-    if (isBlank(row.posted_date)) {
-      err('BANK_POSTED_DATE_REQUIRED', 'posted_date', 'posted_date is required');
-    } else if (!isIsoDate(row.posted_date)) {
+    const sequenceNumber = row['Sequence Number'];
+    if (isBlank(sequenceNumber)) {
+      err('BANK_SEQUENCE_REQUIRED', 'Sequence Number', 'Sequence Number is required');
+    } else if (seenSequenceNumbers.has(sequenceNumber)) {
       err(
-        'BANK_POSTED_DATE_FORMAT',
-        'posted_date',
-        `posted_date must be YYYY-MM-DD, got "${row.posted_date}"`,
-      );
-    } else if (options.rejectFutureDates && row.posted_date > today) {
-      err('BANK_POSTED_DATE_FUTURE', 'posted_date', `posted_date is in the future: ${row.posted_date}`);
-    }
-
-    if (!isBlank(row.transaction_date)) {
-      if (!isIsoDate(row.transaction_date!)) {
-        err('BANK_TXN_DATE_FORMAT', 'transaction_date', 'transaction_date must be YYYY-MM-DD');
-      } else if (isIsoDate(row.posted_date) && row.transaction_date! > row.posted_date) {
-        warn(
-          'BANK_TXN_DATE_AFTER_POSTED',
-          'transaction_date',
-          'transaction_date is after posted_date',
-        );
-      }
-    }
-
-    const amount = parseDecimal(row.amount, options.currencyMinorUnits);
-    if (amount === null) {
-      err(
-        'BANK_AMOUNT_FORMAT',
-        'amount',
-        `amount must be a plain signed decimal (no symbols/thousands separators): "${row.amount}"`,
-      );
-    } else if (amount === 0) {
-      warn('BANK_AMOUNT_ZERO', 'amount', 'amount is zero');
-    }
-
-    if (isBlank(row.currency_code)) {
-      err('BANK_CURRENCY_REQUIRED', 'currency_code', 'currency_code is required');
-    } else if (!isIso4217(row.currency_code)) {
-      err(
-        'BANK_CURRENCY_FORMAT',
-        'currency_code',
-        `currency_code must be a 3-letter ISO 4217 code: "${row.currency_code}"`,
+        'BANK_SEQUENCE_DUPLICATE',
+        'Sequence Number',
+        `Duplicate Sequence Number "${sequenceNumber}" within this file`,
       );
     } else {
-      currencies.add(row.currency_code);
+      seenSequenceNumbers.add(sequenceNumber);
     }
 
-    const type = row.transaction_type as BankTransactionType;
-    if (isBlank(row.transaction_type)) {
-      err('BANK_TYPE_REQUIRED', 'transaction_type', 'transaction_type is required');
-    } else if (!(bankTransactionTypes as readonly string[]).includes(row.transaction_type)) {
-      err('BANK_TYPE_INVALID', 'transaction_type', `Unknown transaction_type "${row.transaction_type}"`);
-    } else if (amount !== null) {
-      if (INFLOW_TYPES.has(type) && amount < 0) {
-        err('BANK_TYPE_SIGN', 'transaction_type', `${type} must have a positive amount`);
+    const debitBlank = isBlank(row.Debit);
+    const creditBlank = isBlank(row.Credit);
+    const debit = debitBlank ? 0 : parseAmount(row.Debit);
+    const credit = creditBlank ? 0 : parseAmount(row.Credit);
+
+    if (!debitBlank && debit === null) {
+      err('BANK_DEBIT_FORMAT', 'Debit', `Debit must be a valid amount: "${row.Debit}"`);
+    }
+    if (!creditBlank && credit === null) {
+      err('BANK_CREDIT_FORMAT', 'Credit', `Credit must be a valid amount: "${row.Credit}"`);
+    }
+    if (debit !== null && debit < 0) {
+      err('BANK_DEBIT_NEGATIVE', 'Debit', 'Debit must be non-negative');
+    }
+    if (credit !== null && credit < 0) {
+      err('BANK_CREDIT_NEGATIVE', 'Credit', 'Credit must be non-negative');
+    }
+
+    const debitValue = debit ?? 0;
+    const creditValue = credit ?? 0;
+    if (debitValue === 0 && creditValue === 0) {
+      err('BANK_NO_AMOUNT', 'Debit', 'Exactly one of Debit or Credit must be > 0 (both empty/zero)');
+    }
+    if (debitValue > 0 && creditValue > 0) {
+      err('BANK_BOTH_AMOUNTS', 'Debit', 'A row cannot have both Debit and Credit > 0');
+    }
+
+    let runningBalance: number | undefined;
+    if (!isBlank(row.Balance)) {
+      const parsedBalance = parseAmount(row.Balance);
+      if (parsedBalance === null) {
+        err('BANK_BALANCE_FORMAT', 'Balance', `Balance must be a valid amount: "${row.Balance}"`);
+      } else {
+        runningBalance = parsedBalance;
       }
-      if (OUTFLOW_TYPES.has(type) && amount > 0) {
-        err('BANK_TYPE_SIGN', 'transaction_type', `${type} must have a negative amount`);
-      }
     }
 
-    if (isBlank(row.description)) {
-      err('BANK_DESCRIPTION_REQUIRED', 'description', 'description is required');
-    }
-
-    if (type === 'CHECK' && isBlank(row.check_number)) {
-      warn(
-        'BANK_CHECK_NUMBER_MISSING',
-        'check_number',
-        'check_number recommended when transaction_type is CHECK',
-      );
-    }
-
-    if (
-      !isBlank(row.running_balance) &&
-      parseDecimal(row.running_balance!, options.currencyMinorUnits) === null
-    ) {
-      err(
-        'BANK_BALANCE_FORMAT',
-        'running_balance',
-        `running_balance must be a plain decimal: "${row.running_balance}"`,
-      );
-    }
-
-    if (!hardError && amount !== null) {
-      const signed = options.flipSign ? -amount : amount;
+    if (!hardError) {
+      const signed = creditValue > 0 ? creditValue : -debitValue;
       normalized.push({
         sourceSystem: 'BANK',
-        recordId: row.transaction_id,
-        account: row.account_id,
-        date: row.posted_date,
-        currencyCode: row.currency_code,
+        recordId: sequenceNumber,
+        date: row.Date,
         signedAmount: signed,
         direction: signed >= 0 ? 'INFLOW' : 'OUTFLOW',
         magnitude: Math.abs(signed),
-        description: row.description,
-        reference: row.reference_number || undefined,
+        description: row.Description,
+        checkNumber: row['Check Number'] || undefined,
+        referenceNumber: row.Reference || undefined,
+        runningBalance,
         sourceLineNumber: rowNumber,
         raw: row,
       });
     }
   });
 
-  if (options.singleCurrency && currencies.size > 1) {
-    const issue: ValidationIssue = {
-      severity: 'ERROR',
-      code: 'BANK_MULTI_CURRENCY',
-      message: `File mixes currencies: ${[...currencies].join(', ')}. Expected a single currency.`,
-    };
-    issues.push(issue);
-    onIssue?.(issue);
-  }
-
-  const allHaveBalance = rows.length > 0 && rows.every((row) => !isBlank(row.running_balance));
+  const allHaveBalance = rows.length > 0 && rows.every((row) => !isBlank(row.Balance));
   if (allHaveBalance) {
     for (let index = 1; index < rows.length; index += 1) {
       const previousRow = rows[index - 1]!;
       const currentRow = rows[index]!;
-      const previous = parseDecimal(previousRow.running_balance!, options.currencyMinorUnits);
-      const current = parseDecimal(currentRow.running_balance!, options.currencyMinorUnits);
-      const amount = parseDecimal(currentRow.amount, options.currencyMinorUnits);
-      if (previous === null || current === null || amount === null) continue;
-      if (Math.abs(previous + amount - current) > options.amountTolerance) {
+      const previous = parseAmount(previousRow.Balance);
+      const current = parseAmount(currentRow.Balance);
+      const debit = isBlank(currentRow.Debit) ? 0 : (parseAmount(currentRow.Debit) ?? 0);
+      const credit = isBlank(currentRow.Credit) ? 0 : (parseAmount(currentRow.Credit) ?? 0);
+      if (previous === null || current === null) continue;
+      const rowSigned = credit > 0 ? credit : -debit;
+      if (Math.abs(previous + rowSigned - current) > options.amountTolerance) {
         const issue: ValidationIssue = {
           severity: 'ERROR',
           code: 'BANK_BALANCE_CONTINUITY',
-          field: 'running_balance',
+          field: 'Balance',
           rowNumber: index + 1,
-          message: `running_balance break: ${previous} + (${amount}) != ${current}`,
+          message: `Balance break: ${previous} + (${rowSigned}) != ${current}`,
         };
         issues.push(issue);
         onIssue?.(issue);
@@ -217,189 +160,64 @@ export const validateGeneralLedgerRows = (
   const options = { ...DEFAULT_VALIDATION_OPTIONS, ...opts };
   const issues: ValidationIssue[] = [];
   const normalized: NormalizedRecord[] = [];
-  const currencies = new Set<string>();
   const today = todayIso();
-
-  const byEntry = new Map<string, { row: RawGeneralLedgerRow; rowNumber: number }[]>();
 
   rows.forEach((row, index) => {
     const rowNumber = index + 1;
     let hardError = false;
     const err = (code: string, field: string, message: string): void => {
-      const issue: ValidationIssue = {
-        severity: 'ERROR',
-        code,
-        field,
-        rowNumber,
-        entryId: row.entry_id,
-        message,
-      };
+      const issue: ValidationIssue = { severity: 'ERROR', code, field, rowNumber, message };
       issues.push(issue);
       onIssue?.(issue);
       hardError = true;
     };
 
-    if (isBlank(row.entry_id)) {
-      err('GL_ENTRY_ID_REQUIRED', 'entry_id', 'entry_id is required');
-    }
-    if (isBlank(row.line_number)) {
-      err('GL_LINE_NO_REQUIRED', 'line_number', 'line_number is required');
-    } else if (!/^\d+$/.test(row.line_number.trim()) || Number(row.line_number) < 1) {
-      err(
-        'GL_LINE_NO_FORMAT',
-        'line_number',
-        `line_number must be a positive integer: "${row.line_number}"`,
-      );
+    if (isBlank(row.Date)) {
+      err('GL_TXN_DATE_REQUIRED', 'Date', 'Date is required');
+    } else if (!isIsoDate(row.Date)) {
+      err('GL_TXN_DATE_FORMAT', 'Date', 'Date must be YYYY-MM-DD');
+    } else if (options.rejectFutureDates && row.Date > today) {
+      err('GL_TXN_DATE_FUTURE', 'Date', `Date is in the future: ${row.Date}`);
     }
 
-    if (isBlank(row.transaction_date)) {
-      err('GL_TXN_DATE_REQUIRED', 'transaction_date', 'transaction_date is required');
-    } else if (!isIsoDate(row.transaction_date)) {
-      err('GL_TXN_DATE_FORMAT', 'transaction_date', 'transaction_date must be YYYY-MM-DD');
-    } else if (options.rejectFutureDates && row.transaction_date > today) {
-      err('GL_TXN_DATE_FUTURE', 'transaction_date', `transaction_date is in the future: ${row.transaction_date}`);
+    if (isBlank(row.Memo)) {
+      err('GL_DESCRIPTION_REQUIRED', 'Memo', 'Memo is required');
     }
 
-    if (!isBlank(row.posting_date)) {
-      if (!isIsoDate(row.posting_date!)) {
-        err('GL_POSTING_DATE_FORMAT', 'posting_date', 'posting_date must be YYYY-MM-DD');
-      } else if (isIsoDate(row.transaction_date) && row.posting_date! < row.transaction_date) {
-        const issue: ValidationIssue = {
-          severity: 'WARNING',
-          code: 'GL_POSTING_BEFORE_TXN',
-          field: 'posting_date',
-          rowNumber,
-          entryId: row.entry_id,
-          message: 'posting_date is before transaction_date',
-        };
-        issues.push(issue);
-        onIssue?.(issue);
-      }
+    const amount = isBlank(row.Amount) ? null : parseAmount(row.Amount);
+    if (isBlank(row.Amount)) {
+      err('GL_AMOUNT_FORMAT', 'Amount', 'Amount is required');
+    } else if (amount === null) {
+      err('GL_AMOUNT_FORMAT', 'Amount', `Amount must be a valid signed amount: "${row.Amount}"`);
+    } else if (amount === 0) {
+      const issue: ValidationIssue = {
+        severity: 'WARNING',
+        code: 'GL_AMOUNT_ZERO',
+        field: 'Amount',
+        rowNumber,
+        message: 'Amount is zero',
+      };
+      issues.push(issue);
+      onIssue?.(issue);
     }
 
-    if (isBlank(row.account_code)) {
-      err('GL_ACCOUNT_REQUIRED', 'account_code', 'account_code is required');
-    }
-    if (isBlank(row.description)) {
-      err('GL_DESCRIPTION_REQUIRED', 'description', 'description is required');
-    }
-
-    if (isBlank(row.currency_code)) {
-      err('GL_CURRENCY_REQUIRED', 'currency_code', 'currency_code is required');
-    } else if (!isIso4217(row.currency_code)) {
-      err('GL_CURRENCY_FORMAT', 'currency_code', `currency_code must be ISO 4217: "${row.currency_code}"`);
-    } else {
-      currencies.add(row.currency_code);
-    }
-
-    const debitBlank = isBlank(row.debit_amount);
-    const creditBlank = isBlank(row.credit_amount);
-    const debit = debitBlank ? 0 : parseDecimal(row.debit_amount!, options.currencyMinorUnits);
-    const credit = creditBlank ? 0 : parseDecimal(row.credit_amount!, options.currencyMinorUnits);
-
-    if (!debitBlank && debit === null) {
-      err('GL_DEBIT_FORMAT', 'debit_amount', `debit_amount must be a plain decimal: "${row.debit_amount}"`);
-    }
-    if (!creditBlank && credit === null) {
-      err('GL_CREDIT_FORMAT', 'credit_amount', `credit_amount must be a plain decimal: "${row.credit_amount}"`);
-    }
-    if (debit !== null && debit < 0) {
-      err('GL_DEBIT_NEGATIVE', 'debit_amount', 'debit_amount must be non-negative');
-    }
-    if (credit !== null && credit < 0) {
-      err('GL_CREDIT_NEGATIVE', 'credit_amount', 'credit_amount must be non-negative');
-    }
-
-    const debitValue = debit ?? 0;
-    const creditValue = credit ?? 0;
-    if (debitValue === 0 && creditValue === 0) {
-      err(
-        'GL_NO_AMOUNT',
-        'debit_amount',
-        'Exactly one of debit_amount or credit_amount must be > 0 (both empty/zero)',
-      );
-    }
-    if (debitValue > 0 && creditValue > 0) {
-      err('GL_BOTH_AMOUNTS', 'debit_amount', 'A line cannot have both debit_amount and credit_amount > 0');
-    }
-
-    if (!byEntry.has(row.entry_id)) {
-      byEntry.set(row.entry_id, []);
-    }
-    byEntry.get(row.entry_id)!.push({ row, rowNumber });
-
-    if (!hardError && debit !== null && credit !== null) {
-      const raw = debitValue - creditValue;
-      const signed = options.flipSign ? -raw : raw;
+    if (!hardError && amount !== null) {
       normalized.push({
         sourceSystem: 'GL',
-        recordId: `${row.entry_id}:${row.line_number}`,
-        account: row.account_code,
-        date: row.transaction_date,
-        currencyCode: row.currency_code,
-        signedAmount: signed,
-        direction: signed >= 0 ? 'INFLOW' : 'OUTFLOW',
-        magnitude: Math.abs(signed),
-        description: row.description,
-        reference: row.reference || undefined,
+        recordId: String(rowNumber),
+        date: row.Date,
+        signedAmount: amount,
+        direction: amount >= 0 ? 'INFLOW' : 'OUTFLOW',
+        magnitude: Math.abs(amount),
+        description: row.Memo,
+        transactionType: row.Type || undefined,
+        referenceNumber: row.Num || undefined,
+        payeeName: row.Name || undefined,
         sourceLineNumber: rowNumber,
         raw: row,
       });
     }
   });
-
-  if (options.singleCurrency && currencies.size > 1) {
-    const issue: ValidationIssue = {
-      severity: 'ERROR',
-      code: 'GL_MULTI_CURRENCY',
-      message: `File mixes currencies: ${[...currencies].join(', ')}`,
-    };
-    issues.push(issue);
-    onIssue?.(issue);
-  }
-
-  for (const [entryId, lines] of byEntry) {
-    let totalDebit = 0;
-    let totalCredit = 0;
-    const seenLineNumbers = new Set<string>();
-    for (const { row } of lines) {
-      const debit = isBlank(row.debit_amount)
-        ? 0
-        : (parseDecimal(row.debit_amount!, options.currencyMinorUnits) ?? 0);
-      const credit = isBlank(row.credit_amount)
-        ? 0
-        : (parseDecimal(row.credit_amount!, options.currencyMinorUnits) ?? 0);
-      totalDebit += debit;
-      totalCredit += credit;
-
-      const lineNumber = (row.line_number || '').trim();
-      if (lineNumber) {
-        if (seenLineNumbers.has(lineNumber)) {
-          const issue: ValidationIssue = {
-            severity: 'ERROR',
-            code: 'GL_LINE_NO_DUPLICATE',
-            field: 'line_number',
-            entryId,
-            message: `Duplicate line_number ${lineNumber} in entry ${entryId}`,
-          };
-          issues.push(issue);
-          onIssue?.(issue);
-        }
-        seenLineNumbers.add(lineNumber);
-      }
-    }
-
-    if (Math.abs(totalDebit - totalCredit) > options.amountTolerance) {
-      const issue: ValidationIssue = {
-        severity: 'ERROR',
-        code: 'GL_UNBALANCED',
-        entryId,
-        message: `Entry ${entryId} is unbalanced: debits ${totalDebit.toFixed(2)} != credits ${totalCredit.toFixed(2)}`,
-      };
-      issues.push(issue);
-      onIssue?.(issue);
-    }
-  }
 
   return { issues, normalized };
 };

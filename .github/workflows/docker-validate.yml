@@ -6,6 +6,16 @@ on:
     branches:
       - main
 
+# Without this, a duplicate/near-simultaneous pull_request event (observed twice on PR #146 the
+# same night this workflow's jobs got their per-step timeouts, ~1s apart, identical head SHA)
+# spins up two full, independent runs of every job below -- doubling real CI cost for zero
+# additional signal, since only the latest run against a given ref ever matters. Cancels a
+# same-ref run in favor of a newer one; different refs (separate PRs) never share a group, so this
+# never cancels unrelated work.
+concurrency:
+  group: docker-validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,13 +34,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
-      - name: Set up Node.js
-        run: |
-          set -euo pipefail
-          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
+      # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
+      # mirror (deb.nodesource.com) via apt, which apt itself routes through
+      # azure.archive.ubuntu.com/archive.ubuntu.com -- the exact same external-mirror dependency
+      # that caused e2e-functional's install-step hang (2026-08-19 nightly, PR #144/#145). That
+      # step got a 5-minute timeout as a stopgap, but this job's own equivalent step then hung on
+      # the identical mirror twice in a row the same night (once past even that timeout), because
+      # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
+      # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
+      # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -63,13 +79,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
-      - name: Set up Node.js
-        run: |
-          set -euo pipefail
-          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
+      # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
+      # mirror (deb.nodesource.com) via apt, which apt itself routes through
+      # azure.archive.ubuntu.com/archive.ubuntu.com -- the exact same external-mirror dependency
+      # that caused e2e-functional's install-step hang (2026-08-19 nightly, PR #144/#145). That
+      # step got a 5-minute timeout as a stopgap, but this job's own equivalent step then hung on
+      # the identical mirror twice in a row the same night (once past even that timeout), because
+      # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
+      # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
+      # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -221,13 +243,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
-      - name: Set up Node.js
-        run: |
-          set -euo pipefail
-          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
+      # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
+      # mirror (deb.nodesource.com) via apt, which apt itself routes through
+      # azure.archive.ubuntu.com/archive.ubuntu.com -- the exact same external-mirror dependency
+      # that caused e2e-functional's install-step hang (2026-08-19 nightly, PR #144/#145). That
+      # step got a 5-minute timeout as a stopgap, but this job's own equivalent step then hung on
+      # the identical mirror twice in a row the same night (once past even that timeout), because
+      # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
+      # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
+      # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
 
       - name: Install dependencies
         # compose.e2e.yaml bind-mounts the repo root over the container's /app and relies on an
@@ -282,13 +310,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
-      - name: Set up Node.js
-        run: |
-          set -euo pipefail
-          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
+      # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
+      # mirror (deb.nodesource.com) via apt, which apt itself routes through
+      # azure.archive.ubuntu.com/archive.ubuntu.com -- the exact same external-mirror dependency
+      # that caused e2e-functional's install-step hang (2026-08-19 nightly, PR #144/#145). That
+      # step got a 5-minute timeout as a stopgap, but this job's own equivalent step then hung on
+      # the identical mirror twice in a row the same night (once past even that timeout), because
+      # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
+      # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
+      # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -316,13 +350,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
-      - name: Set up Node.js
-        run: |
-          set -euo pipefail
-          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
+      # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
+      # mirror (deb.nodesource.com) via apt, which apt itself routes through
+      # azure.archive.ubuntu.com/archive.ubuntu.com -- the exact same external-mirror dependency
+      # that caused e2e-functional's install-step hang (2026-08-19 nightly, PR #144/#145). That
+      # step got a 5-minute timeout as a stopgap, but this job's own equivalent step then hung on
+      # the identical mirror twice in a row the same night (once past even that timeout), because
+      # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
+      # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
+      # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -384,13 +424,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
-      - name: Set up Node.js
-        run: |
-          set -euo pipefail
-          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
+      # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
+      # mirror (deb.nodesource.com) via apt, which apt itself routes through
+      # azure.archive.ubuntu.com/archive.ubuntu.com -- the exact same external-mirror dependency
+      # that caused e2e-functional's install-step hang (2026-08-19 nightly, PR #144/#145). That
+      # step got a 5-minute timeout as a stopgap, but this job's own equivalent step then hung on
+      # the identical mirror twice in a row the same night (once past even that timeout), because
+      # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
+      # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
+      # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci

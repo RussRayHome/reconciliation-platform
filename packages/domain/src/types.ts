@@ -497,7 +497,7 @@ export interface MatchingConfigVersion {
 
 /**
  * Response shape for `GET /api/rules/versions`. `overridesAppliedToEngine` reflects whether
- * `executeReconciliation` actually applies the active version's `varianceOverrides` — false until
+ * the reconciliation pipeline actually applies the active version's `varianceOverrides` — false until
  * that Phase 0 engine-wiring work ships, regardless of whether an `ACTIVE` version exists.
  */
 export interface RuleVersionsResponse {

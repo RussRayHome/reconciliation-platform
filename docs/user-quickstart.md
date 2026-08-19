@@ -6,9 +6,12 @@ This guide is for analysts and reviewers who need to run reconciliation and revi
 
 Prepare these items first:
 
-- a bank workbook in `.csv` or `.xlsx` format (max 50 MB)
-- a GL workbook in `.csv` or `.xlsx` format (max 50 MB)
-- files that cover the same account and period
+- two bank workbooks, one per account, each in `.csv` or `.xlsx` format (max 50 MB) -- each bank
+  file's name must start with its account number (or the last 4 digits of it) followed by `-` or
+  `_`, for example `4321_bank-export.csv` or `12345-checking.xlsx`. This is how the app tells the
+  two accounts apart; a file that doesn't follow this pattern is rejected at upload.
+- a GL workbook in `.csv` or `.xlsx` format (max 50 MB), covering both accounts
+- files that cover the same accounts and period
 - access to the reconciliation web app
 - a senior analyst, admin, or superuser account -- other roles can view results but cannot submit an import run
 
@@ -32,8 +35,9 @@ If the page does not load, ask a maintainer to start or verify the environment.
 ## 3. Run a reconciliation
 
 1. Go to the **Import Files** workspace.
-2. Drag both workbooks onto the drop zone, or browse and select them. Bank and GL are detected
-   from each file name; use the slot pickers to override if detection guesses wrong.
+2. Drag all three workbooks onto the drop zone, or browse and select them. The two bank files fill
+   Account A then Account B in the order they're dropped, and GL is detected from its file name;
+   use the slot pickers to override if detection guesses wrong.
 3. Enter optional context fields (account identifier, frequency, period, label).
 4. Select **Submit run** and wait for processing to finish.
 
@@ -99,19 +103,23 @@ Use this workbook for downstream approval, handoff, and audit evidence.
 ### Upload is rejected
 
 - Confirm each file is `.csv` or `.xlsx` and under 50 MB.
+- For a bank file specifically, confirm its name starts with the account number (or its last 4
+  digits) followed by `-` or `_`, for example `4321_bank-export.csv` -- a file that doesn't follow
+  this pattern is rejected before it's even sent to the server.
 - Re-export from source system if the workbook is corrupted or password-protected.
 
 ### Submit run is disabled or "Only a senior analyst may create an import run"
 
-- Both files must be selected and the reconciliation label must be filled in before Submit run
-  enables.
+- All three files (both bank workbooks and GL) must be selected and the reconciliation label must
+  be filled in before Submit run enables.
 - Submitting an import run requires a senior analyst, admin, or superuser account -- ask a
   maintainer to change your role if you need to submit runs regularly.
 
 ### Results do not look right
 
-- Verify both files are for the same account and period.
-- Confirm you did not swap bank and GL files.
+- Verify all three files are for the same accounts and period.
+- Confirm you did not swap bank and GL files, or upload the same bank file twice instead of one
+  per account.
 
 ### Too many data-quality exceptions
 

@@ -5,12 +5,16 @@ import { computeSha256Hex } from './reconciliationLifecycleStore';
 import { runInTenantScope } from './postgres';
 import { PostgresBlobStorage, type BlobStorage } from './blobStorage';
 
-/** One uploaded source file for a new run. `role` and `sourceType` are the same value today
- * (Bank/GL only) -- kept as two fields because `run_source_file.role` is deliberately not FK'd
- * to `import_file.source_type` (changeset 0045): a file's own type and its role *in this run*
- * are conceptually independent, even though this build always keeps them equal. */
+/** One uploaded source file for a new run. `role` and `sourceType` diverge as of Issue #141:
+ * `run_source_file.role` is deliberately not FK'd to `import_file.source_type` (changeset 0045,
+ * "a future run could plausibly want two files of the same source_type distinguished by role")
+ * -- exactly this case. A run now carries 4 files: the two raw per-account bank uploads
+ * (`BANK_ACCOUNT_A`/`BANK_ACCOUNT_B`, `sourceType: 'BANK'`, kept for audit/re-download only,
+ * never individually validated), the merged bank dataset that actually flows through File
+ * Validation and matching (`BANK_MERGED`, `sourceType: 'BANK'`), and `GL` (role and sourceType
+ * still equal, unaffected by this change). */
 export interface CreateImportRunFileInput {
-  role: 'BANK' | 'GL';
+  role: 'BANK_ACCOUNT_A' | 'BANK_ACCOUNT_B' | 'BANK_MERGED' | 'GL';
   sourceType: 'BANK' | 'GL';
   originalFilename: string;
   fileFormat: 'CSV' | 'XLSX';

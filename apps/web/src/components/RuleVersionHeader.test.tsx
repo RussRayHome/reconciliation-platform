@@ -67,7 +67,16 @@ describe('RuleVersionHeader', () => {
       screen.getByText('Not applied — thresholds are not reaching the engine'),
     ).toBeTruthy();
     expect(screen.getByText('defaultReconciliationConfig')).toBeTruthy();
-    expect(screen.getByText('executeReconciliation')).toBeTruthy();
+    expect(
+      screen.getByText((_, element) => {
+        const hasText = (node: Element | null) =>
+          Boolean(node?.textContent?.includes('threaded into the reconciliation pipeline'));
+        return (
+          hasText(element) &&
+          Array.from(element?.children ?? []).every((child) => !hasText(child))
+        );
+      }),
+    ).toBeTruthy();
   });
 
   it('superseded: shows the superseded badge and a route back to active', () => {

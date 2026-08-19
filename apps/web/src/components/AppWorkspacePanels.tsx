@@ -1060,7 +1060,7 @@ export function RuleVersionHeader({
             <strong>Not applied — thresholds are not reaching the engine</strong>
             <p>
               Every run currently uses <code>defaultReconciliationConfig</code>. Editing is
-              disabled until overrides are threaded into <code>executeReconciliation</code>.
+              disabled until overrides are threaded into the reconciliation pipeline.
             </p>
           </div>
         </div>

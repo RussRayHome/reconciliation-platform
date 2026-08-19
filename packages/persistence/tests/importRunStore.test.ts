@@ -28,7 +28,7 @@ const buildRunInput = (
   periodYear: 2026,
   periodMonth: 8,
   files: [
-    { role: 'BANK', sourceType: 'BANK', originalFilename: 'bank.csv', fileFormat: 'CSV', bytes: bankBytes },
+    { role: 'BANK_MERGED', sourceType: 'BANK', originalFilename: 'bank.csv', fileFormat: 'CSV', bytes: bankBytes },
     { role: 'GL', sourceType: 'GL', originalFilename: 'gl.csv', fileFormat: 'CSV', bytes: glBytes },
   ],
   ...overrides,
@@ -77,7 +77,7 @@ describe('PostgresImportRunStore', () => {
     expect(summary.label).toBe('Monthly Recon for August 2026');
     expect(summary.files).toHaveLength(2);
 
-    const bankFile = summary.files.find((file) => file.role === 'BANK');
+    const bankFile = summary.files.find((file) => file.role === 'BANK_MERGED');
     const glFile = summary.files.find((file) => file.role === 'GL');
     expect(bankFile).toMatchObject({
       sourceType: 'BANK',
@@ -95,7 +95,7 @@ describe('PostgresImportRunStore', () => {
       'SELECT role FROM run_source_file WHERE reconciliation_run_id = $1 ORDER BY role',
       [summary.id],
     );
-    expect(linkRows.rows.map((row: { role: string }) => row.role)).toEqual(['BANK', 'GL']);
+    expect(linkRows.rows.map((row: { role: string }) => row.role)).toEqual(['BANK_MERGED', 'GL']);
   });
 
   it('stores each file\'s bytes exactly as received, retrievable via the content table', async () => {
@@ -103,7 +103,7 @@ describe('PostgresImportRunStore', () => {
 
     const store = new PostgresImportRunStore(pool);
     const summary = await store.createRun(buildRunInput());
-    const bankFile = summary.files.find((file) => file.role === 'BANK')!;
+    const bankFile = summary.files.find((file) => file.role === 'BANK_MERGED')!;
 
     const content = await pool.query<{ content: Buffer }>(
       'SELECT content FROM import_file_content WHERE import_file_id = $1',
@@ -119,8 +119,8 @@ describe('PostgresImportRunStore', () => {
     const first = await store.createRun(buildRunInput({ label: 'Run A' }));
     const second = await store.createRun(buildRunInput({ label: 'Run B' }));
 
-    const firstBank = first.files.find((file) => file.role === 'BANK')!;
-    const secondBank = second.files.find((file) => file.role === 'BANK')!;
+    const firstBank = first.files.find((file) => file.role === 'BANK_MERGED')!;
+    const secondBank = second.files.find((file) => file.role === 'BANK_MERGED')!;
     expect(secondBank.importFileId).toBe(firstBank.importFileId);
 
     const importFileRows = await pool.query(
@@ -142,13 +142,13 @@ describe('PostgresImportRunStore', () => {
     const store = new PostgresImportRunStore(pool);
     const sameBytesForBoth: CreateImportRunInput = buildRunInput({
       files: [
-        { role: 'BANK', sourceType: 'BANK', originalFilename: 'a.csv', fileFormat: 'CSV', bytes: bankBytes },
+        { role: 'BANK_MERGED', sourceType: 'BANK', originalFilename: 'a.csv', fileFormat: 'CSV', bytes: bankBytes },
         { role: 'GL', sourceType: 'GL', originalFilename: 'b.csv', fileFormat: 'CSV', bytes: bankBytes },
       ],
     });
 
     const summary = await store.createRun(sameBytesForBoth);
-    const bankFile = summary.files.find((file) => file.role === 'BANK')!;
+    const bankFile = summary.files.find((file) => file.role === 'BANK_MERGED')!;
     const glFile = summary.files.find((file) => file.role === 'GL')!;
 
     expect(bankFile.importFileId).not.toBe(glFile.importFileId);
@@ -226,7 +226,7 @@ describe('PostgresImportRunStore', () => {
 
       const store = new PostgresImportRunStore(pool);
       const created = await store.createRun(buildRunInput({ label: 'Failure Detail Fetch' }));
-      const bankFile = created.files.find((file) => file.role === 'BANK')!;
+      const bankFile = created.files.find((file) => file.role === 'BANK_MERGED')!;
 
       const fetched = await store.getFileWithBytes(defaultOrganizationId, created.id, bankFile.importFileId);
 
@@ -248,12 +248,12 @@ describe('PostgresImportRunStore', () => {
         buildRunInput({
           label: 'Run B For Cross-Run Check',
           files: [
-            { role: 'BANK', sourceType: 'BANK', originalFilename: 'other-bank.csv', fileFormat: 'CSV', bytes: Buffer.from('x') },
+            { role: 'BANK_MERGED', sourceType: 'BANK', originalFilename: 'other-bank.csv', fileFormat: 'CSV', bytes: Buffer.from('x') },
             { role: 'GL', sourceType: 'GL', originalFilename: 'other-gl.csv', fileFormat: 'CSV', bytes: Buffer.from('y') },
           ],
         }),
       );
-      const runAFile = runA.files.find((file) => file.role === 'BANK')!;
+      const runAFile = runA.files.find((file) => file.role === 'BANK_MERGED')!;
 
       const fetched = await store.getFileWithBytes(defaultOrganizationId, runB.id, runAFile.importFileId);
       expect(fetched).toBeNull();
@@ -264,7 +264,7 @@ describe('PostgresImportRunStore', () => {
 
       const store = new PostgresImportRunStore(pool);
       const created = await store.createRun(buildRunInput({ label: 'For Nonexistent Run Check' }));
-      const bankFile = created.files.find((file) => file.role === 'BANK')!;
+      const bankFile = created.files.find((file) => file.role === 'BANK_MERGED')!;
 
       const fetched = await store.getFileWithBytes(
         defaultOrganizationId,
@@ -284,7 +284,7 @@ describe('PostgresImportRunStore', () => {
 
       const adminStore = new PostgresImportRunStore(pool);
       const created = await adminStore.createRun(buildRunInput({ label: 'Tenant Bytes Run' }));
-      const bankFile = created.files.find((file) => file.role === 'BANK')!;
+      const bankFile = created.files.find((file) => file.role === 'BANK_MERGED')!;
 
       const runtimeStore = new PostgresImportRunStore(runtimePool);
       const crossTenantRead = await runtimeStore.getFileWithBytes(

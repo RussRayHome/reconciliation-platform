@@ -50,7 +50,7 @@ describe('validateFile (banking)', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.gatesRun).toEqual(['HEADER', 'COLUMN_ORDER']);
     expect(outcome.issues).toEqual([
-      expect.objectContaining({ code: 'STRUCT_COLUMN_MISSING', field: 'currency_code' }),
+      expect.objectContaining({ code: 'STRUCT_COLUMN_MISSING', field: 'Sequence Number' }),
     ]);
     expect(outcome.normalized).toEqual([]);
   });
@@ -67,27 +67,30 @@ describe('validateFile (banking)', () => {
 
     // 7 data rows, 6 errors, one per row from line 3 on; line 2 and line 8 are clean.
     expect(outcome.issues).toEqual([
-      expect.objectContaining({ code: 'BANK_ID_DUPLICATE', rowNumber: 2 }),
-      expect.objectContaining({ code: 'BANK_POSTED_DATE_FORMAT', rowNumber: 3 }),
-      expect.objectContaining({ code: 'BANK_AMOUNT_FORMAT', rowNumber: 4 }),
-      expect.objectContaining({ code: 'BANK_TYPE_INVALID', rowNumber: 5 }),
+      expect.objectContaining({ code: 'BANK_SEQUENCE_DUPLICATE', rowNumber: 2 }),
+      expect.objectContaining({ code: 'BANK_DATE_FORMAT', rowNumber: 3 }),
+      expect.objectContaining({ code: 'BANK_CREDIT_FORMAT', rowNumber: 4 }),
+      // An unparseable Credit falls back to 0 in the amount tally, so it also fails the
+      // at-least-one-of check -- both findings are correct on this one row.
+      expect.objectContaining({ code: 'BANK_NO_AMOUNT', rowNumber: 4 }),
+      expect.objectContaining({ code: 'BANK_BOTH_AMOUNTS', rowNumber: 5 }),
       expect.objectContaining({ code: 'BANK_DESCRIPTION_REQUIRED', rowNumber: 6 }),
       expect.objectContaining({ code: 'BANK_BALANCE_CONTINUITY', rowNumber: 7 }),
     ]);
 
-    // Rows 1 (TXN-B001, first occurrence) and 7 (TXN-B007) are the only rows with no per-row
+    // Rows 1 (Sequence 1, first occurrence) and 7 (Sequence 7) are the only rows with no per-row
     // hard error -- the balance-continuity finding on row 7 doesn't exclude row 7 itself, matching
-    // schema.ts's own ported behavior (a file-level Step 3 finding doesn't retroactively drop a
-    // row that is otherwise individually clean). This is exactly what makes partial import
-    // possible: 2 of 7 rows are importable even though the file overall is not `ok`.
-    expect(outcome.normalized.map((record) => record.recordId)).toEqual(['TXN-B001', 'TXN-B007']);
+    // the engine's own behavior (a file-level Step 3 finding doesn't retroactively drop a row that
+    // is otherwise individually clean). This is exactly what makes partial import possible: 2 of 7
+    // rows are importable even though the file overall is not `ok`.
+    expect(outcome.normalized.map((record) => record.recordId)).toEqual(['1', '7']);
     expect(outcome.normalized).toHaveLength(2);
     expect(outcome.totalRowCount).toBe(7);
   });
 });
 
 describe('validateFile (GL)', () => {
-  it('a fully valid, balanced entry passes all three gates with zero issues', async () => {
+  it('a fully valid file passes all three gates with zero issues', async () => {
     const outcome = await validateFile({
       bytes: fixture('gl-valid.csv'),
       fileFormat: 'CSV',
@@ -102,7 +105,7 @@ describe('validateFile (GL)', () => {
     expect(outcome.normalized).toHaveLength(2);
   });
 
-  it('reports per-row and entry-level codes without excluding otherwise-clean lines from the same entry', async () => {
+  it('reports per-row codes without excluding rows whose only finding is a warning', async () => {
     const outcome = await validateFile({
       bytes: fixture('gl-multi-error.csv'),
       fileFormat: 'CSV',
@@ -112,22 +115,17 @@ describe('validateFile (GL)', () => {
     expect(outcome.gatesRun).toEqual(['HEADER', 'COLUMN_ORDER', 'CELL_VALUES']);
     expect(outcome.ok).toBe(false);
 
-    const codes = outcome.issues.map((issue) => issue.code);
-    expect(codes).toContain('GL_DESCRIPTION_REQUIRED'); // JE-2 line 2 (row 5)
-    expect(codes).toContain('GL_UNBALANCED'); // JE-2: 300 debit vs 290 credit
-    expect(codes).toContain('GL_LINE_NO_DUPLICATE'); // JE-3: line_number "1" used twice
-
-    // JE-1 (both lines clean+balanced), JE-2 line 1 (clean despite its entry being unbalanced),
-    // and both JE-3 lines (clean despite the entry-level duplicate-line-number finding) are all
-    // importable -- only JE-2 line 2 has its own row-level hard error.
-    expect(outcome.normalized.map((record) => record.recordId)).toEqual([
-      'JE-1:1',
-      'JE-1:2',
-      'JE-2:1',
-      'JE-3:1',
-      'JE-3:1', // duplicate line_number -> duplicate recordId, both still individually valid
+    expect(outcome.issues).toEqual([
+      expect.objectContaining({ code: 'GL_DESCRIPTION_REQUIRED', rowNumber: 2 }),
+      expect.objectContaining({ code: 'GL_AMOUNT_FORMAT', rowNumber: 3 }),
+      expect.objectContaining({ code: 'GL_AMOUNT_ZERO', rowNumber: 4, severity: 'WARNING' }),
+      expect.objectContaining({ code: 'GL_TXN_DATE_FORMAT', rowNumber: 5 }),
     ]);
-    expect(outcome.normalized).toHaveLength(5);
+
+    // Row 1 (clean) and row 4 (zero-amount is a WARNING, not a hard error) are the only importable
+    // rows -- rows 2, 3, and 5 each have their own row-level hard error.
+    expect(outcome.normalized.map((record) => record.recordId)).toEqual(['1', '4']);
+    expect(outcome.normalized).toHaveLength(2);
   });
 });
 
@@ -136,23 +134,9 @@ describe('validateFile (XLSX)', () => {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Sheet1');
-    sheet.addRow([
-      'transaction_id',
-      'account_id',
-      'posted_date',
-      'transaction_date',
-      'amount',
-      'currency_code',
-      'transaction_type',
-      'description',
-      'memo',
-      'check_number',
-      'reference_number',
-      'counterparty_account',
-      'running_balance',
-    ]);
-    sheet.addRow(['TXN-X001', 'ACC-1', '2026-07-01', null, 100, 'USD', 'DEP', 'Deposit', null, null, 'REF-1', null, 1000]);
-    sheet.addRow(['TXN-X002', 'ACC-1', '2026-07-02', null, -84.23, 'USD', 'POS', 'Purchase', null, null, 'REF-2', null, 915.77]);
+    sheet.addRow(['Date', 'Description', 'Sequence Number', 'Check Number', 'Reference', 'Debit', 'Credit', 'Balance']);
+    sheet.addRow(['2026-07-01', 'Deposit', '1', null, 'REF-1', null, 100, 1000]);
+    sheet.addRow(['2026-07-02', 'Purchase', '2', null, 'REF-2', 84.23, null, 915.77]);
     const xlsxBytes = Buffer.from(await workbook.xlsx.writeBuffer());
 
     const outcome = await validateFile({ bytes: xlsxBytes, fileFormat: 'XLSX', fileType: 'BANK' });

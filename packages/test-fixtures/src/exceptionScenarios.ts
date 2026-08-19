@@ -16,8 +16,6 @@ import {
   duplicateInBankGlRows,
   duplicateInGlBankRows,
   duplicateInGlGlRows,
-  invalidDataBankRows,
-  invalidDataGlRows,
   likelyMiscodingBankRows,
   likelyMiscodingGlRows,
   missingFromBankBankRows,
@@ -259,13 +257,6 @@ export const exceptionScenarioFixtures: ExceptionScenarioFixture[] = [
     glRows: voidedCheckClearedGlRows,
   },
   {
-    name: 'invalid-or-missing-data',
-    expectedCategory: 'InvalidOrMissingData',
-    expectedCount: 1,
-    bankRows: invalidDataBankRows,
-    glRows: invalidDataGlRows,
-  },
-  {
     name: 'ambiguous-match-requiring-review',
     expectedCategory: 'AmbiguousMatchRequiringReview',
     expectedCount: 1,
@@ -357,24 +348,10 @@ export const exceptionEdgeCaseFixtures: ExceptionEdgeCaseFixture[] = [
     expectedPresent: [{ category: 'DateVariance', count: 1 }],
     expectedAbsent: ['TimingDifference'],
   },
-  {
-    name: 'invalid-data-does-not-double-classify-as-missing',
-    bankRows: invalidDataBankRows,
-    glRows: invalidDataGlRows,
-    expectedPresent: [{ category: 'InvalidOrMissingData', count: 1 }],
-    expectedAbsent: ['MissingFromGL'],
-  },
 ];
 
 /** Fixtures for verifying that high-precedence classifiers suppress lower-precedence categories. */
 export const exceptionPrecedenceFixtures: ExceptionPrecedenceFixture[] = [
-  {
-    name: 'invalid-data-wins-over-missing-fallback',
-    bankRows: invalidDataBankRows,
-    glRows: invalidDataGlRows,
-    expectedPresent: [{ category: 'InvalidOrMissingData', count: 1 }],
-    expectedAbsent: ['MissingFromGL'],
-  },
   {
     name: 'timing-difference-wins-over-missing-fallback',
     bankRows: timingDifferenceBankRows,
@@ -412,6 +389,7 @@ const normalizeHeader = (value: string | number): string =>
 const BANK_COLUMN_BY_NORMALIZED_HEADER: Record<string, string> = {
   DATE: 'date',
   DESCRIPTION: 'description',
+  'SEQUENCE NUMBER': 'sequenceNumber',
   CHECK: 'checkNumber',
   'CHECK NUMBER': 'checkNumber',
   REFERENCE: 'referenceNumber',
@@ -439,6 +417,7 @@ const GL_COLUMN_BY_NORMALIZED_HEADER: Record<string, string> = {
 const COMBINED_BANK_HEADER = [
   'Date',
   'Description',
+  'Sequence Number',
   'Check Number',
   'Reference',
   'Debit',
@@ -490,13 +469,31 @@ export const buildAllExceptionsCombinedRows = (): {
     rowsToCombinedRecord(fixture.glRows, GL_COLUMN_BY_NORMALIZED_HEADER),
   );
 
+  // Each fixture numbers its own Sequence Number column starting from 1, so combining fixtures
+  // verbatim would produce many duplicate values (BANK_SEQUENCE_DUPLICATE) once merged into one
+  // file. Renumber globally across the combined set instead -- File Validation only requires
+  // uniqueness within a file, and which literal value each row carries is otherwise arbitrary.
+  // Also drop each fixture's own Balance column: every fixture authors its own self-consistent
+  // running balance in isolation, but concatenating unrelated fixtures' balances end-to-end has no
+  // coherent single-ledger story, which would trip BANK_BALANCE_CONTINUITY at every fixture
+  // boundary. Balance continuity is already covered by rowValidators.test.ts's dedicated fixtures;
+  // leaving it blank here skips the file-level check entirely (it only runs when every row has a
+  // value), matching this fixture's real purpose -- exhaustive exception-*taxonomy* coverage, not
+  // balance-continuity coverage.
+  const renumberedBankRecords = bankRecords.map((record, index) => {
+    const next: RowRecord = { ...record, sequenceNumber: String(index + 1) };
+    delete next['balance'];
+    return next;
+  });
+
   return {
     bankRows: [
       COMBINED_BANK_HEADER,
-      ...bankRecords.map((record) =>
+      ...renumberedBankRecords.map((record) =>
         recordToRow(record, [
           'date',
           'description',
+          'sequenceNumber',
           'checkNumber',
           'referenceNumber',
           'debit',
