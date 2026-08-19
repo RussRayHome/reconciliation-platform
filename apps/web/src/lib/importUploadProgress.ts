@@ -1,9 +1,10 @@
 import type { ImportUploadTransferState } from '../hooks/useImportUploadTransfer';
 
-/** The combined bank+GL request appends `bankFile` before `glFile` (see `createImportRunRequest`),
- * and browsers serialize `FormData` in append order, so a single `loaded` byte count from the
- * request can be split into per-file progress by comparing it against each file's byte range
- * within that body -- `precedingBytes` is the sum of every file's size appended before this one. */
+/** The combined request appends `bankFileA`, then `bankFileB`, then `glFile` (see
+ * `createImportRunRequest`), and browsers serialize `FormData` in append order, so a single
+ * `loaded` byte count from the request can be split into per-file progress by comparing it
+ * against each file's byte range within that body -- `precedingBytes` is the sum of every file's
+ * size appended before this one. */
 export const computeFileTransferPercent = (
   loadedBytes: number,
   precedingBytes: number,

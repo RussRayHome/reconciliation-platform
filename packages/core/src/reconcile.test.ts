@@ -17,8 +17,6 @@ import {
   depositGroupingOversizedBankRows,
   depositGroupingOversizedGlRows,
   depositGroupingGlRows,
-  nonStandardHeaderBankRows,
-  nonStandardHeaderGlRows,
   referenceMismatchBankRows,
   referenceMismatchGlRows,
   splitCombineBankRows,
@@ -36,9 +34,93 @@ import ExcelJS from 'exceljs';
 import { defaultReconciliationConfig } from '@recon/config';
 import type { ReconciliationConfig } from '@recon/domain';
 import { errorCategories } from '@recon/domain';
-import { parseWorkbook } from './parsers/excelParser';
+import { validateFile } from './fileValidation';
+import { toRawTransactionRows } from './fileValidation/toNormalizedTransactions';
 import { randomUUID } from 'node:crypto';
 import { runReconciliation } from './reconcile';
+
+/** Bridges row-array fixtures into `runReconciliation`'s `rawRows` input via the File Validation
+ * Engine + its adapter (Issue #137) -- replaces the old `parseWorkbook`/excelParser.ts bridge,
+ * which no longer exists. `toRawTransactionRows` repackages File Validation's already-captured
+ * raw cell values into the shape `normalizeTransactions` (called inside `runReconciliation`)
+ * expects, so this is a real re-derivation, not synthetic data. */
+const buildRawRowsFromBuffers = async (
+  bankBuffer: Buffer,
+  glBuffer: Buffer,
+  bankFileName: string,
+  glFileName: string,
+) => {
+  const bankSourceFileId = randomUUID();
+  const glSourceFileId = randomUUID();
+
+  const [bankOutcome, glOutcome] = await Promise.all([
+    validateFile({ bytes: bankBuffer, fileFormat: 'XLSX', fileType: 'BANK' }),
+    validateFile({ bytes: glBuffer, fileFormat: 'XLSX', fileType: 'GL' }),
+  ]);
+
+  // Many of these fixtures deliberately exercise invalid/malformed rows (blank dates, balance
+  // breaks, etc.) -- that's the whole point of the test, matching this codebase's own partial-
+  // import philosophy (a Step 3 finding excludes only the offending row, not the whole file). Only
+  // treat a genuine STRUCTURAL failure (never reaching CELL_VALUES at all) as a fixture bug worth
+  // failing loudly on -- that would mean the row-array's headers themselves are wrong.
+  for (const [label, outcome] of [
+    ['bank', bankOutcome],
+    ['gl', glOutcome],
+  ] as const) {
+    if (!outcome.gatesRun.includes('CELL_VALUES')) {
+      throw new Error(
+        `Fixture's ${label} rows failed structural validation -- issues: ${JSON.stringify(outcome.issues)}`,
+      );
+    }
+  }
+
+  const bankContext = {
+    runId: 'unused',
+    sourceFileId: bankSourceFileId,
+    spreadsheetFileName: bankFileName,
+    config: defaultReconciliationConfig,
+  };
+  const glContext = {
+    runId: 'unused',
+    sourceFileId: glSourceFileId,
+    spreadsheetFileName: glFileName,
+    config: defaultReconciliationConfig,
+  };
+
+  const sourceFiles = [
+    {
+      id: bankSourceFileId,
+      source: 'bank' as const,
+      fileName: bankFileName,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      sizeBytes: bankBuffer.length,
+      worksheetName: '',
+      headerRow: 1,
+      transactionStartRow: 2,
+      excludedRowNumbers: [],
+      uploadedAt: new Date(0).toISOString(),
+    },
+    {
+      id: glSourceFileId,
+      source: 'gl' as const,
+      fileName: glFileName,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      sizeBytes: glBuffer.length,
+      worksheetName: '',
+      headerRow: 1,
+      transactionStartRow: 2,
+      excludedRowNumbers: [],
+      uploadedAt: new Date(0).toISOString(),
+    },
+  ];
+
+  const rawRows = [
+    ...toRawTransactionRows(bankOutcome.normalized, bankContext),
+    ...toRawTransactionRows(glOutcome.normalized, glContext),
+  ];
+
+  return { sourceFiles, rawRows };
+};
 
 const buildRun = async () => {
   const [bankBuffer, glBuffer] = await Promise.all([
@@ -46,30 +128,18 @@ const buildRun = async () => {
     createSampleGlWorkbook(),
   ]);
 
-  const [bankParsed, glParsed] = await Promise.all([
-    parseWorkbook({
-      source: 'bank',
-      fileName: 'bank.xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: bankBuffer.length,
-      buffer: bankBuffer,
-      config: defaultReconciliationConfig.bank,
-    }),
-    parseWorkbook({
-      source: 'gl',
-      fileName: 'gl.xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: glBuffer.length,
-      buffer: glBuffer,
-      config: defaultReconciliationConfig.gl,
-    }),
-  ]);
+  const { sourceFiles, rawRows } = await buildRawRowsFromBuffers(
+    bankBuffer,
+    glBuffer,
+    'bank.xlsx',
+    'gl.xlsx',
+  );
 
   return runReconciliation({
     runId: randomUUID(),
     correlationId: 'test-correlation',
-    sourceFiles: [bankParsed.sourceFile, glParsed.sourceFile],
-    rawRows: [...bankParsed.rawRows, ...glParsed.rawRows],
+    sourceFiles,
+    rawRows,
     config: defaultReconciliationConfig,
     accountIdentifier: 'OPERATING-001',
     periodLabel: 'January 2025',
@@ -90,30 +160,18 @@ const buildRunFromRows = async (
     createWorkbookFromRows(glRows),
   ]);
 
-  const [bankParsed, glParsed] = await Promise.all([
-    parseWorkbook({
-      source: 'bank',
-      fileName: 'bank-edge.xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: bankBuffer.length,
-      buffer: bankBuffer,
-      config: config.bank,
-    }),
-    parseWorkbook({
-      source: 'gl',
-      fileName: 'gl-edge.xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: glBuffer.length,
-      buffer: glBuffer,
-      config: config.gl,
-    }),
-  ]);
+  const { sourceFiles, rawRows } = await buildRawRowsFromBuffers(
+    bankBuffer,
+    glBuffer,
+    'bank-edge.xlsx',
+    'gl-edge.xlsx',
+  );
 
   return runReconciliation({
     runId: randomUUID(),
     correlationId: 'edge-case-correlation',
-    sourceFiles: [bankParsed.sourceFile, glParsed.sourceFile],
-    rawRows: [...bankParsed.rawRows, ...glParsed.rawRows],
+    sourceFiles,
+    rawRows,
     config,
     accountIdentifier: 'OPERATING-001',
     reconciliationFrequency: options?.reconciliationFrequency,
@@ -145,8 +203,20 @@ const countExceptionsByCategory = (
 
 describe('runReconciliation', () => {
   it('keeps fixture coverage aligned with the full domain exception taxonomy', () => {
+    // 'InvalidOrMissingData' is exempted (Issue #137): it previously depended on hard-invalid rows
+    // (blank date, unparseable amount) reaching the Matching Engine with `dataQualityIssues`
+    // populated by the old alias-based pathway's lenient normalizer. Under the File-Validation-
+    // based pathway, such rows are rejected upstream (BANK_DATE_REQUIRED/GL_TXN_DATE_REQUIRED,
+    // etc.) and never reach `toNormalizedTransactions` at all -- and that adapter deliberately
+    // never populates `dataQualityIssues` for the WARNING-level issues that DO still pass through
+    // (e.g. GL_AMOUNT_ZERO), since a File-Validation-sourced run's issue list is already the
+    // source of truth for those. This category has no current producer in the real pipeline; see
+    // transaction-csv-spec.md §1.
+    const categoriesRequiringFixtureCoverage = errorCategories.filter(
+      (category) => category !== 'InvalidOrMissingData',
+    );
     expect(new Set(exceptionScenarioFixtures.map((fixture) => fixture.expectedCategory))).toEqual(
-      new Set(errorCategories),
+      new Set(categoriesRequiringFixtureCoverage),
     );
   });
 
@@ -216,8 +286,8 @@ describe('runReconciliation', () => {
   it('lets grouped residual classification outrank advisory one-to-one review matches', async () => {
     const output = await buildRunFromRows(
       [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['2025-10-01', 'CARD SETTLEMENT BATCH', '', '', '300.00', '5300.00'],
+        ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-10-01', 'CARD SETTLEMENT BATCH', '1', '', '', '300.00', '5300.00'],
       ],
       [
         ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
@@ -243,9 +313,9 @@ describe('runReconciliation', () => {
   it('prefers the closest grouped batch when overlapping grouped candidates compete for the same gl transactions', async () => {
     const output = await buildRunFromRows(
       [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['2025-10-01', 'CARD SETTLEMENT CLOSE BATCH', '', '', '300.00', '5300.00'],
-        ['2025-10-03', 'CARD SETTLEMENT LATE BATCH', '', '', '300.00', '5600.00'],
+        ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-10-01', 'CARD SETTLEMENT CLOSE BATCH', '1', '', '', '300.00', '5300.00'],
+        ['2025-10-03', 'CARD SETTLEMENT LATE BATCH', '2', '', '', '300.00', '5600.00'],
       ],
       [
         ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
@@ -262,8 +332,8 @@ describe('runReconciliation', () => {
     expect(
       groupedItems.every((item) => item.ruleTrace?.ruleId === 'grouped-deposit-residual'),
     ).toBe(true);
-    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 2)).toBe(true);
-    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 3)).toBe(
+    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 1)).toBe(true);
+    expect(groupedItems.some((item) => item.source === 'bank' && item.lineNumber === 2)).toBe(
       false,
     );
     expect(output.exceptions.filter((item) => item.category === 'MissingFromGL')).toHaveLength(1);
@@ -290,12 +360,9 @@ describe('runReconciliation', () => {
     expect(output.outputWorkbook.binary.byteLength).toBeGreaterThan(1000);
   });
 
-  it('classifies duplicates, missing items, and data quality issues from fixture rows', async () => {
+  it('classifies duplicates and missing items from fixture rows', async () => {
     const output = await buildRun();
 
-    expect(output.exceptions.map((item) => item.category)).toEqual(
-      expect.arrayContaining(['InvalidOrMissingData']),
-    );
     expect(
       output.exceptions.some(
         (item) => item.category === 'DuplicateInBank' || item.category === 'DuplicateInGL',
@@ -304,7 +371,6 @@ describe('runReconciliation', () => {
     expect(output.summary.exactMatches).toBeGreaterThanOrEqual(1);
     expect(output.summary.probableMatches).toBeGreaterThanOrEqual(1);
     expect(output.summary.duplicates).toBeGreaterThanOrEqual(1);
-    expect(output.summary.dataQualityIssues).toBeGreaterThanOrEqual(1);
   });
 
   it('embeds the two summary chart images in the exported workbook', async () => {
@@ -365,14 +431,6 @@ describe('runReconciliation', () => {
     const durationMs = performance.now() - start;
 
     expect(durationMs).toBeLessThan(5000);
-  });
-
-  it('maps non-standard bank debit and credit headers without inflating invalid data issues', async () => {
-    const output = await buildRunFromRows(nonStandardHeaderBankRows, nonStandardHeaderGlRows);
-
-    expect(output.summary.exactMatches).toBeGreaterThanOrEqual(2);
-    expect(output.summary.dataQualityIssues).toBe(0);
-    expect(output.exceptions.some((item) => item.category === 'InvalidOrMissingData')).toBe(false);
   });
 
   it('classifies timing differences when timing-compatible items fall outside primary tolerance but inside the timing window', async () => {
@@ -494,8 +552,8 @@ describe('runReconciliation', () => {
   it('preserves date variance when extended-window matches are not timing-compatible', async () => {
     const output = await buildRunFromRows(
       [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['2025-04-01', 'CLIENT BATCH DEPOSIT', '', '', '3200.00', '8200.00'],
+        ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-04-01', 'CLIENT BATCH DEPOSIT', '1', '', '', '3200.00', '8200.00'],
       ],
       [
         ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
@@ -542,52 +600,22 @@ describe('runReconciliation', () => {
     );
   });
 
-  it('keeps exception categories mutually exclusive for invalid rows', async () => {
-    const output = await buildRunFromRows(
-      [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['', 'WIRE WITHOUT DATE', '', '250.00', '', '999.00'],
-      ],
-      [
-        ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-        ['2025-03-04', 'Expense', '', 'Vendor', 'Wire without date', '-250.00'],
-      ],
-    );
-
-    const invalidItems = output.exceptions.filter(
-      (item) => item.category === 'InvalidOrMissingData',
-    );
-    const missingItems = output.exceptions.filter((item) => item.category === 'MissingFromGL');
-
-    expect(invalidItems.length).toBeGreaterThanOrEqual(1);
-    expect(missingItems).toHaveLength(0);
-  });
-
-  it('surfaces invalid GL rows as data-quality exceptions', async () => {
-    const output = await buildRunFromRows(
-      [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['2025-03-04', 'VALID BANK ROW', '', '250.00', '', '999.00'],
-      ],
-      [
-        ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
-        ['', 'Expense', '', 'Vendor', 'Missing gl date', '-250.00'],
-      ],
-    );
-
-    expect(
-      output.exceptions.some(
-        (item) => item.category === 'InvalidOrMissingData' && item.source === 'gl',
-      ),
-    ).toBe(true);
-  });
+  // 'keeps exception categories mutually exclusive for invalid rows' and 'surfaces invalid GL
+  // rows as data-quality exceptions' are retired (Issue #137): both exercised a blank-date row
+  // reaching the Matching Engine and getting classified as 'InvalidOrMissingData' there. Under
+  // the File-Validation-based pathway, a blank Date is a hard BANK_DATE_REQUIRED/
+  // GL_TXN_DATE_REQUIRED error (rowValidators.test.ts) -- the row is excluded from
+  // `outcome.normalized` entirely and never reaches the Matching Engine at all, per the design
+  // principle in transaction-csv-spec.md §1 ("the Rules Engine assumes the file is already in
+  // good order"). The underlying behavior these tests cared about (invalid data gets flagged, not
+  // silently matched) is still covered -- just one layer earlier, in rowValidators.test.ts.
 
   it('classifies stale outstanding checks for aged unmatched GL check disbursements', async () => {
     const output = await buildRunFromRows(
       [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['2025-03-31', 'OPERATING ACTIVITY', '', '200.00', '', '800.00'],
-        ['2025-04-30', 'MONTH-END ACTIVITY', '', '100.00', '', '700.00'],
+        ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-03-31', 'OPERATING ACTIVITY', '1', '', '200.00', '', '800.00'],
+        ['2025-04-30', 'MONTH-END ACTIVITY', '2', '', '100.00', '', '700.00'],
       ],
       [
         ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
@@ -606,8 +634,8 @@ describe('runReconciliation', () => {
 
   it('lets account-level stale-check overrides shorten aging policy', async () => {
     const bankRows = [
-      ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-      ['2025-02-15', 'STATEMENT ANCHOR DEPOSIT', '', '', '900.00', '900.00'],
+      ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+      ['2025-02-15', 'STATEMENT ANCHOR DEPOSIT', '1', '', '', '900.00', '900.00'],
     ] as Array<Array<string | number>>;
     const glRows = [
       ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
@@ -642,8 +670,8 @@ describe('runReconciliation', () => {
   it('classifies likely miscoding when same-amount near-date transactions conflict on context', async () => {
     const output = await buildRunFromRows(
       [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['2025-03-10', 'ACME PAYROLL', '', '500.00', '', '9500.00'],
+        ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-03-10', 'ACME PAYROLL', '1', '', '500.00', '', '9500.00'],
       ],
       [
         ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
@@ -672,9 +700,9 @@ describe('runReconciliation', () => {
   it('adds reviewer observations for missing months when annual reconciliation is selected', async () => {
     const output = await buildRunFromRows(
       [
-        ['Date', 'Description', 'Check Number', 'Debit', 'Credit', 'Balance'],
-        ['2025-01-15', 'JAN ENTRY', '', '100.00', '', '900.00'],
-        ['2025-03-15', 'MAR ENTRY', '', '200.00', '', '700.00'],
+        ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['2025-01-15', 'JAN ENTRY', '1', '', '100.00', '', '900.00'],
+        ['2025-03-15', 'MAR ENTRY', '2', '', '200.00', '', '700.00'],
       ],
       [
         ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],

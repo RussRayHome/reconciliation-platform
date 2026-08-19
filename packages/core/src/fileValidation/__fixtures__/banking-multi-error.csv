@@ -1,8 +1,8 @@
-transaction_id,account_id,posted_date,transaction_date,amount,currency_code,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance
-TXN-B001,ACC-1,2026-07-01,,100.00,USD,DEP,"Payroll deposit, biweekly",,,REF-1,,1000.00
-TXN-B001,ACC-1,2026-07-02,,50.00,USD,DEP,Second payroll leg,,,REF-2,,1050.00
-TXN-B003,ACC-1,07/03/2026,,25.00,USD,DEP,Bad date row,,,REF-3,,1075.00
-TXN-B004,ACC-1,2026-07-04,,$500.00,USD,DEP,Bad amount row,,,REF-4,,1575.00
-TXN-B005,ACC-1,2026-07-05,,-30.00,USD,WITHDRAWAL,Bad type row,,,REF-5,,1545.00
-TXN-B006,ACC-1,2026-07-06,,15.00,USD,DEP,,,,REF-6,,1560.00
-TXN-B007,ACC-1,2026-07-07,,20.00,USD,DEP,Balance break row,,,REF-7,,9999.00
+Date,Description,Sequence Number,Check Number,Reference,Debit,Credit,Balance
+2026-07-01,"Payroll deposit, biweekly",1,,REF-1,,100.00,1000.00
+2026-07-02,Second payroll leg,1,,REF-2,,50.00,1050.00
+07/03/2026,Bad date row,3,,REF-3,,25.00,1075.00
+2026-07-04,Bad amount row,4,,REF-4,,N/A,1075.00
+2026-07-05,Both amounts row,5,,REF-5,10.00,20.00,1095.00
+2026-07-06,,6,,REF-6,,15.00,1110.00
+2026-07-07,Balance break row,7,,REF-7,,20.00,9999.00

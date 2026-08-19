@@ -1,6 +1,9 @@
 import { formatFileSize } from '../lib/formatFileSize';
 
-export type RejectedUploadCode = 'UPLOAD_EXTENSION_UNSUPPORTED' | 'UPLOAD_SIZE_EXCEEDED';
+export type RejectedUploadCode =
+  | 'UPLOAD_EXTENSION_UNSUPPORTED'
+  | 'UPLOAD_SIZE_EXCEEDED'
+  | 'UPLOAD_BANK_FILENAME_INVALID';
 
 type ImportUploadCardProps =
   | {
@@ -41,11 +44,16 @@ const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }
     label: 'UPLOAD_SIZE_EXCEEDED · limit 50 MB',
     body: 'Split the export by period, or switch the run frequency to Annual and import per quarter.',
   },
+  UPLOAD_BANK_FILENAME_INVALID: {
+    label: 'UPLOAD_BANK_FILENAME_INVALID',
+    body: 'Bank file names must start with the account number (or its last 4 digits) followed by "-" or "_", e.g. "4321_bank-export.csv".',
+  },
 };
 
 /** Screen 02's per-file upload card -- one of five states (README §4 screen 02). Progress and
- * rejection are both client-side only: this build sends bank+GL as a single combined request on
- * Submit (see `useImportUploadTransfer`), so "uploading" reflects that one request's progress, not
+ * rejection are both client-side only: this build sends both bank workbooks and the GL workbook
+ * as a single combined request on Submit (see `useImportUploadTransfer`), so "uploading" reflects
+ * that one request's progress, not
  * an independent per-file transfer, and a network failure restarts the request rather than
  * resuming from a stored chunk -- the design's literal "resumes from the last stored chunk" claim
  * assumes a chunked/resumable upload backend that doesn't exist here. */
@@ -143,7 +151,7 @@ export function ImportUploadCard(props: Readonly<ImportUploadCardProps>) {
         </span>
       </div>
       <p className="import-upload-card__body">
-        The transfer was interrupted. Nothing was written to the run -- retry resends both files
+        The transfer was interrupted. Nothing was written to the run -- retry resends all files
         from the start.
       </p>
     </div>

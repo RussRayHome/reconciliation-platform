@@ -59,7 +59,10 @@ describe('exception scenario combined rows', () => {
       const bankRow = combined.bankRows.at(-1);
       const glRow = combined.glRows.at(-1);
 
-      expect(bankRow).toEqual(['2026-06-01', '', '', '', '', '', '']);
+      // Sequence Number (index 2) is renumbered globally across the combined set, so its exact
+      // value depends on total row count elsewhere -- assert it's present as a string, not a
+      // specific number, to avoid coupling this test to an unrelated count.
+      expect(bankRow).toEqual(['2026-06-01', '', expect.any(String), '', '', '', '', '']);
       expect(glRow).toEqual(['', '', '', '', '', '', 123.45]);
     } finally {
       restoreFixture();

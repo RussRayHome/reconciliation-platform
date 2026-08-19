@@ -25,11 +25,20 @@ export type ImportValidationWriter = Pick<
 >;
 
 /** One already-fetched source file, handed to the matching trigger -- shaped like the pieces of
- * Express.Multer.File that executeReconciliation actually reads (buffer/originalname), not the
+ * Express.Multer.File that the reconciliation pipeline actually reads (buffer/originalname), not the
  * whole Multer type, since these bytes came from BlobStorage, not a fresh upload. */
 export interface ImportValidationFileBytes {
   buffer: Buffer;
   originalname: string;
+}
+
+/** Issue #137: the matching trigger now receives the already-validated `NormalizedRecord[]`
+ * alongside the original bytes, instead of only bytes to re-parse. `bytes`/`originalname` are
+ * still needed to register this file into the old pipeline's own audit trail
+ * (reconciliation_source_file/reconciliation_source_file_content) -- `matching_job_id` links a
+ * reconciliation_run back to that trail (changeset 0048) -- but they are never re-parsed. */
+export interface ImportValidationTriggerFile extends ImportValidationFileBytes {
+  normalized: NormalizedRecord[];
 }
 
 export interface RunImportValidationWorkflowInput {
@@ -47,8 +56,8 @@ export interface RunImportValidationWorkflowInput {
    * closes over it directly rather than this module reaching in to grab it). Only called when
    * both files pass validation. */
   triggerMatching: (files: {
-    bankFile: ImportValidationFileBytes;
-    glFile: ImportValidationFileBytes;
+    bankFile: ImportValidationTriggerFile;
+    glFile: ImportValidationTriggerFile;
   }) => Promise<{ matchingJobId: string }>;
 }
 
@@ -57,17 +66,24 @@ export interface RunImportValidationWorkflowResult {
   matchingJobId?: string;
 }
 
+/** Issue #137: neither the Bank nor GL template carries a currency column -- the system assumes
+ * single-currency USD for now (docs/transaction-csv-spec.md §1), so this is an explicit constant,
+ * not a silently-dropped field. */
+const ASSUMED_CURRENCY_CODE = 'USD';
+
 const toCanonicalRecordInput = (record: NormalizedRecord): CanonicalRecordInput => ({
   sourceType: record.sourceSystem,
   recordId: record.recordId,
-  account: record.account,
+  // Neither template carries an account column (docs/transaction-csv-spec.md §2/§3) -- account
+  // context is sourced from the bank file's filename once Issue #141's parsing lands, not here.
+  account: record.account ?? '',
   date: record.date,
-  currencyCode: record.currencyCode,
+  currencyCode: ASSUMED_CURRENCY_CODE,
   signedAmount: record.signedAmount,
   direction: record.direction,
   magnitude: record.magnitude,
   description: record.description,
-  reference: record.reference,
+  reference: record.referenceNumber ?? record.checkNumber,
   sourceLineNumber: record.sourceLineNumber,
   raw: record.raw,
 });
@@ -112,10 +128,19 @@ export const runImportValidationWorkflow = async (
   const fileOutcomes: Array<{
     file: ImportRunFileSummary;
     bytes: Buffer;
+    normalized: NormalizedRecord[];
     passed: boolean;
   }> = [];
 
   for (const file of run.files) {
+    // Issue #141: a run now carries the two raw per-account bank uploads (BANK_ACCOUNT_A/B,
+    // audit/re-download only) alongside the merged dataset that actually flows through File
+    // Validation and matching (BANK_MERGED). Only BANK_MERGED/GL get individually validated --
+    // the raw files never get their own validation_issue/canonical_record rows.
+    if (file.role !== 'BANK_MERGED' && file.role !== 'GL') {
+      continue;
+    }
+
     const fileType = assertBankOrGl(file);
     const bytes = await input.blobStorage.get(file.importFileId, input.organizationId);
 
@@ -144,7 +169,12 @@ export const runImportValidationWorkflow = async (
       warningCount: recorded.warningCount,
     });
 
-    fileOutcomes.push({ file, bytes, passed: recorded.validationStatus !== 'INVALID' });
+    fileOutcomes.push({
+      file,
+      bytes,
+      normalized: outcome.normalized,
+      passed: recorded.validationStatus !== 'INVALID',
+    });
   }
 
   const passed = fileOutcomes.every((entry) => entry.passed);
@@ -158,15 +188,23 @@ export const runImportValidationWorkflow = async (
     return { passed: false };
   }
 
-  const bankEntry = fileOutcomes.find((entry) => entry.file.role === 'BANK');
+  const bankEntry = fileOutcomes.find((entry) => entry.file.role === 'BANK_MERGED');
   const glEntry = fileOutcomes.find((entry) => entry.file.role === 'GL');
   if (!bankEntry || !glEntry) {
     throw new Error(`reconciliation_run ${input.runId} passed validation without both a BANK and GL file.`);
   }
 
   const { matchingJobId } = await input.triggerMatching({
-    bankFile: { buffer: bankEntry.bytes, originalname: bankEntry.file.originalFilename },
-    glFile: { buffer: glEntry.bytes, originalname: glEntry.file.originalFilename },
+    bankFile: {
+      buffer: bankEntry.bytes,
+      originalname: bankEntry.file.originalFilename,
+      normalized: bankEntry.normalized,
+    },
+    glFile: {
+      buffer: glEntry.bytes,
+      originalname: glEntry.file.originalFilename,
+      normalized: glEntry.normalized,
+    },
   });
 
   await input.importValidationStore.recordMatchingJobId(input.organizationId, input.runId, matchingJobId);

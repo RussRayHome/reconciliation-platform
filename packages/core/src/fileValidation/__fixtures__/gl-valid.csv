@@ -1,3 +1,3 @@
-entry_id,line_number,transaction_date,posting_date,account_code,account_name,description,debit_amount,credit_amount,currency_code,reference,entity,department,location,source
-JE-V001,1,2026-07-01,,1000,Cash,"Office rent, July",500.00,,USD,REF-1,,,,GJ
-JE-V001,2,2026-07-01,,6000,Rent Expense,Office rent,,500.00,USD,REF-1,,,,GJ
+Date,Type,Num,Name,Memo,Amount
+2026-07-01,Expense,,Landlord LLC,"Office rent, July",-500.00
+2026-07-02,Deposit,,North Client,Client payment north,300.00

@@ -70,13 +70,26 @@ against the GL.
   slot today; needs a second bank file slot.
 - **Templates**: the downloadable bank template and the account-number-in-filename convention need
   to be documented so uploaded files are reliably parseable by the merge step.
-- **Matching engine**: needs confirmation of whether the composite sequence key reaches any
-  existing rule that reads `serialNumber` / `referenceNumber` on `NormalizedTransaction`, or stays
-  a purely ingestion-time disambiguator that File Validation/matching never need to know about.
+- **Matching engine**: confirmed unaffected. The composite sequence number only ever populates
+  `NormalizedRecord.recordId` inside File Validation (used solely for the `BANK_SEQUENCE_DUPLICATE`
+  uniqueness check) — it is never read by the matching engine or mapped onto
+  `NormalizedTransaction`. No matching-engine changes were needed.
 
-## Open questions
+## Resolved decisions
 
-- Exact file name pattern for extracting the account number (prefix vs. suffix, delimiter,
-  fixed-width vs. variable-width).
-- Behavior if both accounts happen to share the same last four digits.
-- Whether this generalizes to N accounts, or is deliberately scoped to exactly two.
+- **File name pattern**: a bank file's name must **start with digits followed by `-` or `_`**
+  (`/^(\d{4,})[-_]/`), e.g. `4321_bank-export.csv` or `12345-bank.xlsx`. The account identifier
+  used for the composite sequence-number prefix is the **last four digits** of that leading digit
+  run. A file that doesn't match is rejected at upload — client-side in `SourceDropZone` for
+  immediate feedback, and authoritatively server-side in `mergeBankFiles`
+  (`packages/core/src/fileValidation/bankFileMerge.ts`) via
+  `parseBankAccountLast4FromFilename` (`packages/domain/src/bankAccountFilename.ts`), which both
+  layers import from the same shared implementation so the pattern can't drift between them.
+- **Same-last-4 collision**: not specially detected. If both accounts' last four digits happen to
+  match and their composite sequence numbers then genuinely collide, the existing
+  `BANK_SEQUENCE_DUPLICATE` rule (`packages/core/src/fileValidation/rowValidators.ts`) already
+  catches it correctly once the files are merged — no dedicated detection code was needed.
+- **N accounts vs. exactly two**: deliberately scoped to exactly two bank accounts, not
+  generalized. `mergeBankFiles` takes a fixed 2-tuple (`readonly [RawBankFileInput,
+  RawBankFileInput]`), and the upload API/schema (`BANK_ACCOUNT_A`/`BANK_ACCOUNT_B`/`BANK_MERGED`
+  roles) assume exactly two raw bank uploads per run.

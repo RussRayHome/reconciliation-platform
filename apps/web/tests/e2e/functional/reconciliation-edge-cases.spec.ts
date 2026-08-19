@@ -26,11 +26,22 @@ test.beforeEach(async ({ page }) => {
   await loginToApplication(page);
 });
 
+/** Account B's own bank workbook is a required upload slot (Issue #141); an empty (header-only)
+ * file merges cleanly and contributes zero extra bank rows, so it never perturbs the row
+ * counts/exception categories these scenarios assert on. Bank filenames must start with the
+ * account number (or its last 4 digits) followed by "-"/"_" per ADR-0003's filename convention. */
 async function setWorkbookFiles(page: Page, bankBuffer: Buffer, glBuffer: Buffer): Promise<void> {
+  const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
+
   await page.locator('#bank-workbook-input').setInputFiles({
-    name: 'bank.xlsx',
+    name: '1111_bank.xlsx',
     mimeType: XLSX_MIME,
     buffer: bankBuffer,
+  });
+  await page.locator('#bank-workbook-b-input').setInputFiles({
+    name: '2222_bank.xlsx',
+    mimeType: XLSX_MIME,
+    buffer: bankAccountBBuffer,
   });
   await page.locator('#gl-workbook-input').setInputFiles({
     name: 'gl.xlsx',
@@ -97,11 +108,13 @@ test.describe('form validation', () => {
     await expect(page.getByRole('button', { name: 'Submit run' })).toBeDisabled();
   });
 
-  test('submit button remains disabled with only the bank file uploaded', async ({ page }) => {
+  test('submit button remains disabled with only the Account A bank file uploaded', async ({
+    page,
+  }) => {
     const bankBuffer = await createSampleBankFileValidationWorkbook();
     await openSetup(page);
     await page.locator('#bank-workbook-input').setInputFiles({
-      name: 'bank.xlsx',
+      name: '1111_bank.xlsx',
       mimeType: XLSX_MIME,
       buffer: bankBuffer,
     });
@@ -140,12 +153,20 @@ test.describe('form validation', () => {
     page,
   }) => {
     const fakeBuffer = Buffer.from('col1,col2\nval1,val2');
-    const bankBuffer = await createSampleBankFileValidationWorkbook();
+    const [bankBuffer, bankAccountBBuffer] = await Promise.all([
+      createSampleBankFileValidationWorkbook(),
+      createWorkbookFromRows(bankHeaderOnlyFileValidationRows),
+    ]);
     await openSetup(page);
     await page.locator('#bank-workbook-input').setInputFiles({
-      name: 'bank.xlsx',
+      name: '1111_bank.xlsx',
       mimeType: XLSX_MIME,
       buffer: bankBuffer,
+    });
+    await page.locator('#bank-workbook-b-input').setInputFiles({
+      name: '2222_bank.xlsx',
+      mimeType: XLSX_MIME,
+      buffer: bankAccountBBuffer,
     });
     await page.locator('#gl-workbook-input').setInputFiles({
       name: 'transactions.csv',

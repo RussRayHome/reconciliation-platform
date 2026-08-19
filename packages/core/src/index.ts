@@ -5,7 +5,6 @@ export * from './matching/ruleCatalog';
 export * from './matching/similarity';
 export * from './normalization/text';
 export * from './normalization/transactions';
-export * from './parsers/excelParser';
 export * from './reconcile';
 export * from './reporting/chartData';
 export * from './reporting/exceptionClassifier';

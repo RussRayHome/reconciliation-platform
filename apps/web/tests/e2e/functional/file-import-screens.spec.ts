@@ -3,7 +3,10 @@ import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup } from '../auth';
-import { createSampleGlFileValidationWorkbook } from '../fileValidationWorkbooks';
+import {
+  bankHeaderOnlyFileValidationRows,
+  createSampleGlFileValidationWorkbook,
+} from '../fileValidationWorkbooks';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const BANK_HEADER = [
@@ -20,11 +23,23 @@ test.beforeEach(async ({ page }) => {
   await loginToApplication(page);
 });
 
+/** Account B's own bank workbook is a required upload slot (Issue #141), but this file's scenarios
+ * only care about Account A's rows -- an empty (header-only) Account B file merges cleanly and
+ * contributes zero extra bank rows, so it never perturbs the row counts/exceptions these tests
+ * assert on. Bank filenames must start with the account number (or its last 4 digits) followed by
+ * "-"/"_" per ADR-0003's filename convention. */
 async function setWorkbookFiles(page: Page, bankBuffer: Buffer, glBuffer: Buffer): Promise<void> {
+  const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
+
   await page.locator('#bank-workbook-input').setInputFiles({
-    name: 'bank.xlsx',
+    name: '1111_bank.xlsx',
     mimeType: XLSX_MIME,
     buffer: bankBuffer,
+  });
+  await page.locator('#bank-workbook-b-input').setInputFiles({
+    name: '2222_bank.xlsx',
+    mimeType: XLSX_MIME,
+    buffer: bankAccountBBuffer,
   });
   await page.locator('#gl-workbook-input').setInputFiles({
     name: 'gl.xlsx',

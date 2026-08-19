@@ -627,7 +627,8 @@ function ReconciliationApp({
     String(currentYear - index - 1),
   );
   const defaultMonth = monthsWithinYear[new Date().getMonth()] ?? 'January';
-  const [bankFile, setBankFile] = useState<File | null>(null);
+  const [bankFileA, setBankFileA] = useState<File | null>(null);
+  const [bankFileB, setBankFileB] = useState<File | null>(null);
   const [glFile, setGlFile] = useState<File | null>(null);
   const [accountIdentifier, setAccountIdentifier] = useState('');
   const [reconciliationFrequency, setReconciliationFrequency] =
@@ -1003,15 +1004,17 @@ function ReconciliationApp({
 
   const trimmedPeriodLabel = periodLabel.trim();
   const isLabelMissing = trimmedPeriodLabel.length === 0;
-  const hasStartedUploadStep = Boolean(bankFile || glFile);
-  const isUploadStepComplete = Boolean(bankFile && glFile);
+  const hasStartedUploadStep = Boolean(bankFileA || bankFileB || glFile);
+  const isUploadStepComplete = Boolean(bankFileA && bankFileB && glFile);
   const isConfigurationStepComplete = isUploadStepComplete && !isLabelMissing;
   const isRunStepComplete = Boolean(run);
   const isRunStepCurrent = isConfigurationStepComplete && !isRunStepComplete;
   const isExportStepComplete = hasDownloadedWorkbook || hasExportedJson;
   const isExportStepCurrent = isRunStepComplete && !isExportStepComplete;
   const isRunPendingStep = isRunStepCurrent || reconciliation.isPending;
-  const canSubmit = Boolean(bankFile && glFile && !reconciliation.isPending && !isLabelMissing);
+  const canSubmit = Boolean(
+    bankFileA && bankFileB && glFile && !reconciliation.isPending && !isLabelMissing,
+  );
 
   const progressSteps = useMemo<ProgressStep[]>(() => {
     const uploadMeterValue = resolveMeterValue(isUploadStepComplete, hasStartedUploadStep, 20);
@@ -1031,7 +1034,7 @@ function ReconciliationApp({
       {
         id: 'upload',
         label: 'Upload source files',
-        description: 'Select both Bank and GL workbooks.',
+        description: 'Select both bank account workbooks and the GL workbook.',
         isComplete: isUploadStepComplete,
         isCurrent: hasStartedUploadStep && !isUploadStepComplete,
         meterValue: uploadMeterValue,
@@ -1096,7 +1099,9 @@ function ReconciliationApp({
   const elapsedLabel = runElapsedMs === null ? null : formatElapsedLabel(runElapsedMs);
   const runBarSourceFileNames = reportRun
     ? reportRun.sourceFiles.map((file) => file.fileName)
-    : [bankFile?.name, glFile?.name].filter((name): name is string => Boolean(name));
+    : [bankFileA?.name, bankFileB?.name, glFile?.name].filter(
+        (name): name is string => Boolean(name),
+      );
   const runBarAccountIdentifier = reportRun?.accountIdentifier ?? accountIdentifier;
   const runBarFrequency = reportRun?.reconciliationFrequency ?? reconciliationFrequency;
   const appliedVarianceOverrides = reportRun?.appliedVarianceOverrides;
@@ -1151,14 +1156,15 @@ function ReconciliationApp({
   const handleSubmit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();
 
-    if (!bankFile || !glFile) {
+    if (!bankFileA || !bankFileB || !glFile) {
       return;
     }
 
     setRunStartedAtMs(Date.now());
     setNowMs(Date.now());
     uploadTransfer.start({
-      bankFile,
+      bankFileA,
+      bankFileB,
       glFile,
       label: trimmedPeriodLabel,
       accountIdentifier: accountIdentifier || undefined,
@@ -1246,7 +1252,8 @@ function ReconciliationApp({
                 element={
                   <SourceUploadSection
                     annualYear={annualYear}
-                    bankFile={bankFile}
+                    bankFileA={bankFileA}
+                    bankFileB={bankFileB}
                     glFile={glFile}
                     canSubmit={canSubmit}
                     currentYear={currentYear}
@@ -1260,7 +1267,8 @@ function ReconciliationApp({
                     reconciliationFrequency={reconciliationFrequency}
                     setAccountIdentifier={setAccountIdentifier}
                     setAnnualYear={setAnnualYear}
-                    setBankFile={setBankFile}
+                    setBankFileA={setBankFileA}
+                    setBankFileB={setBankFileB}
                     setIsCustomPeriodLabel={setIsCustomPeriodLabel}
                     setMonthlyMonth={setMonthlyMonth}
                     setPeriodLabel={setPeriodLabel}
@@ -1476,7 +1484,8 @@ function ReconciliationApp({
 function SourceUploadSection({
   accountIdentifier,
   annualYear,
-  bankFile,
+  bankFileA,
+  bankFileB,
   glFile,
   canSubmit,
   currentYear,
@@ -1490,7 +1499,8 @@ function SourceUploadSection({
   reconciliationFrequency,
   setAccountIdentifier,
   setAnnualYear,
-  setBankFile,
+  setBankFileA,
+  setBankFileB,
   setIsCustomPeriodLabel,
   setMonthlyMonth,
   setPeriodLabel,
@@ -1502,7 +1512,8 @@ function SourceUploadSection({
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
-  bankFile: File | null;
+  bankFileA: File | null;
+  bankFileB: File | null;
   glFile: File | null;
   canSubmit: boolean;
   currentYear: number;
@@ -1516,7 +1527,8 @@ function SourceUploadSection({
   reconciliationFrequency: ReconciliationFrequency;
   setAccountIdentifier: Dispatch<SetStateAction<string>>;
   setAnnualYear: Dispatch<SetStateAction<string>>;
-  setBankFile: Dispatch<SetStateAction<File | null>>;
+  setBankFileA: Dispatch<SetStateAction<File | null>>;
+  setBankFileB: Dispatch<SetStateAction<File | null>>;
   setIsCustomPeriodLabel: Dispatch<SetStateAction<boolean>>;
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
   setPeriodLabel: Dispatch<SetStateAction<string>>;
@@ -1573,28 +1585,35 @@ function SourceUploadSection({
         >
           <div className="import-screen__upload-column">
             {uploadTransfer.transfer.kind === 'idle' ? (
-              <>
-                <SourceDropZone
-                  bankFile={bankFile}
-                  glFile={glFile}
-                  setBankFile={setBankFile}
-                  setGlFile={setGlFile}
-                />
-                <p className="source-dropzone__note">
-                  Bank and GL are detected from each file name; use the slot pickers to override.
-                  Row counts, date range, and excluded rows are calculated when the reconciliation
-                  runs.
-                </p>
-              </>
+              <SourceDropZone
+                bankFileA={bankFileA}
+                bankFileB={bankFileB}
+                glFile={glFile}
+                setBankFileA={setBankFileA}
+                setBankFileB={setBankFileB}
+                setGlFile={setGlFile}
+              />
             ) : (
               <div className="import-upload-card-list" aria-label="Upload progress">
-                {bankFile ? (
+                {bankFileA ? (
                   <ImportUploadCard
                     {...buildTransferCardProps(
                       uploadTransfer.transfer,
-                      bankFile,
-                      'bank',
+                      bankFileA,
+                      'bank A',
                       0,
+                      uploadTransfer.cancel,
+                      uploadTransfer.retry,
+                    )}
+                  />
+                ) : null}
+                {bankFileB ? (
+                  <ImportUploadCard
+                    {...buildTransferCardProps(
+                      uploadTransfer.transfer,
+                      bankFileB,
+                      'bank B',
+                      bankFileA?.size ?? 0,
                       uploadTransfer.cancel,
                       uploadTransfer.retry,
                     )}
@@ -1606,7 +1625,7 @@ function SourceUploadSection({
                       uploadTransfer.transfer,
                       glFile,
                       'gl',
-                      bankFile?.size ?? 0,
+                      (bankFileA?.size ?? 0) + (bankFileB?.size ?? 0),
                       uploadTransfer.cancel,
                       uploadTransfer.retry,
                     )}
@@ -1690,7 +1709,8 @@ function SourceUploadSection({
               run={reconciliation.error.run}
               onRetryUpload={() => {
                 reconciliation.reset();
-                setBankFile(null);
+                setBankFileA(null);
+                setBankFileB(null);
                 setGlFile(null);
               }}
               partialAccept={partialAccept}

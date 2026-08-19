@@ -430,41 +430,57 @@ const appWithPool = (pool: Pool) =>
   createApp(undefined, undefined, undefined, pool as Parameters<typeof createApp>[3]);
 
 const cleanBankCsv = Buffer.from(
-  'transaction_id,account_id,posted_date,transaction_date,amount,currency_code,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance\n' +
-    'TXN-V001,ACC-1,2026-07-01,,100.00,USD,DEP,"Payroll deposit, biweekly",,,REF-1,,1000.00\n' +
-    'TXN-V002,ACC-1,2026-07-02,,-84.23,USD,POS,Card purchase,,,REF-2,,915.77\n' +
-    'TXN-V003,ACC-1,2026-07-03,,-500.00,USD,CHECK,Rent check,,CHK-1001,REF-3,,415.77\n',
+  'Date,Description,Sequence Number,Check Number,Reference,Debit,Credit,Balance\n' +
+    '2026-07-01,"Payroll deposit, biweekly",1,,REF-1,,100.00,1000.00\n' +
+    '2026-07-02,Card purchase,2,,REF-2,84.23,,915.77\n' +
+    '2026-07-03,Rent check,3,CHK-1001,REF-3,500.00,,415.77\n',
+);
+
+// Issue #141: a run now always carries two bank files (one per account); this is Account B's
+// file, kept minimal since most tests here aren't about the merge itself.
+const cleanBankCsvB = Buffer.from(
+  'Date,Description,Sequence Number,Check Number,Reference,Debit,Credit,Balance\n' +
+    '2026-07-01,Second account deposit,1,,REF-9,,50.00,50.00\n',
 );
 
 const cleanGlCsv = Buffer.from(
-  'entry_id,line_number,transaction_date,posting_date,account_code,account_name,description,debit_amount,credit_amount,currency_code,reference,entity,department,location,source\n' +
-    'JE-V001,1,2026-07-01,,1000,Cash,"Office rent, July",500.00,,USD,REF-1,,,,GJ\n' +
-    'JE-V001,2,2026-07-01,,6000,Rent Expense,Office rent,,500.00,USD,REF-1,,,,GJ\n',
+  'Date,Type,Num,Name,Memo,Amount\n' + '2026-07-03,Check,CHK-1001,Landlord LLC,Rent check,-500.00\n',
 );
 
-const invalidBankCsv = Buffer.from(
-  'TXN-9001,ACC-1,2026-07-01,100.00,USD,DEP,First row is data not a header\n' +
-    'TXN-9002,ACC-1,2026-07-02,-50.00,USD,POS,Second row is also data\n',
+// Issue #141: the merge step always re-serializes the merged bank dataset with a canonical
+// header row (BANKING_HEADERS), and a raw per-account file with no recognizable header is now
+// rejected pre-merge (BankFileStructuralError, a 400 at POST /api/imports/runs itself, before any
+// run is even created) -- so a header-less BANK file can no longer reach the STRUCT_HEADER_MISSING
+// failure-detail/error-report/acceptPartialImport tests below the way it did pre-#141. The GL file
+// is not merged and still goes through File Validation completely unchanged, so it's used instead
+// to exercise the same downstream (post-persistence) HEADER-gate failure paths.
+const invalidGlCsv = Buffer.from(
+  '9001,First row is data not a header,100.00\n' + '9002,Second row is also data,-50.00\n',
 );
 
 // Header/column-order gates pass (matches cleanBankCsv's header exactly); row 1 is clean, row 2
-// has an unparseable amount -- a Step 3 (CELL_VALUES)-only failure, i.e. Screen 06's territory.
+// has an unparseable Credit -- a Step 3 (CELL_VALUES)-only failure, i.e. Screen 06's territory.
 const partiallyInvalidBankCsv = Buffer.from(
-  'transaction_id,account_id,posted_date,transaction_date,amount,currency_code,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance\n' +
-    'TXN-P001,ACC-1,2026-07-01,,100.00,USD,DEP,Payroll deposit,,,REF-1,,1000.00\n' +
-    'TXN-P002,ACC-1,2026-07-02,,not-a-number,USD,POS,Card purchase,,,REF-2,,915.77\n',
+  'Date,Description,Sequence Number,Check Number,Reference,Debit,Credit,Balance\n' +
+    '2026-07-01,Payroll deposit,1,,REF-1,,100.00,1000.00\n' +
+    '2026-07-02,Card purchase,2,,REF-2,,not-a-number,915.77\n',
 );
 
 const createRun = async (
   app: ReturnType<typeof appWithPool>,
-  files: { bankFile: Buffer; glFile: Buffer } = { bankFile: cleanBankCsv, glFile: cleanGlCsv },
+  files: { bankFileA: Buffer; bankFileB: Buffer; glFile: Buffer } = {
+    bankFileA: cleanBankCsv,
+    bankFileB: cleanBankCsvB,
+    glFile: cleanGlCsv,
+  },
 ) =>
   authedApp(app, { role: 'senior-analyst' })
     .post('/api/imports/runs')
     .field('label', 'Submit Test Run')
     .field('frequency', 'MONTHLY')
     .field('periodYear', '2026')
-    .attach('bankFile', files.bankFile, { filename: 'bank.csv', contentType: 'text/csv' })
+    .attach('bankFileA', files.bankFileA, { filename: '1111_bank.csv', contentType: 'text/csv' })
+    .attach('bankFileB', files.bankFileB, { filename: '2222_bank.csv', contentType: 'text/csv' })
     .attach('glFile', files.glFile, { filename: 'gl.csv', contentType: 'text/csv' });
 
 describe('POST /api/imports/runs/:id/submit', () => {
@@ -491,7 +507,7 @@ describe('POST /api/imports/runs/:id/submit', () => {
 
   it('validates a run with a structurally invalid file, fails, and never sets matching_job_id', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: invalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: cleanBankCsv, bankFileB: cleanBankCsvB, glFile: invalidGlCsv });
     expect(created.status).toBe(201);
 
     const response = await authedApp(app, { role: 'senior-analyst' }).post(
@@ -559,7 +575,7 @@ describe('GET /api/imports/runs/:id/files/:fileId/failure-detail (Phase 11)', ()
   });
 
   const submitFailingRun = async (app: ReturnType<typeof appWithPool>) => {
-    const created = await createRun(app, { bankFile: invalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: cleanBankCsv, bankFileB: cleanBankCsvB, glFile: invalidGlCsv });
     const submitted = await authedApp(app, { role: 'senior-analyst' }).post(
       `/api/imports/runs/${created.body.id}/submit`,
     );
@@ -622,7 +638,7 @@ describe('GET /api/imports/runs/:id/error-report.csv (Phase 11)', () => {
 
   it('returns a CSV with one row per finding, including the failed file\'s name', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: invalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: cleanBankCsv, bankFileB: cleanBankCsvB, glFile: invalidGlCsv });
     await authedApp(app, { role: 'senior-analyst' }).post(
       `/api/imports/runs/${created.body.id}/submit`,
     );
@@ -634,7 +650,7 @@ describe('GET /api/imports/runs/:id/error-report.csv (Phase 11)', () => {
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/csv');
     expect(response.text.split('\n')[0]).toBe('file,line,column,code,severity,message,raw_value');
-    expect(response.text).toContain('bank.csv');
+    expect(response.text).toContain('gl.csv');
     expect(response.text).toContain('STRUCT_HEADER_MISSING');
   });
 
@@ -658,12 +674,12 @@ describe('GET /api/imports/runs/:id/files/:fileId/rows (Phase 12)', () => {
 
   it('returns every row re-parsed from the stored file, annotated with its issue', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: partiallyInvalidBankCsv, bankFileB: cleanBankCsvB, glFile: cleanGlCsv });
     const submitted = await authedApp(app, { role: 'senior-analyst' }).post(
       `/api/imports/runs/${created.body.id}/submit`,
     );
     const bankFileId = submitted.body.run.files.find(
-      (file: { role: string }) => file.role === 'BANK',
+      (file: { role: string }) => file.role === 'BANK_MERGED',
     ).importFileId;
 
     const response = await authedApp(app, { role: 'senior-analyst' }).get(
@@ -671,16 +687,20 @@ describe('GET /api/imports/runs/:id/files/:fileId/rows (Phase 12)', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.totalRows).toBe(2);
+    // 2 rows from bankFileA (partiallyInvalidBankCsv) + 1 clean row from bankFileB
+    // (cleanBankCsvB), concatenated in that order by mergeBankFiles.
+    expect(response.body.totalRows).toBe(3);
     expect(response.body.errorRowCount).toBe(1);
-    expect(response.body.cleanRowCount).toBe(1);
+    expect(response.body.cleanRowCount).toBe(2);
 
-    const [row1, row2] = response.body.rows;
+    const [row1, row2, row3] = response.body.rows;
     expect(row1).toMatchObject({ lineNumber: 1, status: 'IMPORT', flaggedFields: {} });
     expect(row2.lineNumber).toBe(2);
     expect(row2.status).toBe('SKIP');
-    expect(row2.flaggedFields.amount).toBeTruthy();
-    expect(row2.values.transaction_id).toBe('TXN-P002');
+    expect(row2.flaggedFields.Credit).toBeTruthy();
+    expect(row2.values.Description).toBe('Card purchase');
+    expect(row3).toMatchObject({ lineNumber: 3, status: 'IMPORT', flaggedFields: {} });
+    expect(row3.values.Description).toBe('Second account deposit');
   });
 
   it('returns 404 for an unknown file id', async () => {
@@ -705,7 +725,7 @@ describe('POST /api/imports/runs/:id/import (Phase 12 Screen 06)', () => {
 
   it('accepts a partial-failure run, transitions to PENDING_APPROVAL, and triggers matching', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: partiallyInvalidBankCsv, bankFileB: cleanBankCsvB, glFile: cleanGlCsv });
     const submitted = await authedApp(app, { role: 'senior-analyst' }).post(
       `/api/imports/runs/${created.body.id}/submit`,
     );
@@ -723,7 +743,7 @@ describe('POST /api/imports/runs/:id/import (Phase 12 Screen 06)', () => {
 
   it('returns 409 for a structurally-failed run', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: invalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: cleanBankCsv, bankFileB: cleanBankCsvB, glFile: invalidGlCsv });
     await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
 
     const response = await authedApp(app, { role: 'senior-analyst' })
@@ -735,7 +755,7 @@ describe('POST /api/imports/runs/:id/import (Phase 12 Screen 06)', () => {
 
   it('returns 400 when skipInvalidRows is not true', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: partiallyInvalidBankCsv, bankFileB: cleanBankCsvB, glFile: cleanGlCsv });
     await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
 
     const response = await authedApp(app, { role: 'senior-analyst' })
@@ -747,7 +767,7 @@ describe('POST /api/imports/runs/:id/import (Phase 12 Screen 06)', () => {
 
   it('returns 403 for a role other than senior-analyst', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: partiallyInvalidBankCsv, bankFileB: cleanBankCsvB, glFile: cleanGlCsv });
     await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
 
     const response = await authedApp(app, { role: 'financial-analyst' })
@@ -769,7 +789,7 @@ describe('POST /api/imports/runs/:id/import (Phase 12 Screen 06)', () => {
 
   it('returns 409 on a second call after the run has already been accepted', async () => {
     const app = appWithPool(pool);
-    const created = await createRun(app, { bankFile: partiallyInvalidBankCsv, glFile: cleanGlCsv });
+    const created = await createRun(app, { bankFileA: partiallyInvalidBankCsv, bankFileB: cleanBankCsvB, glFile: cleanGlCsv });
     await authedApp(app, { role: 'senior-analyst' }).post(`/api/imports/runs/${created.body.id}/submit`);
 
     const first = await authedApp(app, { role: 'senior-analyst' })

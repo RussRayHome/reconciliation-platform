@@ -1,11 +1,13 @@
 import './containerGuard';
 
 import type { ReconciliationRunReport } from '@recon/domain';
+import { createWorkbookFromRows } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { openSetup } from '../auth';
 import {
+  bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
   createSampleGlFileValidationWorkbook,
 } from '../fileValidationWorkbooks';
@@ -189,12 +191,19 @@ const runReconciliation = async (page: Page): Promise<void> => {
     createSampleGlFileValidationWorkbook(),
   ]);
 
+  const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
+
   await openSetup(page);
 
   await page.locator('#bank-workbook-input').setInputFiles({
-    name: 'bank.xlsx',
+    name: '1111_bank.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankBuffer,
+  });
+  await page.locator('#bank-workbook-b-input').setInputFiles({
+    name: '2222_bank.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: bankAccountBBuffer,
   });
   await page.locator('#gl-workbook-input').setInputFiles({
     name: 'gl.xlsx',

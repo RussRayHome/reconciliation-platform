@@ -16,15 +16,12 @@ import {
 const silentLogger = pino({ level: 'silent' });
 
 const bankCsv = Buffer.from(
-  'transaction_id,account_id,posted_date,amount,currency_code,transaction_type,description\n' +
-    'TXN-1,ACCT-1,2026-08-01,100.00,USD,CREDIT,Deposit\n',
+  'Date,Description,Sequence Number,Debit,Credit\n' + '2026-08-01,Deposit,1,,100.00\n',
   'utf8',
 );
 
 const glCsv = Buffer.from(
-  'entry_id,line_number,transaction_date,account_code,description,debit_amount,credit_amount,currency_code\n' +
-    'JE-1,1,2026-08-01,1000,Deposit,100.00,,USD\n' +
-    'JE-1,2,2026-08-01,2000,Deposit,,100.00,USD\n',
+  'Date,Memo,Amount\n' + '2026-08-01,Deposit,100.00\n',
   'utf8',
 );
 
@@ -43,7 +40,7 @@ const baseRun = (): ImportRunSummary => ({
   files: [
     {
       importFileId: 'file-bank',
-      role: 'BANK',
+      role: 'BANK_MERGED',
       sourceType: 'BANK',
       originalFilename: 'bank.csv',
       fileFormat: 'CSV',
@@ -139,8 +136,8 @@ describe('runImportValidationWorkflow', () => {
       passed: true,
     });
     expect(triggerMatching).toHaveBeenCalledWith({
-      bankFile: { buffer: bankCsv, originalname: 'bank.csv' },
-      glFile: { buffer: glCsv, originalname: 'gl.csv' },
+      bankFile: { buffer: bankCsv, originalname: 'bank.csv', normalized: expect.any(Array) },
+      glFile: { buffer: glCsv, originalname: 'gl.csv', normalized: expect.any(Array) },
     });
     expect(importValidationStore.recordMatchingJobId).toHaveBeenCalledWith(
       'org-1',
@@ -187,6 +184,70 @@ describe('runImportValidationWorkflow', () => {
         triggerMatching: vi.fn(),
       }),
     ).rejects.toThrow(/reconciliation_run missing-run not found/);
+  });
+
+  it('skips raw per-account BANK_ACCOUNT_A/B files -- never validates them or passes them to triggerMatching', async () => {
+    const run = baseRun();
+    run.files.unshift(
+      {
+        importFileId: 'file-bank-raw-a',
+        role: 'BANK_ACCOUNT_A',
+        sourceType: 'BANK',
+        originalFilename: '1111_bank.csv',
+        fileFormat: 'CSV',
+        validationStatus: 'PENDING',
+        byteSize: bankCsv.byteLength,
+        contentSha256: 'sha-bank-raw-a',
+        rowCount: null,
+        errorCount: null,
+        warningCount: null,
+      },
+      {
+        importFileId: 'file-bank-raw-b',
+        role: 'BANK_ACCOUNT_B',
+        sourceType: 'BANK',
+        originalFilename: '2222_bank.csv',
+        fileFormat: 'CSV',
+        validationStatus: 'PENDING',
+        byteSize: bankCsv.byteLength,
+        contentSha256: 'sha-bank-raw-b',
+        rowCount: null,
+        errorCount: null,
+        warningCount: null,
+      },
+    );
+
+    const importValidationStore = createFakeImportValidationWriter();
+    const triggerMatching = vi.fn(() => Promise.resolve({ matchingJobId: 'matching-job-1' }));
+
+    const result = await runImportValidationWorkflow({
+      organizationId: 'org-1',
+      runId: 'run-1',
+      importJobId: 'job-1',
+      workerId: 'worker-1',
+      logger: silentLogger,
+      blobStorage: createFakeBlobStorage({
+        'file-bank-raw-a': bankCsv,
+        'file-bank-raw-b': bankCsv,
+        'file-bank': bankCsv,
+        'file-gl': glCsv,
+      }),
+      importRunStore: createFakeImportRunStore(run),
+      importValidationStore,
+      triggerMatching,
+    });
+
+    expect(result).toEqual({ passed: true, matchingJobId: 'matching-job-1' });
+    // Only the merged bank file and the GL file are ever validated -- the two raw per-account
+    // uploads are never touched.
+    expect(importValidationStore.recordedOutcomes.map((entry) => entry.importFileId)).toEqual([
+      'file-bank',
+      'file-gl',
+    ]);
+    expect(triggerMatching).toHaveBeenCalledWith({
+      bankFile: { buffer: bankCsv, originalname: 'bank.csv', normalized: expect.any(Array) },
+      glFile: { buffer: glCsv, originalname: 'gl.csv', normalized: expect.any(Array) },
+    });
   });
 
   it('throws if a file has a source_type outside BANK/GL', async () => {

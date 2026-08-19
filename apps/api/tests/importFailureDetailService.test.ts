@@ -9,14 +9,14 @@ const unrecognizableHeaderCsv = Buffer.from(
   'col_a,col_b,col_c\nx,y,z\n',
 );
 
-const validBankingHeaderMissingCurrencyCsv = Buffer.from(
-  'transaction_id,account_id,posted_date,transaction_date,amount,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance\n' +
-    'TXN-1,ACC-1,2026-07-01,,100.00,DEP,Payroll,,,REF-1,,1000.00\n',
+const validBankingHeaderMissingSequenceCsv = Buffer.from(
+  'Date,Description,Check Number,Reference,Debit,Credit,Balance\n' +
+    '2026-07-01,Payroll,,REF-1,,100.00,1000.00\n',
 );
 
 const fullyValidBankingHeaderCsv = Buffer.from(
-  'transaction_id,account_id,posted_date,transaction_date,amount,currency_code,transaction_type,description,memo,check_number,reference_number,counterparty_account,running_balance\n' +
-    'TXN-1,ACC-1,2026-07-01,,not-a-number,USD,DEP,Payroll,,,REF-1,,1000.00\n',
+  'Date,Description,Sequence Number,Check Number,Reference,Debit,Credit,Balance\n' +
+    '2026-07-01,Payroll,1,,REF-1,not-a-number,,1000.00\n',
 );
 
 const baseInput = {
@@ -57,7 +57,7 @@ describe('buildImportFileFailureDetail', () => {
     expect(detail.headerComparison!.every((row) => !row.matches)).toBe(true);
     expect(detail.headerComparison![0]).toMatchObject({
       position: 1,
-      expected: 'transaction_id',
+      expected: 'Date',
       found: 'col_a',
     });
   });
@@ -65,13 +65,13 @@ describe('buildImportFileFailureDetail', () => {
   it('derives a COLUMN_ORDER-gate-failed sequence when a required column is missing', async () => {
     const detail = await buildImportFileFailureDetail({
       ...baseInput,
-      bytes: validBankingHeaderMissingCurrencyCsv,
+      bytes: validBankingHeaderMissingSequenceCsv,
       issues: [
         {
           severity: 'ERROR',
           code: 'STRUCT_COLUMN_MISSING',
-          message: 'Required column "currency_code" is absent.',
-          field: 'currency_code',
+          message: 'Required column "Sequence Number" is absent.',
+          field: 'Sequence Number',
           rowNumber: null,
         },
       ],
@@ -83,10 +83,10 @@ describe('buildImportFileFailureDetail', () => {
       { gate: 'CELL_VALUES', state: 'NOT_RUN' },
     ]);
     expect(detail.headerComparison).not.toBeNull();
-    // currency_code (5th required header) is absent from the actual file's headers -- found
-    // slides everything after it over by one position, so position 5 shows the mismatch.
-    const currencyRow = detail.headerComparison!.find((row) => row.expected === 'currency_code');
-    expect(currencyRow?.matches).toBe(false);
+    // Sequence Number (3rd required header) is absent from the actual file's headers -- found
+    // slides everything after it over by one position, so this position shows the mismatch.
+    const sequenceRow = detail.headerComparison!.find((row) => row.expected === 'Sequence Number');
+    expect(sequenceRow?.matches).toBe(false);
   });
 
   it('derives an all-gates-passed sequence with no header comparison when there is no structural failure', async () => {
@@ -96,9 +96,9 @@ describe('buildImportFileFailureDetail', () => {
       issues: [
         {
           severity: 'ERROR',
-          code: 'BANK_AMOUNT_FORMAT',
-          message: '"amount" is not a valid number.',
-          field: 'amount',
+          code: 'BANK_DEBIT_FORMAT',
+          message: '"Debit" is not a valid amount.',
+          field: 'Debit',
           rowNumber: 1,
         },
       ],

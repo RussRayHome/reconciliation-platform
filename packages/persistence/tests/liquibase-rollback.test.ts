@@ -53,11 +53,16 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0048 (the current HEAD) adds reconciliation_run.matching_job_id -- a column addition, not
-      // a new table, so this uses the same col_type_is text-diff approach as the 0026 rollback
-      // test below rather than tableExists (see git history on this describe block for why table
-      // existence doesn't always apply: an RLS-only rollback once showed no diff at all here).
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=1');
+      // 0048 adds reconciliation_run.matching_job_id -- a column addition, not a new table, so
+      // this uses the same col_type_is text-diff approach as the 0026 rollback test below rather
+      // than tableExists (see git history on this describe block for why table existence doesn't
+      // always apply: an RLS-only rollback once showed no diff at all here). 0049 (sequence
+      // grants) and 0050 (re-seeds validation_rule_version rows -- data only, no DDL) now sit on
+      // top of 0048 without touching the schema this test cares about, so rolling back 3
+      // changesets (0050, 0049, 0048) lands on the same DDL diff a --count=1 rollback used to
+      // produce when 0048 was HEAD. When a future changeset lands here, extend the count again
+      // rather than re-pinning this test to a single changeset number.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=3');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -70,18 +75,21 @@ describe('Liquibase rollback', () => {
       }
     });
 
-    it('removes the changeset from the tracking table', async () => {
+    it('removes the changesets from the tracking table and restores it on reapply', async () => {
+      // Checked after beforeAll's final `update` call re-applies everything -- this asserts the
+      // round trip (update -> rollback-count=3 -> update) lands back on the full changelog count,
+      // not the count immediately after the rollback step (which beforeAll never captures).
       expect(await changelogCount(database!.pool)).toBe(changesetFileCount);
     });
 
-    it('restores the exact original schema when the changeset is re-applied', () => {
+    it('restores the exact original schema when the changesets are re-applied', () => {
       expect(reappliedSchema.split('\n')).toEqual(migratedSchema.split('\n'));
     });
 
     it('reverses 0048 by dropping reconciliation_run.matching_job_id', () => {
-      // When a future changeset lands on top of 0048, update this test to describe that changeset
-      // instead -- it is intentionally pinned to "whatever is currently the most recent
-      // changeset", not to 0048 forever (see 0033's git history for the last time this moved).
+      // Pinned to 0048 specifically, not "whatever changeset is currently HEAD" -- 0049/0050 are
+      // both data/grant-only (no DDL), so 0048 remains the most recent changeset with a schema
+      // diff this test's col_type_is approach can observe. See the --count=3 comment above.
       const columnMarker = "col_type_is('public', 'reconciliation_run', 'matching_job_id', 'uuid'";
       expect(migratedSchema).toContain(columnMarker);
       expect(rolledBackSchema).not.toContain(columnMarker);
@@ -90,7 +98,7 @@ describe('Liquibase rollback', () => {
     });
   });
 
-  describe('rolling back twenty-three changesets (0048 down through 0026 schema-changing)', () => {
+  describe('rolling back twenty-five changesets (0050 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -102,7 +110,7 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now twenty-three changesets back from HEAD (0048): 0027 (verify-only), 0028 (adds
+      // 0026 is now twenty-five changesets back from HEAD (0050): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
@@ -114,10 +122,11 @@ describe('Liquibase rollback', () => {
       // reconciliation_user changes), 0042/0043 (File Imports & Validation tables + RLS, no
       // reconciliation_user changes), 0044/0045/0046 (source_type widening, run_source_file,
       // canonical_record rename -- none touch reconciliation_user), 0047 (rule version lineage
-      // tables, no reconciliation_user changes), and 0048 (reconciliation_run.matching_job_id, no
-      // reconciliation_user changes) all sit on top of it without reversing anything this test
-      // cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=23');
+      // tables, no reconciliation_user changes), 0048 (reconciliation_run.matching_job_id, no
+      // reconciliation_user changes), 0049 (sequence grants only), and 0050 (re-seeds
+      // validation_rule_version rows -- data only, no reconciliation_user changes) all sit on top
+      // of it without reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=25');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

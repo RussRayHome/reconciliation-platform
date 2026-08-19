@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { TextNormalizationConfig } from '@recon/domain';
 
 const punctuationPattern = /[^A-Z0-9\s]/g;
@@ -63,3 +65,13 @@ export const buildComparisonTokens = (
 
   return [...tokenSet].sort();
 };
+
+/** Shared duplicate-detection fingerprint, extracted from `normalization/transactions.ts` (Issue
+ * #137) so both the old normalization pathway and the new File Validation adapter
+ * (`fileValidation/toNormalizedTransactions.ts`) compute it identically. */
+export const buildContextFingerprint = (
+  parts: Array<string | number | undefined | null>,
+): string =>
+  createHash('sha1')
+    .update(parts.filter((part) => part !== undefined && part !== null).join('|'))
+    .digest('hex');

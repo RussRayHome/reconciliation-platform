@@ -1,11 +1,4 @@
-import {
-  buildSummaryMetrics,
-  classifyExceptions,
-  exportWorkbook,
-  normalizeTransactions,
-  reconcileMatches,
-  parseWorkbook,
-} from '@recon/core';
+import { buildSummaryMetrics, classifyExceptions, exportWorkbook, reconcileMatches } from '@recon/core';
 import {
   defaultReconciliationConfig,
   resolveReconciliationConfig,
@@ -14,9 +7,16 @@ import {
 
 import type { PostgresReconciliationLifecycleStore } from '@recon/persistence';
 
-import type { AuditEvent, PayeeAlias, ReconciliationRun } from '@recon/domain';
+import type {
+  AuditEvent,
+  NormalizedTransaction,
+  PayeeAlias,
+  RawTransactionRow,
+  ReconciliationConfig,
+  ReconciliationRun,
+  SourceFile,
+} from '@recon/domain';
 import pino from 'pino';
-import { randomUUID } from 'node:crypto';
 import { resolveLogLevelAtLeastInfo } from './logLevel';
 
 // Module-level logger used for service-layer tracing outside HTTP context.
@@ -26,66 +26,56 @@ const serviceLogger = pino({
   level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL),
 });
 
-interface UploadedFile {
-  originalname: string;
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-}
-
-/**
- * Input contract for executing one reconciliation run from uploaded workbook
- * files and optional business context.
- */
-export interface ExecuteReconciliationInput {
+interface RunReconciliationPipelineInput {
   correlationId: string;
-  runId?: string;
-  /** ADR-0001 step 6: threaded to every lifecycleStore call so each write transaction can set
-   * the RLS tenant GUC. Required whenever `lifecycleStore` is provided. */
+  runId: string;
   organizationId: string;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
-  sourceFileIds?: Partial<Record<'bank' | 'gl', string>>;
-  bankFile: UploadedFile;
-  glFile: UploadedFile;
+  sourceFiles: SourceFile[];
+  /** Raw rows for the lifecycle store's IMPORTING/IMPORTED state-machine step
+   * (`persistParsedRows`). For File-Validation-sourced runs (Issue #137's
+   * `executeReconciliationFromNormalized`), these are repackaged from `NormalizedRecord.raw` via
+   * `@recon/core`'s `toRawTransactionRows` rather than a real parse -- see that function's doc
+   * comment for why this isn't invented data. */
+  rawRows: RawTransactionRow[];
+  /** Lazy, not a pre-resolved value: called inside this function's own try/catch so a throw here
+   * (e.g. `executeReconciliation`'s `normalizeTransactions` call) is logged and rethrown exactly
+   * like every other pipeline-stage failure, matching pre-Issue-#137 behavior where normalization
+   * lived inside this same try block. `executeReconciliationFromNormalized` just returns its
+   * already-built array. */
+  getNormalizedTransactions: () => NormalizedTransaction[];
+  config: ReconciliationConfig;
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
-  aliases?: PayeeAlias[];
+  aliases: PayeeAlias[];
+  t0: number;
+  log: pino.Logger;
 }
 
 /**
- * Parses the uploaded bank and GL workbooks, resolves reconciliation config,
- * executes the shared matching pipeline, and returns a completed run payload.
- *
- * @param input Uploaded workbooks plus correlation and optional accounting context.
- * @returns A completed reconciliation run suitable for API responses and export.
+ * The shared tail of the reconciliation pipeline -- persistence lifecycle, matching, exception
+ * classification, summary, and export -- factored out of `executeReconciliation` (Issue #137) so
+ * both that function (parses + normalizes via the old alias-based pathway) and
+ * `executeReconciliationFromNormalized` (takes File-Validation-sourced `NormalizedTransaction[]`
+ * directly, no parse) share identical behavior downstream of "we have normalized transactions."
  */
-export const executeReconciliation = async ({
+const runReconciliationPipeline = async ({
   correlationId,
-  runId: providedRunId,
+  runId,
   organizationId,
   lifecycleStore,
-  sourceFileIds,
-  bankFile,
-  glFile,
+  sourceFiles,
+  rawRows,
+  getNormalizedTransactions,
+  config,
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
-  aliases = [],
-}: ExecuteReconciliationInput): Promise<ReconciliationRun> => {
-  const log = serviceLogger.child({ correlationId, accountIdentifier });
-  const t0 = Date.now();
-
-  log.info({
-    action: 'service.reconciliation.start',
-    bankFile: bankFile.originalname,
-    glFile: glFile.originalname,
-    bankSizeBytes: bankFile.size,
-    glSizeBytes: glFile.size,
-  });
-
-  // Times and logs a lifecycleStore persistence call at debug level, so a stalled
-  // Postgres write is visible as "step never completed" rather than a silent hang.
+  aliases,
+  t0,
+  log,
+}: RunReconciliationPipelineInput): Promise<ReconciliationRun> => {
   const runPersistStep = async <T>(action: string, fn: () => Promise<T>): Promise<T> => {
     const stepStart = Date.now();
     const result = await fn();
@@ -93,95 +83,17 @@ export const executeReconciliation = async ({
     return result;
   };
 
-  // ── 1. Config resolution ───────────────────────────────────────────────────
-  const config =
-    resolveReconciliationConfig(accountIdentifier, sampleAccountOverrides) ??
-    defaultReconciliationConfig;
-  log.debug({
-    action: 'service.config.resolved',
-    accountIdentifier,
-    dateToleranceDays: config.matching.dateToleranceDays,
-    timingDifferenceDays: config.matching.timingDifferenceDays,
-    bankHeaderRow: config.bank.headerRow,
-    glHeaderRow: config.gl.headerRow,
-  });
-
-  const runId = providedRunId ?? randomUUID();
-  log.debug({ action: 'service.run.id.assigned', runId });
-
-  // ── 2. Parallel workbook parsing ──────────────────────────────────────────
-  const parseStart = Date.now();
-  log.debug({ action: 'service.parse.start' });
-
-  let bankParsed: Awaited<ReturnType<typeof parseWorkbook>>;
-  let glParsed: Awaited<ReturnType<typeof parseWorkbook>>;
-  try {
-    [bankParsed, glParsed] = await Promise.all([
-      parseWorkbook({
-        source: 'bank',
-        sourceFileId: sourceFileIds?.bank,
-        fileName: bankFile.originalname,
-        mimeType: bankFile.mimetype,
-        sizeBytes: bankFile.size,
-        buffer: bankFile.buffer,
-        config: config.bank,
-      }),
-      parseWorkbook({
-        source: 'gl',
-        sourceFileId: sourceFileIds?.gl,
-        fileName: glFile.originalname,
-        mimeType: glFile.mimetype,
-        sizeBytes: glFile.size,
-        buffer: glFile.buffer,
-        config: config.gl,
-      }),
-    ]);
-  } catch (parseError) {
-    log.error({
-      action: 'service.parse.error',
-      err:
-        parseError instanceof Error
-          ? { message: parseError.message, stack: parseError.stack }
-          : parseError,
-    });
-    throw parseError;
-  }
-
-  log.info({
-    action: 'service.parse.completed',
-    durationMs: Date.now() - parseStart,
-    bankRawRows: bankParsed.rawRows.length,
-    glRawRows: glParsed.rawRows.length,
-    bankWorksheet: bankParsed.sourceFile.worksheetName,
-    glWorksheet: glParsed.sourceFile.worksheetName,
-  });
-
-  const sourceFiles = [bankParsed.sourceFile, glParsed.sourceFile] as const;
-  const rawRows = [...bankParsed.rawRows, ...glParsed.rawRows];
-
   if (lifecycleStore) {
     await runPersistStep('service.persist.parsedRows.completed', () =>
-      lifecycleStore.persistParsedRows(organizationId, runId, [...sourceFiles], rawRows),
+      lifecycleStore.persistParsedRows(organizationId, runId, sourceFiles, rawRows),
     );
-  }
-
-  // Log first few raw rows at debug level for traceability
-  if (process.env.DEBUG_RECONCILIATION === 'true') {
-    log.debug({
-      action: 'service.parse.bank.sample',
-      rows: bankParsed.rawRows.slice(0, 5).map((r) => ({ line: r.lineNumber, raw: r.rawValues })),
-    });
-    log.debug({
-      action: 'service.parse.gl.sample',
-      rows: glParsed.rawRows.slice(0, 5).map((r) => ({ line: r.lineNumber, raw: r.rawValues })),
-    });
   }
 
   // ── 3. Core reconciliation pipeline ───────────────────────────────────────
   const reconStart = Date.now();
   log.debug({
     action: 'service.reconciliation.pipeline.start',
-    totalRawRows: bankParsed.rawRows.length + glParsed.rawRows.length,
+    totalRawRows: rawRows.length,
   });
 
   let auditEvents: AuditEvent[] = [
@@ -207,22 +119,20 @@ export const executeReconciliation = async ({
     ];
   };
 
-  let normalizedTransactions: ReturnType<typeof normalizeTransactions>;
+  let normalizedTransactions: NormalizedTransaction[];
   let matching: ReturnType<typeof reconcileMatches>;
   let exceptionOutput: ReturnType<typeof classifyExceptions>;
   let summary: ReturnType<typeof buildSummaryMetrics>;
   let outputWorkbook: Awaited<ReturnType<typeof exportWorkbook>>;
 
   try {
-    const normalizeStart = Date.now();
-    normalizedTransactions = normalizeTransactions(runId, rawRows, config);
+    normalizedTransactions = getNormalizedTransactions();
     const excludedTransactions = normalizedTransactions.filter((t) => t.isExcluded);
     const dataQualityTransactions = normalizedTransactions.filter(
       (t) => t.dataQualityIssues.length > 0,
     );
     log.debug({
       action: 'service.normalize.completed',
-      durationMs: Date.now() - normalizeStart,
       normalizedCount: normalizedTransactions.length,
       excludedCount: excludedTransactions.length,
       dataQualityIssueCount: dataQualityTransactions.length,
@@ -453,4 +363,83 @@ export const executeReconciliation = async ({
     outputWorkbook,
     auditEvents,
   };
+};
+
+/**
+ * Input contract for `executeReconciliationFromNormalized` -- File-Validation-sourced runs
+ * (Issue #137) that already have validated, normalized transactions and never call
+ * `parseWorkbook`/`excelParser.ts` at all.
+ */
+export interface ExecuteReconciliationFromNormalizedInput {
+  correlationId: string;
+  runId: string;
+  organizationId: string;
+  lifecycleStore?: PostgresReconciliationLifecycleStore;
+  sourceFiles: SourceFile[];
+  rawRows: RawTransactionRow[];
+  normalizedTransactions: NormalizedTransaction[];
+  accountIdentifier?: string;
+  reconciliationFrequency?: 'Monthly' | 'Annual';
+  periodLabel?: string;
+  aliases?: PayeeAlias[];
+}
+
+/**
+ * Runs the reconciliation pipeline against transactions File Validation already validated and
+ * normalized (via `@recon/core`'s `toNormalizedTransactions`/`toRawTransactionRows`), skipping
+ * `parseWorkbook`/`normalizeTransactions` entirely (Issue #137) -- this is what
+ * `triggerMatchingForImportRun` (the Import flow) and `/api/reconciliation/run` (the standalone
+ * atomic route) both call now instead of re-parsing raw bytes through the old alias-based
+ * pathway. Shares every downstream step (persistence lifecycle, matching, classification,
+ * summary, export) with `executeReconciliation` via `runReconciliationPipeline`.
+ */
+export const executeReconciliationFromNormalized = async ({
+  correlationId,
+  runId,
+  organizationId,
+  lifecycleStore,
+  sourceFiles,
+  rawRows,
+  normalizedTransactions,
+  accountIdentifier,
+  reconciliationFrequency,
+  periodLabel,
+  aliases = [],
+}: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
+  const log = serviceLogger.child({ correlationId, accountIdentifier });
+  const t0 = Date.now();
+
+  log.info({
+    action: 'service.reconciliation.start',
+    source: 'file-validation',
+    sourceFileCount: sourceFiles.length,
+    normalizedCount: normalizedTransactions.length,
+  });
+
+  const config =
+    resolveReconciliationConfig(accountIdentifier, sampleAccountOverrides) ??
+    defaultReconciliationConfig;
+  log.debug({
+    action: 'service.config.resolved',
+    accountIdentifier,
+    dateToleranceDays: config.matching.dateToleranceDays,
+    timingDifferenceDays: config.matching.timingDifferenceDays,
+  });
+
+  return runReconciliationPipeline({
+    correlationId,
+    runId,
+    organizationId,
+    lifecycleStore,
+    sourceFiles,
+    rawRows,
+    getNormalizedTransactions: () => normalizedTransactions,
+    config,
+    accountIdentifier,
+    reconciliationFrequency,
+    periodLabel,
+    aliases,
+    t0,
+    log,
+  });
 };

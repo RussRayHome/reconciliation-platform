@@ -280,7 +280,8 @@ export interface ImportRunSummary {
 
 /** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. */
 export interface CreateImportRunPayload {
-  bankFile: File;
+  bankFileA: File;
+  bankFileB: File;
   glFile: File;
   label: string;
   accountIdentifier?: string;
@@ -289,8 +290,9 @@ export interface CreateImportRunPayload {
   periodMonth?: number;
 }
 
-/** Bytes sent so far vs. the total request body size, reported while the combined bank+GL
- * multipart upload is in flight (Screen 02's per-file progress bars). */
+/** Bytes sent so far vs. the total request body size, reported while the combined bank + GL
+ * multipart upload (both bank workbooks plus the GL workbook) is in flight (Screen 02's per-file
+ * progress bars). */
 export interface UploadProgressEvent {
   loadedBytes: number;
   totalBytes: number;
@@ -309,7 +311,8 @@ export interface CreateImportRunOptions {
  * `xhr.upload`'s `progress` event is the only standard way to observe bytes sent for a multipart
  * body still in flight, which Screen 02's per-file progress bars need. */
 export const createImportRunRequest = ({
-  bankFile,
+  bankFileA,
+  bankFileB,
   glFile,
   label,
   accountIdentifier,
@@ -320,7 +323,8 @@ export const createImportRunRequest = ({
   signal,
 }: CreateImportRunPayload & CreateImportRunOptions): Promise<ImportRunSummary> => {
   const formData = new FormData();
-  formData.append('bankFile', bankFile);
+  formData.append('bankFileA', bankFileA);
+  formData.append('bankFileB', bankFileB);
   formData.append('glFile', glFile);
   formData.append('label', label);
   if (accountIdentifier) {

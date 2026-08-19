@@ -3,7 +3,7 @@
  * similarity threshold windows to help calibrate matching configuration values.
  * Invoked via `npm run analyze:reconciliation`.
  */
-import { normalizeTransactions, parseWorkbook, tokenSimilarity } from '@recon/core';
+import { toNormalizedTransactions, tokenSimilarity, validateFile } from '@recon/core';
 import { resolveReconciliationConfig, sampleAccountOverrides } from '@recon/config';
 
 import { basename } from 'node:path';
@@ -207,30 +207,41 @@ const main = async (): Promise<void> => {
     readFile(options.glPath),
   ]);
 
-  const [bank, gl] = await Promise.all([
-    parseWorkbook({
-      source: 'bank',
-      fileName: basename(options.bankPath),
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: bankBuffer.length,
-      buffer: bankBuffer,
-      config: config.bank,
-    }),
-    parseWorkbook({
-      source: 'gl',
-      fileName: basename(options.glPath),
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      sizeBytes: glBuffer.length,
-      buffer: glBuffer,
-      config: config.gl,
-    }),
+  const [bankOutcome, glOutcome] = await Promise.all([
+    validateFile({ bytes: bankBuffer, fileFormat: 'XLSX', fileType: 'BANK' }),
+    validateFile({ bytes: glBuffer, fileFormat: 'XLSX', fileType: 'GL' }),
   ]);
 
-  const transactions = normalizeTransactions(
-    `analysis-${options.accountId}`,
-    [...bank.rawRows, ...gl.rawRows],
-    config,
-  );
+  for (const [label, outcome] of [
+    ['bank', bankOutcome],
+    ['gl', glOutcome],
+  ] as const) {
+    if (!outcome.gatesRun.includes('CELL_VALUES')) {
+      throw new Error(
+        `${label} file failed structural validation -- issues: ${JSON.stringify(outcome.issues)}`,
+      );
+    }
+    if (outcome.issues.some((issue) => issue.severity === 'ERROR')) {
+      console.error(
+        `${label} file has ${outcome.totalRowCount - outcome.normalized.length} row(s) excluded by validation errors -- issues: ${JSON.stringify(outcome.issues)}`,
+      );
+    }
+  }
+
+  const transactions = [
+    ...toNormalizedTransactions(bankOutcome.normalized, {
+      runId: `analysis-${options.accountId}`,
+      sourceFileId: 'bank',
+      spreadsheetFileName: basename(options.bankPath),
+      config,
+    }),
+    ...toNormalizedTransactions(glOutcome.normalized, {
+      runId: `analysis-${options.accountId}`,
+      sourceFileId: 'gl',
+      spreadsheetFileName: basename(options.glPath),
+      config,
+    }),
+  ];
 
   const active = transactions.filter(
     (item) => !item.isExcluded && item.dataQualityIssues.length === 0,

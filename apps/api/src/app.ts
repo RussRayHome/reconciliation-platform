@@ -57,8 +57,15 @@ import {
   type PostgresReconciliationReadModelStore,
   type RunApprovalListItem,
 } from '@recon/persistence';
-import { CsvParser } from '@recon/core';
-import ExcelJS from 'exceljs';
+import {
+  BankFilenameAccountParseError,
+  BankFileStructuralError,
+  mergeBankFiles,
+  toNormalizedTransactions,
+  toRawTransactionRows,
+  validateFile,
+  type ValidationIssue,
+} from '@recon/core';
 import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -99,7 +106,7 @@ import {
 } from './services/importValidationQueue';
 import {
   runImportValidationWorkflow,
-  type ImportValidationFileBytes,
+  type ImportValidationTriggerFile,
 } from './services/importValidationService';
 import {
   buildErrorReportCsv,
@@ -141,7 +148,8 @@ import {
 
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
-import { executeReconciliation } from './services/reconciliationService';
+import { executeReconciliationFromNormalized } from './services/reconciliationService';
+import { defaultReconciliationConfig } from '@recon/config';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
@@ -328,6 +336,33 @@ const getUploadedReconciliationFiles = (files: UploadFileMap): ReconciliationUpl
   return { bankFile, glFile };
 };
 
+/** `/api/imports/runs` only -- deliberately separate from `UploadFileMap`/
+ * `getUploadedReconciliationFiles` above, which the unrelated legacy `/api/reconciliation/run`
+ * route also uses for its single-bank-file shape (Issue #141 does not touch that route). */
+type ImportRunUploadFileMap = {
+  bankFileA?: Express.Multer.File[];
+  bankFileB?: Express.Multer.File[];
+  glFile?: Express.Multer.File[];
+};
+
+type ImportRunUploadFiles = {
+  bankFileA: Express.Multer.File;
+  bankFileB: Express.Multer.File;
+  glFile: Express.Multer.File;
+};
+
+const getUploadedImportRunFiles = (files: ImportRunUploadFileMap): ImportRunUploadFiles | null => {
+  const bankFileA = files.bankFileA?.[0];
+  const bankFileB = files.bankFileB?.[0];
+  const glFile = files.glFile?.[0];
+
+  if (!bankFileA || !bankFileB || !glFile) {
+    return null;
+  }
+
+  return { bankFileA, bankFileB, glFile };
+};
+
 const toQueuedReconciliationFiles = (
   files: ReconciliationUploadFiles,
 ): QueuedReconciliationFiles => ({
@@ -377,51 +412,22 @@ const fromQueuedReconciliationFiles = (
   };
 };
 
-/** Re-encodes CSV bytes into an in-memory XLSX workbook, same header row and cell values,
- * verbatim -- no type coercion, no reordering. Exists solely to bridge into
- * executeReconciliation, which has no CSV path (see toReconciliationUploadFile's own comment). */
-const synthesizeXlsxFromCsv = async (bytes: Buffer): Promise<Buffer> => {
-  const { headers, rows } = await new CsvParser().parse(bytes);
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Sheet1');
-  worksheet.addRow(headers);
-  for (const row of rows) {
-    worksheet.addRow(headers.map((header) => row[header] ?? ''));
-  }
-  const binary = await workbook.xlsx.writeBuffer();
-  return Buffer.from(binary);
+/** Issue #137: File-Validation-sourced files have no worksheet/header-row/exclusion concept of
+ * their own (that was the old alias-based pathway's XLSX-specific notion) -- these are fixed
+ * placeholders for the `SourceFile` shape `executeReconciliationFromNormalized` still needs for
+ * audit/export display, matching the row-1-header/row-2-data convention every File Validation
+ * input already follows (docs/transaction-csv-spec.md §4). */
+const FILE_VALIDATION_SOURCE_FILE_DEFAULTS = {
+  worksheetName: '',
+  headerRow: 1,
+  transactionStartRow: 2,
+  excludedRowNumbers: [] as number[],
 };
 
-/** Same reconstruction as fromQueuedReconciliationFiles above, but for File Imports &
- * Validation's already-stored bytes (BlobStorage.get). executeReconciliation's own parsing
- * (parseWorkbook, packages/core/src/parsers/excelParser.ts) is XLSX-only -- it has no CSV path at
- * all, unlike the File Validation Engine's own extension-based dispatch, since the *existing*
- * /api/reconciliation/run route it backs has only ever accepted .xlsx uploads. Rather than
- * teaching the matching engine about CSV (crossing back into "Rule Engineer" territory this
- * feature was explicitly built to stay out of), a CSV source gets re-encoded into an XLSX
- * workbook here, at the apps/api bridge point only -- neither packages/core/fileValidation nor
- * packages/core/matching know this conversion exists. */
-const toReconciliationUploadFile = async (
-  file: ImportValidationFileBytes,
-  fieldname: 'bankFile' | 'glFile',
-): Promise<Express.Multer.File> => {
-  const isCsv = resolveSourceFormat(file.originalname) === 'csv';
-  const buffer = isCsv ? await synthesizeXlsxFromCsv(file.buffer) : file.buffer;
-  const originalname = isCsv ? file.originalname.replace(/\.csv$/i, '.xlsx') : file.originalname;
-
-  return {
-    fieldname,
-    originalname,
-    encoding: '7bit',
-    mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    size: buffer.byteLength,
-    buffer,
-    destination: '',
-    filename: originalname,
-    path: '',
-    stream: Readable.from(buffer),
-  };
-};
+const mimeTypeForFileName = (fileName: string): string =>
+  resolveSourceFormat(fileName) === 'csv'
+    ? 'text/csv'
+    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const sanitizeQueuedReconciliationResult = (
   queuedResult: QueuedReconciliationResult,
@@ -540,6 +546,23 @@ const registerLifecycleJob = async (
   return { runId, bankSourceFileId, glSourceFileId };
 };
 
+/** Thrown by `runReconciliationWorkflow` when either uploaded file fails File Validation
+ * (Issue #137, Phase 7). This route has no partial-import/review screen the way the Import flow
+ * does, so the decided behavior is to fail the request outright with the validation issues rather
+ * than silently degrading or falling back to the old lenient pathway -- callers catch this
+ * specifically (before the generic error handler) to respond with the issues instead of a bare
+ * 500. No lifecycle job is registered when this throws, so a rejected upload never creates an
+ * orphaned CREATED-status reconciliation_job row. */
+class ReconciliationFileValidationError extends Error {
+  constructor(
+    public readonly bankIssues: ValidationIssue[],
+    public readonly glIssues: ValidationIssue[],
+  ) {
+    super('Uploaded files failed File Validation.');
+    this.name = 'ReconciliationFileValidationError';
+  }
+}
+
 const runReconciliationWorkflow = async (input: {
   body: Record<string, unknown>;
   files: ReconciliationUploadFiles;
@@ -553,6 +576,29 @@ const runReconciliationWorkflow = async (input: {
   const { accountIdentifier, periodLabel, reconciliationFrequency, varianceOverrides } =
     parseReconciliationRequestInput(input.body);
   const correlationId = resolveCorrelationId(input.requestId);
+
+  const [bankOutcome, glOutcome] = await Promise.all([
+    validateFile({
+      bytes: input.files.bankFile.buffer,
+      fileFormat: resolveSourceFormat(input.files.bankFile.originalname) === 'csv' ? 'CSV' : 'XLSX',
+      fileType: 'BANK',
+    }),
+    validateFile({
+      bytes: input.files.glFile.buffer,
+      fileFormat: resolveSourceFormat(input.files.glFile.originalname) === 'csv' ? 'CSV' : 'XLSX',
+      fileType: 'GL',
+    }),
+  ]);
+
+  if (!bankOutcome.ok || !glOutcome.ok) {
+    input.requestLog.info({
+      action: 'reconciliation.run.validation_failed',
+      bankIssueCount: bankOutcome.issues.length,
+      glIssueCount: glOutcome.issues.length,
+    });
+    throw new ReconciliationFileValidationError(bankOutcome.issues, glOutcome.issues);
+  }
+
   const lifecycleContext = await registerLifecycleJob(
     input.lifecycleStore,
     correlationId,
@@ -571,17 +617,56 @@ const runReconciliationWorkflow = async (input: {
     ? await loadPayeeAliases(input.pool, input.organizationId, accountIdentifier)
     : [];
 
-  const run = await executeReconciliation({
+  const bankTransactionContext = {
+    runId: lifecycleContext.runId,
+    sourceFileId: lifecycleContext.bankSourceFileId,
+    spreadsheetFileName: input.files.bankFile.originalname,
+    config: defaultReconciliationConfig,
+  };
+  const glTransactionContext = {
+    runId: lifecycleContext.runId,
+    sourceFileId: lifecycleContext.glSourceFileId,
+    spreadsheetFileName: input.files.glFile.originalname,
+    config: defaultReconciliationConfig,
+  };
+
+  const normalizedTransactions = [
+    ...toNormalizedTransactions(bankOutcome.normalized, bankTransactionContext),
+    ...toNormalizedTransactions(glOutcome.normalized, glTransactionContext),
+  ];
+  const rawRows = [
+    ...toRawTransactionRows(bankOutcome.normalized, bankTransactionContext),
+    ...toRawTransactionRows(glOutcome.normalized, glTransactionContext),
+  ];
+  const sourceFiles = [
+    {
+      id: lifecycleContext.bankSourceFileId,
+      source: 'bank' as const,
+      fileName: input.files.bankFile.originalname,
+      mimeType: input.files.bankFile.mimetype,
+      sizeBytes: input.files.bankFile.size,
+      uploadedAt: new Date().toISOString(),
+      ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
+    },
+    {
+      id: lifecycleContext.glSourceFileId,
+      source: 'gl' as const,
+      fileName: input.files.glFile.originalname,
+      mimeType: input.files.glFile.mimetype,
+      sizeBytes: input.files.glFile.size,
+      uploadedAt: new Date().toISOString(),
+      ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
+    },
+  ];
+
+  const run = await executeReconciliationFromNormalized({
     correlationId,
     runId: lifecycleContext.runId,
     organizationId: input.organizationId,
     lifecycleStore: input.lifecycleStore,
-    sourceFileIds: {
-      bank: lifecycleContext.bankSourceFileId,
-      gl: lifecycleContext.glSourceFileId,
-    },
-    bankFile: input.files.bankFile,
-    glFile: input.files.glFile,
+    sourceFiles,
+    rawRows,
+    normalizedTransactions,
     accountIdentifier,
     reconciliationFrequency,
     periodLabel,
@@ -610,36 +695,109 @@ const runReconciliationWorkflow = async (input: {
 };
 
 /** The "trigger the existing GL<->Bank matching pipeline immediately" half of Phase 6 (submit &
- * async validation) -- runs the *existing* atomic reconciliation flow verbatim against an import
- * run's already-validated bytes, which is also what registers them into the older pipeline's own
- * audit trail (reconciliation_job/reconciliation_source_file/reconciliation_source_file_content).
- * The id that flow returns doubles as reconciliation_job.id (changeset 0048's own comment) --
- * that's what reconciliation_run.matching_job_id links to. */
+ * async validation) -- Issue #137: runs the reconciliation pipeline directly against the File
+ * Validation Engine's already-validated `NormalizedRecord`s (via `toNormalizedTransactions`/
+ * `toRawTransactionRows`), never re-parsing the original bytes through the old alias-based
+ * pathway. Still registers the original bytes into the older pipeline's own audit trail
+ * (reconciliation_job/reconciliation_source_file/reconciliation_source_file_content) via
+ * `registerLifecycleJob`, since `reconciliation_run.matching_job_id` (changeset 0048) links to
+ * that job id specifically -- only the parsing step is skipped, not the audit registration. */
 const triggerMatchingForImportRun = async (input: {
-  files: { bankFile: ImportValidationFileBytes; glFile: ImportValidationFileBytes };
+  files: { bankFile: ImportValidationTriggerFile; glFile: ImportValidationTriggerFile };
   organizationId: string;
   repository: InMemoryRunRepository;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   pool?: Pool;
   requestLog: pino.Logger;
 }): Promise<{ matchingJobId: string }> => {
-  const [bankFile, glFile] = await Promise.all([
-    toReconciliationUploadFile(input.files.bankFile, 'bankFile'),
-    toReconciliationUploadFile(input.files.glFile, 'glFile'),
-  ]);
+  const correlationId = randomUUID();
 
-  const workflowResult = await runReconciliationWorkflow({
-    body: {},
-    files: { bankFile, glFile },
-    requestId: randomUUID(),
-    organizationId: input.organizationId,
-    requestLog: input.requestLog,
-    repository: input.repository,
-    lifecycleStore: input.lifecycleStore,
-    pool: input.pool,
+  const toUploadShape = (file: ImportValidationTriggerFile): Express.Multer.File => ({
+    fieldname: 'file',
+    originalname: file.originalname,
+    encoding: '7bit',
+    mimetype: mimeTypeForFileName(file.originalname),
+    size: file.buffer.byteLength,
+    buffer: file.buffer,
+    destination: '',
+    filename: file.originalname,
+    path: '',
+    stream: Readable.from(file.buffer),
   });
 
-  return { matchingJobId: workflowResult.run.id };
+  const lifecycleContext = await registerLifecycleJob(
+    input.lifecycleStore,
+    correlationId,
+    input.organizationId,
+    {},
+    { bankFile: toUploadShape(input.files.bankFile), glFile: toUploadShape(input.files.glFile) },
+  );
+
+  const aliases = input.pool
+    ? await loadPayeeAliases(input.pool, input.organizationId, undefined)
+    : [];
+
+  const bankTransactionContext = {
+    runId: lifecycleContext.runId,
+    sourceFileId: lifecycleContext.bankSourceFileId,
+    spreadsheetFileName: input.files.bankFile.originalname,
+    config: defaultReconciliationConfig,
+  };
+  const glTransactionContext = {
+    runId: lifecycleContext.runId,
+    sourceFileId: lifecycleContext.glSourceFileId,
+    spreadsheetFileName: input.files.glFile.originalname,
+    config: defaultReconciliationConfig,
+  };
+
+  const normalizedTransactions = [
+    ...toNormalizedTransactions(input.files.bankFile.normalized, bankTransactionContext),
+    ...toNormalizedTransactions(input.files.glFile.normalized, glTransactionContext),
+  ];
+  const rawRows = [
+    ...toRawTransactionRows(input.files.bankFile.normalized, bankTransactionContext),
+    ...toRawTransactionRows(input.files.glFile.normalized, glTransactionContext),
+  ];
+  const sourceFiles = [
+    {
+      id: lifecycleContext.bankSourceFileId,
+      source: 'bank' as const,
+      fileName: input.files.bankFile.originalname,
+      mimeType: mimeTypeForFileName(input.files.bankFile.originalname),
+      sizeBytes: input.files.bankFile.buffer.byteLength,
+      uploadedAt: new Date().toISOString(),
+      ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
+    },
+    {
+      id: lifecycleContext.glSourceFileId,
+      source: 'gl' as const,
+      fileName: input.files.glFile.originalname,
+      mimeType: mimeTypeForFileName(input.files.glFile.originalname),
+      sizeBytes: input.files.glFile.buffer.byteLength,
+      uploadedAt: new Date().toISOString(),
+      ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
+    },
+  ];
+
+  const run = await executeReconciliationFromNormalized({
+    correlationId,
+    runId: lifecycleContext.runId,
+    organizationId: input.organizationId,
+    lifecycleStore: input.lifecycleStore,
+    sourceFiles,
+    rawRows,
+    normalizedTransactions,
+    aliases,
+  });
+
+  input.repository.save(run);
+  input.requestLog.info({
+    action: 'reconciliation.run.completed',
+    runId: run.id,
+    exceptions: run.exceptions.length,
+  });
+
+  return { matchingJobId: run.id };
 };
 
 /** processJob for the import validation queue (and the synchronous fallback when that queue is
@@ -1324,6 +1482,17 @@ export const createApp = (
           run: sanitizeRun(workflowResult.run),
         };
       } catch (error) {
+        // A File Validation failure is expected user-input rejection, not an application bug --
+        // no lifecycle job was ever registered for it (runReconciliationWorkflow throws before
+        // that step), so there's nothing to mark failed, and it's not captured as an exception.
+        if (error instanceof ReconciliationFileValidationError) {
+          return {
+            status: 'failed',
+            failedAt: new Date().toISOString(),
+            reason: `File Validation failed: ${error.bankIssues.length} bank issue(s), ${error.glIssues.length} GL issue(s).`,
+          };
+        }
+
         await handleFailedReconciliationRun({
           requestId: payload.requestId,
           requestBody: payload.body,
@@ -2169,6 +2338,17 @@ export const createApp = (
 
         response.status(201).json(sanitizeRun(workflowResult.run));
       } catch (error) {
+        // File Validation failure: fail the request with the issues rather than a generic 500 --
+        // no lifecycle job was ever registered for it, so there's nothing to mark failed.
+        if (error instanceof ReconciliationFileValidationError) {
+          response.status(400).json({
+            message: 'Uploaded files failed File Validation.',
+            bankIssues: error.bankIssues,
+            glIssues: error.glIssues,
+          });
+          return;
+        }
+
         const requestBody = (request.body ?? {}) as Record<string, unknown>;
         await handleFailedReconciliationRun({
           requestId: request.id,
@@ -2430,14 +2610,13 @@ export const createApp = (
   // ── File Imports & Validation: create/read a reconciliation_run + its Bank/GL source files ──────
   // No routes here touch validation_issue/canonical_record yet -- this is purely T5(persistence)'s
   // create/read surface (DRAFT status only). Submitting a run for validation is Phase 6, not built.
-  // Reuses getUploadedReconciliationFiles: both routes require the same bankFile+glFile field
-  // shape, just from importUpload (.xlsx/.csv) rather than upload (.xlsx only).
   const toImportRunFile = (
-    role: 'BANK' | 'GL',
+    role: CreateImportRunFileInput['role'],
+    sourceType: 'BANK' | 'GL',
     file: Express.Multer.File,
   ): CreateImportRunFileInput => ({
     role,
-    sourceType: role,
+    sourceType,
     originalFilename: file.originalname,
     fileFormat: resolveSourceFormat(file.originalname) === 'csv' ? 'CSV' : 'XLSX',
     bytes: file.buffer,
@@ -2446,7 +2625,8 @@ export const createApp = (
   app.post(
     '/api/imports/runs',
     importUpload.fields([
-      { name: 'bankFile', maxCount: 1 },
+      { name: 'bankFileA', maxCount: 1 },
+      { name: 'bankFileB', maxCount: 1 },
       { name: 'glFile', maxCount: 1 },
     ]),
     async (request, response, next) => {
@@ -2461,10 +2641,25 @@ export const createApp = (
       }
 
       try {
-        const files = getUploadedReconciliationFiles((request.files ?? {}) as UploadFileMap);
+        const files = getUploadedImportRunFiles((request.files ?? {}) as ImportRunUploadFileMap);
         if (!files) {
           response.status(400).json({
-            message: 'Both bankFile and glFile must be provided as .csv or .xlsx uploads.',
+            message:
+              'bankFileA, bankFileB, and glFile must all be provided as .csv or .xlsx uploads.',
+          });
+          return;
+        }
+
+        // ADR-0003 / Issue #141: two bank files merge into one unified dataset before File
+        // Validation ever runs. `findOrCreateImportFile` (importRunStore.ts) dedupes an
+        // uploaded file's import_file row by (organization, content hash, source_type) -- both
+        // raw bank uploads share source_type 'BANK', so byte-identical files (the same file
+        // attached to both slots by mistake) would dedupe to the same import_file row and the
+        // second run_source_file insert would violate its own UNIQUE constraint. Caught here as
+        // a clean 400 rather than surfacing as an unhandled 500 from that constraint violation.
+        if (computeSha256Hex(files.bankFileA.buffer) === computeSha256Hex(files.bankFileB.buffer)) {
+          response.status(400).json({
+            message: 'Bank Account A and Bank Account B files cannot be identical uploads.',
           });
           return;
         }
@@ -2475,6 +2670,19 @@ export const createApp = (
           return;
         }
 
+        const merged = await mergeBankFiles([
+          {
+            bytes: files.bankFileA.buffer,
+            fileFormat: resolveSourceFormat(files.bankFileA.originalname) === 'csv' ? 'CSV' : 'XLSX',
+            originalFilename: files.bankFileA.originalname,
+          },
+          {
+            bytes: files.bankFileB.buffer,
+            fileFormat: resolveSourceFormat(files.bankFileB.originalname) === 'csv' ? 'CSV' : 'XLSX',
+            originalFilename: files.bankFileB.originalname,
+          },
+        ]);
+
         const importRunStore = new PostgresImportRunStore(pool!);
         const summary = await importRunStore.createRun({
           organizationId: request.auth!.organizationId,
@@ -2483,11 +2691,40 @@ export const createApp = (
           frequency: bodyResult.data.frequency,
           periodYear: bodyResult.data.periodYear,
           periodMonth: bodyResult.data.periodMonth,
-          files: [toImportRunFile('BANK', files.bankFile), toImportRunFile('GL', files.glFile)],
+          files: [
+            toImportRunFile('BANK_ACCOUNT_A', 'BANK', files.bankFileA),
+            toImportRunFile('BANK_ACCOUNT_B', 'BANK', files.bankFileB),
+            {
+              role: 'BANK_MERGED',
+              sourceType: 'BANK',
+              originalFilename: `(merged) ${files.bankFileA.originalname} + ${files.bankFileB.originalname}`,
+              fileFormat: merged.fileFormat,
+              bytes: merged.bytes,
+            },
+            toImportRunFile('GL', 'GL', files.glFile),
+          ],
         });
 
         response.status(201).json(summary);
       } catch (error) {
+        // Filename-parsing failure is an upload-level problem, not File Validation content
+        // problem -- never routed through validation_issue/rule_version.
+        if (error instanceof BankFilenameAccountParseError) {
+          response.status(400).json({ message: error.message });
+          return;
+        }
+        // A raw per-account file's own structural failure (bad/missing header, wrong column
+        // order) -- caught pre-merge so it's attributable to the specific file, not diluted into
+        // per-row noise against the merged output. No lifecycle job/import_file rows exist yet
+        // for this run, so nothing needs to be marked failed.
+        if (error instanceof BankFileStructuralError) {
+          response.status(400).json({
+            message: error.message,
+            originalFilename: error.originalFilename,
+            issues: error.issues,
+          });
+          return;
+        }
         next(error);
       }
     },
@@ -2892,17 +3129,42 @@ export const createApp = (
       }
 
       const summary = await importRunStore.getRunSummary(organizationId, runId);
-      const bankFileSummary = summary!.files.find((file) => file.role === 'BANK')!;
+      const bankFileSummary = summary!.files.find((file) => file.role === 'BANK_MERGED')!;
       const glFileSummary = summary!.files.find((file) => file.role === 'GL')!;
       const [bankWithBytes, glWithBytes] = await Promise.all([
         importRunStore.getFileWithBytes(organizationId, runId, bankFileSummary.importFileId),
         importRunStore.getFileWithBytes(organizationId, runId, glFileSummary.importFileId),
       ]);
 
+      // Re-runs File Validation against the already-fetched bytes rather than persisting/fetching
+      // a second copy of canonical_record -- validateFile is pure and deterministic, and this run
+      // already passed validation once (or is here specifically because skipInvalidRows accepted
+      // it despite some rows failing), so this is a cheap re-derivation, not new business logic.
+      const [bankOutcome, glOutcome] = await Promise.all([
+        validateFile({
+          bytes: bankWithBytes!.bytes,
+          fileFormat: bankFileSummary.fileFormat,
+          fileType: 'BANK',
+        }),
+        validateFile({
+          bytes: glWithBytes!.bytes,
+          fileFormat: glFileSummary.fileFormat,
+          fileType: 'GL',
+        }),
+      ]);
+
       const { matchingJobId } = await triggerMatchingForImportRun({
         files: {
-          bankFile: { buffer: bankWithBytes!.bytes, originalname: bankWithBytes!.originalFilename },
-          glFile: { buffer: glWithBytes!.bytes, originalname: glWithBytes!.originalFilename },
+          bankFile: {
+            buffer: bankWithBytes!.bytes,
+            originalname: bankWithBytes!.originalFilename,
+            normalized: bankOutcome.normalized,
+          },
+          glFile: {
+            buffer: glWithBytes!.bytes,
+            originalname: glWithBytes!.originalFilename,
+            normalized: glOutcome.normalized,
+          },
         },
         organizationId,
         repository,

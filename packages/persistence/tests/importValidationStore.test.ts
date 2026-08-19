@@ -31,7 +31,7 @@ const buildRunInput = (overrides: Partial<CreateImportRunInput> = {}): CreateImp
   periodYear: 2026,
   periodMonth: 8,
   files: [
-    { role: 'BANK', sourceType: 'BANK', originalFilename: 'bank.csv', fileFormat: 'CSV', bytes: bankBytes },
+    { role: 'BANK_MERGED', sourceType: 'BANK', originalFilename: 'bank.csv', fileFormat: 'CSV', bytes: bankBytes },
     { role: 'GL', sourceType: 'GL', originalFilename: 'gl.csv', fileFormat: 'CSV', bytes: glBytes },
   ],
   ...overrides,
@@ -217,26 +217,26 @@ describe('PostgresImportValidationStore', () => {
     const store = new PostgresImportValidationStore(pool);
     const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
 
-    expect(ruleVersionIds.size).toBe(45);
-    expect(ruleVersionIds.get('BANK_ID_REQUIRED')).toBeTruthy();
-    expect(ruleVersionIds.get('GL_UNBALANCED')).toBeTruthy();
+    expect(ruleVersionIds.size).toBe(24);
+    expect(ruleVersionIds.get('BANK_SEQUENCE_REQUIRED')).toBeTruthy();
+    expect(ruleVersionIds.get('GL_AMOUNT_FORMAT')).toBeTruthy();
     expect(ruleVersionIds.get('STRUCT_HEADER_MISSING')).toBeTruthy();
   });
 
   describe('recordFileValidationOutcome', () => {
     const errorIssue: ValidationIssueInput = {
       severity: 'ERROR',
-      code: 'BANK_ID_REQUIRED',
-      field: 'transaction_id',
+      code: 'BANK_SEQUENCE_REQUIRED',
+      field: 'Sequence Number',
       rowNumber: 3,
-      message: 'transaction_id is required',
+      message: 'Sequence Number is required',
     };
     const warningIssue: ValidationIssueInput = {
       severity: 'WARNING',
-      code: 'BANK_AMOUNT_ZERO',
-      field: 'amount',
+      code: 'GL_AMOUNT_ZERO',
+      field: 'Amount',
       rowNumber: 1,
-      message: 'amount is zero',
+      message: 'Amount is zero',
     };
     const normalizedRecord: CanonicalRecordInput = {
       sourceType: 'BANK',
@@ -260,7 +260,7 @@ describe('PostgresImportValidationStore', () => {
       const store = new PostgresImportValidationStore(pool);
       const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
       const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
-      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const bankFile = run.files.find((file) => file.role === 'BANK_MERGED')!;
       const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
 
       const result = await store.recordFileValidationOutcome(
@@ -283,8 +283,8 @@ describe('PostgresImportValidationStore', () => {
         [bankFile.importFileId],
       );
       expect(issueRows.rows).toHaveLength(2);
-      expect(issueRows.rows[0]?.rule_version_id).toBe(ruleVersionIds.get('BANK_AMOUNT_ZERO'));
-      expect(issueRows.rows[1]?.rule_version_id).toBe(ruleVersionIds.get('BANK_ID_REQUIRED'));
+      expect(issueRows.rows[0]?.rule_version_id).toBe(ruleVersionIds.get('BANK_SEQUENCE_REQUIRED'));
+      expect(issueRows.rows[1]?.rule_version_id).toBe(ruleVersionIds.get('GL_AMOUNT_ZERO'));
 
       const canonicalRows = await pool.query<{ record_id: string; reference_ids: { reference: string } }>(
         'SELECT record_id, reference_ids FROM canonical_record WHERE import_file_id = $1',
@@ -323,7 +323,7 @@ describe('PostgresImportValidationStore', () => {
       const store = new PostgresImportValidationStore(pool);
       const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
       const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
-      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const bankFile = run.files.find((file) => file.role === 'BANK_MERGED')!;
       const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
 
       const result = await store.recordFileValidationOutcome(
@@ -349,7 +349,7 @@ describe('PostgresImportValidationStore', () => {
       const store = new PostgresImportValidationStore(pool);
       const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
       const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
-      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const bankFile = run.files.find((file) => file.role === 'BANK_MERGED')!;
       const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
 
       const result = await store.recordFileValidationOutcome(
@@ -375,7 +375,7 @@ describe('PostgresImportValidationStore', () => {
       const store = new PostgresImportValidationStore(pool);
       const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
       const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
-      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const bankFile = run.files.find((file) => file.role === 'BANK_MERGED')!;
 
       await expect(
         store.recordFileValidationOutcome(
@@ -403,7 +403,7 @@ describe('PostgresImportValidationStore', () => {
       const store = new PostgresImportValidationStore(pool);
       const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
       const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
-      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const bankFile = run.files.find((file) => file.role === 'BANK_MERGED')!;
       const glFile = run.files.find((file) => file.role === 'GL')!;
       const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
 
@@ -415,8 +415,8 @@ describe('PostgresImportValidationStore', () => {
           reconciliationRunId: run.id,
           totalRowCount: 2,
           issues: [
-            { severity: 'ERROR', code: 'BANK_ID_REQUIRED', field: 'transaction_id', rowNumber: 2, message: 'missing' },
-            { severity: 'WARNING', code: 'BANK_AMOUNT_ZERO', field: 'amount', rowNumber: 1, message: 'zero' },
+            { severity: 'ERROR', code: 'BANK_SEQUENCE_REQUIRED', field: 'Sequence Number', rowNumber: 2, message: 'missing' },
+            { severity: 'ERROR', code: 'BANK_DATE_REQUIRED', field: 'Date', rowNumber: 1, message: 'missing' },
           ],
           normalized: [
             {
@@ -446,7 +446,7 @@ describe('PostgresImportValidationStore', () => {
           reconciliationRunId: run.id,
           totalRowCount: 1,
           issues: [
-            { severity: 'ERROR', code: 'GL_ENTRY_ID_REQUIRED', field: 'entry_id', rowNumber: 1, message: 'missing' },
+            { severity: 'WARNING', code: 'GL_AMOUNT_ZERO', field: 'Amount', rowNumber: 1, message: 'zero' },
           ],
           normalized: [
             {
@@ -511,7 +511,7 @@ describe('PostgresImportValidationStore', () => {
           severity: 'WARNING',
         });
         expect(page!.total).toBe(1);
-        expect(page!.items[0]?.code).toBe('BANK_AMOUNT_ZERO');
+        expect(page!.items[0]?.code).toBe('GL_AMOUNT_ZERO');
       });
 
       it('filters by code', async () => {
@@ -521,13 +521,13 @@ describe('PostgresImportValidationStore', () => {
         const store = new PostgresImportValidationStore(pool);
 
         const page = await store.listRunIssues(defaultOrganizationId, run.id, 50, 0, {
-          code: 'GL_ENTRY_ID_REQUIRED',
+          code: 'GL_AMOUNT_ZERO',
         });
         expect(page!.total).toBe(1);
         expect(page!.items[0]).toMatchObject({
-          code: 'GL_ENTRY_ID_REQUIRED',
-          severity: 'ERROR',
-          field: 'entry_id',
+          code: 'GL_AMOUNT_ZERO',
+          severity: 'WARNING',
+          field: 'Amount',
           rowNumber: 1,
         });
       });
@@ -687,7 +687,7 @@ describe('PostgresImportValidationStore', () => {
         label,
         files: [
           {
-            role: 'BANK',
+            role: 'BANK_MERGED',
             sourceType: 'BANK',
             originalFilename: 'bank.csv',
             fileFormat: 'CSV',
@@ -705,7 +705,7 @@ describe('PostgresImportValidationStore', () => {
       const store = new PostgresImportValidationStore(pool);
       const submitted = await store.submitRun(defaultOrganizationId, run.id, submittedByUserName);
       const importJobId = submitted.outcome === 'submitted' ? submitted.importJobId : '';
-      const bankFile = run.files.find((file) => file.role === 'BANK')!;
+      const bankFile = run.files.find((file) => file.role === 'BANK_MERGED')!;
       const glFile = run.files.find((file) => file.role === 'GL')!;
       const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
 
@@ -744,10 +744,10 @@ describe('PostgresImportValidationStore', () => {
           issues: [
             {
               severity: 'ERROR',
-              code: 'BANK_AMOUNT_FORMAT',
-              field: 'amount',
+              code: 'BANK_DEBIT_FORMAT',
+              field: 'Debit',
               rowNumber: 3,
-              message: '"amount" is not a valid number.',
+              message: '"Debit" is not a valid amount.',
             },
           ],
           normalized: [
@@ -771,8 +771,8 @@ describe('PostgresImportValidationStore', () => {
             {
               severity: 'ERROR',
               code: 'STRUCT_COLUMN_MISSING',
-              field: 'currency_code',
-              message: 'Required column "currency_code" is absent.',
+              field: 'Sequence Number',
+              message: 'Required column "Sequence Number" is absent.',
             },
           ],
           normalized: [],
@@ -781,10 +781,10 @@ describe('PostgresImportValidationStore', () => {
           issues: [
             {
               severity: 'ERROR',
-              code: 'BANK_AMOUNT_FORMAT',
-              field: 'amount',
+              code: 'BANK_DEBIT_FORMAT',
+              field: 'Debit',
               rowNumber: 2,
-              message: '"amount" is not a valid number.',
+              message: '"Debit" is not a valid amount.',
             },
           ],
           normalized: [],

@@ -8,8 +8,8 @@ export type ImportUploadTransferPayload = Omit<ImportRunSubmitPayload, 'onProgre
 
 /** Client-side transfer status for Screen 02's upload cards. There's no chunked/resumable upload
  * backend here (see `ImportUploadCard`'s doc comment) -- "uploading" tracks the one combined
- * bank+GL request's bytes sent so far, and a network failure can only be retried by resending both
- * files from the start, not resumed. */
+ * request's bytes sent so far (both bank workbooks plus the GL workbook), and a network failure
+ * can only be retried by resending every file from the start, not resumed. */
 export type ImportUploadTransferState =
   | { kind: 'idle' }
   | { kind: 'uploading'; loadedBytes: number }
