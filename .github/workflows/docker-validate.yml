@@ -24,7 +24,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      # timeout-minutes below is deliberately much shorter than the job's own budget. This step
+      # normally finishes in well under two minutes (median ~19s, worst observed 75s across 8
+      # historical successful runs) -- but it fetches from an external Debian package mirror
+      # (deb.nodesource.com), the same class of external-network dependency that caused
+      # e2e-functional's install-step hang (2026-08-19 nightly, see that step's own timeout
+      # comment). This exact step hung indefinitely on PR #146's own CI run the same night, with
+      # no per-step timeout to bound it -- only the job's full 30-minute budget. 5 minutes gives
+      # real headroom above the worst *successful* historical duration (75s) while still failing
+      # fast instead of silently burning the whole job budget.
       - name: Set up Node.js
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -63,7 +73,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      # timeout-minutes below is deliberately much shorter than the job's own budget. This step
+      # normally finishes in well under two minutes (median ~19s, worst observed 75s across 8
+      # historical successful runs) -- but it fetches from an external Debian package mirror
+      # (deb.nodesource.com), the same class of external-network dependency that caused
+      # e2e-functional's install-step hang (2026-08-19 nightly, see that step's own timeout
+      # comment). This exact step hung indefinitely on PR #146's own CI run the same night, with
+      # no per-step timeout to bound it -- only the job's full 30-minute budget. 5 minutes gives
+      # real headroom above the worst *successful* historical duration (75s) while still failing
+      # fast instead of silently burning the whole job budget.
       - name: Set up Node.js
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -221,7 +241,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      # timeout-minutes below is deliberately much shorter than the job's own budget. This step
+      # normally finishes in well under two minutes (median ~19s, worst observed 75s across 8
+      # historical successful runs) -- but it fetches from an external Debian package mirror
+      # (deb.nodesource.com), the same class of external-network dependency that caused
+      # e2e-functional's install-step hang (2026-08-19 nightly, see that step's own timeout
+      # comment). This exact step hung indefinitely on PR #146's own CI run the same night, with
+      # no per-step timeout to bound it -- only the job's full 30-minute budget. 5 minutes gives
+      # real headroom above the worst *successful* historical duration (75s) while still failing
+      # fast instead of silently burning the whole job budget.
       - name: Set up Node.js
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -282,7 +312,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      # timeout-minutes below is deliberately much shorter than the job's own budget. This step
+      # normally finishes in well under two minutes (median ~19s, worst observed 75s across 8
+      # historical successful runs) -- but it fetches from an external Debian package mirror
+      # (deb.nodesource.com), the same class of external-network dependency that caused
+      # e2e-functional's install-step hang (2026-08-19 nightly, see that step's own timeout
+      # comment). This exact step hung indefinitely on PR #146's own CI run the same night, with
+      # no per-step timeout to bound it -- only the job's full 30-minute budget. 5 minutes gives
+      # real headroom above the worst *successful* historical duration (75s) while still failing
+      # fast instead of silently burning the whole job budget.
       - name: Set up Node.js
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -316,7 +356,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      # timeout-minutes below is deliberately much shorter than the job's own budget. This step
+      # normally finishes in well under two minutes (median ~19s, worst observed 75s across 8
+      # historical successful runs) -- but it fetches from an external Debian package mirror
+      # (deb.nodesource.com), the same class of external-network dependency that caused
+      # e2e-functional's install-step hang (2026-08-19 nightly, see that step's own timeout
+      # comment). This exact step hung indefinitely on PR #146's own CI run the same night, with
+      # no per-step timeout to bound it -- only the job's full 30-minute budget. 5 minutes gives
+      # real headroom above the worst *successful* historical duration (75s) while still failing
+      # fast instead of silently burning the whole job budget.
       - name: Set up Node.js
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -384,7 +434,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      # timeout-minutes below is deliberately much shorter than the job's own budget. This step
+      # normally finishes in well under two minutes (median ~19s, worst observed 75s across 8
+      # historical successful runs) -- but it fetches from an external Debian package mirror
+      # (deb.nodesource.com), the same class of external-network dependency that caused
+      # e2e-functional's install-step hang (2026-08-19 nightly, see that step's own timeout
+      # comment). This exact step hung indefinitely on PR #146's own CI run the same night, with
+      # no per-step timeout to bound it -- only the job's full 30-minute budget. 5 minutes gives
+      # real headroom above the worst *successful* historical duration (75s) while still failing
+      # fast instead of silently burning the whole job budget.
       - name: Set up Node.js
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
