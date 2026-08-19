@@ -180,6 +180,18 @@ fi
 
 wait_for_postgres
 
+# Issue #134: worker has no HTTP endpoint by design (it never accepts inbound traffic, only pulls
+# from BullMQ/Redis -- see compose.yaml's comment on the service) so "is it running" is the whole
+# check, unlike the HTTP-polled checks above. Not gated by AUX_HEALTH_CHECK_REQUIRED like pgweb/
+# nginx-ui below -- those are optional dev tooling, `worker` is a core service whenever present.
+if has_compose_service "worker"; then
+  if ! is_service_running "worker"; then
+    echo "Worker service (queue consumer) is configured but not running." >&2
+    exit 1
+  fi
+  echo "Worker service health check passed (container running)."
+fi
+
 pgweb_enabled=false
 pgweb_healthy=false
 if has_compose_service "pgweb"; then

@@ -134,7 +134,7 @@ docker compose "${compose_args[@]}" up migrate
 # create it. This second call seeds the application login accounts now that
 # the table is present.
 bash "$ROOT_DIR/scripts/pre-flight/run-users.sh" "$DEPLOY_ENV"
-docker compose "${compose_args[@]}" up -d --force-recreate api web
+docker compose "${compose_args[@]}" up -d --force-recreate api worker web
 if has_compose_service "pgweb"; then
   docker compose "${compose_args[@]}" up -d pgweb
 fi
