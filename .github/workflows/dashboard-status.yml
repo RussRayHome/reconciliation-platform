@@ -368,7 +368,17 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - run: npm ci
+      # timeout-minutes below is deliberately much shorter than the job's own 20-minute budget.
+      # This step normally finishes in well under a minute (median ~28s, p90 ~44s across 72
+      # historical runs) -- but its underlying `apt-get install` occasionally stalls completely on
+      # a slow/stuck package mirror on the runner VM, with zero output once it hangs. Before this
+      # timeout existed, one such stall silently burned the *entire* 20-minute job budget with no
+      # distinguishing signal from an actual test hang (2026-08-19 nightly, e2e-functional shard
+      # 3). 8 minutes gives real headroom above the worst *successful* historical duration (221s)
+      # while still failing far faster than the old full-job timeout, and leaves the bulk of the
+      # 20-minute budget for the actual test run that follows.
       - run: npx playwright install --with-deps chromium
+        timeout-minutes: 8
       # File Imports & Validation (Phase 6+) has no in-memory fallback for the import pipeline --
       # unlike the older atomic /api/reconciliation/run route, POST /api/imports/runs always needs
       # a real Postgres connection. This job used to run against an in-memory backend
