@@ -6,6 +6,16 @@ on:
     branches:
       - main
 
+# Without this, a duplicate/near-simultaneous pull_request event (observed twice on PR #146 the
+# same night this workflow's jobs got their per-step timeouts, ~1s apart, identical head SHA)
+# spins up two full, independent runs of every job below -- doubling real CI cost for zero
+# additional signal, since only the latest run against a given ref ever matters. Cancels a
+# same-ref run in favor of a newer one; different refs (separate PRs) never share a group, so this
+# never cancels unrelated work.
+concurrency:
+  group: docker-validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
