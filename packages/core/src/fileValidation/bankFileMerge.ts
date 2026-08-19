@@ -12,6 +12,8 @@ import { BANKING_HEADERS, REQUIRED_BANKING_HEADERS, type ValidationIssue } from 
  * upload-level filename problem, never a File Validation content issue, so this is never routed
  * through the `validation_issue`/rule-version DB system. */
 export class BankFilenameAccountParseError extends Error {
+  /** @param originalFilename The uploaded bank file's own filename, named back in the message so
+   * the offending file is identifiable when two bank files are uploaded in the same request. */
   constructor(public readonly originalFilename: string) {
     super(
       `Bank file "${originalFilename}" must start with the account number (or its last 4 digits) ` +
@@ -30,6 +32,11 @@ export class BankFilenameAccountParseError extends Error {
  * column blank because none of that file's column names matched anything) instead of one clear
  * "missing column" finding. */
 export class BankFileStructuralError extends Error {
+  /**
+   * @param originalFilename The specific raw bank file that failed, so the caller can attribute
+   * the failure to one of the two per-account uploads rather than the merged output.
+   * @param issues The Step 1/Step 2 structural issues raised against this file on its own.
+   */
   constructor(
     public readonly originalFilename: string,
     public readonly issues: ValidationIssue[],
