@@ -553,6 +553,10 @@ const registerLifecycleJob = async (
  * 500. No lifecycle job is registered when this throws, so a rejected upload never creates an
  * orphaned CREATED-status reconciliation_job row. */
 export class ReconciliationFileValidationError extends Error {
+  /**
+   * @param bankIssues Validation issues found in the uploaded bank file.
+   * @param glIssues Validation issues found in the uploaded GL file.
+   */
   constructor(
     public readonly bankIssues: ValidationIssue[],
     public readonly glIssues: ValidationIssue[],
