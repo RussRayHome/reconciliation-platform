@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset recon:0050-repoint_file_validation_rules_to_template_schema splitStatements:false
+--changeset recon:0051-repoint_file_validation_rules_to_template_schema splitStatements:false
 -- Issue #137: the File Validation Engine validated against an invented snake_case schema
 -- (transaction_id/account_id/entry_id/line_number/etc.) that shared zero header overlap with the
 -- app's actual downloadable Bank/GL templates -- every uploaded file that followed the app's own

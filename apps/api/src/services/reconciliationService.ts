@@ -1,4 +1,10 @@
-import { buildSummaryMetrics, classifyExceptions, exportWorkbook, reconcileMatches } from '@recon/core';
+import {
+  buildSummaryMetrics,
+  classifyExceptions,
+  exportWorkbook,
+  reconcileMatches,
+  type CandidateOutcomeObserver,
+} from '@recon/core';
 import {
   defaultReconciliationConfig,
   resolveReconciliationConfig,
@@ -52,6 +58,24 @@ interface RunReconciliationPipelineInput {
   t0: number;
   log: pino.Logger;
 }
+
+/** Fault-finding detail for the vetting phase, LOG_LEVEL=debug only -- undefined (not a no-op)
+ * when debug isn't enabled, so the O(bank x gl) scoring loop this feeds from pays zero per-pair
+ * overhead in normal operation; gated on the same logger instance that will do the emitting, so
+ * the gate and the emission can never drift out of sync with each other. */
+const buildCandidateOutcomeObserver = (log: pino.Logger): CandidateOutcomeObserver | undefined =>
+  log.isLevelEnabled('debug')
+    ? (candidate, disposition) =>
+        log.debug({
+          action: 'service.match.candidate.outcome',
+          bankTransactionId: candidate.bankTransactionId,
+          glTransactionId: candidate.glTransactionId,
+          ruleName: candidate.ruleName,
+          score: candidate.score,
+          confidence: candidate.confidence,
+          disposition,
+        })
+    : undefined;
 
 /**
  * The shared tail of the reconciliation pipeline -- persistence lifecycle, matching, exception
@@ -160,7 +184,12 @@ const runReconciliationPipeline = async ({
     }
 
     const matchStart = Date.now();
-    matching = reconcileMatches(normalizedTransactions, config.matching, aliases);
+    matching = reconcileMatches(
+      normalizedTransactions,
+      config.matching,
+      aliases,
+      buildCandidateOutcomeObserver(log),
+    );
     const matchResultsByDisposition = matching.matchResults.reduce<Record<string, number>>(
       (acc, result) => {
         acc[result.disposition] = (acc[result.disposition] ?? 0) + 1;
@@ -373,6 +402,12 @@ const runReconciliationPipeline = async ({
 export interface ExecuteReconciliationFromNormalizedInput {
   correlationId: string;
   runId: string;
+  /** Session id (JWT `jti`) of whoever triggered this run, so the entire matching-phase log
+   * narrative can be filtered alongside everything else that happened in the same session --
+   * this module's logger is deliberately independent of request.log (see serviceLogger below,
+   * this function is also reachable from a bare queue worker with no request object), so the
+   * session id has to be threaded in explicitly rather than picked up automatically. */
+  sessionId?: string;
   organizationId: string;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   sourceFiles: SourceFile[];
@@ -396,6 +431,7 @@ export interface ExecuteReconciliationFromNormalizedInput {
 export const executeReconciliationFromNormalized = async ({
   correlationId,
   runId,
+  sessionId,
   organizationId,
   lifecycleStore,
   sourceFiles,
@@ -406,7 +442,7 @@ export const executeReconciliationFromNormalized = async ({
   periodLabel,
   aliases = [],
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
-  const log = serviceLogger.child({ correlationId, accountIdentifier });
+  const log = serviceLogger.child({ correlationId, sessionId, accountIdentifier });
   const t0 = Date.now();
 
   log.info({

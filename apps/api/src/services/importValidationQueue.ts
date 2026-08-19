@@ -13,6 +13,10 @@ export type QueuedImportValidationJobPayload = {
   organizationId: string;
   runId: string;
   importJobId: string;
+  /** Session id (JWT `jti`) of whoever submitted the files, so the worker -- which runs outside
+   * the original request's lifecycle and has no `request.log` to inherit -- can still bind it
+   * onto every log line it emits while processing the job. */
+  sessionId?: string;
 };
 
 export type QueuedImportValidationResult = {

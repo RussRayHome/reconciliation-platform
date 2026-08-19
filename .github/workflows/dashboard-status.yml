@@ -368,31 +368,69 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      # ALLOW_LOCAL_LOGIN_FALLBACK: this runtime has no real Postgres (in-memory backend, via
-      # Playwright's own webServer), so apps/web/tests/e2e/auth.ts's fallback credentials
-      # (rray/rray, bray/bray, rray3/rray3) are the only login path available -- without this,
-      # app.ts rejects every attempt before the fallback logic ever runs. Safe by design, not just
-      # by convention: app.ts refuses to start with this set in a production runtime at all
-      # (ADR-0002 step 7).
-      #
+      # File Imports & Validation (Phase 6+) has no in-memory fallback for the import pipeline --
+      # unlike the older atomic /api/reconciliation/run route, POST /api/imports/runs always needs
+      # a real Postgres connection. This job used to run against an in-memory backend
+      # (ALLOW_LOCAL_LOGIN_FALLBACK) matching the old route's own fallback; that stopped being
+      # sufficient once Screen 01 (Phase 9) made the import pipeline the default landing flow. Same
+      # fix as docker-validate.yml's e2e-functional job -- see that file's own comment for the full
+      # reasoning; kept in sync here since this is a separate job in a separate workflow.
+      - name: Start Postgres and run migrations
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'POSTGRES_DB=reconciliation_platform' \
+            'POSTGRES_USER=recon_app' \
+            'POSTGRES_PASSWORD=change-ci-password' \
+            'POSTGRES_HOST_PORT=5432' \
+            'ENABLE_PGAUDIT=false' \
+            'API_DATABASE_URL=unused' \
+            'JWT_SECRET=unused-ci-placeholder' \
+            > ci-e2e.env
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} up -d postgres --wait
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} run --rm migrate
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} exec -T postgres \
+            psql -U recon_app -d reconciliation_platform < scripts/db/dev-stage/create-users.psql
+      # Runner-user-owned before the container below (running as root) touches it -- same
+      # root-write-wins-ownership gotcha e2e-visual's job hit first (see that job's own "Pre-create
+      # the output directory" step comment). Without this, run-check.ts's later write of meta.json
+      # here, as the unprivileged runner user, fails EACCES.
+      - name: Pre-create the output directory
+        run: mkdir -p .ci-out/e2e
       # DISABLE_API_RATE_LIMIT: the route-sweep and signup specs (ISSUE-026/ISSUE-033) each do
       # real logins in sequence -- against a local Postgres, this reproducibly tripped the API's
       # 120-requests/minute rate limit (a real 429 on /api/auth/me, confirmed via the failing
       # run's network trace) once total e2e request volume crossed that threshold. The limiter is
-      # generic Express middleware applying regardless of persistence backend, so the same risk
-      # exists here even though CI's in-memory backend takes a different login path
-      # (ALLOW_LOCAL_LOGIN_FALLBACK, not real Postgres auth). Safe to disable for this job
-      # specifically: DISABLE_API_RATE_LIMIT has no production-safety guard of its own, but this
-      # env var only ever reaches the ephemeral webServer this job spawns for itself, never a
-      # deployed instance.
+      # generic Express middleware applying regardless of persistence backend. Safe to disable for
+      # this job specifically: DISABLE_API_RATE_LIMIT has no production-safety guard of its own,
+      # but this env var only ever reaches the ephemeral webServer this job spawns for itself,
+      # never a deployed instance.
+      #
+      # DATABASE_URL points the webServer that runs inside the functional-e2e container (Playwright's
+      # own `dev:api:test`, spawned as a child process of the containerized test run -- see
+      # compose.e2e.yaml) at the postgres service just started above, as app_user (least-privilege
+      # runtime role, changeset 0031). Hostname is `postgres` (the compose network name), not
+      # `localhost` -- this test run no longer executes on the bare runner, so the host-mapped port
+      # isn't reachable from inside the container; both this step and functional-e2e run joined to
+      # the same compose project (`-p ...`) so they share that network and can resolve it by name.
+      # No more `npx playwright install --with-deps chromium` step here -- compose.e2e.yaml's
+      # functional-e2e service runs inside docker/e2e-functional.Dockerfile, which bakes the
+      # browser and its OS dependencies in at build time instead of installing them on every job
+      # run. That install step was the source of a real, repeated nightly flake: its underlying
+      # `apt-get install` would occasionally stall completely on a slow/stuck Ubuntu package
+      # mirror, with zero output once it hung (2026-08-19 nightly, e2e-functional shard 3 alone
+      # burned the full 20-minute job budget; a follow-up 8-minute step timeout bounded the hang
+      # but 3 of 4 shards still failed the next run on the same underlying mirror slowness) --
+      # removing the runtime apt-get call entirely removes the failure mode, not just its blast
+      # radius.
       - run: >
           npx tsx scripts/ci/run-check.ts --name "E2E functional tests (shard ${{ matrix.shard }}/4)" --meta .ci-out/e2e/meta.json --
-          npm run test:e2e:functional -- --reporter=list,json
+          docker compose -f compose.yaml -f compose.e2e.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} --profile e2e-functional
+          run --rm functional-e2e npm run test:e2e:functional -- --reporter=list,json
           --shard=${{ matrix.shard }}/4
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e/e2e-results.json
-          ALLOW_LOCAL_LOGIN_FALLBACK: 'true'
+          DATABASE_URL: postgresql://app_user:P%40ssw0rd@postgres:5432/reconciliation_platform
           DISABLE_API_RATE_LIMIT: 'true'
       - if: always()
         uses: actions/upload-artifact@v7

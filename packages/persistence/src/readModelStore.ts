@@ -1757,6 +1757,7 @@ type LoginEventRow = {
   event_type: LoginEventType;
   failure_reason: string | null;
   ip_address: string | null;
+  session_id: string | null;
   created_at: string;
 };
 
@@ -1767,6 +1768,7 @@ const mapLoginEvent = (row: LoginEventRow): LoginEvent => ({
   eventType: row.event_type,
   failureReason: row.failure_reason,
   ipAddress: row.ip_address,
+  sessionId: row.session_id,
   createdAt: row.created_at,
 });
 
@@ -1778,6 +1780,9 @@ export interface RecordLoginEventInput {
   eventType: LoginEventType;
   failureReason?: string;
   ipAddress?: string;
+  /** Session id (JWT `jti`). Omit for LOGIN_FAILURE -- no token is ever minted for a failed
+   * attempt. */
+  sessionId?: string;
 }
 
 /**
@@ -1792,9 +1797,10 @@ export const recordLoginEvent = async (
 ): Promise<LoginEvent> => {
   const result = await pool.query<LoginEventRow>(
     `INSERT INTO reconciliation_login_event
-       (id, organization_id, username, event_type, failure_reason, ip_address)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, organization_id, username, event_type, failure_reason, ip_address, created_at`,
+       (id, organization_id, username, event_type, failure_reason, ip_address, session_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, organization_id, username, event_type, failure_reason, ip_address, session_id,
+       created_at`,
     [
       input.id,
       input.organizationId,
@@ -1802,6 +1808,7 @@ export const recordLoginEvent = async (
       input.eventType,
       input.failureReason ?? null,
       input.ipAddress ?? null,
+      input.sessionId ?? null,
     ],
   );
   const row = result.rows[0];

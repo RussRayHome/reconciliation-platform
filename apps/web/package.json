@@ -14,7 +14,7 @@
     "@recon/domain": "0.1.0",
     "@recon/ui": "0.1.0",
     "@tanstack/react-query": "^5.101.1",
-    "@xyflow/react": "^12.11.2",
+    "@xyflow/react": "^12.11.3",
     "lodash": "^4.18.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

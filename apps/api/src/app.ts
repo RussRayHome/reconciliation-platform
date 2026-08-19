@@ -567,12 +567,18 @@ const runReconciliationWorkflow = async (input: {
   body: Record<string, unknown>;
   files: ReconciliationUploadFiles;
   requestId: unknown;
+  /** Session id (JWT `jti`) of whoever submitted this run. `requestLog` arrives unbound when
+   * this is called from the queue worker (no request.log to inherit from) -- child() it with
+   * this value so this function's own log lines, and executeReconciliation's, stay filterable
+   * by session the same way the synchronous in-request path already gets via request.log. */
+  sessionId?: string;
   organizationId: string;
   requestLog: pino.Logger;
   repository: InMemoryRunRepository;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   pool?: Pool;
 }): Promise<ReconciliationWorkflowResult> => {
+  const log = input.sessionId ? input.requestLog.child({ jti: input.sessionId }) : input.requestLog;
   const { accountIdentifier, periodLabel, reconciliationFrequency, varianceOverrides } =
     parseReconciliationRequestInput(input.body);
   const correlationId = resolveCorrelationId(input.requestId);
@@ -611,7 +617,7 @@ const runReconciliationWorkflow = async (input: {
     input.files,
   );
 
-  input.requestLog.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
+  log.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
 
   const aliases = input.pool
     ? await loadPayeeAliases(input.pool, input.organizationId, accountIdentifier)
@@ -661,6 +667,7 @@ const runReconciliationWorkflow = async (input: {
 
   const run = await executeReconciliationFromNormalized({
     correlationId,
+    sessionId: input.sessionId,
     runId: lifecycleContext.runId,
     organizationId: input.organizationId,
     lifecycleStore: input.lifecycleStore,
@@ -674,7 +681,7 @@ const runReconciliationWorkflow = async (input: {
   });
 
   input.repository.save(run);
-  input.requestLog.info({
+  log.info({
     action: 'reconciliation.run.completed',
     runId: run.id,
     exceptions: run.exceptions.length,
@@ -709,6 +716,11 @@ const triggerMatchingForImportRun = async (input: {
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   pool?: Pool;
   requestLog: pino.Logger;
+  /** Session id (JWT `jti`) of whoever submitted the files, threaded down to
+   * executeReconciliationFromNormalized so its whole matching-phase log narrative stays
+   * filterable by session, same as the synchronous in-request path gets for free via
+   * request.log. */
+  sessionId?: string;
 }): Promise<{ matchingJobId: string }> => {
   const correlationId = randomUUID();
 
@@ -782,6 +794,7 @@ const triggerMatchingForImportRun = async (input: {
   const run = await executeReconciliationFromNormalized({
     correlationId,
     runId: lifecycleContext.runId,
+    sessionId: input.sessionId,
     organizationId: input.organizationId,
     lifecycleStore: input.lifecycleStore,
     sourceFiles,
@@ -814,8 +827,15 @@ const processImportValidationJob = async (input: {
   repository: InMemoryRunRepository;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   requestLog: pino.Logger;
+  /** Session id (JWT `jti`) of whoever submitted the files. When invoked from the queue worker
+   * (see importValidationQueue.ts), `requestLog` is the shared module-level logger with no
+   * per-job binding of its own -- child() it with this value so every log line the rest of this
+   * workflow emits stays filterable by session, same as the synchronous in-request path already
+   * gets for free via request.log. */
+  sessionId?: string;
 }): Promise<QueuedImportValidationResult> => {
   const importValidationStore = new PostgresImportValidationStore(input.pool);
+  const log = input.sessionId ? input.requestLog.child({ jti: input.sessionId }) : input.requestLog;
 
   try {
     const result = await runImportValidationWorkflow({
@@ -823,7 +843,7 @@ const processImportValidationJob = async (input: {
       runId: input.runId,
       importJobId: input.importJobId,
       workerId: input.workerId,
-      logger: input.requestLog,
+      logger: log,
       blobStorage: new PostgresBlobStorage(input.pool),
       importRunStore: new PostgresImportRunStore(input.pool),
       importValidationStore,
@@ -834,7 +854,8 @@ const processImportValidationJob = async (input: {
           repository: input.repository,
           lifecycleStore: input.lifecycleStore,
           pool: input.pool,
-          requestLog: input.requestLog,
+          requestLog: log,
+          sessionId: input.sessionId,
         }),
     });
 
@@ -1462,6 +1483,7 @@ export const createApp = (
           body: payload.body,
           files: fromQueuedReconciliationFiles(payload.files),
           requestId: payload.requestId,
+          sessionId: payload.sessionId,
           organizationId: payload.organizationId,
           requestLog: httpLogger,
           repository,
@@ -1541,6 +1563,7 @@ export const createApp = (
         repository,
         lifecycleStore,
         requestLog: httpLogger,
+        sessionId: payload.sessionId,
       }),
   });
 
@@ -1564,6 +1587,17 @@ export const createApp = (
       logger: httpLogger,
       genReqId: (request) => request.headers['x-correlation-id']?.toString() ?? randomUUID(),
       quietReqLogger: false,
+      // pino-http's own received/completed lines close over a logger captured at request start,
+      // so a later `request.log = request.log.child(...)` (see authMiddleware.ts) never reaches
+      // them -- customProps is re-invoked at both received and finish time and is the only hook
+      // that does. The received line still can't carry jti: auth hasn't run yet at that point.
+      // request.sessionId covers the one request where request.auth is never set at all -- the
+      // login route itself, which mints a jti but is a PUBLIC_ROUTE so createAuthMiddleware never
+      // runs for it.
+      customProps: (request) => {
+        const jti = request.auth?.jti ?? request.sessionId;
+        return jti ? { jti } : {};
+      },
       // Log full error detail including stack trace for 4xx/5xx responses
       customErrorMessage: (_request, response) =>
         `request failed with status ${response.statusCode}`,
@@ -1745,9 +1779,13 @@ export const createApp = (
     username: string,
     organizationId: string | null,
     failureReason?: string,
+    // The session id (JWT `jti`) minted for this login, or the existing session's jti on logout.
+    // Undefined for LOGIN_FAILURE -- no token is ever minted for a failed attempt.
+    sessionId?: string,
   ): Promise<void> => {
     const ipAddress = request.ip;
-    httpLogger.info(
+    const log = sessionId ? request.log.child({ jti: sessionId }) : request.log;
+    log.info(
       { action: `auth.${eventType.toLowerCase()}`, username, organizationId, ipAddress, failureReason },
       `Authentication event: ${eventType}`,
     );
@@ -1764,12 +1802,13 @@ export const createApp = (
         eventType,
         failureReason,
         ipAddress,
+        sessionId,
       });
     } catch (error) {
       // The audit trail failing to persist must never block the login/logout response itself --
       // the structured log line above already recorded the event; this is a durability layer on
       // top of it, not the only copy.
-      httpLogger.error(
+      log.error(
         { action: 'auth.login_event.persist_failed', username, err: error },
         'Failed to persist login event to the database',
       );
@@ -1800,7 +1839,7 @@ export const createApp = (
           return;
         }
 
-        const { token } = signAuthToken(
+        const { token, jti } = signAuthToken(
           {
             sub: localUser.username,
             role: localUser.role,
@@ -1810,11 +1849,14 @@ export const createApp = (
           },
           httpLogger,
         );
+        request.sessionId = jti;
         await auditLoginEvent(
           request,
           'LOGIN_SUCCESS',
           localUser.username,
           LOCAL_LOGIN_FALLBACK_ORGANIZATION_ID,
+          undefined,
+          jti,
         );
         response.json({
           token,
@@ -1861,7 +1903,7 @@ export const createApp = (
         return;
       }
 
-      const { token } = signAuthToken(
+      const { token, jti } = signAuthToken(
         {
           sub: user.user_name,
           role: user.role,
@@ -1871,8 +1913,16 @@ export const createApp = (
         },
         httpLogger,
       );
+      request.sessionId = jti;
 
-      await auditLoginEvent(request, 'LOGIN_SUCCESS', user.user_name, user.organization_id);
+      await auditLoginEvent(
+        request,
+        'LOGIN_SUCCESS',
+        user.user_name,
+        user.organization_id,
+        undefined,
+        jti,
+      );
 
       response.json({
         token,
@@ -1902,7 +1952,14 @@ export const createApp = (
         );
         // ISSUE-050.2: a successful logout previously produced zero log lines at all (only a
         // denylistToken failure did). Matches the login handler's audit pattern above.
-        await auditLoginEvent(request, 'LOGOUT', request.auth.username, request.auth.organizationId);
+        await auditLoginEvent(
+          request,
+          'LOGOUT',
+          request.auth.username,
+          request.auth.organizationId,
+          undefined,
+          request.auth.jti,
+        );
       }
 
       response.status(204).end();
@@ -2309,6 +2366,7 @@ export const createApp = (
           const queuedResponse: ReconciliationJobEnqueueResponse =
             await reconciliationQueue.enqueue({
               requestId: resolveCorrelationId(request.id),
+              sessionId: request.auth!.jti,
               organizationId,
               body,
               files: toQueuedReconciliationFiles(files),
@@ -2322,6 +2380,7 @@ export const createApp = (
           body,
           files,
           requestId: request.id,
+          sessionId: request.auth!.jti,
           organizationId,
           requestLog: request.log,
           repository,
@@ -2994,7 +3053,12 @@ export const createApp = (
       const { importJobId } = submitResult;
 
       if (importValidationQueue.enabled) {
-        await importValidationQueue.enqueue({ organizationId, runId, importJobId });
+        await importValidationQueue.enqueue({
+          organizationId,
+          runId,
+          importJobId,
+          sessionId: request.auth!.jti,
+        });
         response.status(202).json({ importJobId, status: 'queued' });
         return;
       }
@@ -3010,6 +3074,7 @@ export const createApp = (
         repository,
         lifecycleStore,
         requestLog: request.log,
+        sessionId: request.auth!.jti,
       });
 
       const importRunStore = new PostgresImportRunStore(pool!);
@@ -3171,6 +3236,7 @@ export const createApp = (
         lifecycleStore,
         pool: pool!,
         requestLog: request.log,
+        sessionId: request.auth!.jti,
       });
 
       await importValidationStore.recordMatchingJobId(organizationId, runId, matchingJobId);

@@ -74,9 +74,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
       # File Imports & Validation (Phase 6+) has no in-memory fallback for the import pipeline --
       # unlike the older atomic /api/reconciliation/run route, POST /api/imports/runs always needs
       # a real Postgres connection. This job used to run against an in-memory backend
@@ -98,7 +95,7 @@ jobs:
             'POSTGRES_PASSWORD=change-ci-password' \
             'POSTGRES_HOST_PORT=5432' \
             'ENABLE_PGAUDIT=false' \
-            'API_DATABASE_URL=postgresql://app_user:unused@postgres:5432/reconciliation_platform' \
+            'API_DATABASE_URL=unused' \
             'JWT_SECRET=unused-ci-placeholder' \
             > ci-e2e.env
           docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} up -d postgres --wait
@@ -115,21 +112,32 @@ jobs:
       # but this env var only ever reaches the ephemeral webServer this job spawns for itself,
       # never a deployed instance.
       #
-      # DATABASE_URL points the native webServer (Playwright's own `dev:api:test`, not a Docker
-      # container) at the postgres service just started above, as app_user (least-privilege
+      # DATABASE_URL points the webServer that runs inside the functional-e2e container (Playwright's
+      # own `dev:api:test`, spawned as a child process of the containerized test run -- see
+      # compose.e2e.yaml) at the postgres service just started above, as app_user (least-privilege
       # runtime role, changeset 0031) -- matches API_DATABASE_URL's shape everywhere else in this
-      # repo.
+      # repo. Hostname is `postgres` (the compose network name), not `localhost` -- this test run
+      # no longer executes on the bare runner, so the host-mapped port isn't reachable from inside
+      # the container; this step and functional-e2e both run joined to the same compose project
+      # (`-p ...`) so they share that network and can resolve it by name.
       #
       # Normal retry policy (retries: process.env.CI ? 2 : 0, from playwright.config.ts) -- not
       # dashboard-status.yml's --max-failures=1 --retries=0, which that file's own comment marks
       # explicitly temporary/triage-only. A required merge gate should retry ordinary flakiness
       # the same way any other check here would, not fail-fast on the first flake.
+      #
+      # No more `npx playwright install --with-deps chromium` step here -- compose.e2e.yaml's
+      # functional-e2e service runs inside docker/e2e-functional.Dockerfile, which bakes the
+      # browser and its OS dependencies in at build time instead of installing them on every job
+      # run. See dashboard-status.yml's identical comment for the incident that motivated this.
       - name: Run functional E2E tests
         # --reporter=list, explicit: Playwright's default is 'dot' outside a TTY, which is much
         # harder to debug from a CI log than list's per-test lines when this job fails.
-        run: npm run test:e2e:functional -- --reporter=list --shard=${{ matrix.shard }}/4
+        run: >
+          docker compose -f compose.yaml -f compose.e2e.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} --profile e2e-functional
+          run --rm functional-e2e npm run test:e2e:functional -- --reporter=list --shard=${{ matrix.shard }}/4
         env:
-          DATABASE_URL: postgresql://app_user:P%40ssw0rd@localhost:5432/reconciliation_platform
+          DATABASE_URL: postgresql://app_user:P%40ssw0rd@postgres:5432/reconciliation_platform
           DISABLE_API_RATE_LIMIT: 'true'
 
       - name: Upload failure diagnostics

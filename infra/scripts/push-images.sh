@@ -6,8 +6,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INFRA_DIR="$(dirname "$SCRIPT_DIR")"
-REPO_ROOT="$(cd "$INFRA_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$INFRA_DIR/.." && pwd)"
 TAG="${1:-latest}"
+
+# ECR cross-region replication (infra/lib/persistent-stack.ts) propagates pushed images to the
+# standby DR regions automatically -- push once here, against the primary region's ECR, not once
+# per region.
 
 AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"

@@ -18,9 +18,14 @@ export interface RowValidationOutcome {
   normalized: NormalizedRecord[];
 }
 
+/** Fires once per validation issue, for a caller that wants DEBUG-level fault-finding detail
+ * (apps/api's importValidationService) without this module depending on a logger itself. */
+export type RowIssueObserver = (issue: ValidationIssue) => void;
+
 export const validateBankingRows = (
   rows: RawBankingRow[],
   opts: ValidationOptions = {},
+  onIssue?: RowIssueObserver,
 ): RowValidationOutcome => {
   const options = { ...DEFAULT_VALIDATION_OPTIONS, ...opts };
   const issues: ValidationIssue[] = [];
@@ -32,7 +37,9 @@ export const validateBankingRows = (
     const rowNumber = index + 1;
     let hardError = false;
     const err = (code: string, field: string, message: string): void => {
-      issues.push({ severity: 'ERROR', code, field, rowNumber, message });
+      const issue: ValidationIssue = { severity: 'ERROR', code, field, rowNumber, message };
+      issues.push(issue);
+      onIssue?.(issue);
       hardError = true;
     };
 
@@ -129,13 +136,15 @@ export const validateBankingRows = (
       if (previous === null || current === null) continue;
       const rowSigned = credit > 0 ? credit : -debit;
       if (Math.abs(previous + rowSigned - current) > options.amountTolerance) {
-        issues.push({
+        const issue: ValidationIssue = {
           severity: 'ERROR',
           code: 'BANK_BALANCE_CONTINUITY',
           field: 'Balance',
           rowNumber: index + 1,
           message: `Balance break: ${previous} + (${rowSigned}) != ${current}`,
-        });
+        };
+        issues.push(issue);
+        onIssue?.(issue);
       }
     }
   }
@@ -146,6 +155,7 @@ export const validateBankingRows = (
 export const validateGeneralLedgerRows = (
   rows: RawGeneralLedgerRow[],
   opts: ValidationOptions = {},
+  onIssue?: RowIssueObserver,
 ): RowValidationOutcome => {
   const options = { ...DEFAULT_VALIDATION_OPTIONS, ...opts };
   const issues: ValidationIssue[] = [];
@@ -156,7 +166,9 @@ export const validateGeneralLedgerRows = (
     const rowNumber = index + 1;
     let hardError = false;
     const err = (code: string, field: string, message: string): void => {
-      issues.push({ severity: 'ERROR', code, field, rowNumber, message });
+      const issue: ValidationIssue = { severity: 'ERROR', code, field, rowNumber, message };
+      issues.push(issue);
+      onIssue?.(issue);
       hardError = true;
     };
 
@@ -178,13 +190,15 @@ export const validateGeneralLedgerRows = (
     } else if (amount === null) {
       err('GL_AMOUNT_FORMAT', 'Amount', `Amount must be a valid signed amount: "${row.Amount}"`);
     } else if (amount === 0) {
-      issues.push({
+      const issue: ValidationIssue = {
         severity: 'WARNING',
         code: 'GL_AMOUNT_ZERO',
         field: 'Amount',
         rowNumber,
         message: 'Amount is zero',
-      });
+      };
+      issues.push(issue);
+      onIssue?.(issue);
     }
 
     if (!hardError && amount !== null) {

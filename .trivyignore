@@ -29,6 +29,19 @@ CVE-2026-39822 exp:2026-11-01
 CVE-2026-39836 exp:2026-11-01
 CVE-2026-42499 exp:2026-11-01
 CVE-2026-42504 exp:2026-11-01
+# Found 2026-08-14 in liquibase/bin/lpm specifically (golang.org/x/net, same bundled-Go-toolchain
+# category as the rest of this section).
+CVE-2026-39821 exp:2026-11-01
+CVE-2026-46600 exp:2026-11-01
+# Found 2026-08-15 in liquibase/bin/lpm specifically (Go stdlib itself this time -- asn1,
+# net/http, html/template, encoding/xml, net/url, crypto/tls -- same bundled-Go-toolchain
+# category as the rest of this section). 90-day revisit window.
+CVE-2026-33818 exp:2026-11-13
+CVE-2026-56853 exp:2026-11-13
+CVE-2026-56858 exp:2026-11-13
+CVE-2026-56859 exp:2026-11-13
+CVE-2026-56860 exp:2026-11-13
+CVE-2026-56862 exp:2026-11-13
 
 # Ubuntu base OS packages (dirmngr, libssl3) inside the liquibase/liquibase:4.33.0 base image --
 # not a project dependency; needs an upstream base-image rebuild, not a change here.
