@@ -244,7 +244,7 @@ test.describe('exception category detection', () => {
   // Pre-File-Validation, a row with a blank required field (e.g. no posted_date) still reached
   // the old matching engine, which flagged it as a downstream "Invalid or Missing Data"
   // exception. The File Validation Engine now rejects that row before matching ever runs
-  // (BANK_POSTED_DATE_REQUIRED, Step 3) -- with only one row in the file, zero rows survive
+  // (BANK_DATE_REQUIRED, Step 3) -- with only one row in the file, zero rows survive
   // validation, so the run never reaches the Review stage at all. This asserts the new,
   // upstream behavior instead of the old downstream category.
   test('a row with missing required data fails validation before matching runs', async ({
@@ -252,15 +252,15 @@ test.describe('exception category detection', () => {
   }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
       createWorkbookFromRows([
-        ['transaction_id', 'account_id', 'posted_date', 'amount', 'currency_code', 'transaction_type', 'description'],
-        ['TXN-5001', 'OPERATING-001', '', '-250.00', 'USD', 'PAYMENT', 'WIRE WITHOUT DATE'],
+        ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+        ['', 'WIRE WITHOUT DATE', '1', '', '250.00', '', '9750.00'],
       ]),
       createSampleGlFileValidationWorkbook(),
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
     await page.getByRole('button', { name: 'Submit run' }).click();
-    await expect(page.getByText('BANK_POSTED_DATE_REQUIRED').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('BANK_DATE_REQUIRED').first()).toBeVisible({ timeout: 30_000 });
   });
 });
 

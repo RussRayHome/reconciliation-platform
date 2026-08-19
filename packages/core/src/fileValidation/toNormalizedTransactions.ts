@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { v5 as uuidv5 } from 'uuid';
 
 import type {
   NormalizedTransaction,
@@ -9,6 +10,18 @@ import type {
 
 import { buildComparisonTokens, buildContextFingerprint, normalizeText } from '../normalization/text';
 import type { NormalizedRecord } from './types';
+
+/** Fixed, arbitrary namespace for deriving a raw row's id (reconciliation_raw_row.id /
+ * reconciliation_canonical_row.raw_row_id, both UUID columns, changeset 0001) deterministically
+ * from `${sourceFileId}:${sourceLineNumber}` -- `toRawTransactionRows` and
+ * `toNormalizedTransactions` are called independently on the same records, so the two id
+ * fields they each produce for the same logical row must resolve to the identical UUID without
+ * any shared state between the calls. A plain composite string here previously failed Postgres's
+ * `invalid input syntax for type uuid` check outright. */
+const RAW_ROW_ID_NAMESPACE = '6f1d6b6e-2c0a-4b7e-9e6b-6a6b7a6b7a6b';
+
+const deriveRawRowId = (sourceFileId: string, sourceLineNumber: number): string =>
+  uuidv5(`${sourceFileId}:${sourceLineNumber}`, RAW_ROW_ID_NAMESPACE);
 
 /**
  * Adapts File Validation's already-validated `NormalizedRecord`s into the `NormalizedTransaction`
@@ -79,7 +92,7 @@ export const toRawTransactionRows = (
     const raw = record.raw as unknown as Record<string, string | undefined>;
     const isBeginningBalance = isBeginningBalanceRecord(record, source, context.config);
     return {
-      id: `${context.sourceFileId}:${record.sourceLineNumber}`,
+      id: deriveRawRowId(context.sourceFileId, record.sourceLineNumber),
       sourceFileId: context.sourceFileId,
       source,
       spreadsheetFileName: context.spreadsheetFileName,
@@ -129,7 +142,7 @@ export const toNormalizedTransactions = (
     return {
       id: randomUUID(),
       runId: context.runId,
-      rawRowId: `${context.sourceFileId}:${record.sourceLineNumber}`,
+      rawRowId: deriveRawRowId(context.sourceFileId, record.sourceLineNumber),
       sourceFileId: context.sourceFileId,
       source,
       spreadsheetFileName: context.spreadsheetFileName,

@@ -9,15 +9,7 @@ import {
 } from '../fileValidationWorkbooks';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const BANK_HEADER = [
-  'transaction_id',
-  'account_id',
-  'posted_date',
-  'amount',
-  'currency_code',
-  'transaction_type',
-  'description',
-];
+const BANK_HEADER = ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'];
 
 test.beforeEach(async ({ page }) => {
   await loginToApplication(page);
@@ -62,7 +54,7 @@ test.describe('upload transfer', () => {
     const [bankBuffer, glBuffer] = await Promise.all([
       createWorkbookFromRows([
         BANK_HEADER,
-        ['TXN-6001', 'OPERATING-001', '2025-01-02', '-125.50', 'USD', 'DEBIT', 'ACME OFFICE SUPPLY'],
+        ['2025-01-02', 'ACME OFFICE SUPPLY', '1', '', '125.50', '', '9874.50'],
       ]),
       createSampleGlFileValidationWorkbook(),
     ]);
@@ -100,11 +92,11 @@ test.describe('partial import', () => {
     const [bankBuffer, glBuffer] = await Promise.all([
       createWorkbookFromRows([
         BANK_HEADER,
-        ['TXN-6101', 'OPERATING-001', '2025-01-02', '-125.50', 'USD', 'DEBIT', 'ACME OFFICE SUPPLY'],
-        // Blank posted_date -- fails BANK_POSTED_DATE_REQUIRED (Step 3), but the file still has
-        // one importable row, landing on Screen 06 (RowGridPanel) rather than Screen 07
-        // (AllRowsInvalidPanel, which only renders when importableRowCount is 0).
-        ['TXN-6102', 'OPERATING-001', '', '-45.00', 'USD', 'FEE', 'BANK FEE MISSING DATE'],
+        ['2025-01-02', 'ACME OFFICE SUPPLY', '1', '', '125.50', '', '9874.50'],
+        // Blank Date -- fails BANK_DATE_REQUIRED (Step 3), but the file still has one importable
+        // row, landing on Screen 06 (RowGridPanel) rather than Screen 07 (AllRowsInvalidPanel,
+        // which only renders when importableRowCount is 0).
+        ['', 'BANK FEE MISSING DATE', '2', '', '45.00', '', '9829.50'],
       ]),
       createSampleGlFileValidationWorkbook(),
     ]);
