@@ -35,6 +35,18 @@ x-api-environment: &api-environment
   # workers; mirrors the same opt-out CI already applies for its own native functional-E2E runs.
   DISABLE_API_RATE_LIMIT: ${DISABLE_API_RATE_LIMIT:-false}
   RECONCILIATION_RUN_STORE_PATH: ${RECONCILIATION_RUN_STORE_PATH:-/var/lib/reconciliation/latest-reconciliation-run.json}
+  # Issue #134 phases 1-4: the `worker` service below is what actually consumes these queues (its
+  # own process, `PROCESS_MODE=worker`) -- `api` only ever produces (enqueue/getStatus). Both
+  # share this anchor so they always agree on queue name/prefix/Redis connection without either
+  # one needing to know about the other directly. Default OFF here (matches today's dormant/
+  # synchronous-fallback status quo for CI's bare `-f compose.yaml` smoke test and E2E overlays,
+  # which never opted into real queue behavior) -- compose.dev.yaml turns these on for Dev.
+  # Separate DB indices from RATE_LIMIT_REDIS_URL's (db 0) so BullMQ's own key scanning never
+  # mixes with rate-limit keys in the same Redis.
+  ENABLE_RECONCILIATION_QUEUE: ${ENABLE_RECONCILIATION_QUEUE:-false}
+  RECONCILIATION_QUEUE_REDIS_URL: ${RECONCILIATION_QUEUE_REDIS_URL:-redis://redis:6379/1}
+  ENABLE_IMPORT_VALIDATION_QUEUE: ${ENABLE_IMPORT_VALIDATION_QUEUE:-false}
+  IMPORT_VALIDATION_QUEUE_REDIS_URL: ${IMPORT_VALIDATION_QUEUE_REDIS_URL:-redis://redis:6379/2}
   # ISSUE-050.2: without this, structured logs (login/logout/mapping-profile audit events among
   # them) only ever reach stdout -- captured by Docker's json-file driver for a while, but
   # rotated (max-size/max-file above) and gone entirely if the container is ever removed rather
@@ -180,6 +192,50 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    logging: *default-logging
+
+  # Issue #134 phases 2-4: the standalone BullMQ consumer process (apps/api/src/worker.ts),
+  # same image as `api` (PROCESS_MODE=worker is the only difference -- see apps/api/src/index.ts)
+  # so `docker compose build` builds it once and both services share the result. Harmless when
+  # ENABLE_RECONCILIATION_QUEUE/ENABLE_IMPORT_VALIDATION_QUEUE are both off (the default here,
+  # see *api-environment) -- both consumers resolve to a no-op `start()`, confirmed by a live
+  # smoke test. No `ports`/`expose`/healthcheck -- it doesn't serve HTTP, so nothing else in this
+  # file depends on `service_healthy` for it, matching `migrate`'s already-healthcheck-less shape.
+  worker:
+    image: ${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}-api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: '1'
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *api-environment
+      PROCESS_MODE: worker
+    volumes:
+      - recon-app-state:/var/lib/reconciliation
+    networks:
+      - app
+      - data
+    restart: unless-stopped
+    mem_limit: ${WORKER_MEM_LIMIT:-1g}
+    mem_reservation: ${WORKER_MEM_RESERVATION:-384m}
+    cpus: ${WORKER_CPUS:-1.00}
+    stop_grace_period: 45s
+    # apps/api/Dockerfile bakes an image-level HEALTHCHECK (HTTP GET against 127.0.0.1:4000/api/
+    # health) for the `api` service this image is shared with -- `worker` never listens on that
+    # port (PROCESS_MODE=worker never starts Express), so without this override every worker
+    # container reports permanently unhealthy despite functioning correctly. Confirmed via a live
+    # deploy: BullMQ processing works fine regardless, but `docker ps`/anything gating on
+    # `service_healthy` would be misled without this.
+    healthcheck:
+      disable: true
     logging: *default-logging
 
   web:

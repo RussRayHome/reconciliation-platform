@@ -1,4 +1,4 @@
-import type { createReconciliationQueue } from '../src/services/reconciliationQueue';
+import type { createReconciliationProducer } from '../src/services/reconciliationQueue';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSampleBankWorkbook, createSampleGlWorkbook } from '@recon/test-fixtures';
@@ -16,7 +16,7 @@ const queueState = vi.hoisted(() => ({
 
 vi.mock('../src/services/reconciliationQueue', async () => {
   type ReconciliationQueueModule = {
-    createReconciliationQueue: typeof createReconciliationQueue;
+    createReconciliationProducer: typeof createReconciliationProducer;
   };
 
   const actual = await vi.importActual<ReconciliationQueueModule>(
@@ -25,7 +25,7 @@ vi.mock('../src/services/reconciliationQueue', async () => {
 
   return {
     ...actual,
-    createReconciliationQueue: vi.fn(() => ({
+    createReconciliationProducer: vi.fn(() => ({
       enabled: queueState.enabled,
       enqueue: queueState.enqueue,
       getStatus: queueState.getStatus,

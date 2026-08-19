@@ -100,8 +100,7 @@ import {
 import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 import { logRedactOptions } from './services/logRedaction';
 import {
-  createImportValidationQueue,
-  type QueuedImportValidationJobPayload,
+  createImportValidationProducer,
   type QueuedImportValidationResult,
 } from './services/importValidationQueue';
 import {
@@ -114,9 +113,8 @@ import {
 } from './services/importFailureDetailService';
 import { buildImportRowGrid } from './services/importRowGridService';
 import {
-  createReconciliationQueue,
+  createReconciliationProducer,
   type QueuedReconciliationFilePayload,
-  type QueuedReconciliationJobPayload,
   type QueuedReconciliationResult,
 } from './services/reconciliationQueue';
 import { captureApiException, flushApiSentry, initializeApiSentry } from './services/sentry';
@@ -378,7 +376,8 @@ const toQueuedReconciliationFiles = (
   },
 });
 
-const fromQueuedReconciliationFiles = (
+/** Exported for `worker.ts` (Issue #134 phase 3). */
+export const fromQueuedReconciliationFiles = (
   files: QueuedReconciliationFiles,
 ): ReconciliationUploadFiles => {
   const bankBuffer = Buffer.from(files.bankFile.buffer, 'base64');
@@ -553,7 +552,7 @@ const registerLifecycleJob = async (
  * specifically (before the generic error handler) to respond with the issues instead of a bare
  * 500. No lifecycle job is registered when this throws, so a rejected upload never creates an
  * orphaned CREATED-status reconciliation_job row. */
-class ReconciliationFileValidationError extends Error {
+export class ReconciliationFileValidationError extends Error {
   constructor(
     public readonly bankIssues: ValidationIssue[],
     public readonly glIssues: ValidationIssue[],
@@ -563,7 +562,10 @@ class ReconciliationFileValidationError extends Error {
   }
 }
 
-const runReconciliationWorkflow = async (input: {
+/** Exported for `worker.ts` (Issue #134 phase 3) -- the standalone consumer process calls this
+ * directly, same function the synchronous in-request path and the (now removed) in-process queue
+ * Worker both used. */
+export const runReconciliationWorkflow = async (input: {
   body: Record<string, unknown>;
   files: ReconciliationUploadFiles;
   requestId: unknown;
@@ -818,7 +820,9 @@ const triggerMatchingForImportRun = async (input: {
  * real pool -- only ever invoked once a submit request has already passed requirePool, so the
  * non-null assertions below are safe, matching how the rest of this route family asserts `pool!`
  * after its own requirePool check. */
-const processImportValidationJob = async (input: {
+/** Exported for `worker.ts` (Issue #134 phase 3) -- see `runReconciliationWorkflow`'s doc comment
+ * above for the same rationale. */
+export const processImportValidationJob = async (input: {
   organizationId: string;
   runId: string;
   importJobId: string;
@@ -882,7 +886,8 @@ const processImportValidationJob = async (input: {
   }
 };
 
-const recordSuccessfulReconciliationRun = (input: {
+/** Exported for `worker.ts` (Issue #134 phase 3). */
+export const recordSuccessfulReconciliationRun = (input: {
   requestId: unknown;
   started: number;
   result: ReconciliationWorkflowResult;
@@ -900,7 +905,8 @@ const recordSuccessfulReconciliationRun = (input: {
   });
 };
 
-const handleFailedReconciliationRun = async (input: {
+/** Exported for `worker.ts` (Issue #134 phase 3). */
+export const handleFailedReconciliationRun = async (input: {
   requestId: unknown;
   requestBody: Record<string, unknown>;
   started: number;
@@ -955,7 +961,8 @@ const createUploadMiddleware = (maxUploadMb: number, allowedExtensions: readonly
     },
   });
 
-const sanitizeRun = (run: ReconciliationRun): ReconciliationRunReport => ({
+/** Exported for `worker.ts` (Issue #134 phase 3). */
+export const sanitizeRun = (run: ReconciliationRun): ReconciliationRunReport => ({
   id: run.id,
   correlationId: run.correlationId,
   accountIdentifier: run.accountIdentifier,
@@ -1054,7 +1061,9 @@ type ApiRateLimiter = {
     | null;
 };
 
-type ReconciliationQueueConfiguration = {
+/** Exported for `worker.ts` (Issue #134 phase 3), which needs the same shape to build its own
+ * consumer. */
+export type ReconciliationQueueConfiguration = {
   enabled: boolean;
   redisUrl: string | null;
   queueName: string;
@@ -1064,8 +1073,9 @@ type ReconciliationQueueConfiguration = {
 
 /** File Imports & Validation's own queue config, deliberately separate from
  * ReconciliationQueueConfiguration above -- "we should use the best queuing tool" resolved to
- * BullMQ but as its own queue, not sharing the existing reconciliation queue's job type. */
-type ImportValidationQueueConfiguration = {
+ * BullMQ but as its own queue, not sharing the existing reconciliation queue's job type. Exported
+ * for `worker.ts` (Issue #134 phase 3). */
+export type ImportValidationQueueConfiguration = {
   enabled: boolean;
   redisUrl: string | null;
   queueName: string;
@@ -1170,7 +1180,8 @@ const createApiRateLimiter = (logger: pino.Logger): ApiRateLimiter => {
   };
 };
 
-const resolveReconciliationQueueConfiguration = (): ReconciliationQueueConfiguration => {
+/** Exported for `worker.ts` (Issue #134 phase 3). */
+export const resolveReconciliationQueueConfiguration = (): ReconciliationQueueConfiguration => {
   const queueEnabled = parseBooleanFlag(process.env.ENABLE_RECONCILIATION_QUEUE) === true;
   const configuredRedisUrl =
     process.env.RECONCILIATION_QUEUE_REDIS_URL?.trim() ||
@@ -1187,7 +1198,8 @@ const resolveReconciliationQueueConfiguration = (): ReconciliationQueueConfigura
   };
 };
 
-const resolveImportValidationQueueConfiguration = (): ImportValidationQueueConfiguration => {
+/** Exported for `worker.ts` (Issue #134 phase 3). */
+export const resolveImportValidationQueueConfiguration = (): ImportValidationQueueConfiguration => {
   const queueEnabled = parseBooleanFlag(process.env.ENABLE_IMPORT_VALIDATION_QUEUE) === true;
   const configuredRedisUrl =
     process.env.IMPORT_VALIDATION_QUEUE_REDIS_URL?.trim() ||
@@ -1465,106 +1477,29 @@ export const createApp = (
 
   initializeApiSentry(httpLogger);
 
-  const reconciliationQueue = createReconciliationQueue({
+  // Producer only (Issue #134 phase 2) -- no Worker/processJob here anymore. The consumer that
+  // actually processes queued jobs lives in worker.ts, its own process, built from the same
+  // resolveReconciliationQueueConfiguration() (exported for that purpose) so both sides agree on
+  // queueName/prefix/Redis connection without sharing any in-process state.
+  const reconciliationQueue = createReconciliationProducer({
     enabled: queueConfiguration.enabled,
     redisUrl: queueConfiguration.redisUrl,
     queueName: queueConfiguration.queueName,
     prefix: queueConfiguration.prefix,
-    concurrency: queueConfiguration.concurrency,
     logger: httpLogger,
-    processJob: async (
-      payload: QueuedReconciliationJobPayload,
-    ): Promise<QueuedReconciliationResult> => {
-      const started = Date.now();
-      let persistenceJobId: string | undefined;
-
-      try {
-        const workflowResult = await runReconciliationWorkflow({
-          body: payload.body,
-          files: fromQueuedReconciliationFiles(payload.files),
-          requestId: payload.requestId,
-          sessionId: payload.sessionId,
-          organizationId: payload.organizationId,
-          requestLog: httpLogger,
-          repository,
-          lifecycleStore,
-          pool,
-        });
-        persistenceJobId = workflowResult.persistenceJobId;
-
-        recordSuccessfulReconciliationRun({
-          requestId: payload.requestId,
-          started,
-          result: workflowResult,
-        });
-
-        return {
-          status: 'completed',
-          runId: workflowResult.run.id,
-          run: sanitizeRun(workflowResult.run),
-        };
-      } catch (error) {
-        // A File Validation failure is expected user-input rejection, not an application bug --
-        // no lifecycle job was ever registered for it (runReconciliationWorkflow throws before
-        // that step), so there's nothing to mark failed, and it's not captured as an exception.
-        if (error instanceof ReconciliationFileValidationError) {
-          return {
-            status: 'failed',
-            failedAt: new Date().toISOString(),
-            reason: `File Validation failed: ${error.bankIssues.length} bank issue(s), ${error.glIssues.length} GL issue(s).`,
-          };
-        }
-
-        await handleFailedReconciliationRun({
-          requestId: payload.requestId,
-          requestBody: payload.body,
-          started,
-          organizationId: payload.organizationId,
-          lifecycleStore,
-          persistenceJobId,
-          error,
-        });
-        captureApiException(error, {
-          tags: { scope: 'reconciliation-queue' },
-          extra: { requestId: payload.requestId },
-        });
-
-        return {
-          status: 'failed',
-          failedAt: new Date().toISOString(),
-          reason:
-            error instanceof Error ? error.message : 'Unexpected reconciliation queue failure',
-        };
-      }
-    },
   });
 
   // worker-N (not a random id): if two worker processes are ever run side by side, import_job.
   // worker_id should read as which *process* handled a job, not a fresh id per job that reveals
-  // nothing on inspection.
+  // nothing on inspection. Still used below by the synchronous fallback path (requirePool already
+  // guarantees a pool exists there); the queue-consumer path builds its own in worker.ts.
   const importValidationWorkerId = `import-validation-worker-${process.pid}`;
-  const importValidationQueue = createImportValidationQueue({
+  const importValidationQueue = createImportValidationProducer({
     enabled: importValidationQueueConfiguration.enabled,
     redisUrl: importValidationQueueConfiguration.redisUrl,
     queueName: importValidationQueueConfiguration.queueName,
     prefix: importValidationQueueConfiguration.prefix,
-    concurrency: importValidationQueueConfiguration.concurrency,
     logger: httpLogger,
-    processJob: (payload: QueuedImportValidationJobPayload): Promise<QueuedImportValidationResult> =>
-      processImportValidationJob({
-        organizationId: payload.organizationId,
-        runId: payload.runId,
-        importJobId: payload.importJobId,
-        workerId: importValidationWorkerId,
-        // requirePool (checked ahead of every route that can enqueue onto this queue) guarantees
-        // a real pool exists before a job is ever created, matching the non-null assertions
-        // documented on processImportValidationJob's own doc comment.
-        pool: pool!,
-        repository,
-        lifecycleStore,
-        requestLog: httpLogger,
-        sessionId: payload.sessionId,
-      }),
   });
 
   app.set('trust proxy', true);
@@ -4037,6 +3972,7 @@ export const createApp = (
     }
 
     await reconciliationQueue.close().catch(() => undefined);
+    await importValidationQueue.close().catch(() => undefined);
     await flushApiSentry().catch(() => undefined);
   };
 

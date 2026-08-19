@@ -27,6 +27,18 @@ services:
       GIT_CONFIG_COUNT: '1'
       GIT_CONFIG_KEY_0: 'safe.directory'
       GIT_CONFIG_VALUE_0: '/app'
+      # Issue #134 phase 4: Dev is where this topology gets exercised for real -- CI's smoke test
+      # and E2E overlays deliberately stay on the synchronous fallback (compose.yaml's own
+      # defaults), so this override is scoped to Dev only, not the shared base file.
+      ENABLE_RECONCILIATION_QUEUE: 'true'
+      ENABLE_IMPORT_VALIDATION_QUEUE: 'true'
+
+  worker:
+    build:
+      target: runtime
+    environment:
+      ENABLE_RECONCILIATION_QUEUE: 'true'
+      ENABLE_IMPORT_VALIDATION_QUEUE: 'true'
 
   web:
     build:
