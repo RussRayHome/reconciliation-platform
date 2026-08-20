@@ -110,11 +110,14 @@ export const validateBankingRows = (
     // amounts blank, etc.) still becomes a NormalizedRecord using best-effort fallback values for
     // whichever fields failed to parse; its issues travel with it via `issues` so it surfaces as a
     // flagged/reviewable transaction downstream instead of vanishing (see toNormalizedTransactions.ts).
+    // `date` specifically must fall back to a genuinely valid ISO date, not a raw passthrough --
+    // it lands in canonical_record.txn_date, a Postgres `DATE NOT NULL` column, so a blank or
+    // malformed value would fail the INSERT outright instead of surfacing as a reviewable issue.
     const signed = creditValue > 0 ? creditValue : -debitValue;
     normalized.push({
       sourceSystem: 'BANK',
       recordId: isBlank(sequenceNumber) ? `row-${rowNumber}` : sequenceNumber,
-      date: row.Date,
+      date: isIsoDate(row.Date) ? row.Date : today,
       signedAmount: signed,
       direction: signed >= 0 ? 'INFLOW' : 'OUTFLOW',
       magnitude: Math.abs(signed),
@@ -206,12 +209,14 @@ export const validateGeneralLedgerRows = (
     // Every row is kept, regardless of ERROR/WARNING issues -- nothing is silently dropped from
     // the reconciliation pipeline. A row whose Amount couldn't be parsed still becomes a
     // NormalizedRecord with signedAmount 0; its issues travel with it via `issues` so it surfaces
-    // as a flagged/reviewable transaction downstream instead of vanishing.
+    // as a flagged/reviewable transaction downstream instead of vanishing. `date` falls back to a
+    // genuinely valid ISO date, not a raw passthrough -- see the Bank validator's own comment on
+    // this (canonical_record.txn_date is a Postgres `DATE NOT NULL` column).
     const signedAmount = amount ?? 0;
     normalized.push({
       sourceSystem: 'GL',
       recordId: String(rowNumber),
-      date: row.Date,
+      date: isIsoDate(row.Date) ? row.Date : today,
       signedAmount,
       direction: signedAmount >= 0 ? 'INFLOW' : 'OUTFLOW',
       magnitude: Math.abs(signedAmount),
