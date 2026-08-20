@@ -64,7 +64,7 @@ describe('validateBankingRows', () => {
     expect(codesOf(issues)).toContain('BANK_SEQUENCE_REQUIRED');
   });
 
-  it('BANK_SEQUENCE_DUPLICATE: flags the later occurrence, keeps the first normalized', () => {
+  it('BANK_SEQUENCE_DUPLICATE: flags the later occurrence, keeps both rows normalized', () => {
     const rows = [
       validBankRow({ 'Sequence Number': '7' }),
       validBankRow({ 'Sequence Number': '7' }),
@@ -72,8 +72,15 @@ describe('validateBankingRows', () => {
     const { issues, normalized } = validateBankingRows(rows);
 
     expect(issues).toEqual([expect.objectContaining({ code: 'BANK_SEQUENCE_DUPLICATE', rowNumber: 2 })]);
-    expect(normalized).toHaveLength(1);
+    // Nothing is excluded on a content issue any more -- both rows stay normalized, with the
+    // duplicate's own issue carried on its record so it still surfaces downstream.
+    expect(normalized).toHaveLength(2);
     expect(normalized[0]?.sourceLineNumber).toBe(1);
+    expect(normalized[0]?.issues).toEqual([]);
+    expect(normalized[1]?.sourceLineNumber).toBe(2);
+    expect(normalized[1]?.issues).toEqual([
+      expect.objectContaining({ code: 'BANK_SEQUENCE_DUPLICATE', rowNumber: 2 }),
+    ]);
   });
 
   it('BANK_DEBIT_FORMAT: flags an unparseable Debit', () => {

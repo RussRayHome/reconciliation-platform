@@ -477,6 +477,66 @@ describe('classifyExceptions', () => {
     ).toBe(true);
   });
 
+  it('does not promote a SAME-DAY date variance pair into likely miscoding when the amount is uniquely distinctive on both sides', () => {
+    // Regression for GitHub #151 finding #2: a same-day pair whose amount occurs nowhere else on
+    // either side is about as strong a same-transaction signal as this system has -- text
+    // similarity alone shouldn't be able to override that and force a miscoding conflict. This is
+    // the same fixture shape as the "weak date variance... promotes... likely miscoding" test
+    // above, just with matching dates instead of 1 day apart.
+    const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
+    const bankTransaction = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: bankFile.id,
+      spreadsheetFileName: bankFile.fileName,
+      lineNumber: 5,
+      transactionDate: '2025-03-10',
+      amount: -500,
+      description: 'ACME PAYROLL',
+      normalizedComparisonTokens: ['ACME', 'PAYROLL'],
+    });
+    const glTransaction = buildTransaction({
+      id: 'gl-1',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
+      lineNumber: 8,
+      transactionDate: '2025-03-10',
+      amount: -500,
+      description: 'Office supplies',
+      payeeName: 'Office Depot',
+      normalizedComparisonTokens: ['OFFICE', 'SUPPLIES'],
+    });
+    const matchResult = buildMatchResult({
+      bankTransactionId: bankTransaction.id,
+      glTransactionId: glTransaction.id,
+      exceptionCategory: 'DateVariance',
+      ruleId: 'amount-extended-date-window-match',
+      reason: 'Original date variance classification',
+    });
+
+    const output = classifyExceptions({
+      runId: 'run-same-day',
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankTransaction, glTransaction],
+      matchResults: [matchResult],
+      unmatchedBankTransactionIds: new Set<string>(),
+      unmatchedGlTransactionIds: new Set<string>(),
+      duplicateTransactionIds: new Set<string>(),
+      reporting: defaultReconciliationConfig.reporting,
+      matching: defaultReconciliationConfig.matching,
+      reconciliationFrequency: 'Monthly',
+    });
+
+    expect(output.exceptions.some((item) => item.category === 'LikelyMiscoding')).toBe(false);
+    // Plain DateVariance (unlike TimingDifference/LikelyMiscoding) only ever creates one
+    // exception per match result, for the bank side when present -- see
+    // `buildMatchResultTargets` in exceptionClassifierStages.ts. Not something this fix changes.
+    expect(output.exceptions.filter((item) => item.category === 'DateVariance')).toHaveLength(1);
+    expect(output.exceptions[0]).toMatchObject({ source: 'bank', category: 'DateVariance' });
+  });
+
   it('attaches recommended next actions to missing-from-gl exceptions', () => {
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
     const bankTransaction = buildTransaction({
@@ -1565,6 +1625,46 @@ describe('classifyExceptions', () => {
 
     expect(output.exceptions.filter((e) => e.category === 'ACHReturn')).toHaveLength(2);
     expect(output.exceptions.some((e) => e.category === 'NSFReturnedDeposit')).toBe(false);
+  });
+
+  it('does not classify a same-account TRANSFER pair as ACHReturn (word "TRANSFER" contains "NSF" as a substring)', () => {
+    // Regression for GitHub #151 finding #1: a naive `.includes('NSF')` check false-positives on
+    // "TRANSFER" (tra-NSF-er). An inter-account transfer's debit/credit legs, which legitimately
+    // net to zero the same way a real ACH return does, must not be misclassified as one.
+    const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank' });
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl' });
+    const bankDebit = buildTransaction({
+      id: 'bank-1',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: -250000,
+      lineNumber: 2,
+      description: 'TRUIST ONLINE TRANSFER ONLINE TO ****5703',
+      transactionDate: '2025-01-28',
+    });
+    const bankCredit = buildTransaction({
+      id: 'bank-2',
+      source: 'bank',
+      sourceFileId: 'bank-file',
+      amount: 250000,
+      lineNumber: 3,
+      description: 'TRUIST ONLINE TRANSFER ONLINE FROM ****1061',
+      transactionDate: '2025-01-28',
+    });
+
+    const output = classifyExceptions({
+      runId: 'test-run',
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankDebit, bankCredit],
+      matchResults: [],
+      unmatchedBankTransactionIds: new Set([bankDebit.id, bankCredit.id]),
+      unmatchedGlTransactionIds: new Set(),
+      duplicateTransactionIds: new Set(),
+      reporting: defaultReconciliationConfig.reporting,
+      matching: defaultReconciliationConfig.matching,
+    });
+
+    expect(output.exceptions.some((e) => e.category === 'ACHReturn')).toBe(false);
   });
 
   it('classifies VoidedCheckCleared for unmatched bank check debit with check number', () => {

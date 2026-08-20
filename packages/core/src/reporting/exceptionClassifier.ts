@@ -15,6 +15,7 @@ import {
   categoryPrecedence,
   severityRank,
 } from './exceptionClassifierTypes';
+import { buildAmountFrequency } from './exceptionClassifierUtils';
 import {
   buildCounterpartTrace,
   buildExceptionRuleTrace,
@@ -211,12 +212,24 @@ export const classifyExceptions = ({
     engineReservedGroups,
   });
 
+  // Whole-run amount frequency, for the DateVariance -> LikelyMiscoding reclassification below to
+  // apply the same "same-day + distinctive amount on both sides" override as the residual
+  // miscoding stage (exceptionClassifierCandidates.ts's buildLikelyMiscodingCandidate) uses.
+  const bankAmountFrequency = buildAmountFrequency(
+    normalizedTransactions.filter((transaction) => transaction.source === 'bank'),
+  );
+  const glAmountFrequency = buildAmountFrequency(
+    normalizedTransactions.filter((transaction) => transaction.source === 'gl'),
+  );
+
   matchResults.forEach((result) => {
     const classification = buildMatchResultClassification({
       result,
       transactionById,
       matching,
       miscodingThresholds: residualStageState.miscodingThresholds,
+      bankAmountFrequency,
+      glAmountFrequency,
     });
 
     if (!classification) {

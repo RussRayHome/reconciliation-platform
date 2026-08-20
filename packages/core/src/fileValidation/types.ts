@@ -102,6 +102,13 @@ export interface NormalizedRecord {
   sourceLineNumber: number;
   /** Everything from the source row, preserved for audit (raw JSONB column). */
   raw: RawBankingRow | RawGeneralLedgerRow;
+  /** This row's own Step 3 validation issues (ERROR and WARNING), carried through even though the
+   * row is still normalized -- nothing is excluded from the reconciliation pipeline on a content
+   * issue any more (only a structural gate-1/2 failure excludes rows, by aborting the whole file).
+   * `toNormalizedTransactions.ts` maps this into `NormalizedTransaction.dataQualityIssues` so a
+   * flagged row still surfaces as a reviewable exception instead of vanishing. Always present,
+   * possibly empty -- not optional, so every construction site must account for it. */
+  issues: ValidationIssue[];
 }
 
 export type Severity = 'ERROR' | 'WARNING';

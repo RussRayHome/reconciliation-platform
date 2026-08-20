@@ -112,7 +112,10 @@ export const createException = (params: {
   likelyMatchingReference: params.likelyMatchingReference,
   matchConfidence: params.matchConfidence,
   normalizedComparisonTokens: params.transaction.normalizedComparisonTokens,
-  relatedTransactionIds: params.relatedTransactionIds ?? [],
+  // Default to the exception's own transaction rather than an empty array -- every ExceptionItem
+  // belongs to exactly one transaction even when the caller doesn't pass a paired counterpart, so
+  // relatedTransactionIds should always be a safe join key back to NormalizedTransaction.id.
+  relatedTransactionIds: params.relatedTransactionIds ?? [params.transaction.id],
 });
 
 export const buildCounterpartTrace = (

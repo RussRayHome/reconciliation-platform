@@ -55,7 +55,7 @@ describe('validateFile (banking)', () => {
     expect(outcome.normalized).toEqual([]);
   });
 
-  it('reaches Step 3 and reports exactly the hand-verified per-row and file-level codes, offering partial import', async () => {
+  it('reaches Step 3, reports the hand-verified per-row and file-level codes, and keeps every row', async () => {
     const outcome = await validateFile({
       bytes: fixture('banking-multi-error.csv'),
       fileFormat: 'CSV',
@@ -63,6 +63,9 @@ describe('validateFile (banking)', () => {
     });
 
     expect(outcome.gatesRun).toEqual(['HEADER', 'COLUMN_ORDER', 'CELL_VALUES']);
+    // `ok` stays an accurate "did this file have problems" signal even though no row gets
+    // excluded any more -- it's no longer what gates whether reconciliation proceeds
+    // (apps/api uses `gatesRun.includes('CELL_VALUES')` for that instead).
     expect(outcome.ok).toBe(false);
 
     // 7 data rows, 6 errors, one per row from line 3 on; line 2 and line 8 are clean.
@@ -78,13 +81,26 @@ describe('validateFile (banking)', () => {
       expect.objectContaining({ code: 'BANK_BALANCE_CONTINUITY', rowNumber: 7 }),
     ]);
 
-    // Rows 1 (Sequence 1, first occurrence) and 7 (Sequence 7) are the only rows with no per-row
-    // hard error -- the balance-continuity finding on row 7 doesn't exclude row 7 itself, matching
-    // the engine's own behavior (a file-level Step 3 finding doesn't retroactively drop a row that
-    // is otherwise individually clean). This is exactly what makes partial import possible: 2 of 7
-    // rows are importable even though the file overall is not `ok`.
-    expect(outcome.normalized.map((record) => record.recordId)).toEqual(['1', '7']);
-    expect(outcome.normalized).toHaveLength(2);
+    // Nothing is excluded on a content issue any more -- all 7 rows stay normalized, each
+    // carrying its own issues (empty for the two genuinely clean rows) so a flagged row still
+    // surfaces downstream instead of silently vanishing.
+    expect(outcome.normalized).toHaveLength(7);
+    // Row 2 duplicates row 1's own Sequence Number ("1"), so its recordId is "1" too -- that's
+    // the whole point of BANK_SEQUENCE_DUPLICATE.
+    expect(outcome.normalized.map((record) => record.recordId)).toEqual([
+      '1',
+      '1',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+    ]);
+    expect(outcome.normalized[0]?.issues).toEqual([]);
+    expect(outcome.normalized[1]?.issues).toEqual([
+      expect.objectContaining({ code: 'BANK_SEQUENCE_DUPLICATE' }),
+    ]);
+    expect(outcome.normalized[6]?.issues).toEqual([]);
     expect(outcome.totalRowCount).toBe(7);
   });
 });
@@ -105,7 +121,7 @@ describe('validateFile (GL)', () => {
     expect(outcome.normalized).toHaveLength(2);
   });
 
-  it('reports per-row codes without excluding rows whose only finding is a warning', async () => {
+  it('reports per-row codes and keeps every row, including ones with a hard error', async () => {
     const outcome = await validateFile({
       bytes: fixture('gl-multi-error.csv'),
       fileFormat: 'CSV',
@@ -122,10 +138,29 @@ describe('validateFile (GL)', () => {
       expect.objectContaining({ code: 'GL_TXN_DATE_FORMAT', rowNumber: 5 }),
     ]);
 
-    // Row 1 (clean) and row 4 (zero-amount is a WARNING, not a hard error) are the only importable
-    // rows -- rows 2, 3, and 5 each have their own row-level hard error.
-    expect(outcome.normalized.map((record) => record.recordId)).toEqual(['1', '4']);
-    expect(outcome.normalized).toHaveLength(2);
+    // Nothing is excluded on a content issue any more -- all 5 rows stay normalized, each
+    // carrying its own issues (empty for row 1, the only genuinely clean row).
+    expect(outcome.normalized).toHaveLength(5);
+    expect(outcome.normalized.map((record) => record.recordId)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+    ]);
+    expect(outcome.normalized[0]?.issues).toEqual([]);
+    expect(outcome.normalized[1]?.issues).toEqual([
+      expect.objectContaining({ code: 'GL_DESCRIPTION_REQUIRED' }),
+    ]);
+    expect(outcome.normalized[2]?.issues).toEqual([
+      expect.objectContaining({ code: 'GL_AMOUNT_FORMAT' }),
+    ]);
+    expect(outcome.normalized[3]?.issues).toEqual([
+      expect.objectContaining({ code: 'GL_AMOUNT_ZERO', severity: 'WARNING' }),
+    ]);
+    expect(outcome.normalized[4]?.issues).toEqual([
+      expect.objectContaining({ code: 'GL_TXN_DATE_FORMAT' }),
+    ]);
   });
 });
 

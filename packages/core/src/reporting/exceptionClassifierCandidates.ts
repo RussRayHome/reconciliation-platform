@@ -279,7 +279,7 @@ export const buildTimingDifferenceCandidate = (
   };
 };
 
-const hasDistinctiveAmount = (
+export const hasDistinctiveAmount = (
   transaction: NormalizedTransaction,
   frequency: Map<number, number>,
   matching: MatchingConfig,
@@ -325,6 +325,8 @@ export const buildLikelyMiscodingCandidate = (
   glTransaction: NormalizedTransaction & { amount: number },
   matching: MatchingConfig,
   thresholds: MiscodingThresholds,
+  bankAmountFrequency: Map<number, number>,
+  glAmountFrequency: Map<number, number>,
 ): MiscodingCandidate | undefined => {
   if (!currencyEquals(bankTransaction.amount, glTransaction.amount, matching.amountTolerance)) {
     return undefined;
@@ -336,6 +338,22 @@ export const buildLikelyMiscodingCandidate = (
   );
 
   if (dateDifference === null || dateDifference > matching.dateToleranceDays) {
+    return undefined;
+  }
+
+  // Same-day + a uniquely-distinctive amount on BOTH sides is about as strong a same-transaction
+  // signal as this system has -- an amount that occurs nowhere else on either side, on the exact
+  // same date. Text similarity alone shouldn't be able to override that combination and force a
+  // "miscoding" conflict; let the pair fall through to whatever the primary engine / other
+  // residual stages already decided (ExactMatch, DateVariance, TimingDifference, or
+  // DescriptionMerchantVariance) instead. Scoped to dateDifference === 0 specifically (not the
+  // full dateToleranceDays window) -- a wider gap is a weaker signal and still deserves the
+  // ordinary miscoding conflict check below.
+  if (
+    dateDifference === 0 &&
+    hasDistinctiveAmount(bankTransaction, bankAmountFrequency, matching) &&
+    hasDistinctiveAmount(glTransaction, glAmountFrequency, matching)
+  ) {
     return undefined;
   }
 
@@ -403,6 +421,8 @@ export const findLikelyMiscodingCandidates = (
         glTransaction,
         matching,
         thresholds,
+        bankAmountFrequency,
+        glAmountFrequency,
       );
 
       if (!candidate) {

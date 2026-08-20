@@ -111,4 +111,42 @@ describe('toNormalizedTransactions', () => {
       glTransactionId: transactions[1]?.id,
     });
   });
+
+  it('maps a row with an ERROR-severity issue into dataQualityIssues instead of dropping it', () => {
+    // Blank Memo -- GL_DESCRIPTION_REQUIRED -- no longer excludes the row from `normalized`.
+    const glRow: RawGeneralLedgerRow = {
+      Date: '2026-07-01',
+      Type: 'Check',
+      Num: '1052',
+      Name: 'Landlord LLC',
+      Memo: '',
+      Amount: '-500.00',
+    };
+    const { normalized } = validateGeneralLedgerRows([glRow]);
+    expect(normalized).toHaveLength(1);
+
+    const [transaction] = toNormalizedTransactions(normalized, glContext);
+
+    expect(transaction?.dataQualityIssues).toEqual(['GL_DESCRIPTION_REQUIRED: Memo is required']);
+  });
+
+  it('does not add a WARNING-severity issue to dataQualityIssues -- the row stays fully eligible for matching', () => {
+    const glRow: RawGeneralLedgerRow = {
+      Date: '2026-07-01',
+      Type: 'Journal Entry',
+      Num: '1160',
+      Name: '',
+      Memo: 'Zero-dollar filler line',
+      Amount: '0.00',
+    };
+    const { normalized } = validateGeneralLedgerRows([glRow]);
+    expect(normalized).toHaveLength(1);
+    expect(normalized[0]?.issues).toEqual([
+      expect.objectContaining({ code: 'GL_AMOUNT_ZERO', severity: 'WARNING' }),
+    ]);
+
+    const [transaction] = toNormalizedTransactions(normalized, glContext);
+
+    expect(transaction?.dataQualityIssues).toEqual([]);
+  });
 });
