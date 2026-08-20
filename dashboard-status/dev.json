@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-08-20T10:42:18.052Z",
+  "generatedAt": "2026-08-20T10:49:00.329Z",
   "repositoryPath": "/home/runner/work/reconciliation-platform/reconciliation-platform",
-  "overallStatus": "attention-needed",
-  "failedChecks": 1,
-  "passedChecks": 10,
+  "overallStatus": "healthy",
+  "failedChecks": 0,
+  "passedChecks": 11,
   "totalChecks": 11,
-  "totalDurationMs": 1661761,
+  "totalDurationMs": 1657967,
   "checks": [
     {
       "name": "Unit tests",
@@ -45995,15 +45995,15 @@
     {
       "name": "E2E tests",
       "command": "npm run test:e2e:functional / test:e2e:visual:container (merged x5)",
-      "ok": false,
-      "exitCode": 1,
-      "durationMs": 1043789,
-      "summary": "Passed: 62, Failed: 1",
-      "details": "Check failed -- see job log for full output.",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 1039995,
+      "summary": "Passed: 63, Failed: 0",
+      "details": "See job log for full output.",
       "areaLabel": "E2E",
       "testType": "e2e",
-      "passedCount": 62,
-      "failedCount": 1,
+      "passedCount": 63,
+      "failedCount": 0,
       "totalCount": 63,
       "e2eSpecs": [
         {
@@ -46267,51 +46267,50 @@
         {
           "name": "functional/reconciliation.spec.ts › requires login and lands on the application after successful authentication",
           "status": "passed",
-          "durationMs": 4043,
+          "durationMs": 4616,
           "retries": 0
         },
         {
           "name": "functional/reconciliation.spec.ts › uploads workbooks and shows reconciliation results",
           "status": "passed",
-          "durationMs": 6117,
+          "durationMs": 10202,
           "retries": 0
         },
         {
           "name": "functional/route-sweep.spec.ts › route sweep › every routePaths entry is accounted for by this sweep",
           "status": "passed",
-          "durationMs": 75,
+          "durationMs": 151,
           "retries": 0
         },
         {
           "name": "functional/route-sweep.spec.ts › route sweep › login (/login) renders unauthenticated",
           "status": "passed",
-          "durationMs": 2046,
+          "durationMs": 3382,
           "retries": 0
         },
         {
           "name": "functional/route-sweep.spec.ts › route sweep › forgotPassword (/forgot-password) renders unauthenticated",
           "status": "passed",
-          "durationMs": 1994,
+          "durationMs": 2436,
           "retries": 0
         },
         {
           "name": "functional/route-sweep.spec.ts › route sweep › signup (/signup) renders unauthenticated",
           "status": "passed",
-          "durationMs": 2126,
+          "durationMs": 2580,
           "retries": 0
         },
         {
           "name": "functional/route-sweep.spec.ts › route sweep › support (/support) renders unauthenticated",
           "status": "passed",
-          "durationMs": 2039,
+          "durationMs": 2407,
           "retries": 0
         },
         {
           "name": "functional/route-sweep.spec.ts › route sweep › authenticated › every in-app route renders its expected heading and does not fall through to the login redirect",
-          "status": "failed",
-          "durationMs": 42944,
-          "retries": 0,
-          "artifactPath": "/app/test-results/e2e/route-sweep-route-sweep-au-e2283-rough-to-the-login-redirect-functional/trace.zip"
+          "status": "passed",
+          "durationMs": 47850,
+          "retries": 0
         },
         {
           "name": "visual/visual-baseline.spec.ts › visual baseline @1440px › login and error state @1440",
@@ -46390,20 +46389,16 @@
   ],
   "history": [
     {
-      "generatedAt": "2026-08-20T10:42:18.052Z",
-      "overallStatus": "attention-needed",
-      "failedChecks": 1,
+      "generatedAt": "2026-08-20T10:49:00.329Z",
+      "overallStatus": "healthy",
+      "failedChecks": 0,
       "totalChecks": 11,
-      "totalDurationMs": 1661761,
-      "failingCheckNames": [
-        "E2E tests"
-      ],
-      "failingAreas": [
-        "E2E"
-      ],
+      "totalDurationMs": 1657967,
+      "failingCheckNames": [],
+      "failingAreas": [],
       "testTotals": {
-        "passed": 1612,
-        "failed": 1,
+        "passed": 1613,
+        "failed": 0,
         "total": 1613,
         "byType": []
       },
@@ -46470,20 +46465,20 @@
         },
         {
           "name": "E2E tests",
-          "ok": false,
-          "durationMs": 1043789,
-          "summary": "Passed: 62, Failed: 1"
+          "ok": true,
+          "durationMs": 1039995,
+          "summary": "Passed: 63, Failed: 0"
         }
       ]
     }
   ],
   "repoHealth": {
-    "overallStatus": "attention-needed",
-    "failedChecks": 1,
+    "overallStatus": "healthy",
+    "failedChecks": 0,
     "lastCiRun": {
-      "status": "attention-needed",
-      "durationMs": 1661761,
-      "at": "2026-08-20T10:42:18.052Z"
+      "status": "healthy",
+      "durationMs": 1657967,
+      "at": "2026-08-20T10:49:00.329Z"
     },
     "commitsThisWeek": 22,
     "branchFreshness": {
@@ -46495,7 +46490,7 @@
   },
   "environment": "dev",
   "promotionReadiness": {
-    "checkedAt": "2026-08-20T10:42:18.184Z",
+    "checkedAt": "2026-08-20T10:49:00.462Z",
     "baseline": {
       "tagName": "stable-baseline-2026-05-14",
       "exists": true,
@@ -46643,11 +46638,11 @@
     }
   ],
   "repoStatus": {
-    "verdict": "blocked",
+    "verdict": "attention",
     "repo": {
       "slug": "RussRayHome/reconciliation-platform",
       "defaultBranch": "dev",
-      "refreshedAt": "2026-08-20T10:42:18.900Z"
+      "refreshedAt": "2026-08-20T10:49:01.306Z"
     },
     "environments": [
       {
@@ -46660,8 +46655,8 @@
         "driftLabel": "In sync",
         "driftNote": "Integration target",
         "ci": {
-          "status": "fail",
-          "durationMs": 1661761
+          "status": "pass",
+          "durationMs": 1657967
         }
       },
       {
