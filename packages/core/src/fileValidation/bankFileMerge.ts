@@ -33,6 +33,8 @@ export class BankFilenameAccountParseError extends Error {
  * per-file content problem, so it's a distinct error from {@link BankFilenameAccountParseError}/
  * {@link BankFileStructuralError} below. */
 export class BankFileCountError extends Error {
+  /** @param fileCount The number of raw bank files actually passed, named back in the message so
+   * the caller can see what was rejected. */
   constructor(public readonly fileCount: number) {
     super(
       `mergeBankFiles requires between 1 and ${MAX_BANK_ACCOUNTS} raw bank files, got ${fileCount}.`,
