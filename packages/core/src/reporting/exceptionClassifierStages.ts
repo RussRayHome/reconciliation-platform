@@ -50,12 +50,22 @@ const resolveMatchResultCategory = (params: {
   glTransaction?: NormalizedTransaction;
   matching: MatchingConfig;
   miscodingThresholds: MiscodingThresholds;
+  bankAmountFrequency: Map<number, number>;
+  glAmountFrequency: Map<number, number>;
 }): {
   resultCategory?: ExceptionItem['category'];
   matchedMiscodingCandidate?: MiscodingCandidate;
   matchedTimingDifferenceCandidate?: TimingDifferenceCandidate;
 } => {
-  const { result, bankTransaction, glTransaction, matching, miscodingThresholds } = params;
+  const {
+    result,
+    bankTransaction,
+    glTransaction,
+    matching,
+    miscodingThresholds,
+    bankAmountFrequency,
+    glAmountFrequency,
+  } = params;
   let resultCategory: ExceptionItem['category'] | undefined = result.exceptionCategory;
 
   const matchedMiscodingCandidate =
@@ -69,6 +79,8 @@ const resolveMatchResultCategory = (params: {
           glTransaction as NormalizedTransaction & { amount: number },
           matching,
           miscodingThresholds,
+          bankAmountFrequency,
+          glAmountFrequency,
         )
       : undefined;
 
@@ -103,8 +115,17 @@ export const buildMatchResultClassification = (params: {
   transactionById: Map<string, NormalizedTransaction>;
   matching: MatchingConfig;
   miscodingThresholds: MiscodingThresholds;
+  bankAmountFrequency: Map<number, number>;
+  glAmountFrequency: Map<number, number>;
 }): MatchResultClassification | undefined => {
-  const { result, transactionById, matching, miscodingThresholds } = params;
+  const {
+    result,
+    transactionById,
+    matching,
+    miscodingThresholds,
+    bankAmountFrequency,
+    glAmountFrequency,
+  } = params;
   const bankTransaction = result.bankTransactionId
     ? transactionById.get(result.bankTransactionId)
     : undefined;
@@ -117,6 +138,8 @@ export const buildMatchResultClassification = (params: {
     glTransaction,
     matching,
     miscodingThresholds,
+    bankAmountFrequency,
+    glAmountFrequency,
   });
 
   if (!categoryResolution.resultCategory) {
@@ -342,12 +365,18 @@ const classifyOutstandingChecksStage = (
 };
 
 const ACH_RETURN_KEYWORDS = ['RETURN', 'RTN', 'NSF', 'R01', 'R09'];
+/** Word-boundary regexes for each keyword, built once -- a raw substring check (e.g.
+ * `.includes('NSF')`) false-positives on any word that happens to contain the letters in
+ * sequence, such as "TRANSFER" (tra-NSF-er), misclassifying real transfers as ACH returns. */
+const ACH_RETURN_KEYWORD_PATTERNS = ACH_RETURN_KEYWORDS.map(
+  (keyword) => new RegExp(`\\b${keyword}\\b`),
+);
 
 const hasAchReturnKeyword = (transaction: NormalizedTransaction): boolean => {
   const description = (transaction.description ?? '').toUpperCase();
   const transactionType = (transaction.transactionType ?? '').toUpperCase();
-  return ACH_RETURN_KEYWORDS.some(
-    (keyword) => description.includes(keyword) || transactionType.includes(keyword),
+  return ACH_RETURN_KEYWORD_PATTERNS.some(
+    (pattern) => pattern.test(description) || pattern.test(transactionType),
   );
 };
 

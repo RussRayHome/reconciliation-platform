@@ -32,15 +32,17 @@ const parserFor = (fileFormat: 'CSV' | 'XLSX'): FileParser =>
 /**
  * Runs the full ordered File Validation Engine (transaction-csv-spec.md §4) against one file:
  * Step 1 (header present) -> Step 2 (column order) -> Step 3 (cell values, delegates to
- * rowValidators.ts). A gate failure (any ERROR-severity issue) stops further checks for that
- * file, matching "a gate failure stops further checks for that file" -- called once per file
- * (bank, then GL), never both at once; each file's outcome is independent.
+ * rowValidators.ts). Only a Step 1/2 (structural) failure stops the file entirely -- there's
+ * literally no reliable row shape to work with (wrong/missing columns) -- and short-circuits with
+ * `normalized: []` before Step 3 ever runs, reflected by `gatesRun` not including `'CELL_VALUES'`.
  *
- * `normalized` always reflects exactly the rows that individually passed Step 3, regardless of
- * `ok` -- a file-level Step 3 finding (e.g. BANK_BALANCE_CONTINUITY, GL_UNBALANCED) makes `ok`
- * false without retroactively excluding any row, matching schema.ts's own ported behavior. This
- * is what makes partial import possible: the caller decides VALIDATION_FAILED vs. "offer partial
- * import" from `normalized.length`, not from `ok`.
+ * `normalized` always contains every row once Step 3 runs, regardless of `ok` -- Step 3 no longer
+ * excludes a row for a content issue (ERROR or WARNING); each row carries its own issues via
+ * `NormalizedRecord.issues` instead (see rowValidators.ts, toNormalizedTransactions.ts). `ok`
+ * (true iff no ERROR-severity issue anywhere) remains a useful "did this file have problems"
+ * signal for reporting/UI, but callers must NOT use `!ok` to decide whether to proceed with
+ * reconciliation -- use `gatesRun.includes('CELL_VALUES')` for that (false only on a genuine
+ * structural failure).
  */
 export const validateFile = async (input: ValidateFileInput): Promise<FileValidationOutcome> => {
   const allKnownHeaders = input.fileType === 'BANK' ? BANKING_HEADERS : GL_HEADERS;

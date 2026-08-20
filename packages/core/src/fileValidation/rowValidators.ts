@@ -35,12 +35,12 @@ export const validateBankingRows = (
 
   rows.forEach((row, index) => {
     const rowNumber = index + 1;
-    let hardError = false;
+    const rowIssues: ValidationIssue[] = [];
     const err = (code: string, field: string, message: string): void => {
       const issue: ValidationIssue = { severity: 'ERROR', code, field, rowNumber, message };
       issues.push(issue);
+      rowIssues.push(issue);
       onIssue?.(issue);
-      hardError = true;
     };
 
     if (isBlank(row.Date)) {
@@ -105,23 +105,30 @@ export const validateBankingRows = (
       }
     }
 
-    if (!hardError) {
-      const signed = creditValue > 0 ? creditValue : -debitValue;
-      normalized.push({
-        sourceSystem: 'BANK',
-        recordId: sequenceNumber,
-        date: row.Date,
-        signedAmount: signed,
-        direction: signed >= 0 ? 'INFLOW' : 'OUTFLOW',
-        magnitude: Math.abs(signed),
-        description: row.Description,
-        checkNumber: row['Check Number'] || undefined,
-        referenceNumber: row.Reference || undefined,
-        runningBalance,
-        sourceLineNumber: rowNumber,
-        raw: row,
-      });
-    }
+    // Every row is kept, regardless of ERROR/WARNING issues -- nothing is silently dropped from
+    // the reconciliation pipeline. A row with an unrecoverable content issue (bad date, both
+    // amounts blank, etc.) still becomes a NormalizedRecord using best-effort fallback values for
+    // whichever fields failed to parse; its issues travel with it via `issues` so it surfaces as a
+    // flagged/reviewable transaction downstream instead of vanishing (see toNormalizedTransactions.ts).
+    // `date` specifically must fall back to a genuinely valid ISO date, not a raw passthrough --
+    // it lands in canonical_record.txn_date, a Postgres `DATE NOT NULL` column, so a blank or
+    // malformed value would fail the INSERT outright instead of surfacing as a reviewable issue.
+    const signed = creditValue > 0 ? creditValue : -debitValue;
+    normalized.push({
+      sourceSystem: 'BANK',
+      recordId: isBlank(sequenceNumber) ? `row-${rowNumber}` : sequenceNumber,
+      date: isIsoDate(row.Date) ? row.Date : today,
+      signedAmount: signed,
+      direction: signed >= 0 ? 'INFLOW' : 'OUTFLOW',
+      magnitude: Math.abs(signed),
+      description: row.Description,
+      checkNumber: row['Check Number'] || undefined,
+      referenceNumber: row.Reference || undefined,
+      runningBalance,
+      sourceLineNumber: rowNumber,
+      raw: row,
+      issues: rowIssues,
+    });
   });
 
   const allHaveBalance = rows.length > 0 && rows.every((row) => !isBlank(row.Balance));
@@ -164,12 +171,18 @@ export const validateGeneralLedgerRows = (
 
   rows.forEach((row, index) => {
     const rowNumber = index + 1;
-    let hardError = false;
+    const rowIssues: ValidationIssue[] = [];
     const err = (code: string, field: string, message: string): void => {
       const issue: ValidationIssue = { severity: 'ERROR', code, field, rowNumber, message };
       issues.push(issue);
+      rowIssues.push(issue);
       onIssue?.(issue);
-      hardError = true;
+    };
+    const warn = (code: string, field: string, message: string): void => {
+      const issue: ValidationIssue = { severity: 'WARNING', code, field, rowNumber, message };
+      issues.push(issue);
+      rowIssues.push(issue);
+      onIssue?.(issue);
     };
 
     if (isBlank(row.Date)) {
@@ -190,33 +203,31 @@ export const validateGeneralLedgerRows = (
     } else if (amount === null) {
       err('GL_AMOUNT_FORMAT', 'Amount', `Amount must be a valid signed amount: "${row.Amount}"`);
     } else if (amount === 0) {
-      const issue: ValidationIssue = {
-        severity: 'WARNING',
-        code: 'GL_AMOUNT_ZERO',
-        field: 'Amount',
-        rowNumber,
-        message: 'Amount is zero',
-      };
-      issues.push(issue);
-      onIssue?.(issue);
+      warn('GL_AMOUNT_ZERO', 'Amount', 'Amount is zero');
     }
 
-    if (!hardError && amount !== null) {
-      normalized.push({
-        sourceSystem: 'GL',
-        recordId: String(rowNumber),
-        date: row.Date,
-        signedAmount: amount,
-        direction: amount >= 0 ? 'INFLOW' : 'OUTFLOW',
-        magnitude: Math.abs(amount),
-        description: row.Memo,
-        transactionType: row.Type || undefined,
-        referenceNumber: row.Num || undefined,
-        payeeName: row.Name || undefined,
-        sourceLineNumber: rowNumber,
-        raw: row,
-      });
-    }
+    // Every row is kept, regardless of ERROR/WARNING issues -- nothing is silently dropped from
+    // the reconciliation pipeline. A row whose Amount couldn't be parsed still becomes a
+    // NormalizedRecord with signedAmount 0; its issues travel with it via `issues` so it surfaces
+    // as a flagged/reviewable transaction downstream instead of vanishing. `date` falls back to a
+    // genuinely valid ISO date, not a raw passthrough -- see the Bank validator's own comment on
+    // this (canonical_record.txn_date is a Postgres `DATE NOT NULL` column).
+    const signedAmount = amount ?? 0;
+    normalized.push({
+      sourceSystem: 'GL',
+      recordId: String(rowNumber),
+      date: isIsoDate(row.Date) ? row.Date : today,
+      signedAmount,
+      direction: signedAmount >= 0 ? 'INFLOW' : 'OUTFLOW',
+      magnitude: Math.abs(signedAmount),
+      description: row.Memo,
+      transactionType: row.Type || undefined,
+      referenceNumber: row.Num || undefined,
+      payeeName: row.Name || undefined,
+      sourceLineNumber: rowNumber,
+      raw: row,
+      issues: rowIssues,
+    });
   });
 
   return { issues, normalized };

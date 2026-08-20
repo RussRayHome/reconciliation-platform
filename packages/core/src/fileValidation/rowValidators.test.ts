@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { isIsoDate } from './primitives';
 import { validateBankingRows, validateGeneralLedgerRows } from './rowValidators';
 import type { RawBankingRow, RawGeneralLedgerRow } from './types';
 
@@ -54,6 +55,25 @@ describe('validateBankingRows', () => {
     expect(codesOf(issues)).toContain('BANK_DATE_FUTURE');
   });
 
+  it('a blank or malformed Date still produces a valid ISO date on the normalized record, not a raw passthrough', () => {
+    // Regression: `date` lands in canonical_record.txn_date, a Postgres `DATE NOT NULL` column.
+    // Passing a blank or non-ISO string straight through (rather than falling back to a valid
+    // date) fails that INSERT outright instead of surfacing as a reviewable issue -- caught by
+    // CI e2e, not by this file's other tests, since they only assert on `issues`, not `date`.
+    const blank = validateBankingRows([validBankRow({ Date: '' })]).normalized[0];
+    const malformed = validateBankingRows([validBankRow({ Date: '07/01/2026' })]).normalized[0];
+
+    expect(blank?.date).not.toBe('');
+    expect(isIsoDate(blank?.date ?? '')).toBe(true);
+    expect(malformed?.date).not.toBe('07/01/2026');
+    expect(isIsoDate(malformed?.date ?? '')).toBe(true);
+
+    // A syntactically valid ISO date that's merely in the future is still a valid DATE value --
+    // no fallback needed, the real date is kept.
+    const future = validateBankingRows([validBankRow({ Date: '2999-01-01' })]).normalized[0];
+    expect(future?.date).toBe('2999-01-01');
+  });
+
   it('BANK_DESCRIPTION_REQUIRED: flags a blank Description', () => {
     const { issues } = validateBankingRows([validBankRow({ Description: '' })]);
     expect(codesOf(issues)).toContain('BANK_DESCRIPTION_REQUIRED');
@@ -64,7 +84,7 @@ describe('validateBankingRows', () => {
     expect(codesOf(issues)).toContain('BANK_SEQUENCE_REQUIRED');
   });
 
-  it('BANK_SEQUENCE_DUPLICATE: flags the later occurrence, keeps the first normalized', () => {
+  it('BANK_SEQUENCE_DUPLICATE: flags the later occurrence, keeps both rows normalized', () => {
     const rows = [
       validBankRow({ 'Sequence Number': '7' }),
       validBankRow({ 'Sequence Number': '7' }),
@@ -72,8 +92,15 @@ describe('validateBankingRows', () => {
     const { issues, normalized } = validateBankingRows(rows);
 
     expect(issues).toEqual([expect.objectContaining({ code: 'BANK_SEQUENCE_DUPLICATE', rowNumber: 2 })]);
-    expect(normalized).toHaveLength(1);
+    // Nothing is excluded on a content issue any more -- both rows stay normalized, with the
+    // duplicate's own issue carried on its record so it still surfaces downstream.
+    expect(normalized).toHaveLength(2);
     expect(normalized[0]?.sourceLineNumber).toBe(1);
+    expect(normalized[0]?.issues).toEqual([]);
+    expect(normalized[1]?.sourceLineNumber).toBe(2);
+    expect(normalized[1]?.issues).toEqual([
+      expect.objectContaining({ code: 'BANK_SEQUENCE_DUPLICATE', rowNumber: 2 }),
+    ]);
   });
 
   it('BANK_DEBIT_FORMAT: flags an unparseable Debit', () => {
@@ -187,6 +214,17 @@ describe('validateGeneralLedgerRows', () => {
   it('GL_TXN_DATE_FUTURE: flags a Date after today', () => {
     const { issues } = validateGeneralLedgerRows([validGlRow({ Date: '2999-01-01' })]);
     expect(codesOf(issues)).toContain('GL_TXN_DATE_FUTURE');
+  });
+
+  it('a blank or malformed Date still produces a valid ISO date on the normalized record, not a raw passthrough', () => {
+    // Same regression as the Bank validator's own test -- see its comment.
+    const blank = validateGeneralLedgerRows([validGlRow({ Date: '' })]).normalized[0];
+    const malformed = validateGeneralLedgerRows([validGlRow({ Date: '07/01/2026' })]).normalized[0];
+
+    expect(blank?.date).not.toBe('');
+    expect(isIsoDate(blank?.date ?? '')).toBe(true);
+    expect(malformed?.date).not.toBe('07/01/2026');
+    expect(isIsoDate(malformed?.date ?? '')).toBe(true);
   });
 
   it('GL_DESCRIPTION_REQUIRED: flags a blank Memo', () => {

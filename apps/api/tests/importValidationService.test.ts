@@ -27,6 +27,13 @@ const glCsv = Buffer.from(
 
 const invalidBankCsv = Buffer.from('not,a,recognizable,header\n1,2,3,4\n', 'utf8');
 
+// Structurally valid (right headers, right order) but a blank Memo trips GL_DESCRIPTION_REQUIRED
+// -- a row-content ERROR, not a structural one.
+const glCsvWithRowContentError = Buffer.from(
+  'Date,Memo,Amount\n' + '2026-08-01,,100.00\n',
+  'utf8',
+);
+
 const baseRun = (): ImportRunSummary => ({
   id: 'run-1',
   organizationId: 'org-1',
@@ -168,6 +175,47 @@ describe('runImportValidationWorkflow', () => {
     });
     expect(triggerMatching).not.toHaveBeenCalled();
     expect(importValidationStore.recordMatchingJobId).not.toHaveBeenCalled();
+  });
+
+  it('still records the row with a row-content ERROR, not excluded, even though the run fails validation (GitHub #151 finding #3)', async () => {
+    // The overall run still fails validation on a row-content ERROR (blank Memo) -- that's
+    // Screen 06's existing deliberate design: a senior-analyst must explicitly opt in via
+    // POST /import { skipInvalidRows: true } before a run with content errors proceeds to
+    // matching. What changed is one layer down: the row itself is no longer silently excluded
+    // from `normalized` before it ever reaches that review -- `packages/core`'s File Validation
+    // Engine now keeps every row, tagging it with its own issues, so Screen 06's row list (and
+    // anything built on `normalized` afterward) has the complete file rather than a gap.
+    const importValidationStore = createFakeImportValidationWriter();
+    const triggerMatching = vi.fn(() => Promise.resolve({ matchingJobId: 'should-not-be-called' }));
+
+    const result = await runImportValidationWorkflow({
+      organizationId: 'org-1',
+      runId: 'run-1',
+      importJobId: 'job-1',
+      workerId: 'worker-1',
+      logger: silentLogger,
+      blobStorage: createFakeBlobStorage({ 'file-bank': bankCsv, 'file-gl': glCsvWithRowContentError }),
+      importRunStore: createFakeImportRunStore(baseRun()),
+      importValidationStore,
+      triggerMatching,
+    });
+
+    expect(result).toEqual({ passed: false });
+    expect(triggerMatching).not.toHaveBeenCalled();
+
+    const glOutcomeCall = (
+      importValidationStore.recordFileValidationOutcome as unknown as {
+        mock: { calls: Array<[string, RecordFileValidationOutcomeInput]> };
+      }
+    ).mock.calls.find(([, input]) => input.importFileId === 'file-gl');
+    // The row with the blank Memo is still present in what gets recorded, carrying its own
+    // GL_DESCRIPTION_REQUIRED issue -- not excluded from `normalized` the way it used to be.
+    expect(glOutcomeCall?.[1].normalized).toEqual(
+      expect.arrayContaining([expect.objectContaining({ recordId: '1' })]),
+    );
+    expect(glOutcomeCall?.[1].issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'GL_DESCRIPTION_REQUIRED' })]),
+    );
   });
 
   it('throws when the run cannot be found', async () => {

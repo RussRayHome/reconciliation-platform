@@ -29,10 +29,13 @@ const deriveRawRowId = (sourceFileId: string, sourceLineNumber: number): string 
  * (Issue #137). This is the ONLY module allowed to know about both shapes -- it depends on
  * `fileValidation/types.ts` and the shared `normalization/text.ts` helpers, never on `matching/*`,
  * so the Matching Engine's own rule code needs zero changes and never imports from File
- * Validation. Every record handed in has already passed Step 3's hard validation (File
- * Validation's own `normalized` array only ever contains rows with no ERROR-severity issue), so
- * this adapter never produces a `dataQualityIssues` entry or excludes a row -- there is nothing
- * left to flag by the time a record reaches here.
+ * Validation. Step 3 no longer excludes a row for having an ERROR-severity issue -- every row
+ * reaches `normalized`, carrying its own issues on `NormalizedRecord.issues`. This adapter maps
+ * those onto `dataQualityIssues`, so a row with a content problem (bad date, missing Memo, etc.)
+ * still becomes a reviewable `InvalidOrMissingData` exception downstream instead of vanishing; it
+ * is simply excluded from active matching by the Matching Engine itself (`engine.ts`'s
+ * `dataQualityIssues.length === 0` filter), which is intentional -- flagged data shouldn't be
+ * offered as a match candidate.
  */
 
 export interface NormalizedTransactionContext {
@@ -169,7 +172,13 @@ export const toNormalizedTransactions = (
       normalizedComparisonTokens: comparisonTokens,
       normalizedReferenceTokens: referenceTokens,
       rawSourceValues: { ...record.raw } as RawTransactionRow['rawValues'],
-      dataQualityIssues: [],
+      // Only ERROR-severity issues opt a transaction out of active matching (via the Matching
+      // Engine's `dataQualityIssues.length === 0` filter) and route it to the InvalidOrMissingData
+      // exception instead. WARNING-severity issues (e.g. GL_AMOUNT_ZERO) stay visible in the
+      // file-level validation report but don't pull an otherwise-fine row out of normal matching.
+      dataQualityIssues: record.issues
+        .filter((issue) => issue.severity === 'ERROR')
+        .map((issue) => `${issue.code}: ${issue.message}`),
       isExcluded: isBeginningBalance,
       exclusionReason: isBeginningBalance ? BEGINNING_BALANCE_EXCLUSION_REASON : undefined,
       isZeroAmount: record.signedAmount === 0,
