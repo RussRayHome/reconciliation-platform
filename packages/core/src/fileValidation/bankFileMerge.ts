@@ -8,6 +8,10 @@ import { XlsxParser } from './parsers/xlsxParser';
 import { checkColumnOrder, checkHeaderPresent } from './structuralGates';
 import { BANKING_HEADERS, REQUIRED_BANKING_HEADERS, type ValidationIssue } from './types';
 
+/** #153: an import run supports 1-4 bank accounts. */
+export const MIN_BANK_ACCOUNTS = 1;
+export const MAX_BANK_ACCOUNTS = 4;
+
 /** Raised when a raw bank file's name doesn't start with `<digits><-|_>` (ADR-0003 §3) -- an
  * upload-level filename problem, never a File Validation content issue, so this is never routed
  * through the `validation_issue`/rule-version DB system. */
@@ -20,6 +24,22 @@ export class BankFilenameAccountParseError extends Error {
         `followed by "-" or "_", e.g. "4321_bank-export.csv".`,
     );
     this.name = 'BankFilenameAccountParseError';
+  }
+}
+
+/** Raised when `mergeBankFiles` is called with fewer than 1 or more than
+ * {@link MAX_BANK_ACCOUNTS} raw files -- a caller-contract violation (the HTTP layer's own multer
+ * config and upload-count check should normally prevent this from ever reaching here), not a
+ * per-file content problem, so it's a distinct error from {@link BankFilenameAccountParseError}/
+ * {@link BankFileStructuralError} below. */
+export class BankFileCountError extends Error {
+  /** @param fileCount The number of raw bank files actually passed, named back in the message so
+   * the caller can see what was rejected. */
+  constructor(public readonly fileCount: number) {
+    super(
+      `mergeBankFiles requires between 1 and ${MAX_BANK_ACCOUNTS} raw bank files, got ${fileCount}.`,
+    );
+    this.name = 'BankFileCountError';
   }
 }
 
@@ -82,25 +102,31 @@ const prepareRowsForMerge = (parsed: ParsedFile, last4: string): Record<string, 
   });
 
 /**
- * Merges two per-account raw bank files into one unified bank dataset, upstream of and invisible
- * to File Validation (ADR-0003, Issue #141). Each file's account number is parsed from its
- * ORIGINAL FILENAME (not its content) via `@recon/domain`'s `parseBankAccountLast4FromFilename`;
- * every non-blank Sequence Number is prefixed `<last4>-<sequence>` to disambiguate the two
- * accounts' otherwise-independent sequence numbering once combined. Reuses (does not reimplement)
- * File Validation's own Step 1/Step 2 structural gate functions against each raw file
- * individually before merging -- this is not "duplicating the pipeline's validation logic" (the
- * ADR's own boundary), it's calling the same functions `fileValidationEngine.ts` calls, just
- * per-file instead of per-merged-output, so a malformed raw file fails clearly and by name rather
- * than dissolving into row-level noise post-merge (see `BankFileStructuralError`'s own doc
- * comment). Step 3 (CELL_VALUES) is deliberately NOT run per-file here -- row content is only
- * meaningful once merged (e.g. BANK_SEQUENCE_DUPLICATE spans both accounts), so that stays exactly
- * where the ADR puts it: against the merged output, via the unchanged `validateFile`. Also drops
- * the Balance column from every row (see `prepareRowsForMerge`'s own comment) -- otherwise
- * BANK_BALANCE_CONTINUITY would false-positive at the account boundary on every real merged run.
+ * Merges 1-4 per-account raw bank files into one unified bank dataset, upstream of and invisible
+ * to File Validation (ADR-0003, Issue #141; widened from exactly 2 to 1-4 by Issue #153). Each
+ * file's account number is parsed from its ORIGINAL FILENAME (not its content) via
+ * `@recon/domain`'s `parseBankAccountLast4FromFilename`; every non-blank Sequence Number is
+ * prefixed `<last4>-<sequence>` to disambiguate the accounts' otherwise-independent sequence
+ * numbering once combined. Reuses (does not reimplement) File Validation's own Step 1/Step 2
+ * structural gate functions against each raw file individually before merging -- this is not
+ * "duplicating the pipeline's validation logic" (the ADR's own boundary), it's calling the same
+ * functions `fileValidationEngine.ts` calls, just per-file instead of per-merged-output, so a
+ * malformed raw file fails clearly and by name rather than dissolving into row-level noise
+ * post-merge (see `BankFileStructuralError`'s own doc comment). Step 3 (CELL_VALUES) is
+ * deliberately NOT run per-file here -- row content is only meaningful once merged (e.g.
+ * BANK_SEQUENCE_DUPLICATE spans every account), so that stays exactly where the ADR puts it:
+ * against the merged output, via the unchanged `validateFile`. Also drops the Balance column from
+ * every row (see `prepareRowsForMerge`'s own comment) -- otherwise BANK_BALANCE_CONTINUITY would
+ * false-positive at each account boundary on every real merged run. Concatenates accounts in
+ * input-array order (`flat()`) -- no cross-account interleaving or sorting.
  */
 export const mergeBankFiles = async (
-  files: readonly [RawBankFileInput, RawBankFileInput],
+  files: readonly RawBankFileInput[],
 ): Promise<MergedBankFile> => {
+  if (files.length < MIN_BANK_ACCOUNTS || files.length > MAX_BANK_ACCOUNTS) {
+    throw new BankFileCountError(files.length);
+  }
+
   const prefixedRows = await Promise.all(
     files.map(async (file) => {
       const last4 = parseBankAccountLast4FromFilename(file.originalFilename);

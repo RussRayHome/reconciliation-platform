@@ -234,35 +234,24 @@ describe('runImportValidationWorkflow', () => {
     ).rejects.toThrow(/reconciliation_run missing-run not found/);
   });
 
-  it('skips raw per-account BANK_ACCOUNT_A/B files -- never validates them or passes them to triggerMatching', async () => {
+  it('skips raw per-account BANK_ACCOUNT_N files -- never validates them or passes them to triggerMatching, for any account count 1-4 (#153)', async () => {
     const run = baseRun();
+    // 4 raw per-account files (not just the old fixed 2) -- proves the skip filter is
+    // count-agnostic, matching role, not a positional A/B check.
     run.files.unshift(
-      {
-        importFileId: 'file-bank-raw-a',
-        role: 'BANK_ACCOUNT_A',
-        sourceType: 'BANK',
-        originalFilename: '1111_bank.csv',
-        fileFormat: 'CSV',
-        validationStatus: 'PENDING',
+      ...['1', '2', '3', '4'].map((n) => ({
+        importFileId: `file-bank-raw-${n}`,
+        role: `BANK_ACCOUNT_${n}`,
+        sourceType: 'BANK' as const,
+        originalFilename: `${n.repeat(4)}_bank.csv`,
+        fileFormat: 'CSV' as const,
+        validationStatus: 'PENDING' as const,
         byteSize: bankCsv.byteLength,
-        contentSha256: 'sha-bank-raw-a',
+        contentSha256: `sha-bank-raw-${n}`,
         rowCount: null,
         errorCount: null,
         warningCount: null,
-      },
-      {
-        importFileId: 'file-bank-raw-b',
-        role: 'BANK_ACCOUNT_B',
-        sourceType: 'BANK',
-        originalFilename: '2222_bank.csv',
-        fileFormat: 'CSV',
-        validationStatus: 'PENDING',
-        byteSize: bankCsv.byteLength,
-        contentSha256: 'sha-bank-raw-b',
-        rowCount: null,
-        errorCount: null,
-        warningCount: null,
-      },
+      })),
     );
 
     const importValidationStore = createFakeImportValidationWriter();
@@ -275,8 +264,10 @@ describe('runImportValidationWorkflow', () => {
       workerId: 'worker-1',
       logger: silentLogger,
       blobStorage: createFakeBlobStorage({
-        'file-bank-raw-a': bankCsv,
-        'file-bank-raw-b': bankCsv,
+        'file-bank-raw-1': bankCsv,
+        'file-bank-raw-2': bankCsv,
+        'file-bank-raw-3': bankCsv,
+        'file-bank-raw-4': bankCsv,
         'file-bank': bankCsv,
         'file-gl': glCsv,
       }),

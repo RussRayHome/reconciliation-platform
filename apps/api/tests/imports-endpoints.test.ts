@@ -177,6 +177,16 @@ const bankCsvB = Buffer.from(
   'Date,Description,Sequence Number,Debit,Credit,Balance\n' +
     '2026-08-01,Second account deposit,1,,50.00,50.00\n',
 );
+// Distinct content for the #153 4-account test -- reusing bankCsvA/B a second time would trip the
+// byte-identical dedupe-collision guard, which is exactly what it's supposed to do.
+const bankCsvC = Buffer.from(
+  'Date,Description,Sequence Number,Debit,Credit,Balance\n' +
+    '2026-08-01,Third account deposit,1,,25.00,25.00\n',
+);
+const bankCsvD = Buffer.from(
+  'Date,Description,Sequence Number,Debit,Credit,Balance\n' +
+    '2026-08-01,Fourth account deposit,1,,10.00,10.00\n',
+);
 // Issue #141's pre-merge structural gate (mergeBankFiles) rejects this before it ever reaches
 // createRun -- kept as a fixture for the "structurally invalid" test below, not for the happy-path
 // tests above, which need real BANKING_HEADERS-shaped content to reach 201.
@@ -186,23 +196,31 @@ const structurallyInvalidBankCsv = Buffer.from(
 );
 const glXlsx = Buffer.from('gl-bytes-not-real-xlsx');
 
-const attachThreeFiles = (
+/** Issue #153: `bankFiles` is one repeated field (1-4 uploads), not per-slot `bankFileA`/
+ * `bankFileB` names. Defaults to today's 2-file happy path; pass `bankFiles` to override count,
+ * content, or filenames for a specific test. */
+const attachImportFiles = (
   request: ReturnType<ReturnType<typeof authedApp>['post']>,
-  overrides: { bankFileA?: Buffer; bankFileB?: Buffer; bankFileAName?: string; bankFileBName?: string } = {},
-) =>
-  request
-    .attach('bankFileA', overrides.bankFileA ?? bankCsvA, {
-      filename: overrides.bankFileAName ?? '1111_bank.csv',
+  overrides: { bankFiles?: Array<{ buffer?: Buffer; filename?: string }> } = {},
+) => {
+  const bankFiles = overrides.bankFiles ?? [
+    { buffer: bankCsvA, filename: '1111_bank.csv' },
+    { buffer: bankCsvB, filename: '2222_bank.csv' },
+  ];
+
+  let req = request;
+  bankFiles.forEach((file, index) => {
+    req = req.attach('bankFiles', file.buffer ?? bankCsvA, {
+      filename: file.filename ?? `${1111 * (index + 1)}_bank.csv`,
       contentType: 'text/csv',
-    })
-    .attach('bankFileB', overrides.bankFileB ?? bankCsvB, {
-      filename: overrides.bankFileBName ?? '2222_bank.csv',
-      contentType: 'text/csv',
-    })
-    .attach('glFile', glXlsx, {
-      filename: 'gl.xlsx',
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
+  });
+
+  return req.attach('glFile', glXlsx, {
+    filename: 'gl.xlsx',
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+};
 
 describe('imports endpoints', () => {
   let pool: Pool;
@@ -213,7 +231,7 @@ describe('imports endpoints', () => {
 
   describe('POST /api/imports/runs', () => {
     it('creates a DRAFT run and returns 201 with all four files, detecting format from extension', async () => {
-      const response = await attachThreeFiles(
+      const response = await attachImportFiles(
         authedApp(appWithPool(pool), { role: 'senior-analyst' })
           .post('/api/imports/runs')
           .field('label', 'August 2026 Operating Recon')
@@ -235,10 +253,76 @@ describe('imports endpoints', () => {
 
       const files = response.body.files as Array<{ role: string; fileFormat: string }>;
       expect(files).toHaveLength(4);
-      expect(files.find((file) => file.role === 'BANK_ACCOUNT_A')).toMatchObject({ fileFormat: 'CSV' });
-      expect(files.find((file) => file.role === 'BANK_ACCOUNT_B')).toMatchObject({ fileFormat: 'CSV' });
+      expect(files.find((file) => file.role === 'BANK_ACCOUNT_1')).toMatchObject({ fileFormat: 'CSV' });
+      expect(files.find((file) => file.role === 'BANK_ACCOUNT_2')).toMatchObject({ fileFormat: 'CSV' });
       expect(files.find((file) => file.role === 'BANK_MERGED')).toMatchObject({ fileFormat: 'CSV' });
       expect(files.find((file) => file.role === 'GL')).toMatchObject({ fileFormat: 'XLSX' });
+    });
+
+    it('creates a DRAFT run with just 1 bank account (the #153 minimum)', async () => {
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Single Account Recon')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        { bankFiles: [{ buffer: bankCsvA, filename: '1111_bank.csv' }] },
+      );
+
+      expect(response.status).toBe(201);
+      const files = response.body.files as Array<{ role: string; fileFormat: string }>;
+      expect(files).toHaveLength(3);
+      expect(files.find((file) => file.role === 'BANK_ACCOUNT_1')).toMatchObject({ fileFormat: 'CSV' });
+      expect(files.find((file) => file.role === 'BANK_MERGED')).toMatchObject({ fileFormat: 'CSV' });
+      expect(files.find((file) => file.role === 'GL')).toMatchObject({ fileFormat: 'XLSX' });
+    });
+
+    it('creates a DRAFT run with 4 bank accounts (the #153 maximum)', async () => {
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Four Account Recon')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        {
+          bankFiles: [
+            { buffer: bankCsvA, filename: '1111_bank.csv' },
+            { buffer: bankCsvB, filename: '2222_bank.csv' },
+            { buffer: bankCsvC, filename: '3333_bank.csv' },
+            { buffer: bankCsvD, filename: '4444_bank.csv' },
+          ],
+        },
+      );
+
+      expect(response.status).toBe(201);
+      const files = response.body.files as Array<{ role: string; fileFormat: string }>;
+      expect(files).toHaveLength(6);
+      for (const index of [1, 2, 3, 4]) {
+        expect(files.find((file) => file.role === `BANK_ACCOUNT_${index}`)).toMatchObject({
+          fileFormat: 'CSV',
+        });
+      }
+    });
+
+    it('returns 400 for a 5th bank account (exceeds the #153 maximum of 4)', async () => {
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Five Account Recon')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        {
+          bankFiles: [
+            { buffer: bankCsvA, filename: '1111_bank.csv' },
+            { buffer: bankCsvB, filename: '2222_bank.csv' },
+            { buffer: bankCsvA, filename: '3333_bank.csv' },
+            { buffer: bankCsvB, filename: '4444_bank.csv' },
+            { buffer: bankCsvA, filename: '5555_bank.csv' },
+          ],
+        },
+      );
+
+      expect(response.status).toBe(400);
     });
 
     it('rejects a .csv upload sent through a client that mislabels its extension the same way the old .xlsx-only filter would have', async () => {
@@ -250,8 +334,8 @@ describe('imports endpoints', () => {
         .field('label', 'CSV-only run')
         .field('frequency', 'MONTHLY')
         .field('periodYear', '2026')
-        .attach('bankFileA', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' })
-        .attach('bankFileB', bankCsvB, { filename: '2222_bank.csv', contentType: 'text/csv' })
+        .attach('bankFiles', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' })
+        .attach('bankFiles', bankCsvB, { filename: '2222_bank.csv', contentType: 'text/csv' })
         .attach('glFile', bankCsvA, { filename: 'gl.csv', contentType: 'text/csv' });
 
       expect(response.status).toBe(201);
@@ -261,7 +345,7 @@ describe('imports endpoints', () => {
     });
 
     it('returns 403 for a role other than senior-analyst', async () => {
-      const response = await attachThreeFiles(
+      const response = await attachImportFiles(
         authedApp(appWithPool(pool), { role: 'financial-analyst' })
           .post('/api/imports/runs')
           .field('label', 'Should Be Blocked')
@@ -279,22 +363,39 @@ describe('imports endpoints', () => {
         .field('label', 'Missing Files')
         .field('frequency', 'MONTHLY')
         .field('periodYear', '2026')
-        .attach('bankFileA', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' });
+        .attach('bankFiles', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' });
 
       expect(response.status).toBe(400);
       expect(response.body).toMatchObject({
-        message: expect.stringContaining('bankFileA, bankFileB, and glFile'),
+        message: expect.stringContaining('bankFiles'),
       });
     });
 
-    it('returns 400 when the two bank files are byte-identical', async () => {
+    it('returns 400 when zero bank files are attached', async () => {
+      const response = await authedApp(appWithPool(pool), { role: 'senior-analyst' })
+        .post('/api/imports/runs')
+        .field('label', 'No Bank Files')
+        .field('frequency', 'MONTHLY')
+        .field('periodYear', '2026')
+        .attach('glFile', glXlsx, {
+          filename: 'gl.xlsx',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        message: expect.stringContaining('bankFiles'),
+      });
+    });
+
+    it('returns 400 when two bank files are byte-identical', async () => {
       const response = await authedApp(appWithPool(pool), { role: 'senior-analyst' })
         .post('/api/imports/runs')
         .field('label', 'Identical Bank Files')
         .field('frequency', 'MONTHLY')
         .field('periodYear', '2026')
-        .attach('bankFileA', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' })
-        .attach('bankFileB', bankCsvA, { filename: '2222_bank.csv', contentType: 'text/csv' })
+        .attach('bankFiles', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' })
+        .attach('bankFiles', bankCsvA, { filename: '2222_bank.csv', contentType: 'text/csv' })
         .attach('glFile', glXlsx, {
           filename: 'gl.xlsx',
           contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -307,13 +408,18 @@ describe('imports endpoints', () => {
     });
 
     it('returns 400 naming the file when a bank filename has no account-number prefix', async () => {
-      const response = await attachThreeFiles(
+      const response = await attachImportFiles(
         authedApp(appWithPool(pool), { role: 'senior-analyst' })
           .post('/api/imports/runs')
           .field('label', 'Bad Filename')
           .field('frequency', 'MONTHLY')
           .field('periodYear', '2026'),
-        { bankFileBName: 'checking-account.csv' },
+        {
+          bankFiles: [
+            { buffer: bankCsvA, filename: '1111_bank.csv' },
+            { buffer: bankCsvB, filename: 'checking-account.csv' },
+          ],
+        },
       );
 
       expect(response.status).toBe(400);
@@ -323,13 +429,18 @@ describe('imports endpoints', () => {
     });
 
     it('returns 400 with structural issues when a raw bank file fails Step 1/Step 2 on its own', async () => {
-      const response = await attachThreeFiles(
+      const response = await attachImportFiles(
         authedApp(appWithPool(pool), { role: 'senior-analyst' })
           .post('/api/imports/runs')
           .field('label', 'Structurally Invalid Bank File')
           .field('frequency', 'MONTHLY')
           .field('periodYear', '2026'),
-        { bankFileA: structurallyInvalidBankCsv },
+        {
+          bankFiles: [
+            { buffer: structurallyInvalidBankCsv, filename: '1111_bank.csv' },
+            { buffer: bankCsvB, filename: '2222_bank.csv' },
+          ],
+        },
       );
 
       expect(response.status).toBe(400);
@@ -340,7 +451,7 @@ describe('imports endpoints', () => {
     });
 
     it('returns 400 when the body fails validation', async () => {
-      const response = await attachThreeFiles(
+      const response = await attachImportFiles(
         authedApp(appWithPool(pool), { role: 'senior-analyst' })
           .post('/api/imports/runs')
           .field('frequency', 'WEEKLY')
@@ -352,7 +463,7 @@ describe('imports endpoints', () => {
     });
 
     it('returns 501 when no database pool is configured', async () => {
-      const response = await attachThreeFiles(
+      const response = await attachImportFiles(
         authedApp(appWithPool(undefined), { role: 'senior-analyst' })
           .post('/api/imports/runs')
           .field('label', 'No Pool')
@@ -367,7 +478,7 @@ describe('imports endpoints', () => {
   describe('GET /api/imports/runs/:id', () => {
     it('returns the run created by a prior POST', async () => {
       const app = appWithPool(pool);
-      const created = await attachThreeFiles(
+      const created = await attachImportFiles(
         authedApp(app, { role: 'senior-analyst' })
           .post('/api/imports/runs')
           .field('label', 'Fetch Me')

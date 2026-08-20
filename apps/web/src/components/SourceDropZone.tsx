@@ -5,14 +5,15 @@ import { parseBankAccountLast4FromFilename } from '@recon/domain';
 import { formatFileSize } from '../lib/formatFileSize';
 import { ImportUploadCard, type RejectedUploadCode } from './ImportUploadCard';
 
-/** Content-based classification from the file name alone -- doesn't distinguish Account A vs B
- * (both are just "a bank file" by keyword), that split happens by slot-fill order instead. */
 type SourceKind = 'bank' | 'gl';
-type SourceSlotKind = 'bankA' | 'bankB' | 'gl';
+
+/** Issue #153: a run supports 1-4 bank accounts. */
+export const MIN_BANK_ACCOUNTS = 1;
+export const MAX_BANK_ACCOUNTS = 4;
 
 /** Screen 02's client-side upload gate: `.csv`/`.xlsx` only, 50 MB per file, both enforced before
- * any request -- a rejected file never reaches `setBankFileA`/`setBankFileB`/`setGlFile` and so
- * never becomes part of an `import_file` row. */
+ * any request -- a rejected file never reaches `setBankFiles`/`setGlFile` and so never becomes
+ * part of an `import_file` row. */
 const MAX_IMPORT_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.csv', '.xlsx'];
 
@@ -43,6 +44,12 @@ const detectRejection = (file: File): RejectedUploadCode | null => {
 const detectBankAccountRejection = (file: File): RejectedUploadCode | null =>
   parseBankAccountLast4FromFilename(file.name) === null ? 'UPLOAD_BANK_FILENAME_INVALID' : null;
 
+/** Slots 1-2 keep their pre-#153 ids (`bank-workbook-input`, `bank-workbook-b-input`) so existing
+ * Playwright fixtures (`#bank-workbook-input`/`#bank-workbook-b-input`) don't break; slots 3-4 get
+ * new lettered ids following the same pattern. */
+const bankInputId = (index: number): string =>
+  index === 0 ? 'bank-workbook-input' : `bank-workbook-${String.fromCharCode(97 + index)}-input`;
+
 const detectSource = (fileName: string): SourceKind | null => {
   const lower = fileName.toLowerCase();
 
@@ -58,23 +65,21 @@ const detectSource = (fileName: string): SourceKind | null => {
 };
 
 /**
- * Single drop zone that accepts all three source workbooks (two per-account bank workbooks + one
- * GL workbook). Files are auto-assigned by filename signature -- bank files fill Account A then
- * Account B in the order they're dropped/detected -- with per-slot inputs for manual override.
+ * Single drop zone that accepts every source workbook: 1-4 per-account bank workbooks (Issue
+ * #153) plus one GL workbook. Files are auto-assigned by filename signature -- bank files fill
+ * the first empty bank slot in drop order, growing a new slot (up to the 4-account cap) if none
+ * is empty -- with per-slot inputs for manual override, an "Add another" control, and a per-slot
+ * remove control (floored at 1 slot).
  */
 export function SourceDropZone({
-  bankFileA,
-  bankFileB,
+  bankFiles,
   glFile,
-  setBankFileA,
-  setBankFileB,
+  setBankFiles,
   setGlFile,
 }: Readonly<{
-  bankFileA: File | null;
-  bankFileB: File | null;
+  bankFiles: (File | null)[];
   glFile: File | null;
-  setBankFileA: Dispatch<SetStateAction<File | null>>;
-  setBankFileB: Dispatch<SetStateAction<File | null>>;
+  setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
   setGlFile: Dispatch<SetStateAction<File | null>>;
 }>) {
   const [isDragging, setIsDragging] = useState(false);
@@ -87,25 +92,28 @@ export function SourceDropZone({
   };
 
   /** One `assignFiles` call can see several bank-shaped files in the same batch (a multi-file drop
-   * or the merged "Source workbooks" picker) -- `setBankFileA`/`setBankFileB` don't take effect
-   * until the next render, so deciding "is slot A taken" from the `bankFileA`/`bankFileB` props
-   * would have every file in the batch see the same stale (pre-batch) answer and pile into slot A.
-   * These locally-scoped flags track what's already been claimed *within this one call* instead. */
+   * or the merged "Source workbooks" picker) -- `setBankFiles`/`setGlFile` don't take effect until
+   * the next render, so deciding "which slots are already taken" from the `bankFiles`/`glFile`
+   * props would have every file in the batch see the same stale (pre-batch) answer. Building the
+   * next `bankFiles` array locally and committing it once at the end avoids that -- no per-file
+   * setter calls, no stale-closure tracking needed. */
   const assignFiles = (files: FileList | File[]): void => {
     const incoming = Array.from(files);
     const unassigned: File[] = [];
-    let bankSlotAFilled = Boolean(bankFileA);
-    let bankSlotBFilled = Boolean(bankFileB);
-    let glSlotFilled = Boolean(glFile);
+    const nextBankFiles = [...bankFiles];
+    let nextGlFile = glFile;
 
-    const assignBankSlot = (file: File): void => {
-      if (!bankSlotAFilled) {
-        setBankFileA(file);
-        bankSlotAFilled = true;
-      } else {
-        setBankFileB(file);
-        bankSlotBFilled = true;
+    const assignBankSlot = (file: File): boolean => {
+      const emptyIndex = nextBankFiles.findIndex((slotFile) => slotFile === null);
+      if (emptyIndex !== -1) {
+        nextBankFiles[emptyIndex] = file;
+        return true;
       }
+      if (nextBankFiles.length < MAX_BANK_ACCOUNTS) {
+        nextBankFiles.push(file);
+        return true;
+      }
+      return false;
     };
 
     for (const file of incoming) {
@@ -123,22 +131,28 @@ export function SourceDropZone({
           rejectFile(file, accountRejection);
           continue;
         }
-        assignBankSlot(file);
+        if (!assignBankSlot(file)) {
+          rejectFile(file, 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED');
+        }
       } else if (detected === 'gl') {
-        setGlFile(file);
-        glSlotFilled = true;
+        nextGlFile = file;
       } else {
         unassigned.push(file);
       }
     }
 
     for (const file of unassigned) {
-      if (!bankSlotAFilled || !bankSlotBFilled) {
+      const hasEmptyBankSlot = nextBankFiles.some((slotFile) => slotFile === null);
+      if (hasEmptyBankSlot || nextBankFiles.length < MAX_BANK_ACCOUNTS) {
         assignBankSlot(file);
-      } else if (!glSlotFilled) {
-        setGlFile(file);
-        glSlotFilled = true;
+      } else if (nextGlFile === null) {
+        nextGlFile = file;
       }
+    }
+
+    setBankFiles(nextBankFiles);
+    if (nextGlFile !== glFile) {
+      setGlFile(nextGlFile);
     }
   };
 
@@ -155,12 +169,9 @@ export function SourceDropZone({
     setRejectedFiles((prev) => prev.filter((entry) => entry.id !== id));
   };
 
-  const bankSlotChange = (
-    setter: Dispatch<SetStateAction<File | null>>,
-    file: File | null,
-  ): void => {
+  const onBankFileChange = (index: number, file: File | null): void => {
     if (file === null) {
-      setter(null);
+      setBankFiles((prev) => prev.map((slotFile, i) => (i === index ? null : slotFile)));
       return;
     }
 
@@ -176,7 +187,17 @@ export function SourceDropZone({
       return;
     }
 
-    setter(file);
+    setBankFiles((prev) => prev.map((slotFile, i) => (i === index ? file : slotFile)));
+  };
+
+  const onAddBankSlot = (): void => {
+    setBankFiles((prev) => (prev.length < MAX_BANK_ACCOUNTS ? [...prev, null] : prev));
+  };
+
+  const onRemoveBankSlot = (index: number): void => {
+    setBankFiles((prev) =>
+      prev.length > MIN_BANK_ACCOUNTS ? prev.filter((_, i) => i !== index) : prev,
+    );
   };
 
   const glSlotChange = (file: File | null): void => {
@@ -209,7 +230,9 @@ export function SourceDropZone({
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
       >
-        <span className="source-dropzone__prompt">Drag all three workbooks here, or browse</span>
+        <span className="source-dropzone__prompt">
+          Drag your bank and GL workbooks here, or browse
+        </span>
         <span className="source-dropzone__hint">.csv · .xlsx — max 50 MB per file</span>
         <span className="source-dropzone__browse-button">Choose files</span>
         <input
@@ -226,28 +249,31 @@ export function SourceDropZone({
       </label>
 
       <div className="source-dropzone__slots">
+        {bankFiles.map((file, index) => (
+          <SourceSlot
+            key={index}
+            kind="bank"
+            label={`Bank workbook (Account ${index + 1})`}
+            inputId={bankInputId(index)}
+            file={file}
+            onChange={(nextFile) => onBankFileChange(index, nextFile)}
+            onRemove={bankFiles.length > MIN_BANK_ACCOUNTS ? () => onRemoveBankSlot(index) : undefined}
+          />
+        ))}
         <SourceSlot
-          slot="bankA"
-          label="Bank workbook (Account A)"
-          inputId="bank-workbook-input"
-          file={bankFileA}
-          onChange={(file) => bankSlotChange(setBankFileA, file)}
-        />
-        <SourceSlot
-          slot="bankB"
-          label="Bank workbook (Account B)"
-          inputId="bank-workbook-b-input"
-          file={bankFileB}
-          onChange={(file) => bankSlotChange(setBankFileB, file)}
-        />
-        <SourceSlot
-          slot="gl"
+          kind="gl"
           label="GL workbook"
           inputId="gl-workbook-input"
           file={glFile}
           onChange={glSlotChange}
         />
       </div>
+
+      {bankFiles.length < MAX_BANK_ACCOUNTS ? (
+        <button type="button" className="secondary-button" onClick={onAddBankSlot}>
+          Add another bank statement
+        </button>
+      ) : null}
 
       {rejectedFiles.length > 0 ? (
         <div className="source-dropzone__rejected-list">
@@ -265,35 +291,49 @@ export function SourceDropZone({
       ) : null}
 
       <p className="source-dropzone__note">
-        Bank workbooks fill Account A then Account B in drop order, and GL is detected from its
-        file name; use the slot pickers to override. Each bank file name must start with its
-        account number (or last 4 digits) followed by "-" or "_", e.g. "4321_bank-export.csv". Row
-        counts, date range, and excluded rows are calculated when the reconciliation runs.
+        Bank workbooks fill the first empty slot in drop order (adding a new slot automatically,
+        up to {MAX_BANK_ACCOUNTS} accounts), and GL is detected from its file name; use the slot
+        pickers to override. Each bank file name must start with its account number (or last 4
+        digits) followed by "-" or "_", e.g. "4321_bank-export.csv". Row counts, date range, and
+        excluded rows are calculated when the reconciliation runs.
       </p>
     </div>
   );
 }
 
 function SourceSlot({
-  slot,
+  kind,
   label,
   inputId,
   file,
   onChange,
+  onRemove,
 }: Readonly<{
-  slot: SourceSlotKind;
+  kind: SourceKind;
   label: string;
   inputId: string;
   file: File | null;
   onChange: (file: File | null) => void;
+  onRemove?: () => void;
 }>) {
-  const slotKind: SourceKind = slot === 'gl' ? 'gl' : 'bank';
   const detected = file ? detectSource(file.name) : null;
-  const isOverride = Boolean(file) && detected !== null && detected !== slotKind;
+  const isOverride = Boolean(file) && detected !== null && detected !== kind;
 
   return (
     <div className="source-slot">
-      <label htmlFor={inputId}>{label}</label>
+      <div className="source-slot__header">
+        <label htmlFor={inputId}>{label}</label>
+        {onRemove ? (
+          <button
+            type="button"
+            className="import-upload-card__ghost-button"
+            onClick={onRemove}
+            aria-label={`Remove ${label}`}
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
       <input
         id={inputId}
         type="file"
