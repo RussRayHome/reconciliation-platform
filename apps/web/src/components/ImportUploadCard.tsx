@@ -3,7 +3,8 @@ import { formatFileSize } from '../lib/formatFileSize';
 export type RejectedUploadCode =
   | 'UPLOAD_EXTENSION_UNSUPPORTED'
   | 'UPLOAD_SIZE_EXCEEDED'
-  | 'UPLOAD_BANK_FILENAME_INVALID';
+  | 'UPLOAD_BANK_FILENAME_INVALID'
+  | 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED';
 
 type ImportUploadCardProps =
   | {
@@ -47,6 +48,10 @@ const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }
   UPLOAD_BANK_FILENAME_INVALID: {
     label: 'UPLOAD_BANK_FILENAME_INVALID',
     body: 'Bank file names must start with the account number (or its last 4 digits) followed by "-" or "_", e.g. "4321_bank-export.csv".',
+  },
+  UPLOAD_BANK_ACCOUNT_LIMIT_REACHED: {
+    label: 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED',
+    body: 'A run supports up to 4 bank accounts. Remove a bank file before adding another.',
   },
 };
 

@@ -640,20 +640,28 @@ const renderApp = () =>
     </QueryClientProvider>,
   );
 
-/** Fills all three Screen 02 upload slots -- both bank filenames must start with digits followed
- * by "-"/"_" (Issue #141's account-filename convention) or `SourceDropZone` rejects them before
- * they ever reach state. Defaults are interchangeable stand-ins for tests that don't care about
- * file identity; pass overrides for tests that assert on specific bytes/names. */
+/** Fills Screen 02's upload slots -- every bank filename must start with digits followed by
+ * "-"/"_" (Issue #141's account-filename convention) or `SourceDropZone` rejects it before it
+ * ever reaches state. Defaults are interchangeable stand-ins for tests that don't care about file
+ * identity (2 bank files, matching this suite's pre-#153 default); pass overrides for tests that
+ * assert on specific bytes/names/counts. #153: two slots exist on mount (matching the prior fixed
+ * layout); a target count above 2 clicks "Add another bank statement" to grow, below 2 clicks the
+ * 2nd slot's Remove control to shrink. */
 const fillUploadInputs = ({
-  bankFileA = new File(['bank-a'], '1111_bank.xlsx'),
-  bankFileB = new File(['bank-b'], '2222_bank.xlsx'),
+  bankFiles = [new File(['bank-a'], '1111_bank.xlsx'), new File(['bank-b'], '2222_bank.xlsx')],
   glFile = new File(['gl'], 'gl.xlsx'),
-}: { bankFileA?: File; bankFileB?: File; glFile?: File } = {}): void => {
-  fireEvent.change(screen.getByLabelText('Bank workbook (Account A)'), {
-    target: { files: [bankFileA] },
-  });
-  fireEvent.change(screen.getByLabelText('Bank workbook (Account B)'), {
-    target: { files: [bankFileB] },
+}: { bankFiles?: File[]; glFile?: File } = {}): void => {
+  if (bankFiles.length === 1) {
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Bank workbook (Account 2)' }));
+  } else {
+    for (let slotCount = 2; slotCount < bankFiles.length; slotCount += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Add another bank statement' }));
+    }
+  }
+  bankFiles.forEach((bankFile, index) => {
+    fireEvent.change(screen.getByLabelText(`Bank workbook (Account ${index + 1})`), {
+      target: { files: [bankFile] },
+    });
   });
   fireEvent.change(screen.getByLabelText('GL workbook'), {
     target: { files: [glFile] },
@@ -1433,7 +1441,7 @@ describe('App', () => {
       type: 'application/octet-stream',
     });
 
-    fillUploadInputs({ bankFileA, bankFileB, glFile });
+    fillUploadInputs({ bankFiles: [bankFileA, bankFileB], glFile });
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
     });
@@ -1456,8 +1464,7 @@ describe('App', () => {
     expect(request.body).toBeInstanceOf(FormData);
 
     const formData = request.body as FormData;
-    expect(formData.get('bankFileA')).toBe(bankFileA);
-    expect(formData.get('bankFileB')).toBe(bankFileB);
+    expect(formData.getAll('bankFiles')).toEqual([bankFileA, bankFileB]);
     expect(formData.get('glFile')).toBe(glFile);
     expect(formData.get('accountIdentifier')).toBe('OPERATING-001');
     expect(formData.get('frequency')).toBe('ANNUAL');
@@ -1592,9 +1599,9 @@ describe('App', () => {
 
     // "4321_gl-export.xlsx" auto-detects to the GL slot (and satisfies the bank account-filename
     // convention so the override check itself is what's under test here, not the filename gate);
-    // forcing it into the Bank Account A slot picker instead should flag the mismatch rather than
+    // forcing it into the Bank Account 1 slot picker instead should flag the mismatch rather than
     // silently accept it.
-    fireEvent.change(screen.getByLabelText('Bank workbook (Account A)'), {
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account 1)'), {
       target: { files: [new File(['gl'], '4321_gl-export.xlsx')] },
     });
 
@@ -1788,6 +1795,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.queryByText('gl_export_2026-08.csv — Step 2 of 3')).not.toBeInTheDocument();
     });
+    // Reset back to the #153 default of two empty bank slots + one empty GL slot.
     expect(screen.getAllByText('No file selected')).toHaveLength(3);
   });
 
@@ -2088,7 +2096,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Bank workbook (Account A)'), {
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account 1)'), {
       target: { files: [new File(['bank'], 'checking-account.csv')] },
     });
 
@@ -2097,8 +2105,111 @@ describe('App', () => {
     expect(alert).toHaveTextContent(
       'Bank file names must start with the account number (or its last 4 digits) followed by "-" or "_", e.g. "4321_bank-export.csv".',
     );
-    // Rejected -- never assigned into the slot, so all three remain empty.
+    // Rejected -- never assigned into the slot, so all remaining slots (2 bank + GL) stay empty.
     expect(screen.getAllByText('No file selected')).toHaveLength(3);
+  });
+
+  it('#153: starts with two bank slots, and "Add another bank statement" adds slots up to 4', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    expect(screen.getByLabelText('Bank workbook (Account 1)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Bank workbook (Account 2)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Bank workbook (Account 3)')).not.toBeInTheDocument();
+
+    const addButton = () => screen.getByRole('button', { name: 'Add another bank statement' });
+
+    fireEvent.click(addButton());
+    expect(screen.getByLabelText('Bank workbook (Account 3)')).toBeInTheDocument();
+
+    fireEvent.click(addButton());
+    expect(screen.getByLabelText('Bank workbook (Account 4)')).toBeInTheDocument();
+
+    // Capped at 4 -- the Add control disappears once the 4th slot exists.
+    expect(screen.queryByRole('button', { name: 'Add another bank statement' })).not.toBeInTheDocument();
+  });
+
+  it('#153: a per-slot Remove control appears down to the minimum 1 slot, and removes a slot', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    // Remove is available on the default 2-slot layout...
+    expect(screen.getByRole('button', { name: 'Remove Bank workbook (Account 2)' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account 2)'), {
+      target: { files: [new File(['bank-2'], '2222_bank.csv')] },
+    });
+    expect(screen.getAllByText('2222_bank.csv').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Bank workbook (Account 2)' }));
+
+    expect(screen.queryByLabelText('Bank workbook (Account 2)')).not.toBeInTheDocument();
+    expect(screen.queryByText('2222_bank.csv')).not.toBeInTheDocument();
+    // ...but disappears once only the minimum 1 slot remains.
+    expect(screen.queryByRole('button', { name: 'Remove Bank workbook (Account 1)' })).not.toBeInTheDocument();
+  });
+
+  it('#153: submits with just 1 bank file (the minimum)', async () => {
+    installFakeImportRunXhr();
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
+
+    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(FakeImportRunXhr.instances).toHaveLength(1);
+    });
+    const formData = FakeImportRunXhr.instances[0]!.body as FormData;
+    expect(formData.getAll('bankFiles')).toHaveLength(1);
+  });
+
+  it('#153: submits with all 4 bank files (the maximum)', async () => {
+    installFakeImportRunXhr();
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fillUploadInputs({
+      bankFiles: [
+        new File(['bank-1'], '1111_bank.xlsx'),
+        new File(['bank-2'], '2222_bank.xlsx'),
+        new File(['bank-3'], '3333_bank.xlsx'),
+        new File(['bank-4'], '4444_bank.xlsx'),
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(FakeImportRunXhr.instances).toHaveLength(1);
+    });
+    const formData = FakeImportRunXhr.instances[0]!.body as FormData;
+    expect(formData.getAll('bankFiles')).toHaveLength(4);
+  });
+
+  it('#153: rejects a 5th bank-shaped file dropped once all 4 slots are filled', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fillUploadInputs({
+      bankFiles: [
+        new File(['bank-1'], '1111_bank.xlsx'),
+        new File(['bank-2'], '2222_bank.xlsx'),
+        new File(['bank-3'], '3333_bank.xlsx'),
+        new File(['bank-4'], '4444_bank.xlsx'),
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Source workbooks'), {
+      target: { files: [new File(['bank-5'], '5555_bank.xlsx')] },
+    });
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('UPLOAD_BANK_ACCOUNT_LIMIT_REACHED');
+    expect(screen.queryByLabelText('Bank workbook (Account 5)')).not.toBeInTheDocument();
   });
 
   it('shows real per-file upload progress and lets Cancel abort the transfer without an error banner', async () => {
@@ -2114,7 +2225,7 @@ describe('App', () => {
     const glFile = new File(['gl'], 'gl.csv');
     Object.defineProperty(glFile, 'size', { value: 6_000_000 });
 
-    fillUploadInputs({ bankFileA, bankFileB, glFile });
+    fillUploadInputs({ bankFiles: [bankFileA, bankFileB], glFile });
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 

@@ -627,8 +627,10 @@ function ReconciliationApp({
     String(currentYear - index - 1),
   );
   const defaultMonth = monthsWithinYear[new Date().getMonth()] ?? 'January';
-  const [bankFileA, setBankFileA] = useState<File | null>(null);
-  const [bankFileB, setBankFileB] = useState<File | null>(null);
+  // Issue #153: 1-4 bank accounts per run. Starts at two empty slots (the common case, and the
+  // prior fixed layout); "Add another" appends a slot (capped at MAX_BANK_ACCOUNTS), a per-slot
+  // remove control removes one (floored at MIN_BANK_ACCOUNTS).
+  const [bankFiles, setBankFiles] = useState<(File | null)[]>([null, null]);
   const [glFile, setGlFile] = useState<File | null>(null);
   const [accountIdentifier, setAccountIdentifier] = useState('');
   const [reconciliationFrequency, setReconciliationFrequency] =
@@ -1004,8 +1006,10 @@ function ReconciliationApp({
 
   const trimmedPeriodLabel = periodLabel.trim();
   const isLabelMissing = trimmedPeriodLabel.length === 0;
-  const hasStartedUploadStep = Boolean(bankFileA || bankFileB || glFile);
-  const isUploadStepComplete = Boolean(bankFileA && bankFileB && glFile);
+  const hasStartedUploadStep = Boolean(bankFiles.some(Boolean) || glFile);
+  const isUploadStepComplete = Boolean(
+    bankFiles.length > 0 && bankFiles.every(Boolean) && glFile,
+  );
   const isConfigurationStepComplete = isUploadStepComplete && !isLabelMissing;
   const isRunStepComplete = Boolean(run);
   const isRunStepCurrent = isConfigurationStepComplete && !isRunStepComplete;
@@ -1013,7 +1017,7 @@ function ReconciliationApp({
   const isExportStepCurrent = isRunStepComplete && !isExportStepComplete;
   const isRunPendingStep = isRunStepCurrent || reconciliation.isPending;
   const canSubmit = Boolean(
-    bankFileA && bankFileB && glFile && !reconciliation.isPending && !isLabelMissing,
+    isUploadStepComplete && !reconciliation.isPending && !isLabelMissing,
   );
 
   const progressSteps = useMemo<ProgressStep[]>(() => {
@@ -1099,7 +1103,7 @@ function ReconciliationApp({
   const elapsedLabel = runElapsedMs === null ? null : formatElapsedLabel(runElapsedMs);
   const runBarSourceFileNames = reportRun
     ? reportRun.sourceFiles.map((file) => file.fileName)
-    : [bankFileA?.name, bankFileB?.name, glFile?.name].filter(
+    : [...bankFiles.map((file) => file?.name), glFile?.name].filter(
         (name): name is string => Boolean(name),
       );
   const runBarAccountIdentifier = reportRun?.accountIdentifier ?? accountIdentifier;
@@ -1156,15 +1160,15 @@ function ReconciliationApp({
   const handleSubmit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();
 
-    if (!bankFileA || !bankFileB || !glFile) {
+    if (bankFiles.length === 0 || bankFiles.some((file) => !file) || !glFile) {
       return;
     }
+    const confirmedBankFiles = bankFiles as File[];
 
     setRunStartedAtMs(Date.now());
     setNowMs(Date.now());
     uploadTransfer.start({
-      bankFileA,
-      bankFileB,
+      bankFiles: confirmedBankFiles,
       glFile,
       label: trimmedPeriodLabel,
       accountIdentifier: accountIdentifier || undefined,
@@ -1252,8 +1256,7 @@ function ReconciliationApp({
                 element={
                   <SourceUploadSection
                     annualYear={annualYear}
-                    bankFileA={bankFileA}
-                    bankFileB={bankFileB}
+                    bankFiles={bankFiles}
                     glFile={glFile}
                     canSubmit={canSubmit}
                     currentYear={currentYear}
@@ -1267,8 +1270,7 @@ function ReconciliationApp({
                     reconciliationFrequency={reconciliationFrequency}
                     setAccountIdentifier={setAccountIdentifier}
                     setAnnualYear={setAnnualYear}
-                    setBankFileA={setBankFileA}
-                    setBankFileB={setBankFileB}
+                    setBankFiles={setBankFiles}
                     setIsCustomPeriodLabel={setIsCustomPeriodLabel}
                     setMonthlyMonth={setMonthlyMonth}
                     setPeriodLabel={setPeriodLabel}
@@ -1484,8 +1486,7 @@ function ReconciliationApp({
 function SourceUploadSection({
   accountIdentifier,
   annualYear,
-  bankFileA,
-  bankFileB,
+  bankFiles,
   glFile,
   canSubmit,
   currentYear,
@@ -1499,8 +1500,7 @@ function SourceUploadSection({
   reconciliationFrequency,
   setAccountIdentifier,
   setAnnualYear,
-  setBankFileA,
-  setBankFileB,
+  setBankFiles,
   setIsCustomPeriodLabel,
   setMonthlyMonth,
   setPeriodLabel,
@@ -1512,8 +1512,7 @@ function SourceUploadSection({
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
-  bankFileA: File | null;
-  bankFileB: File | null;
+  bankFiles: (File | null)[];
   glFile: File | null;
   canSubmit: boolean;
   currentYear: number;
@@ -1527,8 +1526,7 @@ function SourceUploadSection({
   reconciliationFrequency: ReconciliationFrequency;
   setAccountIdentifier: Dispatch<SetStateAction<string>>;
   setAnnualYear: Dispatch<SetStateAction<string>>;
-  setBankFileA: Dispatch<SetStateAction<File | null>>;
-  setBankFileB: Dispatch<SetStateAction<File | null>>;
+  setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
   setIsCustomPeriodLabel: Dispatch<SetStateAction<boolean>>;
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
   setPeriodLabel: Dispatch<SetStateAction<string>>;
@@ -1586,52 +1584,56 @@ function SourceUploadSection({
           <div className="import-screen__upload-column">
             {uploadTransfer.transfer.kind === 'idle' ? (
               <SourceDropZone
-                bankFileA={bankFileA}
-                bankFileB={bankFileB}
+                bankFiles={bankFiles}
                 glFile={glFile}
-                setBankFileA={setBankFileA}
-                setBankFileB={setBankFileB}
+                setBankFiles={setBankFiles}
                 setGlFile={setGlFile}
               />
             ) : (
-              <div className="import-upload-card-list" aria-label="Upload progress">
-                {bankFileA ? (
-                  <ImportUploadCard
-                    {...buildTransferCardProps(
-                      uploadTransfer.transfer,
-                      bankFileA,
-                      'bank A',
-                      0,
-                      uploadTransfer.cancel,
-                      uploadTransfer.retry,
-                    )}
-                  />
-                ) : null}
-                {bankFileB ? (
-                  <ImportUploadCard
-                    {...buildTransferCardProps(
-                      uploadTransfer.transfer,
-                      bankFileB,
-                      'bank B',
-                      bankFileA?.size ?? 0,
-                      uploadTransfer.cancel,
-                      uploadTransfer.retry,
-                    )}
-                  />
-                ) : null}
-                {glFile ? (
-                  <ImportUploadCard
-                    {...buildTransferCardProps(
-                      uploadTransfer.transfer,
-                      glFile,
-                      'gl',
-                      (bankFileA?.size ?? 0) + (bankFileB?.size ?? 0),
-                      uploadTransfer.cancel,
-                      uploadTransfer.retry,
-                    )}
-                  />
-                ) : null}
-              </div>
+              (() => {
+                // Captured as a local const so TS's discriminated-union narrowing (kind !==
+                // 'idle', from the enclosing ternary) persists into the nested closures below --
+                // narrowing on a property access like `uploadTransfer.transfer.kind` doesn't
+                // survive into a callback the way narrowing on a local variable does.
+                const transfer = uploadTransfer.transfer;
+                return (
+                  <div className="import-upload-card-list" aria-label="Upload progress">
+                    {bankFiles.map((file, index) => {
+                      if (!file) {
+                        return null;
+                      }
+                      const precedingBytes = bankFiles
+                        .slice(0, index)
+                        .reduce((sum, previousFile) => sum + (previousFile?.size ?? 0), 0);
+                      return (
+                        <ImportUploadCard
+                          key={index}
+                          {...buildTransferCardProps(
+                            transfer,
+                            file,
+                            `bank ${index + 1}`,
+                            precedingBytes,
+                            uploadTransfer.cancel,
+                            uploadTransfer.retry,
+                          )}
+                        />
+                      );
+                    })}
+                    {glFile ? (
+                      <ImportUploadCard
+                        {...buildTransferCardProps(
+                          transfer,
+                          glFile,
+                          'gl',
+                          bankFiles.reduce((sum, file) => sum + (file?.size ?? 0), 0),
+                          uploadTransfer.cancel,
+                          uploadTransfer.retry,
+                        )}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })()
             )}
           </div>
 
@@ -1709,8 +1711,7 @@ function SourceUploadSection({
               run={reconciliation.error.run}
               onRetryUpload={() => {
                 reconciliation.reset();
-                setBankFileA(null);
-                setBankFileB(null);
+                setBankFiles([null, null]);
                 setGlFile(null);
               }}
               partialAccept={partialAccept}

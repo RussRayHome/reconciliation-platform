@@ -1,11 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
-import { BankFileStructuralError, BankFilenameAccountParseError, mergeBankFiles } from './bankFileMerge';
+import {
+  BankFileCountError,
+  BankFileStructuralError,
+  BankFilenameAccountParseError,
+  mergeBankFiles,
+  type RawBankFileInput,
+} from './bankFileMerge';
 import { parseCsvBuffer } from './parsers/csvParser';
 import { validateBankingRows } from './rowValidators';
 import { BANKING_HEADERS, type RawBankingRow } from './types';
 
 const csv = (text: string): Buffer => Buffer.from(text, 'utf8');
+
+const bankFile = (last4: string, sequence: string, amount: string): RawBankFileInput => ({
+  bytes: csv(
+    `Date,Description,Sequence Number,Debit,Credit,Balance\n2026-02-02,Row ${last4},${sequence},${amount},,${amount}\n`,
+  ),
+  fileFormat: 'CSV',
+  originalFilename: `${last4}_bank.csv`,
+});
 
 describe('mergeBankFiles', () => {
   it('prefixes non-blank Sequence Numbers with each file\'s account last-4', async () => {
@@ -204,5 +218,65 @@ describe('mergeBankFiles', () => {
 
     expect(parsed.rows.map((row) => row['Sequence Number'])).toEqual(['4321-1', '8765-1']);
     expect(parsed.rows[1]).toMatchObject({ Description: 'XLSX ROW', Credit: '10.00' });
+  });
+
+  it('merges a single bank file (the #153 minimum of 1)', async () => {
+    const merged = await mergeBankFiles([bankFile('1111', '1', '50.00')]);
+    const parsed = parseCsvBuffer(merged.bytes);
+
+    expect(parsed.rows.map((row) => row['Sequence Number'])).toEqual(['1111-1']);
+  });
+
+  it('merges three bank files', async () => {
+    const merged = await mergeBankFiles([
+      bankFile('1111', '1', '10.00'),
+      bankFile('2222', '1', '20.00'),
+      bankFile('3333', '1', '30.00'),
+    ]);
+    const parsed = parseCsvBuffer(merged.bytes);
+
+    expect(parsed.rows.map((row) => row['Sequence Number'])).toEqual([
+      '1111-1',
+      '2222-1',
+      '3333-1',
+    ]);
+  });
+
+  it('merges the #153 maximum of 4 bank files, concatenated in input order', async () => {
+    const merged = await mergeBankFiles([
+      bankFile('1111', '1', '10.00'),
+      bankFile('2222', '1', '20.00'),
+      bankFile('3333', '1', '30.00'),
+      bankFile('4444', '1', '40.00'),
+    ]);
+    const parsed = parseCsvBuffer(merged.bytes);
+
+    expect(parsed.rows.map((row) => row['Sequence Number'])).toEqual([
+      '1111-1',
+      '2222-1',
+      '3333-1',
+      '4444-1',
+    ]);
+  });
+
+  it('throws BankFileCountError for zero files', async () => {
+    await expect(mergeBankFiles([])).rejects.toThrow(BankFileCountError);
+  });
+
+  it('throws BankFileCountError for more than 4 files', async () => {
+    const files = [
+      bankFile('1111', '1', '10.00'),
+      bankFile('2222', '1', '20.00'),
+      bankFile('3333', '1', '30.00'),
+      bankFile('4444', '1', '40.00'),
+      bankFile('5555', '1', '50.00'),
+    ];
+
+    await expect(mergeBankFiles(files)).rejects.toThrow(BankFileCountError);
+    try {
+      await mergeBankFiles(files);
+    } catch (error) {
+      expect((error as BankFileCountError).fileCount).toBe(5);
+    }
   });
 });

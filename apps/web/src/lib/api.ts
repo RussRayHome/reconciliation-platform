@@ -278,10 +278,10 @@ export interface ImportRunSummary {
   files: ImportRunFileSummary[];
 }
 
-/** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. */
+/** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. `bankFiles` is 1-4 bank
+ * account uploads (Issue #153) sent as one repeated `bankFiles` form field, not per-slot names. */
 export interface CreateImportRunPayload {
-  bankFileA: File;
-  bankFileB: File;
+  bankFiles: File[];
   glFile: File;
   label: string;
   accountIdentifier?: string;
@@ -311,8 +311,7 @@ export interface CreateImportRunOptions {
  * `xhr.upload`'s `progress` event is the only standard way to observe bytes sent for a multipart
  * body still in flight, which Screen 02's per-file progress bars need. */
 export const createImportRunRequest = ({
-  bankFileA,
-  bankFileB,
+  bankFiles,
   glFile,
   label,
   accountIdentifier,
@@ -323,8 +322,7 @@ export const createImportRunRequest = ({
   signal,
 }: CreateImportRunPayload & CreateImportRunOptions): Promise<ImportRunSummary> => {
   const formData = new FormData();
-  formData.append('bankFileA', bankFileA);
-  formData.append('bankFileB', bankFileB);
+  bankFiles.forEach((bankFile) => formData.append('bankFiles', bankFile));
   formData.append('glFile', glFile);
   formData.append('label', label);
   if (accountIdentifier) {

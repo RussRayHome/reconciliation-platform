@@ -58,8 +58,11 @@ import {
   type RunApprovalListItem,
 } from '@recon/persistence';
 import {
+  BankFileCountError,
   BankFilenameAccountParseError,
   BankFileStructuralError,
+  MAX_BANK_ACCOUNTS,
+  MIN_BANK_ACCOUNTS,
   mergeBankFiles,
   toNormalizedTransactions,
   toRawTransactionRows,
@@ -336,29 +339,28 @@ const getUploadedReconciliationFiles = (files: UploadFileMap): ReconciliationUpl
 
 /** `/api/imports/runs` only -- deliberately separate from `UploadFileMap`/
  * `getUploadedReconciliationFiles` above, which the unrelated legacy `/api/reconciliation/run`
- * route also uses for its single-bank-file shape (Issue #141 does not touch that route). */
+ * route also uses for its single-bank-file shape (Issue #141 does not touch that route).
+ * `bankFiles` is one repeated multer field (Issue #153: 1-4 bank accounts), not per-slot named
+ * fields -- `request.files.bankFiles` arrives as a plain array. */
 type ImportRunUploadFileMap = {
-  bankFileA?: Express.Multer.File[];
-  bankFileB?: Express.Multer.File[];
+  bankFiles?: Express.Multer.File[];
   glFile?: Express.Multer.File[];
 };
 
 type ImportRunUploadFiles = {
-  bankFileA: Express.Multer.File;
-  bankFileB: Express.Multer.File;
+  bankFiles: Express.Multer.File[];
   glFile: Express.Multer.File;
 };
 
 const getUploadedImportRunFiles = (files: ImportRunUploadFileMap): ImportRunUploadFiles | null => {
-  const bankFileA = files.bankFileA?.[0];
-  const bankFileB = files.bankFileB?.[0];
+  const bankFiles = files.bankFiles ?? [];
   const glFile = files.glFile?.[0];
 
-  if (!bankFileA || !bankFileB || !glFile) {
+  if (bankFiles.length < MIN_BANK_ACCOUNTS || bankFiles.length > MAX_BANK_ACCOUNTS || !glFile) {
     return null;
   }
 
-  return { bankFileA, bankFileB, glFile };
+  return { bankFiles, glFile };
 };
 
 const toQueuedReconciliationFiles = (
@@ -2623,8 +2625,8 @@ export const createApp = (
   app.post(
     '/api/imports/runs',
     importUpload.fields([
-      { name: 'bankFileA', maxCount: 1 },
-      { name: 'bankFileB', maxCount: 1 },
+      // Issue #153: 1-4 bank accounts per run, one repeated field rather than per-slot names.
+      { name: 'bankFiles', maxCount: MAX_BANK_ACCOUNTS },
       { name: 'glFile', maxCount: 1 },
     ]),
     async (request, response, next) => {
@@ -2642,22 +2644,23 @@ export const createApp = (
         const files = getUploadedImportRunFiles((request.files ?? {}) as ImportRunUploadFileMap);
         if (!files) {
           response.status(400).json({
-            message:
-              'bankFileA, bankFileB, and glFile must all be provided as .csv or .xlsx uploads.',
+            message: `Between ${MIN_BANK_ACCOUNTS} and ${MAX_BANK_ACCOUNTS} bankFiles uploads and one glFile must all be provided as .csv or .xlsx uploads.`,
           });
           return;
         }
 
-        // ADR-0003 / Issue #141: two bank files merge into one unified dataset before File
-        // Validation ever runs. `findOrCreateImportFile` (importRunStore.ts) dedupes an
-        // uploaded file's import_file row by (organization, content hash, source_type) -- both
-        // raw bank uploads share source_type 'BANK', so byte-identical files (the same file
-        // attached to both slots by mistake) would dedupe to the same import_file row and the
-        // second run_source_file insert would violate its own UNIQUE constraint. Caught here as
-        // a clean 400 rather than surfacing as an unhandled 500 from that constraint violation.
-        if (computeSha256Hex(files.bankFileA.buffer) === computeSha256Hex(files.bankFileB.buffer)) {
+        // ADR-0003 / Issue #141 (widened to N files by Issue #153): every bank file merges into
+        // one unified dataset before File Validation ever runs. `findOrCreateImportFile`
+        // (importRunStore.ts) dedupes an uploaded file's import_file row by (organization,
+        // content hash, source_type) -- every raw bank upload shares source_type 'BANK', so two
+        // byte-identical files (the same file attached twice by mistake) would dedupe to the same
+        // import_file row and the second run_source_file insert would violate its own UNIQUE
+        // constraint. Caught here as a clean 400 rather than surfacing as an unhandled 500 from
+        // that constraint violation -- checked pairwise across all N files, not just a fixed pair.
+        const bankFileHashes = files.bankFiles.map((file) => computeSha256Hex(file.buffer));
+        if (new Set(bankFileHashes).size !== bankFileHashes.length) {
           response.status(400).json({
-            message: 'Bank Account A and Bank Account B files cannot be identical uploads.',
+            message: 'Bank account files cannot be identical uploads.',
           });
           return;
         }
@@ -2668,18 +2671,13 @@ export const createApp = (
           return;
         }
 
-        const merged = await mergeBankFiles([
-          {
-            bytes: files.bankFileA.buffer,
-            fileFormat: resolveSourceFormat(files.bankFileA.originalname) === 'csv' ? 'CSV' : 'XLSX',
-            originalFilename: files.bankFileA.originalname,
-          },
-          {
-            bytes: files.bankFileB.buffer,
-            fileFormat: resolveSourceFormat(files.bankFileB.originalname) === 'csv' ? 'CSV' : 'XLSX',
-            originalFilename: files.bankFileB.originalname,
-          },
-        ]);
+        const merged = await mergeBankFiles(
+          files.bankFiles.map((file) => ({
+            bytes: file.buffer,
+            fileFormat: resolveSourceFormat(file.originalname) === 'csv' ? 'CSV' : 'XLSX',
+            originalFilename: file.originalname,
+          })),
+        );
 
         const importRunStore = new PostgresImportRunStore(pool!);
         const summary = await importRunStore.createRun({
@@ -2690,12 +2688,13 @@ export const createApp = (
           periodYear: bodyResult.data.periodYear,
           periodMonth: bodyResult.data.periodMonth,
           files: [
-            toImportRunFile('BANK_ACCOUNT_A', 'BANK', files.bankFileA),
-            toImportRunFile('BANK_ACCOUNT_B', 'BANK', files.bankFileB),
+            ...files.bankFiles.map((file, index) =>
+              toImportRunFile(`BANK_ACCOUNT_${index + 1}`, 'BANK', file),
+            ),
             {
               role: 'BANK_MERGED',
               sourceType: 'BANK',
-              originalFilename: `(merged) ${files.bankFileA.originalname} + ${files.bankFileB.originalname}`,
+              originalFilename: `(merged) ${files.bankFiles.map((file) => file.originalname).join(' + ')}`,
               fileFormat: merged.fileFormat,
               bytes: merged.bytes,
             },
@@ -2721,6 +2720,13 @@ export const createApp = (
             originalFilename: error.originalFilename,
             issues: error.issues,
           });
+          return;
+        }
+        // Defensive only -- getUploadedImportRunFiles already rejects a bankFiles count outside
+        // [MIN_BANK_ACCOUNTS, MAX_BANK_ACCOUNTS] before mergeBankFiles is ever called, so this
+        // should be unreachable via this route in practice.
+        if (error instanceof BankFileCountError) {
+          response.status(400).json({ message: error.message });
           return;
         }
         next(error);

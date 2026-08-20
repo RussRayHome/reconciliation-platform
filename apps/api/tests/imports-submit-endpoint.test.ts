@@ -479,8 +479,8 @@ const createRun = async (
     .field('label', 'Submit Test Run')
     .field('frequency', 'MONTHLY')
     .field('periodYear', '2026')
-    .attach('bankFileA', files.bankFileA, { filename: '1111_bank.csv', contentType: 'text/csv' })
-    .attach('bankFileB', files.bankFileB, { filename: '2222_bank.csv', contentType: 'text/csv' })
+    .attach('bankFiles', files.bankFileA, { filename: '1111_bank.csv', contentType: 'text/csv' })
+    .attach('bankFiles', files.bankFileB, { filename: '2222_bank.csv', contentType: 'text/csv' })
     .attach('glFile', files.glFile, { filename: 'gl.csv', contentType: 'text/csv' });
 
 describe('POST /api/imports/runs/:id/submit', () => {
