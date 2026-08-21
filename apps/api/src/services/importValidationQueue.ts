@@ -1,5 +1,7 @@
-import { Queue, Worker, type Job } from 'bullmq';
+import { Queue, QueueEvents, Worker, type Job } from 'bullmq';
 import type pino from 'pino';
+
+import type { QueueProgressMessage, QueueStepReporter } from './queueProgress';
 
 /**
  * Own queue, deliberately separate from reconciliationQueue.ts's producer/consumer pair (File
@@ -50,8 +52,12 @@ export type ImportValidationQueueProducerOptions = ImportValidationQueueConnecti
 
 export type ImportValidationQueueConsumerOptions = ImportValidationQueueConnectionOptions & {
   concurrency: number;
+  /** `onStep`'s publish half is constructed here (wrapping `Job.updateProgress`, the only thing
+   * this file has access to) and passed down for the caller's business logic to invoke at each
+   * checkpoint -- see queueProgress.ts. */
   processJob: (
     payload: QueuedImportValidationJobPayload,
+    onStep: QueueStepReporter,
   ) => Promise<QueuedImportValidationResult>;
 };
 
@@ -147,7 +153,10 @@ export const createImportValidationProducer = (
 ): ImportValidationQueueProducer => {
   if (!options.enabled) {
     options.logger.info(
-      { action: 'import-validation.queue.disabled', reason: 'ENABLE_IMPORT_VALIDATION_QUEUE=false' },
+      {
+        action: 'import-validation.queue.disabled',
+        reason: 'ENABLE_IMPORT_VALIDATION_QUEUE=false',
+      },
       'Import validation queue disabled',
     );
 
@@ -160,9 +169,7 @@ export const createImportValidationProducer = (
       'Import validation queue requested but no Redis URL was configured',
     );
 
-    return disabledProducer(
-      'Import validation queue requires IMPORT_VALIDATION_QUEUE_REDIS_URL.',
-    );
+    return disabledProducer('Import validation queue requires IMPORT_VALIDATION_QUEUE_REDIS_URL.');
   }
 
   const connection = resolveConnectionOptions(options.redisUrl);
@@ -208,7 +215,10 @@ export const createImportValidationConsumer = (
 ): ImportValidationQueueConsumer => {
   if (!options.enabled) {
     options.logger.info(
-      { action: 'import-validation.queue.disabled', reason: 'ENABLE_IMPORT_VALIDATION_QUEUE=false' },
+      {
+        action: 'import-validation.queue.disabled',
+        reason: 'ENABLE_IMPORT_VALIDATION_QUEUE=false',
+      },
       'Import validation queue disabled',
     );
 
@@ -227,7 +237,18 @@ export const createImportValidationConsumer = (
   const connection = resolveConnectionOptions(options.redisUrl);
   const worker = new Worker<QueuedImportValidationJobPayload, QueuedImportValidationResult>(
     options.queueName,
-    (job) => options.processJob(job.data),
+    (job) =>
+      options.processJob(job.data, async (statusMessage, details) => {
+        await job
+          .updateProgress({
+            organizationId: job.data.organizationId,
+            processId: job.data.runId,
+            queueType: 'import-validation',
+            statusMessage,
+            details,
+          })
+          .catch(() => undefined);
+      }),
     {
       connection,
       prefix: options.prefix,
@@ -265,6 +286,61 @@ export const createImportValidationConsumer = (
     },
     stop: async () => {
       await worker.close().catch(() => undefined);
+    },
+  };
+};
+
+/** Issue #154 (live status push): a shared, process-wide listener onto every `'progress'` event
+ * this queue's workers publish, unfiltered across every organization and run -- per-connection
+ * filtering (by organizationId/processId) is the SSE endpoint's job, not this file's. One
+ * `QueueEvents` per queue per API process, not one per SSE connection -- constructed once
+ * alongside the producer in `createApp` and reused by every connection, so N concurrent listeners
+ * never open N redundant Redis subscriptions. */
+export type ImportValidationQueueEvents = {
+  enabled: boolean;
+  /** Registers a listener for every progress message this queue's workers publish. Returns an
+   * unsubscribe function -- call it when the caller (an SSE connection) disconnects, or the
+   * underlying `QueueEvents` listener count grows unbounded over the process's lifetime. */
+  onProgress: (listener: (message: QueueProgressMessage) => void) => () => void;
+  close: () => Promise<void>;
+};
+
+const disabledQueueEvents = (): ImportValidationQueueEvents => ({
+  enabled: false,
+  onProgress: () => () => undefined,
+  close: () => Promise.resolve(),
+});
+
+export const createImportValidationQueueEvents = (
+  options: ImportValidationQueueProducerOptions,
+): ImportValidationQueueEvents => {
+  if (!options.enabled || !options.redisUrl) {
+    return disabledQueueEvents();
+  }
+
+  const connection = resolveConnectionOptions(options.redisUrl);
+  const queueEvents = new QueueEvents(options.queueName, { connection, prefix: options.prefix });
+
+  queueEvents.on('error', (error) => {
+    options.logger.error(
+      { action: 'import-validation.queue.events.error', err: error },
+      'Import validation queue events listener error',
+    );
+  });
+
+  return {
+    enabled: true,
+    onProgress: (listener) => {
+      const wrapped = ({ data }: { jobId: string; data: unknown }) => {
+        listener(data as QueueProgressMessage);
+      };
+      queueEvents.on('progress', wrapped);
+      return () => {
+        queueEvents.off('progress', wrapped);
+      };
+    },
+    close: async () => {
+      await queueEvents.close().catch(() => undefined);
     },
   };
 };

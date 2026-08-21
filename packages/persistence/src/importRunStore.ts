@@ -53,6 +53,31 @@ export interface ImportRunFileSummary {
   warningCount: number | null;
 }
 
+/** The linked `reconciliation_job`'s terminal state -- Stage 2 (matching) status, reached via
+ * `reconciliation_run.matching_job_id`. Null until matching has been linked; the live import-run
+ * path only sets `matching_job_id` after `triggerMatching` resolves successfully (Issue #154's
+ * investigation), so a Stage-2 failure on that path never populates this -- see
+ * `ImportRunValidationJobSummary` for where that failure actually lands today. */
+export interface ImportRunMatchingJobSummary {
+  id: string;
+  currentState: string;
+  failureCode: string | null;
+  failureMessage: string | null;
+  completedAt: string | null;
+}
+
+/** The run's newest `import_job` row -- File Validation's own work unit (Stage 1). Carries the
+ * durable Stage-2 failure reason today on the live import-run path (Issue #154): that path's
+ * catch marks `import_job` FAILED with `error_summary` rather than reaching
+ * `reconciliation_job`/`ImportRunMatchingJobSummary` at all. */
+export interface ImportRunValidationJobSummary {
+  id: string;
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+  errorSummary: string | null;
+  queuedAt: string;
+  finishedAt: string | null;
+}
+
 export interface ImportRunSummary {
   id: string;
   organizationId: string;
@@ -63,6 +88,9 @@ export interface ImportRunSummary {
   periodMonth: number | null;
   status: string;
   createdAt: string;
+  matchingJobId: string | null;
+  matchingJob: ImportRunMatchingJobSummary | null;
+  validationJob: ImportRunValidationJobSummary | null;
   files: ImportRunFileSummary[];
 }
 
@@ -159,6 +187,9 @@ export class PostgresImportRunStore {
         periodMonth: input.periodMonth ?? null,
         status: runRow.status,
         createdAt: runRow.created_at,
+        matchingJobId: null,
+        matchingJob: null,
+        validationJob: null,
         files,
       };
     });
@@ -206,67 +237,150 @@ export class PostgresImportRunStore {
     return insertedRow;
   }
 
+  /** Shared by `getRunSummary` (by id) and `getLatestRunSummary` (pick-then-load) so the
+   * `run_source_file`/`import_file` join and the `reconciliation_job`/`import_job` lookups exist
+   * in exactly one place (Issue #154). Runs on an already-open `PoolClient` so a caller that just
+   * resolved `runId` from its own query can reuse the same transaction/tenant scope. */
+  private async loadRunSummaryWithClient(
+    client: PoolClient,
+    organizationId: string,
+    runId: string,
+  ): Promise<ImportRunSummary | null> {
+    const runResult = await client.query<{
+      id: string;
+      label: string;
+      account_identifier: string | null;
+      frequency: 'MONTHLY' | 'ANNUAL';
+      period_year: number;
+      period_month: number | null;
+      status: string;
+      created_at: string;
+      matching_job_id: string | null;
+      job_current_state: string | null;
+      job_failure_code: string | null;
+      job_failure_message: string | null;
+      job_completed_at: string | null;
+    }>(
+      `SELECT r.id, r.label, r.account_identifier, r.frequency, r.period_year, r.period_month,
+              r.status, r.created_at, r.matching_job_id,
+              j.current_state AS job_current_state, j.failure_code AS job_failure_code,
+              j.failure_message AS job_failure_message, j.completed_at AS job_completed_at
+         FROM reconciliation_run r
+         LEFT JOIN reconciliation_job j ON j.id = r.matching_job_id
+        WHERE r.id = $1`,
+      [runId],
+    );
+    const runRow = runResult.rows[0];
+    if (!runRow) {
+      return null;
+    }
+
+    const filesResult = await client.query<
+      ImportFileRow & { role: string }
+    >(
+      `SELECT f.id, f.source_type, f.original_filename, f.file_format, f.validation_status,
+              f.byte_size, f.content_sha256, f.row_count, f.error_count, f.warning_count,
+              rsf.role
+         FROM run_source_file rsf
+         JOIN import_file f ON f.id = rsf.import_file_id
+        WHERE rsf.reconciliation_run_id = $1
+        ORDER BY rsf.created_at`,
+      [runId],
+    );
+
+    // Newest first, not just "the" import_job -- a withdraw+resubmit (POST .../withdraw then
+    // .../submit again) creates a second row for the same run, and the older one must never
+    // shadow the newer one's outcome.
+    const validationJobResult = await client.query<{
+      id: string;
+      status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+      error_summary: string | null;
+      queued_at: string;
+      finished_at: string | null;
+    }>(
+      `SELECT id, status, error_summary, queued_at, finished_at
+         FROM import_job
+        WHERE reconciliation_run_id = $1
+        ORDER BY queued_at DESC, id DESC
+        LIMIT 1`,
+      [runId],
+    );
+    const validationJobRow = validationJobResult.rows[0];
+
+    return {
+      id: runRow.id,
+      organizationId,
+      label: runRow.label,
+      accountIdentifier: runRow.account_identifier,
+      frequency: runRow.frequency,
+      periodYear: runRow.period_year,
+      periodMonth: runRow.period_month,
+      status: runRow.status,
+      createdAt: runRow.created_at,
+      matchingJobId: runRow.matching_job_id,
+      matchingJob: runRow.matching_job_id
+        ? {
+            id: runRow.matching_job_id,
+            currentState: runRow.job_current_state!,
+            failureCode: runRow.job_failure_code,
+            failureMessage: runRow.job_failure_message,
+            completedAt: runRow.job_completed_at,
+          }
+        : null,
+      validationJob: validationJobRow
+        ? {
+            id: validationJobRow.id,
+            status: validationJobRow.status,
+            errorSummary: validationJobRow.error_summary,
+            queuedAt: validationJobRow.queued_at,
+            finishedAt: validationJobRow.finished_at,
+          }
+        : null,
+      files: filesResult.rows.map((row) => ({
+        importFileId: row.id,
+        role: row.role,
+        sourceType: row.source_type,
+        originalFilename: row.original_filename,
+        fileFormat: row.file_format,
+        validationStatus: row.validation_status,
+        byteSize: Number(row.byte_size),
+        contentSha256: row.content_sha256,
+        rowCount: row.row_count,
+        errorCount: row.error_count,
+        warningCount: row.warning_count,
+      })),
+    };
+  }
+
   /** Reads back a run and its files (with per-file row/error/warning counts once validated), or
    * `null` if `runId` doesn't exist in this organization. */
   async getRunSummary(organizationId: string, runId: string): Promise<ImportRunSummary | null> {
+    return runInTenantScope(this.pool, organizationId, (client) =>
+      this.loadRunSummaryWithClient(client, organizationId, runId),
+    );
+  }
+
+  /** The organization's most recent `reconciliation_run` regardless of status -- the durable
+   * "where is my process right now" answer the RunBar needs across a reload, covering
+   * VALIDATION_FAILED and mid-flight runs that `findLatestRunReport` (readModelStore.ts, backing
+   * GET /api/reconciliation/latest) structurally cannot represent. Null when the organization has
+   * no runs at all (Issue #154).
+   * @param organizationId The tenant to look up the latest run for. */
+  async getLatestRunSummary(organizationId: string): Promise<ImportRunSummary | null> {
     return runInTenantScope(this.pool, organizationId, async (client) => {
-      const runResult = await client.query<{
-        id: string;
-        label: string;
-        account_identifier: string | null;
-        frequency: 'MONTHLY' | 'ANNUAL';
-        period_year: number;
-        period_month: number | null;
-        status: string;
-        created_at: string;
-      }>(
-        `SELECT id, label, account_identifier, frequency, period_year, period_month, status, created_at
+      // Explicit predicate even though RLS already scopes every row read here -- this is a
+      // "pick one of many" query, not a by-primary-key lookup, so it doesn't get RLS's usual
+      // wrong-tenant-id-becomes-not-found guard for free; worth the defense in depth.
+      const result = await client.query<{ id: string }>(
+        `SELECT id
            FROM reconciliation_run
-          WHERE id = $1`,
-        [runId],
+          WHERE organization_id = $1
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1`,
+        [organizationId],
       );
-      const runRow = runResult.rows[0];
-      if (!runRow) {
-        return null;
-      }
-
-      const filesResult = await client.query<
-        ImportFileRow & { role: string }
-      >(
-        `SELECT f.id, f.source_type, f.original_filename, f.file_format, f.validation_status,
-                f.byte_size, f.content_sha256, f.row_count, f.error_count, f.warning_count,
-                rsf.role
-           FROM run_source_file rsf
-           JOIN import_file f ON f.id = rsf.import_file_id
-          WHERE rsf.reconciliation_run_id = $1
-          ORDER BY rsf.created_at`,
-        [runId],
-      );
-
-      return {
-        id: runRow.id,
-        organizationId,
-        label: runRow.label,
-        accountIdentifier: runRow.account_identifier,
-        frequency: runRow.frequency,
-        periodYear: runRow.period_year,
-        periodMonth: runRow.period_month,
-        status: runRow.status,
-        createdAt: runRow.created_at,
-        files: filesResult.rows.map((row) => ({
-          importFileId: row.id,
-          role: row.role,
-          sourceType: row.source_type,
-          originalFilename: row.original_filename,
-          fileFormat: row.file_format,
-          validationStatus: row.validation_status,
-          byteSize: Number(row.byte_size),
-          contentSha256: row.content_sha256,
-          rowCount: row.row_count,
-          errorCount: row.error_count,
-          warningCount: row.warning_count,
-        })),
-      };
+      const runId = result.rows[0]?.id;
+      return runId ? this.loadRunSummaryWithClient(client, organizationId, runId) : null;
     });
   }
 

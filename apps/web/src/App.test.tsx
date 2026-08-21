@@ -15,9 +15,15 @@ import { formatCompactDate } from './lib/format';
 // vi.mock factories get), so ACTIVE_RULE_VERSION_FIXTURE has to be built inside it rather than
 // referenced from a `const` declared elsewhere in the file -- that `const` wouldn't have run yet.
 const mockedApiState = vi.hoisted<{
-  latestRunResponse: unknown;
-  latestRunError: Error | null;
-  latestRunPromise: Promise<unknown> | null;
+  // Issue #154: drives getLatestImportRunRequest (GET /api/imports/runs/latest), the durable
+  // cross-reload source -- unlike the old getLatestReconciliationRunRequest mock, `null` is a
+  // real, valid answer (an idle/no-runs-yet organization), not an error condition.
+  latestImportRunResponse: unknown;
+  latestImportRunError: Error | null;
+  latestImportRunPromise: Promise<unknown> | null;
+  // Backs getReconciliationRunByIdRequest, used to resolve the full report once
+  // resolveLatestRunPhase says the durable run 'succeeded'.
+  matchingRunReportResponse: unknown;
   ruleVersionsResponse: RuleVersionsResponse | null;
   defaultRuleVersionsResponse: RuleVersionsResponse;
   rulesCatalogResponse: RuleCatalogResponse;
@@ -104,9 +110,10 @@ const mockedApiState = vi.hoisted<{
   };
 
   return {
-    latestRunResponse: null,
-    latestRunError: null,
-    latestRunPromise: null,
+    latestImportRunResponse: null,
+    latestImportRunError: null,
+    latestImportRunPromise: null,
+    matchingRunReportResponse: null,
     ruleVersionsResponse: defaultRuleVersionsResponse,
     defaultRuleVersionsResponse,
     rulesCatalogResponse,
@@ -119,23 +126,36 @@ vi.mock('./lib/api', async () => {
 
   return {
     ...actual,
-    getLatestReconciliationRunRequest: vi.fn(async () => {
-      if (mockedApiState.latestRunPromise) {
-        return (await mockedApiState.latestRunPromise) as Awaited<
-          ReturnType<typeof actual.getLatestReconciliationRunRequest>
+    getLatestImportRunRequest: vi.fn(async () => {
+      if (mockedApiState.latestImportRunPromise) {
+        return (await mockedApiState.latestImportRunPromise) as Awaited<
+          ReturnType<typeof actual.getLatestImportRunRequest>
         >;
       }
 
-      if (mockedApiState.latestRunError) {
-        throw mockedApiState.latestRunError;
+      if (mockedApiState.latestImportRunError) {
+        throw mockedApiState.latestImportRunError;
       }
 
-      if (!mockedApiState.latestRunResponse) {
-        throw new Error('No latest reconciliation run available in test state.');
+      // null is a real, valid answer here (Issue #154: an idle/no-runs-yet organization) --
+      // unlike the old getLatestReconciliationRunRequest mock, not throwing when unset.
+      return mockedApiState.latestImportRunResponse as Awaited<
+        ReturnType<typeof actual.getLatestImportRunRequest>
+      >;
+    }),
+    // Falls back to the real implementation (real `apiFetch`/`fetch`) when a test hasn't set
+    // `matchingRunReportResponse` explicitly -- existing submission-flow tests
+    // (mockImportRunSubmitFlow et al.) rely on intercepting this at the raw-fetch level via
+    // `/api/reconciliation/:id`, since useImportRunSubmit's own mutationFn calls this on success;
+    // only the Issue #154 hydration tests, which care about App.tsx's *own* direct call to it, set
+    // this state explicitly.
+    getReconciliationRunByIdRequest: vi.fn(async (runId: string) => {
+      if (!mockedApiState.matchingRunReportResponse) {
+        return actual.getReconciliationRunByIdRequest(runId);
       }
 
-      return mockedApiState.latestRunResponse as Awaited<
-        ReturnType<typeof actual.getLatestReconciliationRunRequest>
+      return mockedApiState.matchingRunReportResponse as Awaited<
+        ReturnType<typeof actual.getReconciliationRunByIdRequest>
       >;
     }),
     getRuleVersionsRequest: vi.fn(() =>
@@ -488,6 +508,9 @@ const createImportRunSummary = (overrides: Record<string, unknown> = {}) => ({
   periodMonth: 1,
   status: 'DRAFT',
   createdAt: '2026-08-01T00:00:00.000Z',
+  matchingJobId: null,
+  matchingJob: null,
+  validationJob: null,
   files: [],
   ...overrides,
 });
@@ -674,9 +697,10 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   storage.clear();
-  mockedApiState.latestRunResponse = null;
-  mockedApiState.latestRunError = null;
-  mockedApiState.latestRunPromise = null;
+  mockedApiState.latestImportRunResponse = null;
+  mockedApiState.latestImportRunError = null;
+  mockedApiState.latestImportRunPromise = null;
+  mockedApiState.matchingRunReportResponse = null;
   mockedApiState.ruleVersionsResponse = mockedApiState.defaultRuleVersionsResponse;
   globalThis.history.replaceState({}, '', '/');
 });
@@ -1026,13 +1050,24 @@ describe('App', () => {
     expect(screen.getByText(/Summary \| Probable Matches \| Exceptions/i)).toBeInTheDocument();
   });
 
-  it('hydrates the Review tab from the last successful persisted run after remount', () => {
+  it('keeps a persisted run visible once the server confirms it is still the latest success', () => {
+    // Issue #154: a persisted run alone is no longer trusted on its own -- the mount-time effect
+    // always asks the server, so this run must also be what the server reports as the latest
+    // succeeded run, or the effect would evict it (see the direct regression test below for the
+    // case where the server disagrees).
+    const runResponse = createRunResponse();
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'RECONCILING',
+      matchingJobId: runResponse.id,
+    });
+    mockedApiState.matchingRunReportResponse = runResponse;
+
     setAuthenticatedUser('rray');
     globalThis.localStorage.setItem(
       'reconciliation-platform:latest-report-run',
       // Must track RUN_STORAGE_SCHEMA_VERSION in App.tsx: a persisted run stored under an older
       // version is deliberately discarded, so a stale literal here silently stops testing hydration.
-      JSON.stringify({ version: 3, run: createRunResponse() }),
+      JSON.stringify({ version: 4, run: runResponse }),
     );
 
     renderApp();
@@ -1044,6 +1079,35 @@ describe('App', () => {
       expect(screen.getAllByText('Exact matches').length).toBeGreaterThan(0);
       expect(screen.queryByText('No review output yet')).toBeNull();
     });
+  });
+
+  it('a stale successful persisted run does not mask a newer failed run (Issue #154 regression)', async () => {
+    // The direct regression test for the reported bug: an unrelated old successful run sits in
+    // localStorage (e.g. from a prior session), but the server's actual latest run failed File
+    // Validation. The stale cache must be evicted, not shown -- checked on the Review tab (not
+    // Import Files, the default route) specifically because that's where the stale *success*
+    // content would have wrongly appeared; the validation-failure view itself renders on Import
+    // Files and independently re-fetches its own per-file detail, which isn't this test's concern.
+    globalThis.localStorage.setItem(
+      'reconciliation-platform:latest-report-run',
+      JSON.stringify({ version: 4, run: createRunResponse() }),
+    );
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      label: 'Real Failed Attempt',
+      status: 'VALIDATION_FAILED',
+    });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('No review output yet')).not.toBeNull();
+    });
+
+    expect(globalThis.localStorage.getItem('reconciliation-platform:latest-report-run')).toBeNull();
+    expect(screen.queryByText('Total reviewed')).toBeNull();
   });
 
   it('discards a persisted run stored under an outdated schema version', () => {
@@ -1059,7 +1123,12 @@ describe('App', () => {
   });
 
   it('hydrates the Review tab from the backend latest-run endpoint when storage is empty', async () => {
-    mockedApiState.latestRunResponse = createRunResponse();
+    const runResponse = createRunResponse();
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'RECONCILING',
+      matchingJobId: runResponse.id,
+    });
+    mockedApiState.matchingRunReportResponse = runResponse;
     setAuthenticatedUser('rray');
 
     renderApp();
@@ -1075,8 +1144,10 @@ describe('App', () => {
   });
 
   it('shows a loading state while hydrating the latest backend report', async () => {
-    const deferred = createDeferred<ReturnType<typeof createRunResponse>>();
-    mockedApiState.latestRunPromise = deferred.promise;
+    const runResponse = createRunResponse();
+    const deferred = createDeferred<ReturnType<typeof createImportRunSummary>>();
+    mockedApiState.latestImportRunPromise = deferred.promise;
+    mockedApiState.matchingRunReportResponse = runResponse;
     setAuthenticatedUser('rray');
 
     renderApp();
@@ -1085,7 +1156,9 @@ describe('App', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading review output');
 
-    deferred.resolve(createRunResponse());
+    deferred.resolve(
+      createImportRunSummary({ status: 'RECONCILING', matchingJobId: runResponse.id }),
+    );
 
     await waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -1093,7 +1166,7 @@ describe('App', () => {
   });
 
   it('shows an alert when latest-run hydration fails', async () => {
-    mockedApiState.latestRunError = new Error('Backend unavailable.');
+    mockedApiState.latestImportRunError = new Error('Backend unavailable.');
     setAuthenticatedUser('rray');
 
     renderApp();
@@ -1105,6 +1178,141 @@ describe('App', () => {
     });
 
     expect(screen.getByText('Latest review output could not be loaded')).toBeInTheDocument();
+  });
+
+  it('Issue #154: shows the live status message from the run events stream while running', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      label: 'In-Flight Run',
+      status: 'VALIDATING',
+    });
+
+    const encoder = new TextEncoder();
+    const eventsUrl = `/api/imports/runs/${IMPORT_RUN_ID}/events`;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url === eventsUrl) {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `${JSON.stringify({
+                  organizationId: 'test-org',
+                  processId: IMPORT_RUN_ID,
+                  queueType: 'import-validation',
+                  statusMessage: 'Matching started…',
+                })}\n`,
+              ),
+            );
+          },
+        });
+        return Promise.resolve(new Response(stream, { status: 200 }));
+      }
+      throw new Error(`unexpected fetch call to ${url}`);
+    });
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('Matching started…')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the durable validation-failure phase after a remount with no live mutation', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      label: 'Failed Validation Run',
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('Validation failed')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the durable reconciliation-failure message via a FAILED reconciliation_job (legacy/queue path)', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      label: 'Failed Matching Run',
+      status: 'PENDING_APPROVAL',
+      matchingJobId: 'matching-job-failed',
+      matchingJob: {
+        id: 'matching-job-failed',
+        currentState: 'FAILED',
+        failureCode: 'MATCH_ENGINE_ERROR',
+        failureMessage: 'Matching engine crashed while grouping split payments.',
+        completedAt: '2026-08-21T00:05:00.000Z',
+      },
+    });
+    setAuthenticatedUser('rray');
+
+    renderApp();
+
+    // Both the RunBar's status pill and the progress-meter's current-step label render
+    // "Reconciliation failed" for this phase -- legitimate, not a bug, so this asserts on the
+    // count rather than a single unique match (matching this file's existing pattern for text
+    // that appears in more than one place).
+    await waitFor(() => {
+      expect(screen.getAllByText('Reconciliation failed').length).toBeGreaterThan(0);
+    });
+    expect(
+      screen.getByText(/Matching engine crashed while grouping split payments\./),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the durable reconciliation-failure message via a FAILED import_job (the live path)', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      label: 'Failed Matching Run Live Path',
+      status: 'PENDING_APPROVAL',
+      validationJob: {
+        id: 'validation-job-failed',
+        status: 'FAILED',
+        errorSummary: 'Matching engine crashed mid-run.',
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: '2026-08-21T00:04:00.000Z',
+      },
+    });
+    setAuthenticatedUser('rray');
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Reconciliation failed').length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText(/Matching engine crashed mid-run\./)).toBeInTheDocument();
+  });
+
+  it('shows idle for an organization with no runs, without crashing', async () => {
+    // Default mock state -- latestImportRunResponse is null (no explicit setup needed), matching
+    // a genuinely fresh organization that has never submitted a run.
+    setAuthenticatedUser('rray');
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('Idle')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps a cached run visible while the latest-run fetch is still in flight', () => {
+    const deferred = createDeferred<ReturnType<typeof createImportRunSummary>>();
+    mockedApiState.latestImportRunPromise = deferred.promise;
+    globalThis.localStorage.setItem(
+      'reconciliation-platform:latest-report-run',
+      JSON.stringify({ version: 4, run: createRunResponse() }),
+    );
+
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+
+    // The deferred is deliberately left unresolved for the rest of this test -- the cached run
+    // must still be showing while the durable fetch is pending, not blanked pre-emptively.
+    expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
+    expect(screen.queryByText('No review output yet')).toBeNull();
   });
 
   it('shows the rules catalog with read-only thresholds for non-admins', async () => {
@@ -1307,8 +1515,8 @@ describe('App', () => {
   });
 
   it('shows a no-data review state before any reconciliation run exists', () => {
-    const deferred = createDeferred<ReturnType<typeof createRunResponse>>();
-    mockedApiState.latestRunPromise = deferred.promise;
+    const deferred = createDeferred<ReturnType<typeof createImportRunSummary>>();
+    mockedApiState.latestImportRunPromise = deferred.promise;
     setAuthenticatedUser('rray');
     renderApp();
 

@@ -1,6 +1,8 @@
 import type { ReconciliationRunReport } from '@recon/domain';
-import { Queue, Worker, type Job } from 'bullmq';
+import { Queue, QueueEvents, Worker, type Job } from 'bullmq';
 import type pino from 'pino';
+
+import type { QueueProgressMessage, QueueStepReporter } from './queueProgress';
 
 export type QueuedReconciliationFilePayload = {
   originalname: string;
@@ -58,7 +60,13 @@ export type ReconciliationQueueProducerOptions = ReconciliationQueueConnectionOp
 
 export type ReconciliationQueueConsumerOptions = ReconciliationQueueConnectionOptions & {
   concurrency: number;
-  processJob: (payload: QueuedReconciliationJobPayload) => Promise<QueuedReconciliationResult>;
+  /** `onStep`'s publish half is constructed here (wrapping `Job.updateProgress`, the only thing
+   * this file has access to) and passed down for the caller's business logic to invoke at each
+   * checkpoint -- see queueProgress.ts. */
+  processJob: (
+    payload: QueuedReconciliationJobPayload,
+    onStep: QueueStepReporter,
+  ) => Promise<QueuedReconciliationResult>;
 };
 
 export type ReconciliationQueueProducer = {
@@ -199,7 +207,11 @@ export const createReconciliationProducer = (
   });
 
   options.logger.info(
-    { action: 'reconciliation.queue.producer.enabled', queueName: options.queueName, prefix: options.prefix },
+    {
+      action: 'reconciliation.queue.producer.enabled',
+      queueName: options.queueName,
+      prefix: options.prefix,
+    },
     'Reconciliation queue producer enabled',
   );
 
@@ -254,7 +266,23 @@ export const createReconciliationConsumer = (
   const connection = resolveConnectionOptions(options.redisUrl);
   const worker = new Worker<QueuedReconciliationJobPayload, PersistedQueuedReconciliationResult>(
     options.queueName,
-    async (job) => toPersistedResult(await options.processJob(job.data)),
+    async (job) => {
+      const onStep: QueueStepReporter = async (statusMessage, details) => {
+        await job
+          .updateProgress({
+            organizationId: job.data.organizationId,
+            // requestId, not runId: the standalone /api/reconciliation/run route's run id isn't
+            // known until registerLifecycleJob resolves mid-processing, well after enqueue -- see
+            // queueProgress.ts's QueueProgressMessage doc comment.
+            processId: job.data.requestId,
+            queueType: 'reconciliation',
+            statusMessage,
+            details,
+          })
+          .catch(() => undefined);
+      };
+      return toPersistedResult(await options.processJob(job.data, onStep));
+    },
     {
       connection,
       prefix: options.prefix,
@@ -292,6 +320,61 @@ export const createReconciliationConsumer = (
     },
     stop: async () => {
       await worker.close().catch(() => undefined);
+    },
+  };
+};
+
+/** Issue #154 (live status push): a shared, process-wide listener onto every `'progress'` event
+ * this queue's workers publish, unfiltered across every organization and run -- per-connection
+ * filtering (by organizationId/processId) is the SSE endpoint's job, not this file's. One
+ * `QueueEvents` per queue per API process, not one per SSE connection -- constructed once
+ * alongside the producer in `createApp` and reused by every connection, so N concurrent listeners
+ * never open N redundant Redis subscriptions. */
+export type ReconciliationQueueEvents = {
+  enabled: boolean;
+  /** Registers a listener for every progress message this queue's workers publish. Returns an
+   * unsubscribe function -- call it when the caller (an SSE connection) disconnects, or the
+   * underlying `QueueEvents` listener count grows unbounded over the process's lifetime. */
+  onProgress: (listener: (message: QueueProgressMessage) => void) => () => void;
+  close: () => Promise<void>;
+};
+
+const disabledQueueEvents = (): ReconciliationQueueEvents => ({
+  enabled: false,
+  onProgress: () => () => undefined,
+  close: () => Promise.resolve(),
+});
+
+export const createReconciliationQueueEvents = (
+  options: ReconciliationQueueProducerOptions,
+): ReconciliationQueueEvents => {
+  if (!options.enabled || !options.redisUrl) {
+    return disabledQueueEvents();
+  }
+
+  const connection = resolveConnectionOptions(options.redisUrl);
+  const queueEvents = new QueueEvents(options.queueName, { connection, prefix: options.prefix });
+
+  queueEvents.on('error', (error) => {
+    options.logger.error(
+      { action: 'reconciliation.queue.events.error', err: error },
+      'Reconciliation queue events listener error',
+    );
+  });
+
+  return {
+    enabled: true,
+    onProgress: (listener) => {
+      const wrapped = ({ data }: { jobId: string; data: unknown }) => {
+        listener(data as QueueProgressMessage);
+      };
+      queueEvents.on('progress', wrapped);
+      return () => {
+        queueEvents.off('progress', wrapped);
+      };
+    },
+    close: async () => {
+      await queueEvents.close().catch(() => undefined);
     },
   };
 };

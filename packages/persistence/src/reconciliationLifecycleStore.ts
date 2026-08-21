@@ -79,16 +79,13 @@ export interface PersistReviewArtifactsInput {
   summary: SummaryMetrics;
 }
 
-/** Input to `persistExportAndFinalize` — workbook binary metadata and audit event list. */
+/** Input to `persistExportAndFinalize` — workbook binary metadata. Issue #154: no longer carries
+ * `auditEvents` -- those are now written immediately as each pipeline step completes, via
+ * `recordAuditEvent`, rather than batched here and lost on a mid-run failure. */
 export interface PersistExportArtifactsInput {
   jobId: string;
   outputWorkbook: OutputWorkbook;
   completedAt: string;
-  auditEvents: Array<{
-    timestamp: string;
-    action: string;
-    details: Record<string, string | number | boolean | null>;
-  }>;
 }
 
 /** Input to `markFailed` — transitions the job to FAILED or RETRY_PENDING with an error record. */
@@ -1148,7 +1145,9 @@ export class PostgresReconciliationLifecycleStore {
   }
 
   /**
-   * Persists export metadata, appends audit events, and finalizes the reconciliation job.
+   * Persists export metadata and finalizes the reconciliation job. Issue #154: no longer also
+   * writes audit events here -- see `recordAuditEvent`, called by the pipeline as each step
+   * actually completes.
    */
   async persistExportAndFinalize(
     organizationId: string,
@@ -1181,16 +1180,6 @@ export class PostgresReconciliationLifecycleStore {
         ],
       );
 
-      for (const auditEvent of input.auditEvents) {
-        await insertAuditEvent(
-          client,
-          input.jobId,
-          verifiedOrganizationId,
-          auditEvent.action,
-          auditEvent.details,
-        );
-      }
-
       await client.query(
         'UPDATE reconciliation_job SET completed_at = $2, updated_at = NOW() WHERE id = $1',
         [input.jobId, input.completedAt],
@@ -1199,6 +1188,73 @@ export class PostgresReconciliationLifecycleStore {
         exportFileName: input.outputWorkbook.fileName,
         exportByteSize: input.outputWorkbook.binary.byteLength,
       });
+    });
+  }
+
+  /**
+   * Records one audit-trail event immediately (Issue #154) -- unlike the old
+   * `persistExportAndFinalize`-bundled batch write (only reached once a run fully succeeds), this
+   * is meant to be called by the pipeline as each step actually completes, so a mid-run failure
+   * still leaves a durable, chronologically-ordered trail of what happened before it. Verifies
+   * the job belongs to `organizationId` first, the same defense-in-depth `persistReviewerDecision`
+   * and `persistExportAndFinalize` already apply, rather than trusting the caller's own scoping.
+   * @param organizationId The tenant the job must belong to.
+   * @param jobId The `reconciliation_job` this event is attributed to.
+   * @param eventType A short, stable label for what happened (e.g. `reconciliation.match.completed`).
+   * @param details Arbitrary structured detail describing the event.
+   */
+  async recordAuditEvent(
+    organizationId: string,
+    jobId: string,
+    eventType: string,
+    details: Record<string, string | number | boolean | null>,
+  ): Promise<void> {
+    await runInTenantScope(this.pool, organizationId, async (client) => {
+      const verifiedOrganizationId = await getJobOrganizationId(client, jobId);
+      await insertAuditEvent(client, jobId, verifiedOrganizationId, eventType, details);
+    });
+  }
+
+  /**
+   * Reads the single most recent audit event for a job (Issue #154's SSE catch-up-on-connect) --
+   * a client that opens the live-status stream after an earlier progress message was already
+   * published (a page reload mid-run, a dropped connection, a second tab) would otherwise see a
+   * blank stream until the next live message, since `QueueEvents`'s `'progress'` event is a live
+   * broadcast only with no replay. This reads `recordAuditEvent`'s own prior writes back, so the
+   * catch-up message is exactly what would have been published live had the connection been open
+   * at the time. Returns `null` when the job has no audit events yet (nothing published, or
+   * matching hasn't reached its first checkpoint), never throws for that case.
+   * @param organizationId The tenant the job must belong to.
+   * @param jobId The `reconciliation_job` to read the latest event for.
+   */
+  async getLatestAuditEvent(
+    organizationId: string,
+    jobId: string,
+  ): Promise<{ eventType: string; details: Record<string, unknown>; createdAt: string } | null> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const result = await client.query<{
+        event_type: string;
+        details_json: Record<string, unknown> | null;
+        created_at: string;
+      }>(
+        `SELECT event_type, details_json, created_at
+           FROM reconciliation_audit_event
+          WHERE job_id = $1 AND organization_id = $2
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1`,
+        [jobId, organizationId],
+      );
+
+      const row = result.rows[0];
+      if (!row) {
+        return null;
+      }
+
+      return {
+        eventType: row.event_type,
+        details: row.details_json ?? {},
+        createdAt: row.created_at,
+      };
     });
   }
 

@@ -263,4 +263,65 @@ describe('importValidationQueue consumer', () => {
     bullmqState.workerClose.mockRejectedValueOnce(new Error('close worker failed'));
     await expect(consumer.stop()).resolves.toBeUndefined();
   });
+
+  it('Issue #154: passes an onStep to processJob that publishes via Job.updateProgress', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    let capturedOnStep:
+      ((message: string, details?: Record<string, unknown>) => Promise<void>) | undefined;
+    const processJob = vi.fn().mockImplementation((_payload, onStep) => {
+      capturedOnStep = onStep;
+      return Promise.resolve({ status: 'completed', passed: true, matchingJobId: 'match-1' });
+    });
+
+    createImportValidationConsumer({
+      enabled: true,
+      redisUrl: 'rediss://user:pass@localhost:6380/3',
+      queueName: 'import-validation-runs',
+      prefix: 'import',
+      concurrency: 2,
+      logger: logger as never,
+      processJob,
+    });
+
+    const updateProgress = vi.fn().mockResolvedValue(undefined);
+    const workerProcessor = bullmqState.processor;
+    await workerProcessor?.({ id: 'job-progress', data: samplePayload, updateProgress } as never);
+
+    expect(capturedOnStep).toBeTypeOf('function');
+    await capturedOnStep?.('Validating uploaded files…');
+
+    expect(updateProgress).toHaveBeenCalledWith({
+      organizationId: samplePayload.organizationId,
+      processId: samplePayload.runId,
+      queueType: 'import-validation',
+      statusMessage: 'Validating uploaded files…',
+      details: undefined,
+    });
+  });
+
+  it('Issue #154: onStep never rejects even if Job.updateProgress fails', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    let capturedOnStep:
+      ((message: string, details?: Record<string, unknown>) => Promise<void>) | undefined;
+    const processJob = vi.fn().mockImplementation((_payload, onStep) => {
+      capturedOnStep = onStep;
+      return Promise.resolve({ status: 'completed', passed: true, matchingJobId: 'match-1' });
+    });
+
+    createImportValidationConsumer({
+      enabled: true,
+      redisUrl: 'rediss://user:pass@localhost:6380/3',
+      queueName: 'import-validation-runs',
+      prefix: 'import',
+      concurrency: 2,
+      logger: logger as never,
+      processJob,
+    });
+
+    const updateProgress = vi.fn().mockRejectedValue(new Error('redis unavailable'));
+    const workerProcessor = bullmqState.processor;
+    await workerProcessor?.({ id: 'job-progress', data: samplePayload, updateProgress } as never);
+
+    await expect(capturedOnStep?.('Validating uploaded files…')).resolves.toBeUndefined();
+  });
 });

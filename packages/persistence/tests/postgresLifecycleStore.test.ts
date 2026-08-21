@@ -653,13 +653,6 @@ describe('PostgresReconciliationLifecycleStore', () => {
       jobId,
       outputWorkbook,
       completedAt: new Date().toISOString(),
-      auditEvents: [
-        {
-          timestamp: new Date().toISOString(),
-          action: 'reconciliation.run.completed',
-          details: { runId: jobId, exactMatches: 1 },
-        },
-      ],
     });
 
     const decision: ReviewerDecision = {
@@ -1007,6 +1000,138 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(rawRowCount.rows[0]?.count).toBe(0);
     expect(auditRows.rows.some((row) => row.event_type === 'job.failed' && row.count === 1)).toBe(
       true,
+    );
+  });
+
+  it('recordAuditEvent writes durably and immediately, independent of the job ever finalizing (Issue #154)', async () => {
+    // The direct regression test for the actual defect: before this fix, an audit event only
+    // ever became a row via persistExportAndFinalize's own batch write, reached only once a run
+    // fully succeeded -- a mid-run failure meant the whole in-memory backlog was silently
+    // discarded, with zero rows for anything that happened before the failure. This proves each
+    // event survives on its own, the moment it's recorded, with no dependency on finalization
+    // (or even success) ever happening at all.
+    if (startupError) {
+      throw startupError;
+    }
+
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const { jobId } = await createRegisteredJob(store, {
+      correlationId: 'corr-audit-event',
+      inputFingerprint: 'fingerprint-audit-event',
+    });
+
+    await store.recordAuditEvent(defaultOrganizationId, jobId, 'reconciliation.normalize.completed', {
+      transactionCount: 42,
+    });
+    await store.recordAuditEvent(defaultOrganizationId, jobId, 'reconciliation.run.failed', {
+      message: 'Matching engine crashed while grouping split payments.',
+    });
+
+    // No persistExportAndFinalize, no markFailed, no state transition of any kind -- these two
+    // rows must already be durable on their own. Filtered to this test's own event_type prefix --
+    // createRegisteredJob's own FILE_REGISTERED transition already writes one unrelated row for
+    // this job via transitionJobState's own insertAuditEvent call.
+    const auditRows = await pool.query<{
+      event_type: string;
+      details_json: { transactionCount?: number; message?: string };
+      created_at: string;
+    }>(
+      `SELECT event_type, details_json, created_at
+         FROM reconciliation_audit_event
+        WHERE job_id = $1 AND event_type LIKE 'reconciliation.%'
+        ORDER BY created_at`,
+      [jobId],
+    );
+
+    expect(auditRows.rows).toHaveLength(2);
+    expect(auditRows.rows[0]).toMatchObject({
+      event_type: 'reconciliation.normalize.completed',
+      details_json: { transactionCount: 42 },
+    });
+    expect(auditRows.rows[1]).toMatchObject({
+      event_type: 'reconciliation.run.failed',
+      details_json: { message: 'Matching engine crashed while grouping split payments.' },
+    });
+
+    const jobRows = await pool.query<{ current_state: string; completed_at: string | null }>(
+      'SELECT current_state, completed_at FROM reconciliation_job WHERE id = $1',
+      [jobId],
+    );
+    // recordAuditEvent must not itself transition job state -- that remains a deliberately
+    // separate concern (Issue #154's own explicitly-out-of-scope write-path hardening question).
+    expect(jobRows.rows[0]?.current_state).not.toBe('FAILED');
+    expect(jobRows.rows[0]?.completed_at).toBeNull();
+  });
+
+  it('recordAuditEvent never attributes a row to the caller-supplied organization id, only to the job\'s real one', async () => {
+    if (startupError) {
+      throw startupError;
+    }
+
+    // `pool` in this file is a superuser connection with no RLS enforcement (unlike
+    // importRunStore.test.ts's dedicated `runtimePool`), so a wrong organizationId here does not
+    // get rejected by RLS at getJobOrganizationId's SELECT the way it would under real app
+    // traffic (which would 0-row and throw -- see getJobOrganizationId's own not-found check).
+    // What this test actually proves, and the guarantee that holds either way: recordAuditEvent
+    // always re-derives the job's true organization_id via getJobOrganizationId and inserts under
+    // that value, never under the caller-supplied organizationId directly -- so even a caller
+    // that passes the wrong org can never cause an audit row to be misattributed to it.
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const { jobId } = await createRegisteredJob(store, {
+      correlationId: 'corr-audit-tenant',
+      inputFingerprint: 'fingerprint-audit-tenant',
+    });
+
+    const otherOrganization = await pool.query<{ id: string }>(
+      "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Audit Event Tenant Test Org') RETURNING id",
+    );
+    const otherOrganizationId = otherOrganization.rows[0]!.id;
+
+    await store.recordAuditEvent(otherOrganizationId, jobId, 'reconciliation.normalize.completed', {
+      transactionCount: 1,
+    });
+
+    const auditRows = await pool.query<{ organization_id: string }>(
+      `SELECT organization_id FROM reconciliation_audit_event
+        WHERE job_id = $1 AND event_type = 'reconciliation.normalize.completed'`,
+      [jobId],
+    );
+    expect(auditRows.rows).toHaveLength(1);
+    expect(auditRows.rows[0]!.organization_id).toBe(defaultOrganizationId);
+    expect(auditRows.rows[0]!.organization_id).not.toBe(otherOrganizationId);
+  });
+
+  it('reconciliation_job.updated_at is auto-stamped by trigger, not just by application code', async () => {
+    if (startupError) {
+      throw startupError;
+    }
+
+    // Changeset 0053's set_updated_at() trigger -- this proves updated_at reflects reality even
+    // when an UPDATE statement never mentions the column, closing the gap the manual
+    // `SET updated_at = NOW()` convention used everywhere else in this file left open.
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const { jobId } = await createRegisteredJob(store, {
+      correlationId: 'corr-updated-at-trigger',
+      inputFingerprint: 'fingerprint-updated-at-trigger',
+    });
+
+    const before = await pool.query<{ updated_at: string }>(
+      'SELECT updated_at FROM reconciliation_job WHERE id = $1',
+      [jobId],
+    );
+
+    await pool.query(
+      "UPDATE reconciliation_job SET retry_count = retry_count + 1 WHERE id = $1",
+      [jobId],
+    );
+
+    const after = await pool.query<{ updated_at: string }>(
+      'SELECT updated_at FROM reconciliation_job WHERE id = $1',
+      [jobId],
+    );
+
+    expect(new Date(after.rows[0]!.updated_at).getTime()).toBeGreaterThan(
+      new Date(before.rows[0]!.updated_at).getTime(),
     );
   });
 

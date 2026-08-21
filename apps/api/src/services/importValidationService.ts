@@ -9,6 +9,8 @@ import type {
 } from '@recon/persistence';
 import type pino from 'pino';
 
+import type { QueueStepReporter } from './queueProgress';
+
 /** Exactly the read this workflow needs from PostgresImportRunStore -- Pick<>, not the whole
  * class, so a test double can satisfy it with a plain object (a class with a private `pool`
  * field can't structurally match an object literal). */
@@ -59,6 +61,14 @@ export interface RunImportValidationWorkflowInput {
     bankFile: ImportValidationTriggerFile;
     glFile: ImportValidationTriggerFile;
   }) => Promise<{ matchingJobId: string }>;
+  /** Live push half of Issue #154 (Pub/Sub, not polling) -- present only when this job is
+   * processing inside the import validation queue worker; undefined on the synchronous
+   * in-request fallback. Stage 1 (file validation) doesn't get its own durable per-gate audit
+   * trail the way Stage 2 (matching) does via `reconciliation_audit_event` -- `import_job.status`/
+   * timestamps already durably record start/finish (see `markJobRunning`/`finalizeRun` below), so
+   * `onStep` here is publish-only: a start and a terminal pass/fail checkpoint, matching the
+   * plan's "keep checkpoints modest for v1" guidance. */
+  onStep?: QueueStepReporter;
 }
 
 export interface RunImportValidationWorkflowResult {
@@ -112,7 +122,12 @@ const assertBankOrGl = (file: ImportRunFileSummary): 'BANK' | 'GL' => {
 export const runImportValidationWorkflow = async (
   input: RunImportValidationWorkflowInput,
 ): Promise<RunImportValidationWorkflowResult> => {
-  await input.importValidationStore.markJobRunning(input.organizationId, input.importJobId, input.workerId);
+  await input.importValidationStore.markJobRunning(
+    input.organizationId,
+    input.importJobId,
+    input.workerId,
+  );
+  await input.onStep?.('Validating uploaded files…').catch(() => undefined);
 
   const run = await input.importRunStore.getRunSummary(input.organizationId, input.runId);
   if (!run) {
@@ -193,19 +208,29 @@ export const runImportValidationWorkflow = async (
 
   const passed = fileOutcomes.every((entry) => entry.passed);
 
-  await input.importValidationStore.finalizeRun(input.organizationId, input.runId, input.importJobId, {
-    passed,
-  });
+  await input.importValidationStore.finalizeRun(
+    input.organizationId,
+    input.runId,
+    input.importJobId,
+    {
+      passed,
+    },
+  );
 
   if (!passed) {
     input.logger.info({ action: 'import-validation.run.failed', runId: input.runId });
+    await input.onStep?.('File validation failed').catch(() => undefined);
     return { passed: false };
   }
+
+  await input.onStep?.('File validation passed').catch(() => undefined);
 
   const bankEntry = fileOutcomes.find((entry) => entry.file.role === 'BANK_MERGED');
   const glEntry = fileOutcomes.find((entry) => entry.file.role === 'GL');
   if (!bankEntry || !glEntry) {
-    throw new Error(`reconciliation_run ${input.runId} passed validation without both a BANK and GL file.`);
+    throw new Error(
+      `reconciliation_run ${input.runId} passed validation without both a BANK and GL file.`,
+    );
   }
 
   const { matchingJobId } = await input.triggerMatching({
@@ -221,7 +246,11 @@ export const runImportValidationWorkflow = async (
     },
   });
 
-  await input.importValidationStore.recordMatchingJobId(input.organizationId, input.runId, matchingJobId);
+  await input.importValidationStore.recordMatchingJobId(
+    input.organizationId,
+    input.runId,
+    matchingJobId,
+  );
 
   input.logger.info({ action: 'import-validation.run.matched', runId: input.runId, matchingJobId });
 

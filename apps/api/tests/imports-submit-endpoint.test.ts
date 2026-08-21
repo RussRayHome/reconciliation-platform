@@ -369,10 +369,43 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
 
-    if (text.includes('FROM reconciliation_run') && text.includes('WHERE id = $1')) {
+    // Unrelated to Issue #154's run-summary query -- importValidationStore.ts's plain existence
+    // check for getRunIssues (`SELECT 1 FROM reconciliation_run WHERE id = $1`). Matched
+    // separately and first since it doesn't have a LEFT JOIN and would otherwise fall through to
+    // the "unexpected query" branch below.
+    if (text.includes('SELECT 1 FROM reconciliation_run')) {
+      const [id] = params as [string];
+      const exists = runs.some((run) => run.id === id);
+      return Promise.resolve({ rows: exists ? [{ '?column?': 1 }] : [], rowCount: exists ? 1 : 0 });
+    }
+
+    // Issue #154: loadRunSummaryWithClient's run query now LEFT JOINs reconciliation_job and is
+    // aliased (r./j.). This fake doesn't track reconciliation_job rows separately, so the joined
+    // columns are always null -- no test in this file asserts on matchingJob detail beyond
+    // matchingJobId itself, which `run.matching_job_id` already carries.
+    if (text.includes('LEFT JOIN reconciliation_job')) {
       const [id] = params as [string];
       const row = runs.find((run) => run.id === id);
-      return Promise.resolve({ rows: row ? [row] : [], rowCount: row ? 1 : 0 });
+      return Promise.resolve({
+        rows: row
+          ? [
+              {
+                ...row,
+                job_current_state: null,
+                job_failure_code: null,
+                job_failure_message: null,
+                job_completed_at: null,
+              },
+            ]
+          : [],
+        rowCount: row ? 1 : 0,
+      });
+    }
+
+    // Issue #154: the newest import_job row for a run -- no test in this file seeds one via this
+    // read path (they mutate `importJobs` directly), so this always answers "none recorded".
+    if (text.includes('FROM import_job') && text.includes('ORDER BY queued_at DESC')) {
+      return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
     if (text.includes('FROM run_source_file rsf') && text.includes('JOIN import_file')) {
