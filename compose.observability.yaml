@@ -1,10 +1,11 @@
 # Local Dev/Stage log+metrics aggregation -- deliberately a separate compose project from the app
 # stack (compose.yaml/compose.dev.yaml/compose.stage.yaml). Not referenced by any CI workflow, not
 # started by `npm run docker:deploy`, no depends_on relationship with the app in either direction.
-# Promtail discovers and tails every container on this Docker host via the Docker Engine API
-# (socket-mounted read-only below) -- it does not need to join the app's `edge`/`app`/`data`
-# networks (`app`/`data` are `internal: true` in compose.yaml), and no app service definition
-# needs to change for this to work.
+# Alloy (observability/alloy/config.alloy) discovers and tails every container on this Docker host
+# via the Docker Engine API (socket-mounted read-only below) -- it does not need to join the app's
+# `edge`/`app`/`data` networks (`app`/`data` are `internal: true` in compose.yaml), and no app
+# service definition needs to change for this to work. Replaces Promtail, which reached end of
+# life 2026-03-02.
 #
 # Prometheus is the one exception -- scraping HTTP metrics genuinely requires network reachability
 # to the target, unlike Promtail's socket-based log tailing. It joins both the Dev and Stage app
@@ -57,34 +58,108 @@ services:
       retries: 10
       start_period: 10s
 
-  promtail:
-    image: grafana/promtail:3.3.2
-    command: ['-config.file=/etc/promtail/promtail-config.yaml']
+  # Replaces Promtail (removed) -- Promtail reached end of life 2026-03-02. This config is a
+  # functional equivalent generated via `alloy convert -f promtail` against the old
+  # observability/promtail/promtail-config.yaml and hand-verified against the tool's own `fmt`
+  # validation, not hand-written from scratch, specifically to minimize the chance of silently
+  # losing behavior during the migration. See observability/alloy/config.alloy for the full
+  # reasoning on each component.
+  alloy:
+    image: grafana/alloy:v1.18.1
+    command:
+      [
+        'run',
+        '--server.http.listen-addr=0.0.0.0:12345',
+        '--storage.path=/var/lib/alloy/data',
+        '/etc/alloy/config.alloy',
+      ]
     restart: unless-stopped
     depends_on:
       loki:
         condition: service_healthy
     volumes:
-      - ./observability/promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
-      - recon-observability-promtail-positions:/tmp
-      # Read-only: Promtail only ever needs to discover containers and stream their logs, never
-      # start/stop/inspect-write anything.
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - recon-observability-alloy-data:/var/lib/alloy/data
+      # Read-only: Alloy only ever needs to discover containers and stream their logs, never
+      # start/stop/inspect-write anything -- same justification as Promtail's identical mount.
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - '${OBSERVABILITY_PROMTAIL_PORT:-9080}:9080'
+      - '${OBSERVABILITY_ALLOY_PORT:-12345}:12345'
     healthcheck:
-      # grafana/promtail's image has neither wget nor curl (Debian-based, but minimal) --
-      # verified directly against the running container. bash's /dev/tcp pseudo-device sends a
-      # raw HTTP request without needing either -- but /bin/sh on this image is dash, which
-      # doesn't support /dev/tcp, so bash must be invoked explicitly rather than via CMD-SHELL
-      # (which runs through sh).
+      # grafana/alloy's image has neither wget nor curl (confirmed directly against the running
+      # container, same limitation Promtail's image had) -- same bash /dev/tcp workaround as
+      # Promtail's own healthcheck used, for the same reason (/bin/sh here is dash, which doesn't
+      # support /dev/tcp).
       test:
         [
           'CMD',
           'bash',
           '-c',
-          'exec 3<>/dev/tcp/127.0.0.1/9080 && printf "GET /ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && head -1 <&3 | grep -q "200 OK"',
+          'exec 3<>/dev/tcp/127.0.0.1/12345 && printf "GET /-/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && head -1 <&3 | grep -q "200 OK"',
         ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Per-container CPU/memory/network -- added specifically to answer a question raised while
+  # building k6 load testing: Dev and Stage run concurrently on the same laptop and share its CPU,
+  # even though they don't port-conflict, so a k6 run's numbers could be skewed by whatever Dev's
+  # own containers are doing at the same moment. This makes that contention visible instead of
+  # inferred. Runs inside Docker Desktop's own Linux VM on macOS, same as everything else in this
+  # stack -- reports on containers as the Docker Engine sees them, which is exactly the right scope
+  # here (not a claim about literal Mac hardware, see node-exporter's own comment below for that
+  # same distinction applied to host-level metrics).
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      # NOT `/var/run:/var/run:ro` (looks equivalent, isn't). On Docker Desktop for macOS, mounting
+      # the whole `/var/run` DIRECTORY as a bind-mount source resolves against the macOS host's own
+      # /var/run (confirmed live: with that mount, `docker exec`ing in showed launchd sockets like
+      # com.apple.* and a docker.sock symlinked to `/Users/<user>/.docker/run/docker.sock`, i.e. the
+      # Mac's Docker Desktop CLI socket -- not the Linux VM's own /var/run where dockerd/containerd
+      # actually listen). This is specific to Desktop's "default Docker socket" forwarding feature,
+      # which intercepts directory-level mounts of that exact path; `/var/lib/docker` and other
+      # `/var/*` sources are unaffected (verified separately). `/run` (no `var`) isn't covered by
+      # that forwarding and correctly reaches the VM's real socket directory, confirmed by finding
+      # dockerd's and containerd's real sockets there via a throwaway container.
+      - /run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - '${OBSERVABILITY_CADVISOR_PORT:-8080}:8080'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/healthz || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Host-level CPU/memory/disk/network. On Docker Desktop for macOS (the only platform this stack
+  # targets, per this file's own header comment), "host" means Docker Desktop's own Linux VM, not
+  # literally the Mac's hardware -- Docker Desktop's VM is a real, resource-constrained environment
+  # in its own right (it's what all these containers actually compete for CPU/memory inside), so
+  # this is still the correct thing to measure for the same k6-contention question cadvisor above
+  # answers at the container level; it just isn't a substitute for a macOS-native hardware monitor.
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - '${OBSERVABILITY_NODE_EXPORTER_PORT:-9100}:9100'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:9100/metrics >/dev/null || exit 1']
       interval: 15s
       timeout: 5s
       retries: 10
@@ -151,6 +226,6 @@ services:
 
 volumes:
   recon-observability-loki-data:
-  recon-observability-promtail-positions:
+  recon-observability-alloy-data:
   recon-observability-grafana-data:
   recon-observability-prometheus-data:

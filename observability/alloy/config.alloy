@@ -1,0 +1,78 @@
+// Discovers and tails every container's logs via the Docker Engine API (socket-mounted, read-only
+// -- see compose.observability.yaml) rather than bind-mounting Docker's raw log directory, so this
+// works the same way on Docker Desktop (macOS/Windows) as on native Linux Docker. Replaces
+// Promtail (observability/promtail/, removed) -- Promtail reached end of life 2026-03-02; this is
+// its functional equivalent, generated via `alloy convert -f promtail` against the old config and
+// hand-verified, not hand-written from scratch, to minimize the chance of silently losing behavior
+// during the migration.
+
+discovery.docker "docker" {
+	host             = "unix:///var/run/docker.sock"
+	refresh_interval = "5s"
+}
+
+// Docker Compose already stamps every container with its project/service name -- reuse those
+// labels rather than inventing new ones, so one Alloy instance naturally separates
+// reconciliation-platform-dev / -stage / any ad hoc CI project without extra config.
+// targets is deliberately empty -- this component is only consumed downstream via its .rules
+// export (loki.source.docker's relabel_rules argument below), which just needs the compiled rule
+// set, not a real target list of its own. Matches the verified `alloy convert` output exactly.
+discovery.relabel "docker" {
+	targets = []
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+		target_label  = "compose_project"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "compose_service"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+}
+
+loki.source.docker "docker" {
+	host             = "unix:///var/run/docker.sock"
+	targets          = discovery.docker.docker.targets
+	forward_to       = [loki.process.docker.receiver]
+	relabel_rules    = discovery.relabel.docker.rules
+	refresh_interval = "5s"
+}
+
+// Parses JSON log lines (every pino logger in apps/api already emits structured JSON) so `jti`,
+// `action`, `correlationId`, etc. are queryable via `| json | jti="<uuid>"` at query time.
+// Deliberately NOT promoted to a Loki label beyond `level` -- jti is per-session/high-cardinality,
+// and Loki labels are meant to stay low-cardinality (compose_project/service/container/level are
+// the only labels). nginx's access log is plain text, not JSON -- the json stage below silently
+// no-ops on non-JSON lines rather than erroring, so this same pipeline is safe to share across
+// every container.
+loki.process "docker" {
+	forward_to = [loki.write.default.receiver]
+
+	stage.json {
+		expressions = {
+			level = "level",
+		}
+	}
+
+	// null (not "") means: promote the value already extracted under the same key by stage.json
+	// above, verbatim, as the Loki label. Matches the verified `alloy convert` output exactly --
+	// an empty string here would blank the label instead of populating it from the parsed log.
+	stage.labels {
+		values = {
+			level = null,
+		}
+	}
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}
