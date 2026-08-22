@@ -118,6 +118,8 @@
     "security:scan:zap:stage": "npm run security:scan:zap:web:stage && npm run security:scan:zap:api:stage",
     "security:scan:zap:stage:strict": "npm run security:scan:zap:web:stage:strict && npm run security:scan:zap:api:stage:strict",
     "perf:k6:stage": "DOCKER_ENV_FILE=.env.docker.stage DOCKER_ENV_FALLBACK_FILE=.env.docker.stage.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.stage.yaml bash scripts/pre-flight/k6-load-test.sh",
+    "security:zap:targets:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-zap-api-targets.ts",
+    "security:zap:targets:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-zap-api-targets.ts --check",
     "aws:ecr:push": "bash scripts/pre-flight/ecr-push.sh",
     "aws:prod:up": "cd infra && npm run infra:up",
     "aws:prod:down": "cd infra && npm run infra:down",
