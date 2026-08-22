@@ -86,6 +86,10 @@ export interface RecordRunApprovalDecisionInput {
   toStatus: Extract<RunApprovalStatus, 'APPROVED' | 'REJECTED'>;
   actorUsername: string;
   rationale?: string;
+  /** Dev-only escape hatch (changeset 0056) for the segregation-of-duty CHECK constraint --
+   * the caller (app.ts) sets this only when ALLOW_SUPERUSER_SELF_APPROVAL is enabled and the
+   * actor's role is superuser. Never true in a production runtime (enforced at boot, not here). */
+  allowSelfApproval?: boolean;
 }
 
 export type RunApprovalDecisionResult =
@@ -418,10 +422,15 @@ export class PostgresImportValidationStore {
    * (recordMatchingJobId is still the right next call). Guarded here, atomically with the FOR
    * UPDATE lock, against the two cases Screen 06 doesn't apply to: a structural (HEADER/
    * COLUMN_ORDER) gate failure has no per-row detail to accept, and a file with zero importable
-   * rows has nothing to accept either -- both are Screen 05/07's territory, not this one's. */
+   * rows has nothing to accept either -- both are Screen 05/07's territory, not this one's.
+   * Records `actorUsername` and the current time onto skip_invalid_rows_by/_at (changeset 0054)
+   * -- a real Dev-stack trace-through surfaced that this override had no record of who made it.
+   * @param actorUsername The senior analyst accepting the partial import (`request.auth!.username`).
+   */
   async acceptPartialImport(
     organizationId: string,
     runId: string,
+    actorUsername: string,
   ): Promise<
     | { outcome: 'not_found' }
     | { outcome: 'invalid_state'; currentStatus: string }
@@ -440,6 +449,13 @@ export class PostgresImportValidationStore {
       }
       if (runRow.status !== 'VALIDATION_FAILED') {
         return { outcome: 'invalid_state' as const, currentStatus: runRow.status };
+      }
+
+      const actorUserId = await this.resolveUserId(client, organizationId, actorUsername);
+      if (!actorUserId) {
+        throw new Error(
+          `acceptPartialImport: actor username "${actorUsername}" has no matching reconciliation_user row.`,
+        );
       }
 
       const filesResult = await client.query<{ id: string; validation_status: string }>(
@@ -475,9 +491,12 @@ export class PostgresImportValidationStore {
         }
       }
 
-      await client.query(`UPDATE reconciliation_run SET status = 'PENDING_APPROVAL' WHERE id = $1`, [
-        runId,
-      ]);
+      await client.query(
+        `UPDATE reconciliation_run
+            SET status = 'PENDING_APPROVAL', skip_invalid_rows_by = $2, skip_invalid_rows_at = NOW()
+          WHERE id = $1`,
+        [runId, actorUserId],
+      );
 
       return { outcome: 'accepted' as const };
     });
@@ -860,7 +879,9 @@ export class PostgresImportValidationStore {
    * same convention as createApprovalRequest's unique-violation (23505, readModelStore.ts's own
    * doc comment): the route layer catches the raw error code, this layer doesn't guess at HTTP
    * semantics. Throws (rather than returning a result variant) if actorUsername has no matching
-   * reconciliation_user row, same reasoning as claimRunApproval. */
+   * reconciliation_user row, same reasoning as claimRunApproval. input.allowSelfApproval (changeset
+   * 0056) sets a transaction-local GUC that relaxes the constraint for this UPDATE only -- see the
+   * field's own doc comment for who's allowed to set it. */
   async recordRunApprovalDecision(
     organizationId: string,
     input: RecordRunApprovalDecisionInput,
@@ -871,6 +892,10 @@ export class PostgresImportValidationStore {
         throw new Error(
           `recordRunApprovalDecision: actor username "${input.actorUsername}" has no matching reconciliation_user row.`,
         );
+      }
+
+      if (input.allowSelfApproval) {
+        await client.query("SELECT set_config('app.allow_self_approval', 'true', true)");
       }
 
       const result = await client.query<{

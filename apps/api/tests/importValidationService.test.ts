@@ -20,19 +20,13 @@ const bankCsv = Buffer.from(
   'utf8',
 );
 
-const glCsv = Buffer.from(
-  'Date,Memo,Amount\n' + '2026-08-01,Deposit,100.00\n',
-  'utf8',
-);
+const glCsv = Buffer.from('Date,Memo,Amount\n' + '2026-08-01,Deposit,100.00\n', 'utf8');
 
 const invalidBankCsv = Buffer.from('not,a,recognizable,header\n1,2,3,4\n', 'utf8');
 
 // Structurally valid (right headers, right order) but a blank Memo trips GL_DESCRIPTION_REQUIRED
 // -- a row-content ERROR, not a structural one.
-const glCsvWithRowContentError = Buffer.from(
-  'Date,Memo,Amount\n' + '2026-08-01,,100.00\n',
-  'utf8',
-);
+const glCsvWithRowContentError = Buffer.from('Date,Memo,Amount\n' + '2026-08-01,,100.00\n', 'utf8');
 
 const baseRun = (): ImportRunSummary => ({
   id: 'run-1',
@@ -44,6 +38,9 @@ const baseRun = (): ImportRunSummary => ({
   periodMonth: 8,
   status: 'VALIDATING',
   createdAt: '2026-08-01T00:00:00.000Z',
+  matchingJobId: null,
+  matchingJob: null,
+  validationJob: null,
   files: [
     {
       importFileId: 'file-bank',
@@ -153,6 +150,29 @@ describe('runImportValidationWorkflow', () => {
     );
   });
 
+  it('Issue #154: reports a start checkpoint and a passed checkpoint via onStep', async () => {
+    const importValidationStore = createFakeImportValidationWriter();
+    const triggerMatching = vi.fn(() => Promise.resolve({ matchingJobId: 'matching-job-1' }));
+    const onStep = vi.fn(() => Promise.resolve(undefined));
+
+    await runImportValidationWorkflow({
+      organizationId: 'org-1',
+      runId: 'run-1',
+      importJobId: 'job-1',
+      workerId: 'worker-1',
+      logger: silentLogger,
+      blobStorage: createFakeBlobStorage({ 'file-bank': bankCsv, 'file-gl': glCsv }),
+      importRunStore: createFakeImportRunStore(baseRun()),
+      importValidationStore,
+      triggerMatching,
+      onStep,
+    });
+
+    expect(onStep).toHaveBeenCalledWith('Validating uploaded files…');
+    expect(onStep).toHaveBeenCalledWith('File validation passed');
+    expect(onStep).not.toHaveBeenCalledWith('File validation failed');
+  });
+
   it('finalizes as failed and never triggers matching when a file is structurally invalid', async () => {
     const importValidationStore = createFakeImportValidationWriter();
     const triggerMatching = vi.fn(() => Promise.resolve({ matchingJobId: 'should-not-be-called' }));
@@ -177,6 +197,29 @@ describe('runImportValidationWorkflow', () => {
     expect(importValidationStore.recordMatchingJobId).not.toHaveBeenCalled();
   });
 
+  it('Issue #154: reports a start checkpoint and a failed checkpoint via onStep', async () => {
+    const importValidationStore = createFakeImportValidationWriter();
+    const triggerMatching = vi.fn(() => Promise.resolve({ matchingJobId: 'should-not-be-called' }));
+    const onStep = vi.fn(() => Promise.resolve(undefined));
+
+    await runImportValidationWorkflow({
+      organizationId: 'org-1',
+      runId: 'run-1',
+      importJobId: 'job-1',
+      workerId: 'worker-1',
+      logger: silentLogger,
+      blobStorage: createFakeBlobStorage({ 'file-bank': invalidBankCsv, 'file-gl': glCsv }),
+      importRunStore: createFakeImportRunStore(baseRun()),
+      importValidationStore,
+      triggerMatching,
+      onStep,
+    });
+
+    expect(onStep).toHaveBeenCalledWith('Validating uploaded files…');
+    expect(onStep).toHaveBeenCalledWith('File validation failed');
+    expect(onStep).not.toHaveBeenCalledWith('File validation passed');
+  });
+
   it('still records the row with a row-content ERROR, not excluded, even though the run fails validation (GitHub #151 finding #3)', async () => {
     // The overall run still fails validation on a row-content ERROR (blank Memo) -- that's
     // Screen 06's existing deliberate design: a senior-analyst must explicitly opt in via
@@ -194,7 +237,10 @@ describe('runImportValidationWorkflow', () => {
       importJobId: 'job-1',
       workerId: 'worker-1',
       logger: silentLogger,
-      blobStorage: createFakeBlobStorage({ 'file-bank': bankCsv, 'file-gl': glCsvWithRowContentError }),
+      blobStorage: createFakeBlobStorage({
+        'file-bank': bankCsv,
+        'file-gl': glCsvWithRowContentError,
+      }),
       importRunStore: createFakeImportRunStore(baseRun()),
       importValidationStore,
       triggerMatching,

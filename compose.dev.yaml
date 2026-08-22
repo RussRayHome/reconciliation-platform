@@ -32,6 +32,11 @@ services:
       # defaults), so this override is scoped to Dev only, not the shared base file.
       ENABLE_RECONCILIATION_QUEUE: 'true'
       ENABLE_IMPORT_VALIDATION_QUEUE: 'true'
+      # Dev-only segregation-of-duty bypass (changeset 0056): lets a superuser submit and approve
+      # the same import run for solo testing. Restated (restricted) before go-live -- app.ts
+      # refuses to boot with this set in a production runtime, so it must never be copied into
+      # compose.yaml.
+      ALLOW_SUPERUSER_SELF_APPROVAL: 'true'
 
   worker:
     build:

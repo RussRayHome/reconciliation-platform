@@ -24,6 +24,7 @@ import type {
 } from '@recon/domain';
 import pino from 'pino';
 import { resolveLogLevelAtLeastInfo } from './logLevel';
+import type { QueueStepReporter } from './queueProgress';
 
 // Module-level logger used for service-layer tracing outside HTTP context.
 // When called from an HTTP route, call-site logs via request.log supplement these.
@@ -57,6 +58,13 @@ interface RunReconciliationPipelineInput {
   aliases: PayeeAlias[];
   t0: number;
   log: pino.Logger;
+  /** Live push half of Issue #154 (Pub/Sub, not polling) -- present only when this run is
+   * processing inside a queue worker (see `reconciliationQueue.ts`/`importValidationQueue.ts`'s
+   * `Worker` callbacks); undefined on the synchronous in-request fallback path, where there's no
+   * `Job` to call `updateProgress` on. `appendAuditEvent` below already persists every checkpoint
+   * unconditionally (Issue #154, changeset-independent of this) -- `onStep` only adds the publish
+   * side, so its absence never loses data, only live status text. */
+  onStep?: QueueStepReporter;
 }
 
 /** Fault-finding detail for the vetting phase, LOG_LEVEL=debug only -- undefined (not a no-op)
@@ -99,6 +107,7 @@ const runReconciliationPipeline = async ({
   aliases,
   t0,
   log,
+  onStep,
 }: RunReconciliationPipelineInput): Promise<ReconciliationRun> => {
   const runPersistStep = async <T>(action: string, fn: () => Promise<T>): Promise<T> => {
     const stepStart = Date.now();
@@ -132,7 +141,18 @@ const runReconciliationPipeline = async ({
     },
   ];
 
-  const appendAuditEvent = (action: AuditEvent['action'], details: AuditEvent['details']): void => {
+  // Issue #154: appends to the in-memory array (still returned as part of the ReconciliationRun
+  // shape API consumers already read) *and* writes the same event durably and immediately via
+  // lifecycleStore.recordAuditEvent -- unlike the old batch-at-the-end write, this survives a
+  // failure partway through the pipeline. Write failures are swallowed (never let a database
+  // hiccup on an audit row fail the actual reconciliation run); this is telemetry, not the work
+  // itself. Also fires onStep (the live-push half, present only inside a queue worker) with the
+  // same action string as the statusMessage -- one checkpoint, both effects, so persist and
+  // publish can never drift out of sync with each other.
+  const appendAuditEvent = async (
+    action: AuditEvent['action'],
+    details: AuditEvent['details'],
+  ): Promise<void> => {
     auditEvents = [
       ...auditEvents,
       {
@@ -141,6 +161,26 @@ const runReconciliationPipeline = async ({
         details,
       },
     ];
+
+    if (lifecycleStore) {
+      await lifecycleStore
+        .recordAuditEvent(organizationId, runId, action, details)
+        .catch((error: unknown) => {
+          log.warn({
+            action: 'service.auditEvent.persist.failed',
+            auditEventAction: action,
+            err: error instanceof Error ? { message: error.message } : error,
+          });
+        });
+    }
+
+    await onStep?.(action, details).catch((error: unknown) => {
+      log.warn({
+        action: 'service.auditEvent.publish.failed',
+        auditEventAction: action,
+        err: error instanceof Error ? { message: error.message } : error,
+      });
+    });
   };
 
   let normalizedTransactions: NormalizedTransaction[];
@@ -173,7 +213,7 @@ const runReconciliationPipeline = async ({
         })),
       });
     }
-    appendAuditEvent('reconciliation.normalize.completed', {
+    await appendAuditEvent('reconciliation.normalize.completed', {
       transactionCount: normalizedTransactions.length,
     });
 
@@ -219,7 +259,7 @@ const runReconciliationPipeline = async ({
         })),
       });
     }
-    appendAuditEvent('reconciliation.match.completed', {
+    await appendAuditEvent('reconciliation.match.completed', {
       matchResultCount: matching.matchResults.length,
       groupedMatchResultCount: matching.groupedMatchResults.length,
       probableMatchCount: matching.probableMatches.length,
@@ -276,7 +316,7 @@ const runReconciliationPipeline = async ({
         })),
       });
     }
-    appendAuditEvent('reconciliation.classify.completed', {
+    await appendAuditEvent('reconciliation.classify.completed', {
       exceptionCount: exceptionOutput.exceptions.length,
     });
 
@@ -319,12 +359,12 @@ const runReconciliationPipeline = async ({
       durationMs: Date.now() - exportStart,
       tabCount: outputWorkbook.tabNames.length,
     });
-    appendAuditEvent('reconciliation.export.completed', {
+    await appendAuditEvent('reconciliation.export.completed', {
       workbookFileName: outputWorkbook.fileName,
       tabCount: outputWorkbook.tabNames.length,
     });
 
-    appendAuditEvent('reconciliation.run.completed', {
+    await appendAuditEvent('reconciliation.run.completed', {
       runId,
       correlationId,
       exactMatches: summary.exactMatches,
@@ -337,6 +377,16 @@ const runReconciliationPipeline = async ({
         reconError instanceof Error
           ? { message: reconError.message, stack: reconError.stack }
           : reconError,
+    });
+    // Issue #154: the one genuinely new checkpoint (not a rewire of an existing one) -- this is
+    // what actually closes the "a mid-run failure leaves no durable trail" gap. Still doesn't
+    // transition reconciliation_job's own state to FAILED (a separate, deliberately out-of-scope
+    // write-path change); this only makes sure the audit trail survives, independent of whether
+    // the job's own terminal state does.
+    await appendAuditEvent('reconciliation.run.failed', {
+      runId,
+      correlationId,
+      message: reconError instanceof Error ? reconError.message : String(reconError),
     });
     throw reconError;
   }
@@ -365,7 +415,6 @@ const runReconciliationPipeline = async ({
         jobId: runId,
         outputWorkbook,
         completedAt: new Date().toISOString(),
-        auditEvents,
       }),
     );
   }
@@ -417,6 +466,8 @@ export interface ExecuteReconciliationFromNormalizedInput {
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
   aliases?: PayeeAlias[];
+  /** See `RunReconciliationPipelineInput.onStep`'s doc comment. */
+  onStep?: QueueStepReporter;
 }
 
 /**
@@ -441,6 +492,7 @@ export const executeReconciliationFromNormalized = async ({
   reconciliationFrequency,
   periodLabel,
   aliases = [],
+  onStep,
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
   const log = serviceLogger.child({ correlationId, sessionId, accountIdentifier });
   const t0 = Date.now();
@@ -477,5 +529,6 @@ export const executeReconciliationFromNormalized = async ({
     aliases,
     t0,
     log,
+    onStep,
   });
 };

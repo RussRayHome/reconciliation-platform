@@ -105,9 +105,7 @@ describe('reconciliationQueue producer', () => {
     });
 
     expect(producer.enabled).toBe(false);
-    await expect(producer.enqueue(samplePayload)).rejects.toThrow(
-      'RECONCILIATION_QUEUE_REDIS_URL',
-    );
+    await expect(producer.enqueue(samplePayload)).rejects.toThrow('RECONCILIATION_QUEUE_REDIS_URL');
     expect(logger.warn).toHaveBeenCalled();
   });
 
@@ -273,5 +271,66 @@ describe('reconciliationQueue consumer', () => {
 
     bullmqState.workerClose.mockRejectedValueOnce(new Error('close worker failed'));
     await expect(consumer.stop()).resolves.toBeUndefined();
+  });
+
+  it('Issue #154: passes an onStep to processJob that publishes via Job.updateProgress', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    let capturedOnStep:
+      ((message: string, details?: Record<string, unknown>) => Promise<void>) | undefined;
+    const processJob = vi.fn().mockImplementation((_payload, onStep) => {
+      capturedOnStep = onStep;
+      return Promise.resolve({ status: 'completed', runId: 'run-success' });
+    });
+
+    createReconciliationConsumer({
+      enabled: true,
+      redisUrl: 'rediss://user:pass@localhost:6380/2',
+      queueName: 'reconciliation-runs',
+      prefix: 'recon',
+      concurrency: 2,
+      logger: logger as never,
+      processJob,
+    });
+
+    const updateProgress = vi.fn().mockResolvedValue(undefined);
+    const workerProcessor = bullmqState.processor;
+    await workerProcessor?.({ id: 'job-progress', data: samplePayload, updateProgress } as never);
+
+    expect(capturedOnStep).toBeTypeOf('function');
+    await capturedOnStep?.('Reconciliation started', { step: 1 });
+
+    expect(updateProgress).toHaveBeenCalledWith({
+      organizationId: samplePayload.organizationId,
+      processId: samplePayload.requestId,
+      queueType: 'reconciliation',
+      statusMessage: 'Reconciliation started',
+      details: { step: 1 },
+    });
+  });
+
+  it('Issue #154: onStep never rejects even if Job.updateProgress fails', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    let capturedOnStep:
+      ((message: string, details?: Record<string, unknown>) => Promise<void>) | undefined;
+    const processJob = vi.fn().mockImplementation((_payload, onStep) => {
+      capturedOnStep = onStep;
+      return Promise.resolve({ status: 'completed', runId: 'run-success' });
+    });
+
+    createReconciliationConsumer({
+      enabled: true,
+      redisUrl: 'rediss://user:pass@localhost:6380/2',
+      queueName: 'reconciliation-runs',
+      prefix: 'recon',
+      concurrency: 2,
+      logger: logger as never,
+      processJob,
+    });
+
+    const updateProgress = vi.fn().mockRejectedValue(new Error('redis unavailable'));
+    const workerProcessor = bullmqState.processor;
+    await workerProcessor?.({ id: 'job-progress', data: samplePayload, updateProgress } as never);
+
+    await expect(capturedOnStep?.('Reconciliation started')).resolves.toBeUndefined();
   });
 });

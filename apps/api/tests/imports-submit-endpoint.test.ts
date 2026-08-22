@@ -182,6 +182,19 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: row ? [{ status: row.status }] : [], rowCount: row ? 1 : 0 });
     }
 
+    if (text.includes('FROM reconciliation_user') && text.includes('user_name = $1')) {
+      // acceptPartialImport's resolveUserId lookup (changeset 0054/skip-invalid-rows tracking) --
+      // unlike submitRun's submitted_by below, this one throws if it can't resolve the actor, so
+      // it needs a real match here. Every test in this file authenticates as the same fixture
+      // identity (authedApp's default sub 'test-user' / organizationId 'test-org'), so one fixed
+      // synthetic id is enough -- no test asserts on the resolved id's actual value.
+      const [userName, organizationId] = params as [string, string];
+      if (userName === 'test-user' && organizationId === 'test-org') {
+        return Promise.resolve({ rows: [{ id: 'fixture-user-id' }], rowCount: 1 });
+      }
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
     if (text.includes('FROM reconciliation_user')) {
       // No seeded users in this fake -- submitted_by always resolves to NULL, matching the
       // documented local-login-fallback behavior. Not under test here; imports-endpoints.test.ts
@@ -276,8 +289,10 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: [{ count: String(count) }], rowCount: 1 });
     }
 
-    if (text.includes("UPDATE reconciliation_run SET status = 'PENDING_APPROVAL' WHERE id = $1")) {
-      const [id] = params as [string];
+    if (text.includes("SET status = 'PENDING_APPROVAL', skip_invalid_rows_by")) {
+      // acceptPartialImport's own UPDATE (changeset 0054) -- the skip_invalid_rows_by/_at columns
+      // aren't read back by anything in this fake/these tests, so only status needs updating here.
+      const [id] = params as [string, string];
       const run = runs.find((candidate) => candidate.id === id)!;
       run.status = 'PENDING_APPROVAL';
       return Promise.resolve({ rows: [], rowCount: 1 });
@@ -369,10 +384,43 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
 
-    if (text.includes('FROM reconciliation_run') && text.includes('WHERE id = $1')) {
+    // Unrelated to Issue #154's run-summary query -- importValidationStore.ts's plain existence
+    // check for getRunIssues (`SELECT 1 FROM reconciliation_run WHERE id = $1`). Matched
+    // separately and first since it doesn't have a LEFT JOIN and would otherwise fall through to
+    // the "unexpected query" branch below.
+    if (text.includes('SELECT 1 FROM reconciliation_run')) {
+      const [id] = params as [string];
+      const exists = runs.some((run) => run.id === id);
+      return Promise.resolve({ rows: exists ? [{ '?column?': 1 }] : [], rowCount: exists ? 1 : 0 });
+    }
+
+    // Issue #154: loadRunSummaryWithClient's run query now LEFT JOINs reconciliation_job and is
+    // aliased (r./j.). This fake doesn't track reconciliation_job rows separately, so the joined
+    // columns are always null -- no test in this file asserts on matchingJob detail beyond
+    // matchingJobId itself, which `run.matching_job_id` already carries.
+    if (text.includes('LEFT JOIN reconciliation_job')) {
       const [id] = params as [string];
       const row = runs.find((run) => run.id === id);
-      return Promise.resolve({ rows: row ? [row] : [], rowCount: row ? 1 : 0 });
+      return Promise.resolve({
+        rows: row
+          ? [
+              {
+                ...row,
+                job_current_state: null,
+                job_failure_code: null,
+                job_failure_message: null,
+                job_completed_at: null,
+              },
+            ]
+          : [],
+        rowCount: row ? 1 : 0,
+      });
+    }
+
+    // Issue #154: the newest import_job row for a run -- no test in this file seeds one via this
+    // read path (they mutate `importJobs` directly), so this always answers "none recorded".
+    if (text.includes('FROM import_job') && text.includes('ORDER BY queued_at DESC')) {
+      return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
     if (text.includes('FROM run_source_file rsf') && text.includes('JOIN import_file')) {

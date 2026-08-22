@@ -263,6 +263,29 @@ export interface ImportRunFileSummary {
   warningCount: number | null;
 }
 
+/** The linked `reconciliation_job`'s terminal state, matching `ImportRunMatchingJobSummary`
+ * (packages/persistence/src/importRunStore.ts). Null until matching has been linked -- see that
+ * type's own doc comment for why a live Stage-2 failure often leaves this null and lands in
+ * `ImportRunValidationJobSummary.errorSummary` instead (Issue #154). */
+export interface ImportRunMatchingJobSummary {
+  id: string;
+  currentState: string;
+  failureCode: string | null;
+  failureMessage: string | null;
+  completedAt: string | null;
+}
+
+/** The run's newest `import_job` row (File Validation's own work unit), matching
+ * `ImportRunValidationJobSummary`. Carries the durable Stage-2 failure reason today on the live
+ * import-run path (Issue #154). */
+export interface ImportRunValidationJobSummary {
+  id: string;
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+  errorSummary: string | null;
+  queuedAt: string;
+  finishedAt: string | null;
+}
+
 /** `GET/POST /api/imports/runs` response shape, matching `ImportRunSummary`
  * (packages/persistence/src/importRunStore.ts). */
 export interface ImportRunSummary {
@@ -275,8 +298,20 @@ export interface ImportRunSummary {
   periodMonth: number | null;
   status: string;
   createdAt: string;
+  matchingJobId: string | null;
+  matchingJob: ImportRunMatchingJobSummary | null;
+  validationJob: ImportRunValidationJobSummary | null;
   files: ImportRunFileSummary[];
 }
+
+/** The organization's most recent import run regardless of outcome -- the RunBar's durable
+ * cross-reload status source (Issue #154). `null` (HTTP 204) when the organization has never
+ * submitted a run. Distinct from `getLatestReconciliationRunRequest`, whose response shape can
+ * only represent a completed report. */
+export const getLatestImportRunRequest = async (): Promise<ImportRunSummary | null> => {
+  const response = await apiFetch('/api/imports/runs/latest');
+  return (await parseResponse<ImportRunSummary | undefined>(response)) ?? null;
+};
 
 /** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. `bankFiles` is 1-4 bank
  * account uploads (Issue #153) sent as one repeated `bankFiles` form field, not per-slot names. */

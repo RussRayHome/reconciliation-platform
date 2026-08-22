@@ -246,6 +246,25 @@
     min-width: 260px;
   }
 
+  /* .run-bar is position: sticky, so its own document-flow height still reserves space for
+     content below it -- but that only holds while the expanded body fits comfortably on
+     screen. Issue #154's durable-state hydration made "a genuinely running run" render on
+     every screen (including Import Files' own compose-a-new-run form), not just the screen
+     that submitted it -- a real combination that essentially never happened before that fix.
+     With this details element forced open (open={statusTone === 'running'}), an unbounded
+     step-by-step Process Progress panel can grow tall enough that the sticky run-bar still
+     covers page content below it after scrolling, intercepting clicks on it (confirmed via a
+     real Playwright timeout: "Submit run" unclickable, the run-bar subtree reported as the
+     interceptor). Bounding the expandable body and letting it scroll internally keeps the
+     run-bar's total height predictable regardless of step count, so it can never eat into the
+     content below it. */
+  .run-bar__progress[open] {
+    display: flex;
+    flex-direction: column;
+    max-height: min(60vh, 420px);
+    overflow-y: auto;
+  }
+
   .run-bar__meter {
     display: flex;
     align-items: center;

@@ -183,7 +183,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "Reconciliation runs (received vs completed)",
-      "description": "A gap between 'received' and 'completed' over time is the proxy for in-flight/failed runs -- there is no distinct reconciliation.run.failed log action today.",
+      "description": "A gap between 'received' and 'completed' over time is the proxy for in-flight/failed runs -- there is no distinct reconciliation.run.failed log action today. 'received' only ever fires from the legacy standalone /api/reconciliation/run route (runReconciliationWorkflow, app.ts) -- the modern Import Files flow (triggerMatchingForImportRun) logs 'completed' only, so 'received' will read zero for that path even though it's working correctly.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
       "datasource": { "type": "loki", "uid": "loki" },
       "fieldConfig": { "defaults": { "custom": { "fillOpacity": 15 } }, "overrides": [] },
@@ -192,7 +192,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (action) (count_over_time({compose_project=\"$environment\", compose_service=\"api\"} | json | action=~\"reconciliation\\\\.run\\\\.(received|completed)\" [$__interval]))",
+          "expr": "sum by (action) (count_over_time({compose_project=\"$environment\", compose_service=~\"api|worker\"} | json | action=~\"reconciliation\\\\.run\\\\.(received|completed)\" [$__interval]))",
           "legendFormat": "{{action}}"
         }
       ]
@@ -269,8 +269,9 @@
         "type": "query",
         "label": "Compose project",
         "datasource": { "type": "loki", "uid": "loki" },
-        "query": { "query": "label_values(compose_project)", "refId": "environment" },
-        "refresh": 2,
+        "query": { "type": 1, "label": "compose_project", "refId": "LokiVariableQueryEditor-VariableQuery" },
+        "regex": "^reconciliation-platform-(?:dev|stage)$",
+        "refresh": 1,
         "sort": 1,
         "current": { "text": "reconciliation-platform-dev", "value": "reconciliation-platform-dev" },
         "includeAll": false,
@@ -284,6 +285,6 @@
   "timezone": "",
   "title": "Reconciliation Platform Overview",
   "uid": "reconciliation-platform-overview",
-  "version": 1,
+  "version": 6,
   "weekStart": ""
 }

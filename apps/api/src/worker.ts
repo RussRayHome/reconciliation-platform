@@ -139,6 +139,7 @@ export const createWorkerRuntime = async (): Promise<WorkerRuntime> => {
     logger,
     processJob: async (
       payload: QueuedReconciliationJobPayload,
+      onStep,
     ): Promise<QueuedReconciliationResult> => {
       const started = Date.now();
       let persistenceJobId: string | undefined;
@@ -154,6 +155,7 @@ export const createWorkerRuntime = async (): Promise<WorkerRuntime> => {
           repository,
           lifecycleStore,
           pool,
+          onStep,
         });
         persistenceJobId = workflowResult.persistenceJobId;
 
@@ -211,6 +213,7 @@ export const createWorkerRuntime = async (): Promise<WorkerRuntime> => {
     logger,
     processJob: (
       payload: QueuedImportValidationJobPayload,
+      onStep,
     ): Promise<QueuedImportValidationResult> =>
       processImportValidationJob({
         organizationId: payload.organizationId,
@@ -225,6 +228,7 @@ export const createWorkerRuntime = async (): Promise<WorkerRuntime> => {
         lifecycleStore,
         requestLog: logger,
         sessionId: payload.sessionId,
+        onStep,
       }),
   });
 

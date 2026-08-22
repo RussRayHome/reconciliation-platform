@@ -1,0 +1,31 @@
+Date,Type,Num,Reference,Name,Memo,Amount
+2026-02-02,Check,5010,,Riverside Properties,Check 5010 office rent,-2100.00
+2026-02-02,Check,7710,,Westgate Holdings,Check 7710 warehouse lease,-3400.00
+2026-02-03,Expense,,,Supply Co,ACH vendor supply co,-340.25
+2026-02-03,Expense,,,Packaging Co,ACH vendor packaging co,-512.75
+2026-02-04,Deposit,,,Acme Corp,Client payment acme corp,5200.00
+2026-02-04,Deposit,,,Orion LLC,Client payment orion llc,2750.00
+2026-02-05,Expense,,4471,Brightpath Vendor,Wire vendor brightpath ref-4471,-1875.00
+2026-02-05,Expense,,8820,Tidewater Vendor,Wire vendor tidewater ref-8820,-990.00
+2026-02-06,Expense,,,Office Depot,Card purchase office depot,-128.60
+2026-02-06,Expense,,,UPS Store,Card purchase ups store,-64.15
+2026-02-09,Expense,,,Payroll Processor,Payroll ACH batch (acct 1234),-6400.00
+2026-02-09,Expense,,,Payroll Processor,Payroll ACH batch (acct 5678),-4100.00
+2026-02-10,Deposit,,,Northwind Client,Client payment northwind,3100.00
+2026-02-10,Deposit,,,Summit Retail,Client payment summit retail,2600.00
+2026-02-11,Check,5011,,Guardian Insurance,Check 5011 insurance,-610.00
+2026-02-11,Check,7711,,FieldTech Service,Check 7711 equipment service,-415.00
+2026-02-12,Expense,,,City Power,Utility autopay city power,-245.80
+2026-02-12,Expense,,,Water District,Utility autopay water dist,-132.90
+2026-02-16,Deposit,,,Rebate Vendor,ACH credit rebate vendor,88.40
+2026-02-16,Deposit,,,Vendor Refund,ACH credit vendor refund,55.00
+2026-02-17,Expense,,5591,Cascade Vendor,Wire vendor cascade ref-5591,-2225.00
+2026-02-17,Expense,,9012,Harbor Vendor,Wire vendor harbor ref-9012,-1730.00
+2026-02-18,Deposit,,,Delta Group,Client payment delta group,4400.00
+2026-02-18,Deposit,,,Pioneer Inc,Client payment pioneer inc,3900.00
+2026-02-20,Expense,,,Staples,Card purchase staples,-76.30
+2026-02-20,Expense,,,Home Depot,Card purchase home depot,-210.45
+2026-02-24,Check,5012,,Maintenance Co,Check 5012 maintenance,-950.00
+2026-02-24,Check,7712,,Repair Services Co,Check 7712 repair services,-680.00
+2026-02-26,Deposit,,,Bank,Interest earned (acct 1234),14.20
+2026-02-26,Deposit,,,Bank,Interest earned (acct 5678),9.60

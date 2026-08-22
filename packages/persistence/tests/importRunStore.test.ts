@@ -191,6 +191,10 @@ describe('PostgresImportRunStore', () => {
     const fetched = await store.getRunSummary(defaultOrganizationId, created.id);
     expect(fetched).toMatchObject({ id: created.id, label: 'Fetch Me', status: 'DRAFT' });
     expect(fetched?.files).toHaveLength(2);
+    // Issue #154: a fresh DRAFT run has no matching job or validation job yet.
+    expect(fetched?.matchingJobId).toBeNull();
+    expect(fetched?.matchingJob).toBeNull();
+    expect(fetched?.validationJob).toBeNull();
   });
 
   it('getRunSummary returns null for a nonexistent run', async () => {
@@ -218,6 +222,143 @@ describe('PostgresImportRunStore', () => {
 
     const crossTenantRead = await runtimeStore.getRunSummary(otherOrganizationId, created.id);
     expect(crossTenantRead).toBeNull();
+  });
+
+  describe('getLatestRunSummary (Issue #154)', () => {
+    it('returns the most recently created run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      await store.createRun(buildRunInput({ label: 'Latest Run Older' }));
+      const newer = await store.createRun(buildRunInput({ label: 'Latest Run Newer' }));
+
+      const latest = await store.getLatestRunSummary(defaultOrganizationId);
+      expect(latest?.id).toBe(newer.id);
+      expect(latest?.label).toBe('Latest Run Newer');
+    });
+
+    it('returns null for an organization with no runs', async () => {
+      if (startupError) throw startupError;
+
+      const otherOrganization = await pool.query<{ id: string }>(
+        "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Latest Run Empty Org') RETURNING id",
+      );
+      const otherOrganizationId = otherOrganization.rows[0]!.id;
+
+      const store = new PostgresImportRunStore(pool);
+      const latest = await store.getLatestRunSummary(otherOrganizationId);
+      expect(latest).toBeNull();
+    });
+
+    it('returns a VALIDATION_FAILED run with per-file counts', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const created = await store.createRun(buildRunInput({ label: 'Validation Failed Run' }));
+      const bankFile = created.files.find((file) => file.role === 'BANK_MERGED')!;
+
+      await pool.query("UPDATE reconciliation_run SET status = 'VALIDATION_FAILED' WHERE id = $1", [
+        created.id,
+      ]);
+      await pool.query(
+        "UPDATE import_file SET validation_status = 'INVALID', error_count = 3, warning_count = 1 WHERE id = $1",
+        [bankFile.importFileId],
+      );
+
+      const latest = await store.getLatestRunSummary(defaultOrganizationId);
+      expect(latest?.id).toBe(created.id);
+      expect(latest?.status).toBe('VALIDATION_FAILED');
+      const latestBankFile = latest?.files.find((file) => file.role === 'BANK_MERGED');
+      expect(latestBankFile).toMatchObject({ validationStatus: 'INVALID', errorCount: 3, warningCount: 1 });
+    });
+
+    it("carries the linked reconciliation_job's failure_code/failure_message", async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const created = await store.createRun(buildRunInput({ label: 'Matching Failed Run' }));
+
+      const jobResult = await pool.query<{ id: string }>(
+        `INSERT INTO reconciliation_job
+           (id, organization_id, correlation_id, current_state, rulepack_version, started_at,
+            completed_at, failure_code, failure_message)
+         VALUES (gen_random_uuid(), $1, $2, 'FAILED', 'v1', NOW(), NOW(), 'MATCH_ENGINE_ERROR',
+                 'Matching engine crashed while grouping split payments.')
+         RETURNING id`,
+        [defaultOrganizationId, created.id],
+      );
+      const jobId = jobResult.rows[0]!.id;
+      await pool.query('UPDATE reconciliation_run SET matching_job_id = $1 WHERE id = $2', [
+        jobId,
+        created.id,
+      ]);
+
+      const latest = await store.getLatestRunSummary(defaultOrganizationId);
+      expect(latest?.matchingJobId).toBe(jobId);
+      expect(latest?.matchingJob).toMatchObject({
+        id: jobId,
+        currentState: 'FAILED',
+        failureCode: 'MATCH_ENGINE_ERROR',
+        failureMessage: 'Matching engine crashed while grouping split payments.',
+      });
+    });
+
+    it('returns the newest import_job when a run was withdrawn and resubmitted', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const created = await store.createRun(buildRunInput({ label: 'Withdraw Resubmit Run' }));
+
+      await pool.query(
+        `INSERT INTO import_job (id, organization_id, reconciliation_run_id, status, error_summary, queued_at, finished_at)
+         VALUES (gen_random_uuid(), $1, $2, 'FAILED', 'first attempt failed', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '55 minutes')`,
+        [defaultOrganizationId, created.id],
+      );
+      const newerJob = await pool.query<{ id: string }>(
+        `INSERT INTO import_job (id, organization_id, reconciliation_run_id, status, queued_at)
+         VALUES (gen_random_uuid(), $1, $2, 'SUCCEEDED', NOW())
+         RETURNING id`,
+        [defaultOrganizationId, created.id],
+      );
+
+      const latest = await store.getLatestRunSummary(defaultOrganizationId);
+      expect(latest?.validationJob?.id).toBe(newerJob.rows[0]!.id);
+      expect(latest?.validationJob?.status).toBe('SUCCEEDED');
+    });
+
+    it("carries a FAILED import_job's error_summary (the live Stage-2-failure shape)", async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const created = await store.createRun(buildRunInput({ label: 'Import Job Failed Run' }));
+      await pool.query(
+        `INSERT INTO import_job (id, organization_id, reconciliation_run_id, status, error_summary, queued_at)
+         VALUES (gen_random_uuid(), $1, $2, 'FAILED', 'Matching engine crashed mid-run.', NOW())`,
+        [defaultOrganizationId, created.id],
+      );
+
+      const latest = await store.getLatestRunSummary(defaultOrganizationId);
+      expect(latest?.validationJob).toMatchObject({
+        status: 'FAILED',
+        errorSummary: 'Matching engine crashed mid-run.',
+      });
+    });
+
+    it('is tenant-scoped', async () => {
+      if (startupError) throw startupError;
+
+      const otherOrganization = await pool.query<{ id: string }>(
+        "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Latest Run Tenant Org') RETURNING id",
+      );
+      const otherOrganizationId = otherOrganization.rows[0]!.id;
+
+      const adminStore = new PostgresImportRunStore(pool);
+      await adminStore.createRun(buildRunInput({ label: 'Default Org Latest Run' }));
+
+      const runtimeStore = new PostgresImportRunStore(runtimePool);
+      const crossTenantRead = await runtimeStore.getLatestRunSummary(otherOrganizationId);
+      expect(crossTenantRead).toBeNull();
+    });
   });
 
   describe('getFileWithBytes (Phase 11 failure detail)', () => {

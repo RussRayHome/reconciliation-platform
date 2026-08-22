@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import request from 'supertest';
 import type { Pool } from 'pg';
 
 import { createApp } from '../src/app';
@@ -121,10 +122,48 @@ const createFakeImportsPool = () => {
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
 
-    if (text.includes('FROM reconciliation_run') && text.includes('WHERE id = $1')) {
+    // Issue #154: loadRunSummaryWithClient's run query now LEFT JOINs reconciliation_job and is
+    // aliased (r./j.) -- matched by the LEFT JOIN fragment specifically, distinct from
+    // getLatestRunSummary's own plain "SELECT id FROM reconciliation_run" lookup below. No test
+    // in this file seeds a reconciliation_job row, so the joined columns are always null here --
+    // real Stage-2-shape coverage lives in packages/persistence/tests/importRunStore.test.ts
+    // against a real Postgres, not duplicated here.
+    if (text.includes('LEFT JOIN reconciliation_job')) {
       const [id] = params as [string];
       const row = runs.find((run) => run.id === id);
-      return Promise.resolve({ rows: row ? [row] : [], rowCount: row ? 1 : 0 });
+      return Promise.resolve({
+        rows: row
+          ? [
+              {
+                ...row,
+                matching_job_id: null,
+                job_current_state: null,
+                job_failure_code: null,
+                job_failure_message: null,
+                job_completed_at: null,
+              },
+            ]
+          : [],
+        rowCount: row ? 1 : 0,
+      });
+    }
+
+    // getLatestRunSummary's own "pick the newest run for this org" lookup -- distinct from the
+    // by-id lookup above (that one always includes the LEFT JOIN fragment; this one never does).
+    if (text.includes('SELECT id') && text.includes('FROM reconciliation_run') && text.includes('ORDER BY created_at DESC')) {
+      const [organizationId] = params as [string];
+      const latest = runs
+        .filter((run) => run.organization_id === organizationId)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+      return Promise.resolve({ rows: latest ? [{ id: latest.id }] : [], rowCount: latest ? 1 : 0 });
+    }
+
+    // Issue #154: the newest import_job row for a run -- no test in this file seeds one, so this
+    // always answers "no validation job recorded" (null), matching a run created straight through
+    // POST /api/imports/runs with no subsequent submit/failure. Real coverage for FAILED/SUCCEEDED
+    // import_job shapes lives in the Postgres-backed importRunStore.test.ts suite.
+    if (text.includes('FROM import_job')) {
+      return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
     if (text.includes('FROM run_source_file rsf') && text.includes('JOIN import_file')) {
@@ -503,6 +542,58 @@ describe('imports endpoints', () => {
 
     it('returns 501 when no database pool is configured', async () => {
       const response = await authedApp(appWithPool(undefined)).get('/api/imports/runs/some-id');
+
+      expect(response.status).toBe(501);
+    });
+  });
+
+  describe('GET /api/imports/runs/latest (Issue #154)', () => {
+    it('returns the most recently created run for the organization', async () => {
+      const app = appWithPool(pool);
+      await attachImportFiles(
+        authedApp(app, { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Older Run')
+          .field('frequency', 'ANNUAL')
+          .field('periodYear', '2025'),
+      );
+      const newer = await attachImportFiles(
+        authedApp(app, { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Newer Run')
+          .field('frequency', 'ANNUAL')
+          .field('periodYear', '2025'),
+      );
+
+      const response = await authedApp(app).get('/api/imports/runs/latest');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ id: newer.body.id, label: 'Newer Run' });
+    });
+
+    it('returns 204 for an organization with no runs yet', async () => {
+      const response = await authedApp(appWithPool(pool)).get('/api/imports/runs/latest');
+
+      expect(response.status).toBe(204);
+    });
+
+    it('is not shadowed by GET /api/imports/runs/:id (route-ordering regression)', async () => {
+      // If 'latest' were ever registered below ':id', Express would match it as an :id lookup
+      // and this would 404 with "Import run not found." instead of the empty-org 204 above.
+      const response = await authedApp(appWithPool(pool)).get('/api/imports/runs/latest');
+
+      expect(response.status).not.toBe(404);
+      expect(response.body).not.toMatchObject({ message: 'Import run not found.' });
+    });
+
+    it('returns 401 without a bearer token', async () => {
+      const response = await request(appWithPool(pool)).get('/api/imports/runs/latest');
+
+      expect(response.status).toBe(401);
+    });
+
+    it('returns 501 when no database pool is configured', async () => {
+      const response = await authedApp(appWithPool(undefined)).get('/api/imports/runs/latest');
 
       expect(response.status).toBe(501);
     });

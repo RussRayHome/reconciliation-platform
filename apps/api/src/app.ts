@@ -104,6 +104,7 @@ import { resolveLogLevelAtLeastInfo } from './services/logLevel';
 import { logRedactOptions } from './services/logRedaction';
 import {
   createImportValidationProducer,
+  createImportValidationQueueEvents,
   type QueuedImportValidationResult,
 } from './services/importValidationQueue';
 import {
@@ -117,6 +118,7 @@ import {
 import { buildImportRowGrid } from './services/importRowGridService';
 import {
   createReconciliationProducer,
+  createReconciliationQueueEvents,
   type QueuedReconciliationFilePayload,
   type QueuedReconciliationResult,
 } from './services/reconciliationQueue';
@@ -150,6 +152,7 @@ import {
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
 import { executeReconciliationFromNormalized } from './services/reconciliationService';
+import type { QueueProgressMessage, QueueStepReporter } from './services/queueProgress';
 import { defaultReconciliationConfig } from '@recon/config';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
@@ -585,6 +588,8 @@ export const runReconciliationWorkflow = async (input: {
   repository: InMemoryRunRepository;
   lifecycleStore?: PostgresReconciliationLifecycleStore;
   pool?: Pool;
+  /** See reconciliationService.ts's `RunReconciliationPipelineInput.onStep` doc comment. */
+  onStep?: QueueStepReporter;
 }): Promise<ReconciliationWorkflowResult> => {
   const log = input.sessionId ? input.requestLog.child({ jti: input.sessionId }) : input.requestLog;
   const { accountIdentifier, periodLabel, reconciliationFrequency, varianceOverrides } =
@@ -686,6 +691,7 @@ export const runReconciliationWorkflow = async (input: {
     reconciliationFrequency,
     periodLabel,
     aliases,
+    onStep: input.onStep,
   });
 
   input.repository.save(run);
@@ -729,6 +735,8 @@ const triggerMatchingForImportRun = async (input: {
    * filterable by session, same as the synchronous in-request path gets for free via
    * request.log. */
   sessionId?: string;
+  /** See reconciliationService.ts's `RunReconciliationPipelineInput.onStep` doc comment. */
+  onStep?: QueueStepReporter;
 }): Promise<{ matchingJobId: string }> => {
   const correlationId = randomUUID();
 
@@ -809,6 +817,7 @@ const triggerMatchingForImportRun = async (input: {
     rawRows,
     normalizedTransactions,
     aliases,
+    onStep: input.onStep,
   });
 
   input.repository.save(run);
@@ -843,6 +852,9 @@ export const processImportValidationJob = async (input: {
    * workflow emits stays filterable by session, same as the synchronous in-request path already
    * gets for free via request.log. */
   sessionId?: string;
+  /** Live push half of Issue #154 -- present only when invoked from the import validation queue
+   * worker (see importValidationQueue.ts); undefined on the synchronous in-request fallback. */
+  onStep?: QueueStepReporter;
 }): Promise<QueuedImportValidationResult> => {
   const importValidationStore = new PostgresImportValidationStore(input.pool);
   const log = input.sessionId ? input.requestLog.child({ jti: input.sessionId }) : input.requestLog;
@@ -857,6 +869,7 @@ export const processImportValidationJob = async (input: {
       blobStorage: new PostgresBlobStorage(input.pool),
       importRunStore: new PostgresImportRunStore(input.pool),
       importValidationStore,
+      onStep: input.onStep,
       triggerMatching: (files) =>
         triggerMatchingForImportRun({
           files,
@@ -866,6 +879,7 @@ export const processImportValidationJob = async (input: {
           pool: input.pool,
           requestLog: log,
           sessionId: input.sessionId,
+          onStep: input.onStep,
         }),
     });
 
@@ -950,7 +964,10 @@ export const handleFailedReconciliationRun = async (input: {
  * upload's behavior exactly. File Imports & Validation (/api/imports/runs) passes ['.xlsx',
  * '.csv'] instead -- transaction-csv-spec.md's Bank/GL template is defined for both formats, and
  * the File Validation Engine (packages/core/src/fileValidation) already parses both. */
-const createUploadMiddleware = (maxUploadMb: number, allowedExtensions: readonly string[] = ['.xlsx']) =>
+const createUploadMiddleware = (
+  maxUploadMb: number,
+  allowedExtensions: readonly string[] = ['.xlsx'],
+) =>
   multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: maxUploadMb * 1024 * 1024 },
@@ -1473,13 +1490,29 @@ export const createApp = (
   // ADR-0002 step 7: username == password in localLoginUsers, so this fallback must be
   // impossible to reach in production even by misconfiguration -- checked at startup, not at
   // request time, so a bad deploy fails immediately instead of quietly shipping a backdoor.
-  const localLoginFallbackEnabled = parseBooleanFlag(process.env.ALLOW_LOCAL_LOGIN_FALLBACK) === true;
+  const localLoginFallbackEnabled =
+    parseBooleanFlag(process.env.ALLOW_LOCAL_LOGIN_FALLBACK) === true;
   if (localLoginFallbackEnabled && isProductionRuntime()) {
     throw new Error(
       'ALLOW_LOCAL_LOGIN_FALLBACK is set in a production runtime; refusing to start. ' +
         'This fallback authenticates with username == password and must only exist in local dev.',
     );
   }
+
+  // Dev-only escape hatch (changeset 0056) letting a superuser submit and approve the same
+  // import run for solo Dev-stack testing -- restated (restricted) before go-live, per the app
+  // owner. Deliberately no isProductionRuntime() boot guard here, unlike
+  // ALLOW_LOCAL_LOGIN_FALLBACK above: compose.yaml's shared x-api-environment anchor sets
+  // NODE_ENV=production unconditionally in every Docker tier (dev and stage included, confirmed
+  // by trying the mirrored guard here first -- it refused to boot in Dev too), so
+  // isProductionRuntime() cannot distinguish real production from Dev/stage and would be a false
+  // safety net, not a real one (the ALLOW_LOCAL_LOGIN_FALLBACK guard above has this same latent
+  // gap; it has just never been exercised, since nothing sets that flag anywhere). The actual
+  // safeguard is the same one every other dev-only flag in this project relies on
+  // (ENABLE_RECONCILIATION_QUEUE and siblings): this variable is set only in compose.dev.yaml and
+  // must never be added to compose.yaml or compose.stage.yaml.
+  const superuserSelfApprovalEnabled =
+    parseBooleanFlag(process.env.ALLOW_SUPERUSER_SELF_APPROVAL) === true;
 
   initializeApiSentry(httpLogger);
 
@@ -1501,6 +1534,25 @@ export const createApp = (
   // guarantees a pool exists there); the queue-consumer path builds its own in worker.ts.
   const importValidationWorkerId = `import-validation-worker-${process.pid}`;
   const importValidationQueue = createImportValidationProducer({
+    enabled: importValidationQueueConfiguration.enabled,
+    redisUrl: importValidationQueueConfiguration.redisUrl,
+    queueName: importValidationQueueConfiguration.queueName,
+    prefix: importValidationQueueConfiguration.prefix,
+    logger: httpLogger,
+  });
+
+  // Issue #154 (live status push): one shared `QueueEvents` listener per queue for the whole API
+  // process, constructed here alongside the producers -- not one per SSE connection, which would
+  // open N redundant Redis subscriptions under concurrent users. `GET /api/imports/runs/:id/events`
+  // below registers a per-connection filtered listener against these two shared instances.
+  const reconciliationQueueEvents = createReconciliationQueueEvents({
+    enabled: queueConfiguration.enabled,
+    redisUrl: queueConfiguration.redisUrl,
+    queueName: queueConfiguration.queueName,
+    prefix: queueConfiguration.prefix,
+    logger: httpLogger,
+  });
+  const importValidationQueueEvents = createImportValidationQueueEvents({
     enabled: importValidationQueueConfiguration.enabled,
     redisUrl: importValidationQueueConfiguration.redisUrl,
     queueName: importValidationQueueConfiguration.queueName,
@@ -1727,7 +1779,13 @@ export const createApp = (
     const ipAddress = request.ip;
     const log = sessionId ? request.log.child({ jti: sessionId }) : request.log;
     log.info(
-      { action: `auth.${eventType.toLowerCase()}`, username, organizationId, ipAddress, failureReason },
+      {
+        action: `auth.${eventType.toLowerCase()}`,
+        username,
+        organizationId,
+        ipAddress,
+        failureReason,
+      },
       `Authentication event: ${eventType}`,
     );
 
@@ -1767,7 +1825,13 @@ export const createApp = (
 
       if (!pool) {
         if (!localLoginFallbackEnabled) {
-          await auditLoginEvent(request, 'LOGIN_FAILURE', username, null, 'local_fallback_disabled');
+          await auditLoginEvent(
+            request,
+            'LOGIN_FAILURE',
+            username,
+            null,
+            'local_fallback_disabled',
+          );
           response.status(401).json({ message: invalidLoginMessage });
           return;
         }
@@ -1775,7 +1839,13 @@ export const createApp = (
         const localUser = authenticateWithLocalUsers(username, password);
 
         if (!localUser) {
-          await auditLoginEvent(request, 'LOGIN_FAILURE', username, null, 'invalid_local_credentials');
+          await auditLoginEvent(
+            request,
+            'LOGIN_FAILURE',
+            username,
+            null,
+            'invalid_local_credentials',
+          );
           response.status(401).json({ message: invalidLoginMessage });
           return;
         }
@@ -1832,14 +1902,23 @@ export const createApp = (
       // otherwise a nonexistent username short-circuits before the compare and responds
       // measurably faster than a real username with the wrong password, which lets a caller
       // enumerate valid usernames purely from response timing.
-      const passwordMatches = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
+      const passwordMatches = await verifyPassword(
+        password,
+        user?.password_hash ?? DUMMY_PASSWORD_HASH,
+      );
 
       if (!user || !passwordMatches) {
         // Distinguishable server-side (never surfaced to the client, which always gets the same
         // generic message) so an auditor can tell "no such account" from "wrong password" without
         // that distinction ever being usable for username enumeration over the wire.
         const failureReason = user ? 'invalid_password' : 'unknown_username';
-        await auditLoginEvent(request, 'LOGIN_FAILURE', username, user?.organization_id ?? null, failureReason);
+        await auditLoginEvent(
+          request,
+          'LOGIN_FAILURE',
+          username,
+          user?.organization_id ?? null,
+          failureReason,
+        );
         response.status(401).json({ message: invalidLoginMessage });
         return;
       }
@@ -1996,7 +2075,13 @@ export const createApp = (
             (id, name, entity_state, entity_filing_number, entity_type, entity_verification_status)
           VALUES ($1, $2, $3, $4, $5, 'pending')
         `,
-        [organizationId, body.companyName, body.entityState, body.entityFilingNumber, body.entityType],
+        [
+          organizationId,
+          body.companyName,
+          body.entityState,
+          body.entityFilingNumber,
+          body.entityType,
+        ],
       );
 
       const passwordHash = await hashPassword(body.password);
@@ -2136,7 +2221,9 @@ export const createApp = (
     }
 
     if (!pool) {
-      response.status(501).json({ message: 'Identity verification requires a database connection.' });
+      response
+        .status(501)
+        .json({ message: 'Identity verification requires a database connection.' });
       return;
     }
 
@@ -2196,7 +2283,9 @@ export const createApp = (
     }
 
     if (!pool) {
-      response.status(501).json({ message: 'Identity verification requires a database connection.' });
+      response
+        .status(501)
+        .json({ message: 'Identity verification requires a database connection.' });
       return;
     }
 
@@ -2259,7 +2348,9 @@ export const createApp = (
       const org = orgResult.rows[0];
 
       if (!org || !org.entity_state || !org.entity_filing_number || !org.entity_type) {
-        response.status(409).json({ message: 'Entity details are incomplete for this organization.' });
+        response
+          .status(409)
+          .json({ message: 'Entity details are incomplete for this organization.' });
         return;
       }
 
@@ -2488,7 +2579,10 @@ export const createApp = (
 
   app.get('/api/reconciliation/:id/reviewer-decisions', async (request, response, next) => {
     try {
-      const decisions = await loadReviewerDecisions(request.auth!.organizationId, request.params.id);
+      const decisions = await loadReviewerDecisions(
+        request.auth!.organizationId,
+        request.params.id,
+      );
       if (!decisions) {
         response.status(404).json({ message: 'Reconciliation run not found.' });
         return;
@@ -2734,6 +2828,34 @@ export const createApp = (
     },
   );
 
+  // The RunBar's durable "where is my process right now" source (both engines) -- Issue #154.
+  // Distinct from GET /api/reconciliation/latest, whose ReconciliationRunResponse shape can only
+  // represent a completed report: it cannot express VALIDATION_FAILED (no reconciliation_job row
+  // exists yet) or a Stage-2 failure. Must stay registered above '/api/imports/runs/:id' or
+  // Express matches 'latest' as an :id -- same ordering constraint as /api/reconciliation/latest
+  // above /api/reconciliation/:id.
+  app.get('/api/imports/runs/latest', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const importRunStore = new PostgresImportRunStore(pool!);
+      const summary = await importRunStore.getLatestRunSummary(request.auth!.organizationId);
+
+      if (!summary) {
+        // Not an error -- a fresh organization with no runs yet is a normal state, unlike
+        // GET /api/reconciliation/latest's 404 for the analogous case (that endpoint only ever
+        // represents a completed report, so "none yet" reads more like "nothing to show" there;
+        // here the caller wants to know "what's my run's state, if any," and no run is itself a
+        // valid answer).
+        response.status(204).end();
+        return;
+      }
+
+      response.json(summary);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/imports/runs/:id', async (request, response, next) => {
     if (!requirePool(response)) return;
     try {
@@ -2752,6 +2874,86 @@ export const createApp = (
     } catch (error) {
       next(error);
     }
+  });
+
+  // Issue #154 (live status push, Pub/Sub not polling): NDJSON, not strict `text/event-stream`
+  // framing -- deliberate, not an oversight. The browser's native EventSource cannot set custom
+  // headers, and this app authenticates exclusively via `Authorization: Bearer` (api.ts's
+  // apiFetch, authMiddleware.ts) with no cookie-based session anywhere, so EventSource is unusable
+  // here regardless of wire format. The client reads this via `fetch()` + a stream reader either
+  // way, so plain NDJSON is simpler on both ends than conforming to SSE's `data: `/blank-line
+  // framing for no benefit.
+  //
+  // Only subscribes to importValidationQueueEvents, not reconciliationQueueEvents: Stage 2
+  // (matching) for the import-run flow this endpoint serves runs synchronously *inside* the
+  // import validation queue's own job (triggerMatchingForImportRun is a direct function call from
+  // runImportValidationWorkflow, never a separate reconciliationQueue.enqueue) -- so every
+  // checkpoint for both stages of this pipeline publishes through the same onStep, tagged
+  // processId: runId, queueType: 'import-validation'. reconciliationQueueEvents exists for the
+  // separate standalone /api/reconciliation/run flow (keyed by requestId, not runId), which this
+  // endpoint doesn't serve.
+  app.get('/api/imports/runs/:id/events', async (request, response) => {
+    if (!requirePool(response)) return;
+    const organizationId = request.auth!.organizationId;
+    const runId = request.params.id;
+
+    const importRunStore = new PostgresImportRunStore(pool!);
+    const summary = await importRunStore.getRunSummary(organizationId, runId).catch(() => null);
+    if (!summary) {
+      response.status(404).json({ message: 'Import run not found.' });
+      return;
+    }
+
+    response.writeHead(200, {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    // Node buffers response headers until the first write()/end() call -- without this, a client
+    // that connects before any checkpoint exists yet (the common case: opening the stream right
+    // after submit, before the first "Validating..." message) would never even see the response
+    // begin, since nothing would ever flush the socket until some future write() call.
+    response.flushHeaders();
+
+    const writeMessage = (message: QueueProgressMessage): void => {
+      response.write(`${JSON.stringify(message)}\n`);
+    };
+
+    // Catch-up on connect: a client that opens this stream after an earlier checkpoint was
+    // already published (reload mid-run, dropped connection, second tab) would otherwise see
+    // nothing until the *next* live message -- QueueEvents' 'progress' event has no replay.
+    // Reads recordAuditEvent's own prior writes back as one synthetic first line. Stage-2-only
+    // (matchingJobId must exist) -- see getLatestAuditEvent's doc comment for why Stage 1 has no
+    // equivalent catch-up yet; the durable-state fetch (GET /api/imports/runs/latest) already
+    // covers the coarser "is it running at all" answer regardless.
+    if (summary.matchingJobId && lifecycleStore) {
+      const latest = await lifecycleStore
+        .getLatestAuditEvent(organizationId, summary.matchingJobId)
+        .catch(() => null);
+
+      if (latest) {
+        writeMessage({
+          organizationId,
+          processId: runId,
+          queueType: 'import-validation',
+          statusMessage: latest.eventType,
+          details: latest.details,
+        });
+      }
+    }
+
+    const matchesThisConnection = (message: QueueProgressMessage): boolean =>
+      message.organizationId === organizationId && message.processId === runId;
+
+    const unsubscribe = importValidationQueueEvents.onProgress((message) => {
+      if (matchesThisConnection(message)) {
+        writeMessage(message);
+      }
+    });
+
+    request.on('close', () => {
+      unsubscribe();
+    });
   });
 
   // Phase 8 review drilldown: validation_issue/canonical_record rows for a run, paginated and
@@ -2932,7 +3134,9 @@ export const createApp = (
         return;
       }
 
-      const filenameByFileId = new Map(summary.files.map((file) => [file.importFileId, file.originalFilename]));
+      const filenameByFileId = new Map(
+        summary.files.map((file) => [file.importFileId, file.originalFilename]),
+      );
 
       const importValidationStore = new PostgresImportValidationStore(pool!);
       const issuesPage = await importValidationStore.listRunIssues(organizationId, runId, 5000, 0);
@@ -3112,7 +3316,11 @@ export const createApp = (
       const importValidationStore = new PostgresImportValidationStore(pool!);
       const importRunStore = new PostgresImportRunStore(pool!);
 
-      const acceptResult = await importValidationStore.acceptPartialImport(organizationId, runId);
+      const acceptResult = await importValidationStore.acceptPartialImport(
+        organizationId,
+        runId,
+        request.auth!.username,
+      );
 
       if (acceptResult.outcome === 'not_found') {
         response.status(404).json({ message: 'Import run not found.' });
@@ -3199,7 +3407,11 @@ export const createApp = (
     if (!requirePool(response)) return;
     try {
       const { accountIdentifier } = aliasesQuerySchema.parse(request.query);
-      const aliases = await loadPayeeAliases(pool!, request.auth!.organizationId, accountIdentifier);
+      const aliases = await loadPayeeAliases(
+        pool!,
+        request.auth!.organizationId,
+        accountIdentifier,
+      );
       response.json(aliases);
     } catch (error) {
       next(error);
@@ -3550,7 +3762,9 @@ export const createApp = (
       if (version) {
         title = `Matching config v${version.versionNumber}`;
         meta =
-          record.subjectType === 'varianceThreshold' ? 'Variance threshold change' : 'Matching rule change';
+          record.subjectType === 'varianceThreshold'
+            ? 'Variance threshold change'
+            : 'Matching rule change';
       }
     }
     return {
@@ -3584,7 +3798,10 @@ export const createApp = (
           tab === 'mine'
             ? { uploadedBy: username }
             : canApprove
-              ? { status: tabStatus, routedToOrUnassigned: tab === 'pending' ? username : undefined }
+              ? {
+                  status: tabStatus,
+                  routedToOrUnassigned: tab === 'pending' ? username : undefined,
+                }
               : { status: tabStatus, uploadedBy: username };
 
         const items = await listImportApprovals(pool!, organizationId, filter);
@@ -3598,7 +3815,10 @@ export const createApp = (
           tab === 'mine'
             ? { submittedByUsername: username }
             : canApprove
-              ? { status: runStatus, routedToOrUnassignedUsername: tab === 'pending' ? username : undefined }
+              ? {
+                  status: runStatus,
+                  routedToOrUnassignedUsername: tab === 'pending' ? username : undefined,
+                }
               : { status: runStatus, submittedByUsername: username };
 
         const items = await new PostgresImportValidationStore(pool!).listRunApprovals(
@@ -3654,8 +3874,12 @@ export const createApp = (
           'matchingRule',
           'varianceThreshold',
         ]),
-        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['exceptionResolution']),
-        getApprovalRequestCounts(pool!, organizationId, username, canApprove, ['reportDistribution']),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
+          'exceptionResolution',
+        ]),
+        getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
+          'reportDistribution',
+        ]),
       ]);
       response.json({
         // 'reconciliationRun' shares the 'import' rail submenu (approvableTypes' own doc comment)
@@ -3723,6 +3947,8 @@ export const createApp = (
             toStatus: bodyResult.data.status,
             actorUsername: username,
             rationale: bodyResult.data.rationale,
+            allowSelfApproval:
+              superuserSelfApprovalEnabled && request.auth!.role === 'superuser',
           },
         );
 
@@ -3768,11 +3994,17 @@ export const createApp = (
       });
       response.json(decided);
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith('reconciliation_import_approval not found')) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith('reconciliation_import_approval not found')
+      ) {
         response.status(404).json({ message: 'Import approval not found.' });
         return;
       }
-      if (error instanceof Error && error.message.startsWith('reconciliation_approval_request not found')) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith('reconciliation_approval_request not found')
+      ) {
         response.status(404).json({ message: 'Approval request not found.' });
         return;
       }
@@ -3983,6 +4215,8 @@ export const createApp = (
 
     await reconciliationQueue.close().catch(() => undefined);
     await importValidationQueue.close().catch(() => undefined);
+    await reconciliationQueueEvents.close().catch(() => undefined);
+    await importValidationQueueEvents.close().catch(() => undefined);
     await flushApiSentry().catch(() => undefined);
   };
 

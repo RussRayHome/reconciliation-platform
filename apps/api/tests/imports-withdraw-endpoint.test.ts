@@ -56,7 +56,9 @@ const createFakeWithdrawPool = () => {
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
 
-    if (text.includes('FROM reconciliation_run') && text.includes('WHERE id = $1')) {
+    // Issue #154: loadRunSummaryWithClient's run query now LEFT JOINs reconciliation_job and is
+    // aliased (r./j.) -- matched by the LEFT JOIN fragment specifically.
+    if (text.includes('LEFT JOIN reconciliation_job')) {
       const [id] = params as [string];
       const run = runs.find((candidate) => candidate.id === id);
       return Promise.resolve({
@@ -71,11 +73,21 @@ const createFakeWithdrawPool = () => {
                 period_month: 8,
                 status: run.status,
                 created_at: '2026-08-01T00:00:00.000Z',
+                matching_job_id: null,
+                job_current_state: null,
+                job_failure_code: null,
+                job_failure_message: null,
+                job_completed_at: null,
               },
             ]
           : [],
         rowCount: run ? 1 : 0,
       });
+    }
+
+    // Issue #154: the newest import_job row for a run -- not tracked by this fake.
+    if (text.includes('FROM import_job') && text.includes('ORDER BY queued_at DESC')) {
+      return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
     if (text.includes('FROM run_source_file rsf') && text.includes('JOIN import_file')) {

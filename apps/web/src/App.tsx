@@ -58,15 +58,19 @@ import kinneyHighlander from './assets/kinney-highlander.png';
 import {
   createRuleVersionDraftRequest,
   getApprovalCountsRequest,
-  getLatestReconciliationRunRequest,
+  getLatestImportRunRequest,
   getMappingProfilesRequest,
+  getReconciliationRunByIdRequest,
   getRuleVersionsRequest,
   getRulesCatalogRequest,
   loginRequest,
   logoutRequest,
   meRequest,
   publishRuleVersionRequest,
+  type ImportRunSummary,
 } from './lib/api';
+import { resolveLatestRunPhase, type LatestRunPhase } from './lib/latestRunState';
+import { subscribeToRunStatus } from './lib/runStatusStream';
 import { clearAuthToken, getAuthToken } from './lib/authToken';
 import { countFixedRules, countRulesByFamily } from './lib/ruleFilters';
 import type { AppTab } from './lib/appCatalog';
@@ -119,7 +123,9 @@ const LAST_SUCCESSFUL_RUN_STORAGE_KEY = 'reconciliation-platform:latest-report-r
 // Bump this whenever a change to display wording, category labels, or the RunData shape would
 // make a previously-persisted run render stale or incorrect content (e.g. the QBO->GL rename) --
 // loadPersistedRun() discards anything stored under a different version instead of trusting it.
-const RUN_STORAGE_SCHEMA_VERSION = 3;
+// Bumped 3->4 for Issue #154: one-time insurance so a browser carrying a pre-fix stale success
+// starts clean on first load after deploy, rather than relying solely on the new eviction path.
+const RUN_STORAGE_SCHEMA_VERSION = 4;
 const AUTHENTICATED_USER_STORAGE_KEY = 'reconciliation-platform:authenticated-user';
 const SLIDER_DEFAULTS_STORAGE_KEY = 'reconciliation-platform:slider-defaults';
 const SLIDER_DEFAULTS_UPDATED_AT_KEY = 'reconciliation-platform:slider-defaults-updated-at';
@@ -317,6 +323,17 @@ const persistRun = (run: RunData): void => {
   }
 };
 
+/** Issue #154: called whenever the server's own latest-run answer disagrees with what's cached --
+ * a stale successful run must never keep outranking a fresher failure/idle answer just because it
+ * happens to already be in localStorage. */
+const clearPersistedRun = (): void => {
+  try {
+    globalThis.localStorage?.removeItem(LAST_SUCCESSFUL_RUN_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures -- the in-memory state is what actually matters here.
+  }
+};
+
 const downloadJson = (fileName: string, data: unknown): void => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: 'application/json',
@@ -372,10 +389,14 @@ const runStatusLabelsByTone: Record<RunStatusTone, string> = {
   error: 'Failed',
 };
 
+/** Issue #154: the three live-mutation checks (pending/error/hasRun) come first, unchanged, so
+ * nothing currently in flight regresses -- only once none of those apply does the durable
+ * `latestRunState` phase (which survives a reload; the live checks don't) get a say. */
 const resolveRunStatusTone = (
   isPending: boolean,
   hasError: boolean,
   hasRun: boolean,
+  durablePhaseKind: LatestRunPhase['kind'],
 ): RunStatusTone => {
   if (isPending) {
     return 'running';
@@ -389,7 +410,33 @@ const resolveRunStatusTone = (
     return 'complete';
   }
 
+  if (durablePhaseKind === 'validation-failed' || durablePhaseKind === 'matching-failed') {
+    return 'error';
+  }
+
+  if (durablePhaseKind === 'running') {
+    return 'running';
+  }
+
+  if (durablePhaseKind === 'succeeded') {
+    return 'complete';
+  }
+
   return 'idle';
+};
+
+/** Names *which* engine failed, when the durable phase is the reason the tone is 'error' --
+ * `runStatusLabelsByTone`'s generic 'Failed' otherwise applies (e.g. a live mutation error). */
+const resolveRunStatusLabel = (tone: RunStatusTone, phaseKind: LatestRunPhase['kind']): string => {
+  if (tone === 'error' && phaseKind === 'validation-failed') {
+    return 'Validation failed';
+  }
+
+  if (tone === 'error' && phaseKind === 'matching-failed') {
+    return 'Reconciliation failed';
+  }
+
+  return runStatusLabelsByTone[tone];
 };
 
 const resolveRunElapsedMs = (
@@ -645,8 +692,10 @@ function ReconciliationApp({
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [pendingSavedViewId, setPendingSavedViewId] = useState<string | null>(null);
   const [persistedRun, setPersistedRun] = useState<RunData | undefined>(() => loadPersistedRun());
-  const [hasAttemptedBackendReportHydration, setHasAttemptedBackendReportHydration] =
-    useState(false);
+  // Issue #154: the RunBar's durable, cross-reload source of truth -- populated by one ungated
+  // mount-time fetch of the organization's actual latest run (see the effect below), independent
+  // of whether a live mutation is currently in memory.
+  const [latestImportRun, setLatestImportRun] = useState<ImportRunSummary | null>(null);
   const [isHydratingLatestBackendReport, setIsHydratingLatestBackendReport] = useState(false);
   const [latestBackendReportError, setLatestBackendReportError] = useState<string | null>(null);
   const [varianceDefaultOverrides, setVarianceDefaultOverrides] =
@@ -670,6 +719,39 @@ function ReconciliationApp({
   const partialAccept = useImportPartialAccept();
   const run = partialAccept.data ?? reconciliation.data;
   const reportRun = run ?? persistedRun;
+  // Issue #154: the mount-time hydration effect below is async and only runs once -- if it
+  // resolves *after* a live submission has already succeeded (a real race, not hypothetical: the
+  // background fetch started at mount, a user's own submission can easily finish after it), its
+  // stale "nothing to report yet" answer must never overwrite the fresh, correct result. A ref
+  // (not `run` itself, which the effect's closure captured as null at mount) lets that check see
+  // the latest value regardless of when the effect's callback actually runs.
+  const runRef = useRef(run);
+  useEffect(() => {
+    runRef.current = run;
+  }, [run]);
+  // Issue #154: purely derived from the durable `latestImportRun` fetch -- never gates on or
+  // races with `reportRun`, so a failed run's phase is knowable even while `reportRun` is still
+  // whatever localStorage happened to have cached.
+  const durableRunPhase = useMemo(() => resolveLatestRunPhase(latestImportRun), [latestImportRun]);
+  // Issue #154 (live status push, Pub/Sub not polling): the last statusMessage received over the
+  // run's live NDJSON stream, replacing the generic progress-step label with real step-by-step
+  // text while a run is actually in flight. Reset (not just left stale) whenever the phase leaves
+  // 'running' or the run identity changes, so a message from a previous run can never leak into
+  // the next one's banner.
+  const [liveStatusMessage, setLiveStatusMessage] = useState<string | null>(null);
+  const runningRunId = durableRunPhase.kind === 'running' ? durableRunPhase.run.id : null;
+  useEffect(() => {
+    setLiveStatusMessage(null);
+    if (!runningRunId) {
+      return;
+    }
+
+    const unsubscribe = subscribeToRunStatus(runningRunId, (message) => {
+      setLiveStatusMessage(message.statusMessage);
+    });
+
+    return unsubscribe;
+  }, [runningRunId]);
   const reportRunExceptionIds = useMemo(
     () => new Set((reportRun?.exceptions ?? []).map((exception) => exception.id)),
     [reportRun],
@@ -794,47 +876,64 @@ function ReconciliationApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- navigate identity is stable per React Router.
   }, [run]);
 
-  const hydrateLatestBackendReport = (): void => {
-    if (hasAttemptedBackendReportHydration || run || persistedRun) {
-      return;
-    }
-
-    setHasAttemptedBackendReportHydration(true);
+  // Issue #154: runs once per mount, never gated on `persistedRun` -- that gate was the bug (a
+  // stale cached success silently suppressed ever checking the server again). Always asks the
+  // server for the organization's actual latest run and lets it decide what, if anything, the
+  // RunBar should show; a stale success is only ever kept when the server genuinely agrees with
+  // it (the 'succeeded' branch below) or when the fetch itself fails (network hiccup -- keep
+  // showing a possibly-stale-but-real report rather than blanking it).
+  useEffect(() => {
+    let cancelled = false;
     setIsHydratingLatestBackendReport(true);
     setLatestBackendReportError(null);
-    void getLatestReconciliationRunRequest()
-      .then((latestRun) => {
-        setPersistedRun(latestRun);
-        persistRun(latestRun);
+
+    void getLatestImportRunRequest()
+      .then(async (latest) => {
+        if (cancelled || runRef.current) {
+          // A live submission has already succeeded since this fetch started -- its fresh result
+          // always wins over this background fetch's now-stale answer, regardless of which
+          // settles second.
+          return;
+        }
+
+        setLatestImportRun(latest);
+        const phase = resolveLatestRunPhase(latest);
+
+        if (phase.kind === 'succeeded') {
+          const report = await getReconciliationRunByIdRequest(phase.matchingJobId);
+          if (cancelled || runRef.current) {
+            return;
+          }
+          setPersistedRun(report);
+          persistRun(report);
+          setLatestBackendReportError(null);
+          return;
+        }
+
+        // Anything other than a confirmed success -- idle, running, or either failure phase --
+        // must not be shadowed by an older cached success.
+        setPersistedRun(undefined);
+        clearPersistedRun();
         setLatestBackendReportError(null);
       })
       .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
         setLatestBackendReportError(
           error instanceof Error ? error.message : 'Unable to load the latest reconciliation run.',
         );
       })
       .finally(() => {
-        setIsHydratingLatestBackendReport(false);
+        if (!cancelled) {
+          setIsHydratingLatestBackendReport(false);
+        }
       });
-  };
 
-  const reviewAndExportRoutes = useMemo(
-    () =>
-      new Set<string>([
-        routePaths.reconSummary,
-        routePaths.probableMatches,
-        routePaths.exceptions,
-        routePaths.export,
-      ]),
-    [],
-  );
-
-  useEffect(() => {
-    if (reviewAndExportRoutes.has(location.pathname)) {
-      hydrateLatestBackendReport();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrateLatestBackendReport is internally idempotent; only pathname should retrigger this.
-  }, [location.pathname, reviewAndExportRoutes]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * Old bookmarks/shared links encoded destination as `?tab=...&view=...` on the root path
@@ -1089,11 +1188,18 @@ function ReconciliationApp({
     reconciliation.isPending,
     Boolean(reconciliation.error),
     Boolean(reportRun),
+    durableRunPhase.kind,
   );
-  const runStatusLabel = runStatusLabelsByTone[runStatusTone];
+  const runStatusLabel = resolveRunStatusLabel(runStatusTone, durableRunPhase.kind);
   const currentStepLabel = reportRun
     ? 'Reconciliation complete'
-    : (currentProgressStep?.label ?? 'Ready to run');
+    : durableRunPhase.kind === 'validation-failed'
+      ? 'File validation failed'
+      : durableRunPhase.kind === 'matching-failed'
+        ? 'Reconciliation failed'
+        : durableRunPhase.kind === 'running' && liveStatusMessage
+          ? liveStatusMessage
+          : (currentProgressStep?.label ?? 'Ready to run');
   const runElapsedMs = resolveRunElapsedMs(
     reportRun,
     reconciliation.isPending,
@@ -1101,12 +1207,22 @@ function ReconciliationApp({
     nowMs,
   );
   const elapsedLabel = runElapsedMs === null ? null : formatElapsedLabel(runElapsedMs);
+  // Issue #154: when there's no live/cached report, fall back to the durable latest-run fetch so
+  // a failed run still shows *which* run failed instead of reverting to the blank upload-form
+  // state. BANK_MERGED/GL are the two roles that matter to a human reading this list -- the raw
+  // BANK_ACCOUNT_1..4 uploads (Issue #153) are audit-only duplicates of what BANK_MERGED already
+  // represents merged.
   const runBarSourceFileNames = reportRun
     ? reportRun.sourceFiles.map((file) => file.fileName)
-    : [...bankFiles.map((file) => file?.name), glFile?.name].filter(
-        (name): name is string => Boolean(name),
-      );
-  const runBarAccountIdentifier = reportRun?.accountIdentifier ?? accountIdentifier;
+    : latestImportRun
+      ? latestImportRun.files
+          .filter((file) => file.role === 'BANK_MERGED' || file.role === 'GL')
+          .map((file) => file.originalFilename)
+      : [...bankFiles.map((file) => file?.name), glFile?.name].filter(
+          (name): name is string => Boolean(name),
+        );
+  const runBarAccountIdentifier =
+    reportRun?.accountIdentifier ?? latestImportRun?.accountIdentifier ?? accountIdentifier;
   const runBarFrequency = reportRun?.reconciliationFrequency ?? reconciliationFrequency;
   const appliedVarianceOverrides = reportRun?.appliedVarianceOverrides;
   const rulesUsedCount = reportRun ? Object.keys(appliedVarianceOverrides ?? {}).length : null;
@@ -1225,7 +1341,7 @@ function ReconciliationApp({
       />
       <main className="app-layout app-layout--rail">
         <RunBar
-          periodLabel={reportRun?.periodLabel ?? periodLabel}
+          periodLabel={reportRun?.periodLabel ?? latestImportRun?.label ?? periodLabel}
           accountIdentifier={runBarAccountIdentifier}
           sourceFileNames={runBarSourceFileNames}
           frequency={runBarFrequency}
@@ -1234,7 +1350,7 @@ function ReconciliationApp({
           overallProgressPercent={overallProgressPercent}
           currentStepLabel={currentStepLabel}
           exceptionCount={reportRun ? reportRun.exceptions.length : null}
-          runId={reportRun?.id ?? null}
+          runId={reportRun?.id ?? latestImportRun?.id ?? null}
           elapsedLabel={elapsedLabel}
           isComplete={Boolean(reportRun)}
           onOpenReview={() => navigate(routePaths.reconSummary)}
@@ -1280,6 +1396,8 @@ function ReconciliationApp({
                     accountIdentifier={accountIdentifier}
                     uploadTransfer={uploadTransfer}
                     partialAccept={partialAccept}
+                    durableRunPhase={durableRunPhase}
+                    onDismissDurableRun={() => setLatestImportRun(null)}
                   />
                 }
               />
@@ -1509,6 +1627,8 @@ function SourceUploadSection({
   suggestedPeriodLabel,
   uploadTransfer,
   partialAccept,
+  durableRunPhase,
+  onDismissDurableRun,
 }: Readonly<{
   accountIdentifier: string;
   annualYear: string;
@@ -1535,6 +1655,8 @@ function SourceUploadSection({
   suggestedPeriodLabel: string;
   uploadTransfer: UploadTransferModel;
   partialAccept: PartialAcceptModel;
+  durableRunPhase: LatestRunPhase;
+  onDismissDurableRun: () => void;
 }>) {
   const reconciliationLabelErrorId = 'reconciliation-label-error';
   const reconciliationLabelHintId = 'reconciliation-label-hint';
@@ -1719,6 +1841,23 @@ function SourceUploadSection({
           ) : reconciliation.error ? (
             <p className="error-banner import-screen__status" role="alert">
               {reconciliation.error.message}
+            </p>
+          ) : durableRunPhase.kind === 'validation-failed' ? (
+            // Issue #154: same screen as the live-mutation branch above, driven from a plain
+            // fetched ImportRunSummary rather than a live error object -- ImportValidationFailureView
+            // only needs `run` and independently re-fetches its own per-file detail.
+            <ImportValidationFailureView
+              run={durableRunPhase.run}
+              onRetryUpload={() => {
+                onDismissDurableRun();
+                setBankFiles([null, null]);
+                setGlFile(null);
+              }}
+              partialAccept={partialAccept}
+            />
+          ) : durableRunPhase.kind === 'matching-failed' ? (
+            <p className="error-banner import-screen__status" role="alert">
+              Reconciliation failed for &ldquo;{durableRunPhase.run.label}&rdquo;. {durableRunPhase.message}
             </p>
           ) : null}
         </form>
