@@ -32,3 +32,15 @@ scrape_configs:
       - targets: ['reconciliation-platform-stage-api-1:4000']
         labels:
           compose_project: 'reconciliation-platform-stage'
+
+  # cadvisor/node-exporter (compose.observability.yaml) -- per-container and host-level resource
+  # usage, added to make Dev/Stage's shared-laptop CPU contention visible during a k6 run instead
+  # of inferred. Both are single instances on this project's own `default` network (unlike the
+  # api-dev/api-stage split above), no alias ambiguity to work around.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ['node-exporter:9100']
