@@ -171,6 +171,203 @@ describe('reconcileMatches', () => {
     expect(result.unmatchedGlTransactionIds.has('gl-same-day-low-similarity')).toBe(true);
   });
 
+  it('links a same-day, same-amount pair via the fuzzy second pass when description text shares almost no vocabulary (EDD real-data case)', () => {
+    // Real production case (Jan 2025 Premier Electrical Staffing dataset): a $99.56 GL entry for
+    // California's EDD and a same-day, same-amount bank ACH debit share only the token "edd" --
+    // every other token differs ("CALIFORNIA"/"STATE"/"TAX"/"PAY" vs "CORP"/"DEBIT"/"EFTPMT"/
+    // "EMPLOYMENT"/"DEVEL"...). Before this fix both sides fell through independently into
+    // MissingFromGL/MissingFromBank, completely disconnected. The amount is distinctive on both
+    // sides (each appears exactly once), so the new fuzzy pass should link them.
+    const bank = buildTransaction({
+      id: 'bank-edd',
+      source: 'bank',
+      lineNumber: 176,
+      transactionDate: '2025-01-13',
+      description: 'ACH CORP DEBIT EDD EFTPMT EMPLOYMENT DEVEL PREMIER ELECTRICAL STACUSTOMER ID 1994514272',
+      normalizedComparisonTokens: [
+        'ach', 'corp', 'debit', 'edd', 'eftpmt', 'employment', 'devel', 'premier', 'electrical',
+        'stacustomer', 'id', '1994514272',
+      ],
+      amount: -99.56,
+    });
+    const gl = buildTransaction({
+      id: 'gl-edd',
+      source: 'gl',
+      lineNumber: 185,
+      transactionDate: '2025-01-13',
+      description: 'CAlifornia-EDD STATE TAX PAY-CA',
+      normalizedComparisonTokens: ['california', 'edd', 'state', 'tax', 'pay', 'ca'],
+      amount: -99.56,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('WeakDescriptionMatch');
+    // reconcileMatches's own unmatchedBankTransactionIds/unmatchedGlTransactionIds only exclude
+    // EXACT matches by design (Probable matches, from either pass, stay in those sets) -- whether
+    // a Probable/WeakDescriptionMatch result survives into the final exception report instead of
+    // being reclassified back to MissingFromGL/MissingFromBank is exceptionClassifier.ts's
+    // responsibility (advisoryReviewCategoriesExcludedFromResidualStages), tested separately in
+    // exceptionClassifier.test.ts, not here.
+  });
+
+  it('links a same-day, same-amount pair via the fuzzy second pass (Georgia DOR real-data case)', () => {
+    // Second real production case, same dataset: GL says "GEORGIA DEPT OF REVENUE"; the bank's
+    // own ACH descriptor for the same agency says "GEORGIA ITS TAX" -- Georgia's own tax system
+    // has a different name in each source. Only "georgia" overlaps.
+    const bank = buildTransaction({
+      id: 'bank-ga-dor',
+      source: 'bank',
+      lineNumber: 178,
+      transactionDate: '2025-01-13',
+      description: 'ACH CORP DEBIT GA TX PYMT GEORGIA ITS TAX PREMIER ELECTRICAL STACUSTOMER ID 1434650704',
+      normalizedComparisonTokens: [
+        'ach', 'corp', 'debit', 'ga', 'tx', 'pymt', 'georgia', 'its', 'tax', 'premier',
+        'electrical', 'stacustomer', 'id', '1434650704',
+      ],
+      amount: -2516.43,
+    });
+    const gl = buildTransaction({
+      id: 'gl-ga-dor',
+      source: 'gl',
+      lineNumber: 183,
+      transactionDate: '2025-01-13',
+      description: 'GEORGIA DEPT OF REVENUE STATE TAX PAY-GA',
+      normalizedComparisonTokens: ['georgia', 'dept', 'of', 'revenue', 'state', 'tax', 'pay', 'ga'],
+      amount: -2516.43,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.disposition).toBe('ProbableMatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('WeakDescriptionMatch');
+  });
+
+  it('does not force-match a coincidental same-amount pair when the amount is not distinctive (guardrail)', () => {
+    // Two GL transactions share the same amount as one bank transaction, all with zero text
+    // overlap. The amount is not distinctive on the GL side (occurs twice), so the fuzzy pass
+    // must refuse to guess which one is the real counterpart, rather than force-matching either.
+    const bank = buildTransaction({
+      id: 'bank-ambiguous-amount',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-01-13',
+      description: 'ACH CORP DEBIT SOME VENDOR REF 88221',
+      normalizedComparisonTokens: ['ach', 'corp', 'debit', 'some', 'vendor', 'ref', '88221'],
+      amount: -500,
+    });
+    const glOne = buildTransaction({
+      id: 'gl-ambiguous-one',
+      source: 'gl',
+      lineNumber: 10,
+      transactionDate: '2025-01-13',
+      description: 'OFFICE SUPPLIES',
+      normalizedComparisonTokens: ['office', 'supplies'],
+      amount: -500,
+    });
+    const glTwo = buildTransaction({
+      id: 'gl-ambiguous-two',
+      source: 'gl',
+      lineNumber: 11,
+      transactionDate: '2025-01-14',
+      description: 'CONSULTING FEES',
+      normalizedComparisonTokens: ['consulting', 'fees'],
+      amount: -500,
+    });
+
+    const result = reconcileMatches([bank, glOne, glTwo], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults.some((match) => match.exceptionCategory === 'WeakDescriptionMatch')).toBe(
+      false,
+    );
+    expect(result.unmatchedBankTransactionIds.has('bank-ambiguous-amount')).toBe(true);
+  });
+
+  it('does not fire across a 1-day gap even with a distinctive amount and weak text (deliberately same-day only)', () => {
+    // Confirms the fuzzy pass is deliberately narrower than the primary date-tolerance window: a
+    // >0-day gap must be left for the primary pass's own rules (e.g. Amount + Extended Date Window
+    // Match, or the classifier's LikelyMiscoding residual stage) to handle, not silently absorbed
+    // here. See the inline comment on rankFuzzyCandidates's date check for why -- a real fixture
+    // ('likely-miscoding' in packages/test-fixtures) depends on exactly this boundary.
+    const bank = buildTransaction({
+      id: 'bank-weak-1day',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-01-14',
+      description: 'ACH CORP DEBIT SOME UNRELATED PROCESSOR TEXT REF 55112',
+      normalizedComparisonTokens: ['ach', 'corp', 'debit', 'some', 'unrelated', 'processor', 'text', 'ref', '55112'],
+      amount: -7777.12,
+    });
+    const gl = buildTransaction({
+      id: 'gl-weak-1day',
+      source: 'gl',
+      lineNumber: 1,
+      transactionDate: '2025-01-13',
+      description: 'GENERIC VENDOR CATEGORY',
+      normalizedComparisonTokens: ['generic', 'vendor', 'category'],
+      amount: -7777.12,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(
+      result.matchResults.some((match) => match.exceptionCategory === 'WeakDescriptionMatch'),
+    ).toBe(false);
+  });
+
+  it('does not re-match a transaction the primary pass already resolved (pass-2 scoping)', () => {
+    // bank-exact/gl-exact cleanly exact-match in pass 1 via strong text similarity. A second bank
+    // transaction (bank-extra) happens to share bank-exact's amount but has weak text similarity
+    // against whatever GL remains. Pass 2 must never reconsider bank-exact/gl-exact (already
+    // consumed), and since gl-exact was pass 1's only same-amount GL row, bank-extra correctly has
+    // nothing left to fuzzy-match against.
+    const bankExact = buildTransaction({
+      id: 'bank-exact',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-01-10',
+      description: 'ACME CORP PAYMENT',
+      normalizedComparisonTokens: ['acme', 'corp', 'payment'],
+      amount: -3000,
+    });
+    const glExact = buildTransaction({
+      id: 'gl-exact',
+      source: 'gl',
+      lineNumber: 1,
+      transactionDate: '2025-01-10',
+      description: 'ACME CORP PAYMENT',
+      normalizedComparisonTokens: ['acme', 'corp', 'payment'],
+      amount: -3000,
+    });
+    const bankExtra = buildTransaction({
+      id: 'bank-extra',
+      source: 'bank',
+      lineNumber: 2,
+      transactionDate: '2025-01-11',
+      description: 'UNRELATED PROCESSOR TEXT',
+      normalizedComparisonTokens: ['unrelated', 'processor', 'text'],
+      amount: -3000,
+    });
+
+    const result = reconcileMatches(
+      [bankExact, glExact, bankExtra],
+      defaultReconciliationConfig.matching,
+    );
+
+    const bankExactMatches = result.matchResults.filter(
+      (match) => match.bankTransactionId === 'bank-exact',
+    );
+    expect(bankExactMatches).toHaveLength(1);
+    expect(bankExactMatches[0]?.disposition).toBe('ExactMatch');
+    expect(result.matchResults.some((match) => match.bankTransactionId === 'bank-extra')).toBe(
+      false,
+    );
+    expect(result.unmatchedBankTransactionIds.has('bank-extra')).toBe(true);
+  });
+
   it('produces a probable match with CheckNumberMismatch when check numbers differ but amounts and text align', () => {
     const bank = buildTransaction({
       id: 'bank-check-var',

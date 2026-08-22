@@ -34,6 +34,7 @@ export const categoryPrecedence: Record<ExceptionItem['category'], number> = {
   DateVariance: 6,
   TimingDifference: 7,
   DescriptionMerchantVariance: 8,
+  WeakDescriptionMatch: 8,
   AmbiguousMatchRequiringReview: 9,
   StaleOutstandingCheck: 10,
   OutstandingCheck: 11,
@@ -54,6 +55,7 @@ export const advisoryReviewCategoriesExcludedFromResidualStages = new Set<
   'CheckNumberMismatch',
   'ReferenceNumberMismatch',
   'DescriptionMerchantVariance',
+  'WeakDescriptionMatch',
   'AmbiguousMatchRequiringReview',
 ]);
 

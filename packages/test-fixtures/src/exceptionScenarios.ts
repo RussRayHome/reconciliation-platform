@@ -12,6 +12,8 @@ import {
   depositGroupingGlRows,
   descriptionVarianceBankRows,
   descriptionVarianceGlRows,
+  weakDescriptionMatchBankRows,
+  weakDescriptionMatchGlRows,
   duplicateInBankBankRows,
   duplicateInBankGlRows,
   duplicateInGlBankRows,
@@ -192,6 +194,13 @@ export const exceptionScenarioFixtures: ExceptionScenarioFixture[] = [
     expectedCount: 1,
     bankRows: descriptionVarianceBankRows,
     glRows: descriptionVarianceGlRows,
+  },
+  {
+    name: 'weak-description-match',
+    expectedCategory: 'WeakDescriptionMatch',
+    expectedCount: 1,
+    bankRows: weakDescriptionMatchBankRows,
+    glRows: weakDescriptionMatchGlRows,
   },
   {
     name: 'stale-outstanding-check',

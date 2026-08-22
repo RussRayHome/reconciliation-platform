@@ -196,6 +196,28 @@ export const descriptionVarianceGlRows = [
   ['2025-02-18', 'Expense', '', 'Office Depot', 'Client charge', '-245.00'],
 ];
 
+// Same day, same distinctive amount, but description text shares only one incidental token
+// ("NEVADA") -- below even DescriptionMerchantVariance's review threshold. Models a real pattern
+// (state tax agencies use a different name in their own ACH remittance text than a company's GL
+// books it under) that WeakDescriptionMatch exists to resolve via amount+date alone.
+export const weakDescriptionMatchBankRows = [
+  ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+  [
+    '2025-06-04',
+    'ACH CORP DEBIT NV TX PYMT NEVADA ITS TAX BLUEPRINT LOGISTICS CUSTOMER ID 5512340',
+    '1',
+    '',
+    '812.40',
+    '',
+    '4187.60',
+  ],
+];
+
+export const weakDescriptionMatchGlRows = [
+  ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+  ['2025-06-04', 'Expense', '', 'NEVADA DEPT OF REVENUE', 'STATE TAX PAY-NV', '-812.40'],
+];
+
 export const outstandingCheckBankRows = [
   ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-11-15', 'MONTH-END OPERATING', '1', '', '350.00', '', '9000.00'],

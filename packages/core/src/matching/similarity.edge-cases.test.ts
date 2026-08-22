@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { tokenSimilarity, currencyEquals, dateDifferenceDays } from './similarity';
+import {
+  tokenSimilarity,
+  currencyEquals,
+  dateDifferenceDays,
+  overlapCoefficient,
+  fuzzyContainmentSimilarity,
+  describeTokenSimilarity,
+} from './similarity';
 
 describe('Similarity Utilities - Edge Cases', () => {
   describe('tokenSimilarity', () => {
@@ -50,6 +57,95 @@ describe('Similarity Utilities - Edge Cases', () => {
       const score = tokenSimilarity(['123', '456'], ['123', '789']);
       expect(score).toBeGreaterThanOrEqual(0);
       expect(score).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('overlapCoefficient', () => {
+    it('returns 0 for empty inputs', () => {
+      expect(overlapCoefficient([], [])).toBe(0);
+      expect(overlapCoefficient([], ['a'])).toBe(0);
+      expect(overlapCoefficient(['a'], [])).toBe(0);
+    });
+
+    it('scores higher than Dice when a short, clean side is fully contained in a long, noisy side', () => {
+      // Real case from the Jan 2025 dataset: GL "GEORGIA DEPT OF REVENUE" vs a long, noisy bank
+      // ACH descriptor that only shares the word "GEORGIA".
+      const gl = ['GEORGIA', 'DEPT', 'OF', 'REVENUE'];
+      const bank = [
+        'ACH',
+        'CORP',
+        'DEBIT',
+        'GA',
+        'TX',
+        'PYMT',
+        'GEORGIA',
+        'ITS',
+        'TAX',
+        'PREMIER',
+        'ELECTRICAL',
+        'STACUSTOMER',
+        'ID',
+        '1434650704',
+      ];
+
+      const dice = tokenSimilarity(gl, bank);
+      const overlap = overlapCoefficient(gl, bank);
+
+      expect(overlap).toBeCloseTo(0.25, 5); // 1 shared token / min(4, 14)
+      expect(overlap).toBeGreaterThan(dice);
+    });
+
+    it('converges toward Dice-like behavior when both sides are similar length', () => {
+      const left = ['wire', 'transfer', 'ref'];
+      const right = ['wire', 'transfer', 'other'];
+      const dice = tokenSimilarity(left, right);
+      const overlap = overlapCoefficient(left, right);
+      expect(Math.abs(dice - overlap)).toBeLessThan(0.3);
+    });
+  });
+
+  describe('fuzzyContainmentSimilarity', () => {
+    it('returns 0 for empty inputs', () => {
+      expect(fuzzyContainmentSimilarity([], [])).toBe(0);
+      expect(fuzzyContainmentSimilarity([], ['a'])).toBe(0);
+    });
+
+    it('matches minor spelling/pluralization variance', () => {
+      const score = fuzzyContainmentSimilarity(['REVENUE'], ['REVENUES', 'DEPT']);
+      expect(score).toBe(1);
+    });
+
+    it('never fuzzy-matches short tokens like state abbreviations by proximity alone', () => {
+      // "CA" and "GA" are 1 edit apart but both below the minimum fuzzy-match token length --
+      // must never be treated as the same state.
+      const score = fuzzyContainmentSimilarity(['CA'], ['GA', 'OTHER']);
+      expect(score).toBe(0);
+    });
+
+    it('does not fuzzy-match genuinely unrelated tokens, even short-ish real-world abbreviations', () => {
+      // "EDD" (California's Employment Development Department) vs "EMPLOYMENT" -- real names for
+      // the same real-world agency, but not spelling variants of each other. This layer was never
+      // meant to rescue this case; it's documented here so a future reader doesn't assume it should.
+      const score = fuzzyContainmentSimilarity(['EDD'], ['EMPLOYMENT', 'DEVELOPMENT']);
+      expect(score).toBe(0);
+    });
+  });
+
+  describe('describeTokenSimilarity', () => {
+    it('best is the max of dice, overlap, and fuzzyOverlap', () => {
+      const left = ['GEORGIA', 'DEPT', 'OF', 'REVENUE'];
+      const right = ['ACH', 'CORP', 'DEBIT', 'GA', 'GEORGIA', 'ITS', 'TAX'];
+      const result = describeTokenSimilarity(left, right);
+      expect(result.best).toBe(Math.max(result.dice, result.overlap, result.fuzzyOverlap));
+    });
+
+    it('degrades gracefully to 0 for empty inputs on either side', () => {
+      expect(describeTokenSimilarity([], ['a'])).toEqual({
+        dice: 0,
+        overlap: 0,
+        fuzzyOverlap: 0,
+        best: 0,
+      });
     });
   });
 

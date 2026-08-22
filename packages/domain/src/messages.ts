@@ -15,6 +15,7 @@ export const errorCategoryDisplayNames: Record<ErrorCategory, string> = {
   CheckNumberMismatch: 'Check Number Mismatch',
   ReferenceNumberMismatch: 'Reference Number Mismatch',
   DescriptionMerchantVariance: 'Description/Merchant Variance',
+  WeakDescriptionMatch: 'Weak Description Match',
   StaleOutstandingCheck: 'Stale Outstanding Check',
   OutstandingCheck: 'Outstanding Check',
   FeeNettingMatch: 'Fee Netting Match',
@@ -62,6 +63,8 @@ export const professionalErrorMessages: Record<ErrorCategory, string> = {
     'Transactions likely align on amount and date, but reference number details do not agree and require validation.',
   DescriptionMerchantVariance:
     'Transactions appear related but contain materially different merchant, payee, or description wording and should be reviewed.',
+  WeakDescriptionMatch:
+    'Amount and date align within configured tolerance, but description or payee text shares little to no vocabulary between sources. The match relies on amount and date alone and should be reviewed before treating it as confirmed.',
   StaleOutstandingCheck:
     'A GL check or check-like disbursement remains unmatched in bank activity past the stale-date threshold and should be investigated for voiding, reissue, or clearance status.',
   OutstandingCheck:
@@ -151,6 +154,10 @@ export const recommendedNextActionsByCategory: Record<ErrorCategory, string[]> =
   DescriptionMerchantVariance: [
     'Review merchant, payee, and memo fields against source support to verify the counterpart relationship.',
     'Add reviewer notes before approving or rejecting the proposed relationship.',
+  ],
+  WeakDescriptionMatch: [
+    'Confirm the counterpart relationship using source support, since description text alone could not corroborate it.',
+    'Add reviewer notes before approving; consider updating GL memo conventions if this pattern recurs often.',
   ],
   StaleOutstandingCheck: [
     'Determine whether the check should be voided, reissued, or left outstanding based on current status.',
