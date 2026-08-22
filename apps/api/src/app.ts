@@ -1499,6 +1499,21 @@ export const createApp = (
     );
   }
 
+  // Dev-only escape hatch (changeset 0056) letting a superuser submit and approve the same
+  // import run for solo Dev-stack testing -- restated (restricted) before go-live, per the app
+  // owner. Deliberately no isProductionRuntime() boot guard here, unlike
+  // ALLOW_LOCAL_LOGIN_FALLBACK above: compose.yaml's shared x-api-environment anchor sets
+  // NODE_ENV=production unconditionally in every Docker tier (dev and stage included, confirmed
+  // by trying the mirrored guard here first -- it refused to boot in Dev too), so
+  // isProductionRuntime() cannot distinguish real production from Dev/stage and would be a false
+  // safety net, not a real one (the ALLOW_LOCAL_LOGIN_FALLBACK guard above has this same latent
+  // gap; it has just never been exercised, since nothing sets that flag anywhere). The actual
+  // safeguard is the same one every other dev-only flag in this project relies on
+  // (ENABLE_RECONCILIATION_QUEUE and siblings): this variable is set only in compose.dev.yaml and
+  // must never be added to compose.yaml or compose.stage.yaml.
+  const superuserSelfApprovalEnabled =
+    parseBooleanFlag(process.env.ALLOW_SUPERUSER_SELF_APPROVAL) === true;
+
   initializeApiSentry(httpLogger);
 
   // Producer only (Issue #134 phase 2) -- no Worker/processJob here anymore. The consumer that
@@ -3301,7 +3316,11 @@ export const createApp = (
       const importValidationStore = new PostgresImportValidationStore(pool!);
       const importRunStore = new PostgresImportRunStore(pool!);
 
-      const acceptResult = await importValidationStore.acceptPartialImport(organizationId, runId);
+      const acceptResult = await importValidationStore.acceptPartialImport(
+        organizationId,
+        runId,
+        request.auth!.username,
+      );
 
       if (acceptResult.outcome === 'not_found') {
         response.status(404).json({ message: 'Import run not found.' });
@@ -3928,6 +3947,8 @@ export const createApp = (
             toStatus: bodyResult.data.status,
             actorUsername: username,
             rationale: bodyResult.data.rationale,
+            allowSelfApproval:
+              superuserSelfApprovalEnabled && request.auth!.role === 'superuser',
           },
         );
 

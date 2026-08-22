@@ -815,6 +815,7 @@ describe('PostgresImportValidationStore', () => {
       const result = await store.acceptPartialImport(
         defaultOrganizationId,
         '00000000-0000-0000-0000-000000000000',
+        submittedByUserName,
       );
       expect(result).toEqual({ outcome: 'not_found' });
     });
@@ -825,7 +826,7 @@ describe('PostgresImportValidationStore', () => {
       const run = await createDraftRun({ label: 'Still Draft' });
       const store = new PostgresImportValidationStore(pool);
 
-      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id, submittedByUserName);
       expect(result).toEqual({ outcome: 'invalid_state', currentStatus: 'DRAFT' });
     });
 
@@ -835,7 +836,7 @@ describe('PostgresImportValidationStore', () => {
       const { run, bankFile } = await seedFailedRun('Structural Failure Guard', 'structural');
       const store = new PostgresImportValidationStore(pool);
 
-      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id, submittedByUserName);
       expect(result).toEqual({ outcome: 'structural_failure', importFileId: bankFile.importFileId });
     });
 
@@ -845,7 +846,7 @@ describe('PostgresImportValidationStore', () => {
       const { run, bankFile } = await seedFailedRun('Zero Importable Guard', 'zero-importable');
       const store = new PostgresImportValidationStore(pool);
 
-      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id, submittedByUserName);
       expect(result).toEqual({ outcome: 'no_importable_rows', importFileId: bankFile.importFileId });
     });
 
@@ -855,7 +856,7 @@ describe('PostgresImportValidationStore', () => {
       const { run } = await seedFailedRun('Accepted Partial Import', 'partial');
       const store = new PostgresImportValidationStore(pool);
 
-      const result = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id, submittedByUserName);
       expect(result).toEqual({ outcome: 'accepted' });
 
       const runRow = await pool.query<{ status: string }>(
@@ -865,14 +866,62 @@ describe('PostgresImportValidationStore', () => {
       expect(runRow.rows[0]?.status).toBe('PENDING_APPROVAL');
     });
 
+    it('records who accepted the partial import and when (changeset 0054)', async () => {
+      if (startupError) throw startupError;
+
+      // Deliberately a different user than seedFailedRun's own submitter (submittedByUserName) --
+      // proves skip_invalid_rows_by tracks the accepter specifically, not just echoing whoever
+      // submitted the run.
+      const { run } = await seedFailedRun('Skip Invalid Rows Attribution', 'partial');
+      const store = new PostgresImportValidationStore(pool);
+      const before = Date.now();
+
+      const result = await store.acceptPartialImport(defaultOrganizationId, run.id, approverUserName);
+      expect(result).toEqual({ outcome: 'accepted' });
+
+      const runRow = await pool.query<{
+        skip_invalid_rows_by: string | null;
+        skip_invalid_rows_at: string | null;
+      }>(
+        'SELECT skip_invalid_rows_by, skip_invalid_rows_at FROM reconciliation_run WHERE id = $1',
+        [run.id],
+      );
+      expect(runRow.rows[0]?.skip_invalid_rows_by).toBe(approverUserId);
+      expect(runRow.rows[0]?.skip_invalid_rows_at).toBeTruthy();
+      // NOW() is the Postgres container's own clock, not this process's -- a few ms of drift from
+      // the host is normal and not a bug, so this allows a small tolerance rather than asserting
+      // strict ordering against `before`. Still catches a genuinely wrong value (NULL, epoch 0, a
+      // stale timestamp from a prior run).
+      expect(new Date(runRow.rows[0]!.skip_invalid_rows_at!).getTime()).toBeGreaterThanOrEqual(
+        before - 5000,
+      );
+    });
+
+    it('throws when the accepting username has no matching reconciliation_user row', async () => {
+      if (startupError) throw startupError;
+
+      const { run } = await seedFailedRun('Unresolvable Accepter', 'partial');
+      const store = new PostgresImportValidationStore(pool);
+
+      await expect(
+        store.acceptPartialImport(defaultOrganizationId, run.id, 'nonexistent-user'),
+      ).rejects.toThrow(/has no matching reconciliation_user row/);
+
+      const runRow = await pool.query<{ status: string }>(
+        'SELECT status FROM reconciliation_run WHERE id = $1',
+        [run.id],
+      );
+      expect(runRow.rows[0]?.status).toBe('VALIDATION_FAILED');
+    });
+
     it('returns invalid_state on a second call after the run has already been accepted', async () => {
       if (startupError) throw startupError;
 
       const { run } = await seedFailedRun('Double Accept Guard', 'partial');
       const store = new PostgresImportValidationStore(pool);
 
-      await store.acceptPartialImport(defaultOrganizationId, run.id);
-      const second = await store.acceptPartialImport(defaultOrganizationId, run.id);
+      await store.acceptPartialImport(defaultOrganizationId, run.id, submittedByUserName);
+      const second = await store.acceptPartialImport(defaultOrganizationId, run.id, submittedByUserName);
 
       expect(second).toEqual({ outcome: 'invalid_state', currentStatus: 'PENDING_APPROVAL' });
     });
@@ -1210,6 +1259,52 @@ describe('PostgresImportValidationStore', () => {
             actorUsername: 'no-such-user',
           }),
         ).rejects.toThrow(/no matching reconciliation_user row/);
+      });
+
+      it('allows self-approval (changeset 0056) only when allowSelfApproval is set', async () => {
+        if (startupError) throw startupError;
+
+        const run = await createPendingApprovalRun({ label: 'Self Approval Override' });
+        const store = new PostgresImportValidationStore(pool);
+
+        const result = await store.recordRunApprovalDecision(defaultOrganizationId, {
+          runId: run.id,
+          toStatus: 'APPROVED',
+          actorUsername: submittedByUserName,
+          allowSelfApproval: true,
+        });
+
+        expect(result).toMatchObject({
+          outcome: 'decided',
+          item: { id: run.id, status: 'APPROVED', decidedByUsername: submittedByUserName },
+        });
+      });
+
+      it('does not leak the self-approval override onto a later, unrelated decision on the same pooled connection', async () => {
+        if (startupError) throw startupError;
+
+        const overriddenRun = await createPendingApprovalRun({ label: 'Self Approval First' });
+        const normalRun = await createPendingApprovalRun({ label: 'Self Approval Second' });
+        const store = new PostgresImportValidationStore(pool);
+
+        await store.recordRunApprovalDecision(defaultOrganizationId, {
+          runId: overriddenRun.id,
+          toStatus: 'APPROVED',
+          actorUsername: submittedByUserName,
+          allowSelfApproval: true,
+        });
+
+        // set_config(..., true) is transaction-local (the third argument), so it must not survive
+        // past the COMMIT that ends the call above -- this is the direct regression test for that,
+        // run against the same pool (and likely the same underlying connection once returned to
+        // the pool) as the call it must not leak from.
+        await expect(
+          store.recordRunApprovalDecision(defaultOrganizationId, {
+            runId: normalRun.id,
+            toStatus: 'APPROVED',
+            actorUsername: submittedByUserName,
+          }),
+        ).rejects.toMatchObject({ code: '23514' });
       });
     });
   });

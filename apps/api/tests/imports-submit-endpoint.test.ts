@@ -182,6 +182,19 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: row ? [{ status: row.status }] : [], rowCount: row ? 1 : 0 });
     }
 
+    if (text.includes('FROM reconciliation_user') && text.includes('user_name = $1')) {
+      // acceptPartialImport's resolveUserId lookup (changeset 0054/skip-invalid-rows tracking) --
+      // unlike submitRun's submitted_by below, this one throws if it can't resolve the actor, so
+      // it needs a real match here. Every test in this file authenticates as the same fixture
+      // identity (authedApp's default sub 'test-user' / organizationId 'test-org'), so one fixed
+      // synthetic id is enough -- no test asserts on the resolved id's actual value.
+      const [userName, organizationId] = params as [string, string];
+      if (userName === 'test-user' && organizationId === 'test-org') {
+        return Promise.resolve({ rows: [{ id: 'fixture-user-id' }], rowCount: 1 });
+      }
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
     if (text.includes('FROM reconciliation_user')) {
       // No seeded users in this fake -- submitted_by always resolves to NULL, matching the
       // documented local-login-fallback behavior. Not under test here; imports-endpoints.test.ts
@@ -276,8 +289,10 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: [{ count: String(count) }], rowCount: 1 });
     }
 
-    if (text.includes("UPDATE reconciliation_run SET status = 'PENDING_APPROVAL' WHERE id = $1")) {
-      const [id] = params as [string];
+    if (text.includes("SET status = 'PENDING_APPROVAL', skip_invalid_rows_by")) {
+      // acceptPartialImport's own UPDATE (changeset 0054) -- the skip_invalid_rows_by/_at columns
+      // aren't read back by anything in this fake/these tests, so only status needs updating here.
+      const [id] = params as [string, string];
       const run = runs.find((candidate) => candidate.id === id)!;
       run.status = 'PENDING_APPROVAL';
       return Promise.resolve({ rows: [], rowCount: 1 });

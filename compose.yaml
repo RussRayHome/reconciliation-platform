@@ -9,6 +9,9 @@ x-api-environment: &api-environment
   # Required because NODE_ENV is always "production" here (see resolveJwtSecret in
   # apps/api/src/services/authService.ts) -- without it the API refuses to start signing tokens at
   # all, in every environment this compose file targets (dev, stage, and real production alike).
+  # Consequence worth remembering: isProductionRuntime() (same file) can never distinguish real
+  # production from Dev/stage, so it cannot gate any dev-only env var here -- ALLOW_SUPERUSER_SELF_APPROVAL
+  # (compose.dev.yaml only) relies purely on this file never setting it. Never add it here.
   JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
   PORT: ${PORT:-4000}
   LOG_LEVEL: ${LOG_LEVEL:-info}
