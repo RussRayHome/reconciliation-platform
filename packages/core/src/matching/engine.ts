@@ -11,6 +11,7 @@ import {
   amountDifference,
   currencyEquals,
   dateDifferenceDays,
+  describeTokenSimilarity,
   tokenSimilarity,
 } from './similarity';
 import {
@@ -39,6 +40,7 @@ export const MATCHING_RULE_NAMES = [
   'Amount + Date + Text with Reference Variance',
   'Amount + Date + Text Match',
   'Amount + Date with Description Variance',
+  'Amount + Date Match, Weak Description',
   'Amount + Extended Date Window Match',
   'Wire Correspondent Fee Deduction',
   'FX Rate Variance',
@@ -177,6 +179,27 @@ const isDistinctiveShortContextExactMatch = (
     (bankAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
     (glAmountFrequency.get(bankTransaction.amount) ?? 0) <= 1 &&
     glTransaction.normalizedComparisonTokens.length <= SHORT_CONTEXT_TOKEN_LIMIT
+  );
+};
+
+/** Same "is this amount rare enough to trust on its own" question as
+ * isDistinctiveShortContextExactMatch, but generalized to config.distinctiveAmountMaxOccurrences
+ * instead of a hardcoded 1, and without the short-token-count restriction (that restriction is
+ * specific to the Exact-tier bypass this pairs with above; this guards the separate weak-
+ * description fuzzy-matching pass in rankFuzzyCandidates, which has no token-count ceiling). */
+const isDistinctiveAmountPair = (
+  bankTransaction: NormalizedTransaction,
+  bankAmountFrequency: Map<number, number>,
+  glAmountFrequency: Map<number, number>,
+  config: MatchingConfig,
+): boolean => {
+  if (bankTransaction.amount === null) {
+    return false;
+  }
+
+  return (
+    (bankAmountFrequency.get(bankTransaction.amount) ?? 0) <= config.distinctiveAmountMaxOccurrences &&
+    (glAmountFrequency.get(bankTransaction.amount) ?? 0) <= config.distinctiveAmountMaxOccurrences
   );
 };
 
@@ -730,6 +753,96 @@ const rankCandidates = (
   return candidates.sort((left, right) => right.score - left.score);
 };
 
+/**
+ * Second matching pass, run only against whatever bank/GL transactions `reconcileMatches`'s
+ * primary pass (`rankCandidates`, above) left unmatched. Unlike every rule in that primary pass,
+ * eligibility here never depends on description text similarity -- only amount, same-day date
+ * equality, and a distinctiveness guardrail. Description similarity (`describeTokenSimilarity`)
+ * is computed only for scoring/evidence quality on pairs that already qualify, never as a
+ * pass/fail condition. Deliberately same-day only, not the full primary date-tolerance window --
+ * see the inline comment on the date check below for why.
+ *
+ * This is deliberately a separate pass rather than one more branch inside `rankCandidates`: it
+ * lets cheap, strict rules run to completion first, and reserves the comparatively expensive
+ * fuzzy string-distance work (`fuzzyContainmentSimilarity`) for the much smaller leftover pool
+ * instead of every bank x GL pair up front.
+ */
+const rankFuzzyCandidates = (
+  bankTransactions: NormalizedTransaction[],
+  glTransactions: NormalizedTransaction[],
+  config: MatchingConfig,
+): MatchCandidate[] => {
+  const candidates: MatchCandidate[] = [];
+  const bankAmountFrequency = buildAmountFrequency(bankTransactions);
+  const glAmountFrequency = buildAmountFrequency(glTransactions);
+
+  for (const bankTransaction of bankTransactions) {
+    for (const glTransaction of glTransactions) {
+      if (bankTransaction.amount === null || glTransaction.amount === null) {
+        continue;
+      }
+
+      const sameAmount = currencyEquals(
+        bankTransaction.amount,
+        glTransaction.amount,
+        config.amountTolerance,
+      );
+      const dateDifference = dateDifferenceDays(
+        bankTransaction.transactionDate ?? bankTransaction.postingDate,
+        glTransaction.transactionDate ?? glTransaction.postingDate,
+      );
+      const referenceSimilarity = tokenSimilarity(
+        bankTransaction.normalizedReferenceTokens,
+        glTransaction.normalizedReferenceTokens,
+      );
+      const hasCheckOrReferenceValues =
+        Boolean(bankTransaction.checkNumber || glTransaction.checkNumber) ||
+        Boolean(bankTransaction.referenceNumber || glTransaction.referenceNumber) ||
+        (bankTransaction.normalizedReferenceTokens.length > 0 &&
+          glTransaction.normalizedReferenceTokens.length > 0);
+
+      if (
+        !sameAmount ||
+        // Same-day only, not the full primary date-tolerance window: a >0-day gap with a
+        // distinctive amount and conflicting narrative is exactly what LikelyMiscoding's residual
+        // stage exists to flag (exceptionClassifierCandidates.ts's buildLikelyMiscodingCandidate
+        // narrows its own same-day override the same way, for the same reason) -- widening this
+        // to dateToleranceDays would intercept those pairs here first and silently downgrade a
+        // real miscoding signal into a bland "weak description" match. Confirmed against the
+        // existing 'likely-miscoding' fixture (1-day gap, "ACME PAYROLL" vs "Office supplies" --
+        // genuinely conflicting narrative, not just absent/abbreviated text).
+        dateDifference !== 0 ||
+        (hasCheckOrReferenceValues && referenceSimilarity < config.referenceSimilarityThreshold) ||
+        !isDistinctiveAmountPair(bankTransaction, bankAmountFrequency, glAmountFrequency, config)
+      ) {
+        continue;
+      }
+
+      const fuzzy = describeTokenSimilarity(
+        bankTransaction.normalizedComparisonTokens,
+        glTransaction.normalizedComparisonTokens,
+      );
+      candidates.push(
+        buildCandidate(
+          bankTransaction,
+          glTransaction,
+          'Amount + Date Match, Weak Description',
+          0.55 + fuzzy.best * 0.1,
+          'Probable',
+          [
+            'Amounts agree within configured tolerance and dates fall within the primary tolerance window.',
+            `Description or payee text shares little vocabulary between sources (best similarity ${(fuzzy.best * 100).toFixed(0)}%), but this amount occurs at most ${config.distinctiveAmountMaxOccurrences} time(s) on each side, making amount and date alone a trustworthy signal.`,
+            'Reviewer confirmation is required before treating this as a confirmed match.',
+          ],
+          'WeakDescriptionMatch',
+        ),
+      );
+    }
+  }
+
+  return candidates.sort((left, right) => right.score - left.score);
+};
+
 /** All match output sets produced by a single `reconcileMatches` pass. */
 export interface MatchEngineResult {
   matchResults: MatchResult[];
@@ -890,6 +1003,41 @@ export const reconcileMatches = (
     reviewedBank.add(candidate.bankTransactionId);
     reviewedGl.add(candidate.glTransactionId);
     onCandidateOutcome?.(candidate, disposition);
+  }
+
+  // Second pass, effort-staged behind the primary rule cascade above: only run the fuzzy
+  // amount+date matcher against whatever's still genuinely unmatched, not the full pool.
+  const stillUnmatchedBank = remainingBank.filter(
+    (transaction) =>
+      !exactMatchedBank.has(transaction.id) &&
+      !reviewedBank.has(transaction.id) &&
+      !groupedReservations.reservedBankTransactionIds.has(transaction.id),
+  );
+  const stillUnmatchedGl = remainingGl.filter(
+    (transaction) =>
+      !exactMatchedGl.has(transaction.id) &&
+      !reviewedGl.has(transaction.id) &&
+      !groupedReservations.reservedGlTransactionIds.has(transaction.id),
+  );
+
+  const fuzzyCandidates = rankFuzzyCandidates(stillUnmatchedBank, stillUnmatchedGl, config);
+  for (const candidate of fuzzyCandidates) {
+    if (
+      exactMatchedBank.has(candidate.bankTransactionId) ||
+      exactMatchedGl.has(candidate.glTransactionId) ||
+      reviewedBank.has(candidate.bankTransactionId) ||
+      reviewedGl.has(candidate.glTransactionId)
+    ) {
+      onCandidateOutcome?.(candidate, 'SkippedAlreadyMatched');
+      continue;
+    }
+
+    const result = createMatchResult(candidate, 'ProbableMatch', 'WeakDescriptionMatch');
+    probableMatches.push(result);
+    matchResults.push(result);
+    reviewedBank.add(candidate.bankTransactionId);
+    reviewedGl.add(candidate.glTransactionId);
+    onCandidateOutcome?.(candidate, 'ProbableMatch');
   }
 
   return {

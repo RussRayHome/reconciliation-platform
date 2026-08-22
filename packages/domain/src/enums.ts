@@ -95,6 +95,7 @@ export const errorCategories = [
   'CheckNumberMismatch',
   'ReferenceNumberMismatch',
   'DescriptionMerchantVariance',
+  'WeakDescriptionMatch',
   'StaleOutstandingCheck',
   'OutstandingCheck',
   'FeeNettingMatch',

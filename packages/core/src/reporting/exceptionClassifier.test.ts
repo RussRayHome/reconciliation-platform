@@ -132,6 +132,67 @@ describe('classifyExceptions', () => {
     expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
   });
 
+  it('keeps a WeakDescriptionMatch probable match out of MissingFromBank/MissingFromGL residual reclassification', () => {
+    // Regression test for the load-bearing wiring step of the fuzzy-matching fix: reconcileMatches
+    // itself does NOT remove Probable-matched ids from unmatchedBankTransactionIds/
+    // unmatchedGlTransactionIds (only ExactMatch ids are excluded there) -- exactly the shape this
+    // fixture reproduces below. Without WeakDescriptionMatch in
+    // advisoryReviewCategoriesExcludedFromResidualStages, classifyExceptions would silently
+    // reclassify both sides back to MissingFromGL/MissingFromBank here, defeating the fix.
+    const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
+    const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });
+    const bankEdd = buildTransaction({
+      id: 'bank-edd',
+      source: 'bank',
+      sourceFileId: bankFile.id,
+      spreadsheetFileName: bankFile.fileName,
+      lineNumber: 176,
+      transactionDate: '2025-01-13',
+      amount: -99.56,
+      description: 'ACH CORP DEBIT EDD EFTPMT EMPLOYMENT DEVEL',
+      normalizedComparisonTokens: ['ACH', 'CORP', 'DEBIT', 'EDD', 'EFTPMT', 'EMPLOYMENT', 'DEVEL'],
+    });
+    const glEdd = buildTransaction({
+      id: 'gl-edd',
+      source: 'gl',
+      sourceFileId: glFile.id,
+      spreadsheetFileName: glFile.fileName,
+      lineNumber: 185,
+      transactionDate: '2025-01-13',
+      amount: -99.56,
+      description: 'CAlifornia-EDD STATE TAX PAY-CA',
+      normalizedComparisonTokens: ['CALIFORNIA', 'EDD', 'STATE', 'TAX', 'PAY', 'CA'],
+    });
+    const weakDescriptionMatch = buildMatchResult({
+      disposition: 'ProbableMatch',
+      confidence: 'Probable',
+      ruleName: 'Amount + Date Match, Weak Description',
+      bankTransactionId: bankEdd.id,
+      glTransactionId: glEdd.id,
+      exceptionCategory: 'WeakDescriptionMatch',
+      likelyMatchingReference: glEdd.id,
+    });
+
+    const output = classifyExceptions({
+      runId: 'run-weak-description',
+      sourceFiles: [bankFile, glFile],
+      normalizedTransactions: [bankEdd, glEdd],
+      matchResults: [weakDescriptionMatch],
+      // reconcileMatches genuinely leaves Probable-matched ids in these sets -- reproduced here,
+      // not simplified away, since that's the exact condition the fix depends on.
+      unmatchedBankTransactionIds: new Set<string>(['bank-edd']),
+      unmatchedGlTransactionIds: new Set<string>(['gl-edd']),
+      duplicateTransactionIds: new Set<string>(),
+      reporting: defaultReconciliationConfig.reporting,
+      matching: defaultReconciliationConfig.matching,
+      reconciliationFrequency: 'Monthly',
+    });
+
+    expect(output.exceptions.some((item) => item.category === 'WeakDescriptionMatch')).toBe(true);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromBank')).toBe(false);
+    expect(output.exceptions.some((item) => item.category === 'MissingFromGL')).toBe(false);
+  });
+
   it('does not classify a check as stale before the threshold', () => {
     const glFile = buildSourceFile({ id: 'gl-file', source: 'gl', fileName: 'gl.xlsx' });
     const bankFile = buildSourceFile({ id: 'bank-file', source: 'bank', fileName: 'bank.xlsx' });

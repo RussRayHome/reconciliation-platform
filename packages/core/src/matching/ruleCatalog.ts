@@ -121,6 +121,11 @@ const MATCHING_RULE_METADATA: Record<MatchingRuleName, RuleMetadata> = {
       'probableTextSimilarityThreshold',
     ],
   },
+  'Amount + Date Match, Weak Description': {
+    description:
+      'Second-pass fuzzy match: pairs a same-day, amount-distinctive bank/GL pair left unmatched by every stricter rule above, using only amount, same-day date equality, and a rarity check on the amount -- description similarity informs confidence only, never eligibility. Deliberately scoped to same-day (not the full date tolerance window) so a genuinely conflicting narrative on a >0-day gap is still routed to LikelyMiscoding review instead of being silently downgraded.',
+    varianceMetricIds: ['amountTolerance', 'dateToleranceDays', 'distinctiveAmountMaxOccurrences'],
+  },
   'Amount + Extended Date Window Match': {
     description:
       'Creates a date-variance candidate when amounts agree but date drift falls outside the primary tolerance and inside the extended review window.',
@@ -217,6 +222,7 @@ const CLASSIFIER_CATEGORIES = [
   'CheckNumberMismatch',
   'ReferenceNumberMismatch',
   'DescriptionMerchantVariance',
+  'WeakDescriptionMatch',
   'StaleOutstandingCheck',
   'OutstandingCheck',
   'NSFReturnedDeposit',
@@ -316,6 +322,12 @@ const CLASSIFIER_RULE_METADATA: Record<ClassifierCategory, { name: string } & Ru
     description:
       'Escalates same-amount, same-window candidates into review when merchant or narrative similarity is below exact-match confidence.',
     varianceMetricIds: ['amountTolerance', 'dateToleranceDays', 'textSimilarityThreshold'],
+  },
+  WeakDescriptionMatch: {
+    name: 'Weak Description Match',
+    description:
+      'Escalates second-pass fuzzy amount+date matches into review, since description similarity was too weak to corroborate the pairing on its own.',
+    varianceMetricIds: ['amountTolerance', 'dateToleranceDays', 'distinctiveAmountMaxOccurrences'],
   },
   StaleOutstandingCheck: {
     name: 'Stale Outstanding Check',

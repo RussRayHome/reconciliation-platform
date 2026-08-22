@@ -66,6 +66,7 @@ const defaultSeverityByCategory: Record<ErrorCategory, SeverityLevel> = {
   CheckNumberMismatch: 'Medium',
   ReferenceNumberMismatch: 'Medium',
   DescriptionMerchantVariance: 'Low',
+  WeakDescriptionMatch: 'Medium',
   StaleOutstandingCheck: 'Medium',
   OutstandingCheck: 'Low',
   FeeNettingMatch: 'High',
