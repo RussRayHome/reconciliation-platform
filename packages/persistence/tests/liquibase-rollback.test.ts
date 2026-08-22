@@ -58,14 +58,16 @@ describe('Liquibase rollback', () => {
       // 0051 (re-seeds validation_rule_version rows -- data only, no DDL), 0052 (adds the
       // reconciliation_run_timeline reporting function), 0053 (adds set_updated_at() triggers to
       // five other tables), 0054 (reconciliation_run.skip_invalid_rows_by/_at columns), 0055
-      // (reconciliation_run_timeline function replacement, same signature), and 0056 (relaxes
+      // (reconciliation_run_timeline function replacement, same signature), 0056 (relaxes
       // reconciliation_run_segregation_of_duty_check with a session-GUC OR clause -- a constraint
-      // redefinition, not a column change) all sit on top of it without touching the schema this
-      // test cares about, so rolling back 7 changesets (0056 down through 0050) lands on the same
-      // DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a future changeset
-      // lands here, extend the count again rather than re-pinning this test to a single changeset
-      // number.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=7');
+      // redefinition, not a column change), and 0057 (widens reconciliation_exception/
+      // reconciliation_match_result's category CHECK constraints to add WeakDescriptionMatch --
+      // also a constraint redefinition, not a column change) all sit on top of it without touching
+      // the schema this test cares about, so rolling back 8 changesets (0057 down through 0050)
+      // lands on the same DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a
+      // future changeset lands here, extend the count again rather than re-pinning this test to a
+      // single changeset number.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=8');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -126,7 +128,7 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now thirty-one changesets back from HEAD (0056): 0027 (verify-only), 0028 (adds
+      // 0026 is now thirty-two changesets back from HEAD (0057): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
@@ -146,11 +148,12 @@ describe('Liquibase rollback', () => {
       // reconciliation_user changes), 0053 (adds set_updated_at() triggers to five other tables,
       // no reconciliation_user changes), 0054 (reconciliation_run.skip_invalid_rows_by/_at
       // columns, no reconciliation_user changes), 0055 (replaces the reconciliation_run_timeline
-      // function again, no reconciliation_user changes), and 0056 (redefines
+      // function again, no reconciliation_user changes), 0056 (redefines
       // reconciliation_run_segregation_of_duty_check, a reconciliation_run constraint, no
-      // reconciliation_user changes) all sit on top of it without reversing anything this test
-      // cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=31');
+      // reconciliation_user changes), and 0057 (widens reconciliation_exception/
+      // reconciliation_match_result's category CHECK constraints, no reconciliation_user changes)
+      // all sit on top of it without reversing anything this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=32');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 
