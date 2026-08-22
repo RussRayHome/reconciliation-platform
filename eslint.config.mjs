@@ -22,6 +22,10 @@ export default defineConfig([
       'vitest.config.ts',
       'apps/web/vite.config.ts',
       'scripts/**/*.ts',
+      // k6 scripts run inside k6's own JS engine, not Node or a browser -- __ENV/__VU/__ITER/open()
+      // are real k6 runtime globals (see scripts/perf/k6-golden-path.js's own header comment), not
+      // undefined references. eslint-plugin has no k6 environment definition to declare instead.
+      'scripts/perf/**/*.js',
       'infra/**',
     ],
   },
