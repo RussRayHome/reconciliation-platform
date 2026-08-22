@@ -1059,6 +1059,31 @@ const parseBooleanFlag = (value: string | undefined): boolean | null => {
   return null;
 };
 
+// ZAP finding #161: `cors()` with no options reflects `*` for every request. Real deployments
+// (dev/stage/prod Docker) never need this at all -- the browser only ever talks to the web
+// gateway's own origin, which reverse-proxies /api/* to this service server-side (not subject to
+// CORS, since that's not a browser-initiated cross-origin request). The genuine cross-origin case
+// is local native development/testing, where the Vite dev server (5173) and preview server (4173)
+// run on different ports than this API (4000) -- both are covered by the default below.
+// CORS_ALLOWED_ORIGINS overrides with a comma-separated list for any environment that legitimately
+// needs something else to call this API directly from a browser.
+const resolveCorsAllowedOrigins = (): string[] => {
+  const configured = process.env.CORS_ALLOWED_ORIGINS?.trim();
+  if (configured) {
+    return configured
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0);
+  }
+
+  return [
+    'http://127.0.0.1:5173',
+    'http://localhost:5173',
+    'http://127.0.0.1:4173',
+    'http://localhost:4173',
+  ];
+};
+
 const parsePositiveInteger = (
   value: string | undefined,
   defaultValue: number,
@@ -1573,7 +1598,7 @@ export const createApp = (
   if (parseBooleanFlag(process.env.DISABLE_API_RATE_LIMIT) !== true) {
     app.use(apiRateLimiter.middleware);
   }
-  app.use(cors());
+  app.use(cors({ origin: resolveCorsAllowedOrigins() }));
   app.use(express.json({ limit: '1mb' }));
   app.use(
     pinoHttp({
