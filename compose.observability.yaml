@@ -100,6 +100,13 @@ services:
       # the whole point of feeding load-test results in here is comparing one run against another
       # over time in the same dashboard the app's own metrics already live in.
       - '--web.enable-remote-write-receiver'
+      # Local-only stack (see this file's own header comment -- not exposed beyond localhost, no
+      # real credentials behind it, same trust boundary Grafana's anonymous-admin access already
+      # relies on below). Enables POST /api/v1/admin/tsdb/delete_series -- the only way to purge a
+      # specific stale series (e.g. a scanner/attacker-probed nonexistent route that got recorded
+      # as its own permanent "route" label before apiMetrics.ts's /unmatched fix) without wiping
+      # this Prometheus instance's entire history, including k6's own run-over-run baseline data.
+      - '--web.enable-admin-api'
     restart: unless-stopped
     networks:
       - default

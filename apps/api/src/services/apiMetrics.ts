@@ -43,8 +43,17 @@ const resolveRouteLabel = (request: Request): string => {
     return normalizeRoute(basePath);
   }
 
-  const path = typeof request.path === 'string' ? request.path : '/unknown';
-  return normalizeRoute(path);
+  // Deliberately NOT request.path here. This app sits behind ADR-0002's deny-by-default auth
+  // middleware, reachable from the open internet -- every request to a nonexistent route (a
+  // scanner, an attacker, a stale bookmark, a typo) reaches this middleware with no matched
+  // request.route and no baseUrl, and the raw path is entirely attacker-controlled. Labeling by
+  // it would let anyone inflate this metric's cardinality without bound just by requesting
+  // different bogus URLs -- confirmed live: a pre-#162 ZAP scan against four long-removed
+  // /api/developer/* routes left five permanent, never-again-incrementing Prometheus series
+  // behind, each its own distinct "route" label value. A single fixed sentinel bounds this metric
+  // to real registered routes plus one catch-all bucket, regardless of what garbage traffic the
+  // API receives.
+  return '/unmatched';
 };
 
 export const createApiMetrics = (): ApiMetricsService => {

@@ -222,10 +222,11 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "topk(10, sum by (route) (rate(recon_api_http_requests_total{compose_project=\"$environment\"}[5m])))",
+          "expr": "topk(10, sum by (route) (rate(recon_api_http_requests_total{compose_project=\"$environment\", route!~\"/api/developer.*\"}[5m])))",
           "legendFormat": "{{route}}"
         }
-      ]
+      ],
+      "description": "topk over recon_api_http_requests_total. Excludes /api/developer/* -- those routes were removed months ago (Developer Dashboard re-architecture); historical Prometheus data from pre-#162 ZAP scans against them lives in the head block and can't be durably purged via delete_series until Prometheus's normal ~2h block-cutting cycle promotes it (confirmed live: delete_series+clean_tombstones appeared to work but reverted on container restart). apiMetrics.ts's /unmatched sentinel (Issue #167 follow-up) prevents any new unmatched-route noise going forward; this filter only needs to cover the one known-dead prefix that predates that fix."
     },
     {
       "id": 5,
@@ -842,6 +843,6 @@
   "timezone": "",
   "title": "Reconciliation Platform Overview",
   "uid": "reconciliation-platform-overview",
-  "version": 8,
+  "version": 9,
   "weekStart": ""
 }
