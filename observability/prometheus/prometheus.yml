@@ -9,13 +9,26 @@ global:
 
 scrape_configs:
   # Prometheus's own config format has no env-var substitution (unlike Docker Compose's `${...}`),
-  # so this label is a literal string, not templated -- matches the one real, standing Dev project
-  # name this observability stack is built for (see compose.observability.yaml's own header
-  # comment). Point APP_NETWORK_NAME (compose.observability.yaml) at a different stack's `_app`
-  # network to scrape a different environment; update this label to match if you do.
-  - job_name: recon-api
+  # so these labels are literal strings, not templated -- matches the two real, standing project
+  # names this observability stack is built for (see compose.observability.yaml's own header
+  # comment: it joins both the Dev and Stage `_app` networks). Point APP_NETWORK_NAME/
+  # STAGE_APP_NETWORK_NAME at different stacks to scrape different environments; update these
+  # labels to match if you do. Prometheus itself is one container joined to BOTH the Dev and Stage
+  # app networks at once, so the bare compose-service alias `api` is ambiguous the moment both
+  # networks are joined simultaneously (each network has its own container using that same alias)
+  # -- Docker's embedded DNS can't disambiguate a same-alias lookup across two networks a single
+  # container belongs to. Each stack's actual container name is globally unique on the host, so
+  # target by that instead of the alias.
+  - job_name: recon-api-dev
     metrics_path: /api/metrics
     static_configs:
-      - targets: ['api:4000']
+      - targets: ['reconciliation-platform-dev-api-1:4000']
         labels:
           compose_project: 'reconciliation-platform-dev'
+
+  - job_name: recon-api-stage
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ['reconciliation-platform-stage-api-1:4000']
+        labels:
+          compose_project: 'reconciliation-platform-stage'

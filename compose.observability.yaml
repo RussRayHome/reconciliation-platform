@@ -7,12 +7,14 @@
 # needs to change for this to work.
 #
 # Prometheus is the one exception -- scraping HTTP metrics genuinely requires network reachability
-# to the target, unlike Promtail's socket-based log tailing. It joins the app stack's own `app`
-# network (declared `external` below, referencing the real Dev deploy's network by name) purely to
-# reach `api:4000/api/metrics` -- still no `depends_on`/build coupling in either direction, and
-# still nothing in the app stack needs to change or know this exists. Requires the real Dev stack
-# (`reconciliation-platform-dev`, via `npm run docker:deploy`) to already be running -- Prometheus
-# will just show its target as down otherwise, which doesn't block anything else in this file.
+# to the target, unlike Promtail's socket-based log tailing. It joins both the Dev and Stage app
+# networks (declared `external` below) purely to reach each stack's `api:4000/api/metrics` -- still
+# no `depends_on`/build coupling in either direction, and still nothing in either app stack needs to
+# change or know this exists. Requires the real Dev/Stage stacks (`npm run docker:deploy[:stage]`)
+# to already be running -- Prometheus will just show whichever target as down otherwise, which
+# doesn't block anything else in this file. The dashboard's own `$environment` variable already
+# expected both (every panel already filters on `compose_project="$environment"`) -- only the
+# single-network Prometheus scrape config was actually Dev-only before this.
 #
 # Usage:
 #   docker compose -f compose.observability.yaml up -d
@@ -27,9 +29,15 @@ name: recon-observability
 networks:
   # References the real Dev deploy's `app` network by its actual Compose-generated name
   # (`${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}_app` in compose.yaml) -- override
-  # APP_NETWORK_NAME to point this at a different stack (e.g. an isolated test deploy) instead.
+  # APP_NETWORK_NAME to point this at a different Dev-slot stack instead.
   recon-app:
     name: ${APP_NETWORK_NAME:-reconciliation-platform-dev_app}
+    external: true
+  # Same idea, Stage's own network (compose.stage.yaml). Override STAGE_APP_NETWORK_NAME the same
+  # way. k6 load-test runs (scripts/pre-flight/k6-load-test.sh) also join this network, so their
+  # results can reach this same Prometheus instance via remote-write without a third network hop.
+  recon-stage-app:
+    name: ${STAGE_APP_NETWORK_NAME:-reconciliation-platform-stage_app}
     external: true
 
 services:
@@ -87,10 +95,16 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      # Lets k6 (scripts/pre-flight/k6-load-test.sh) push its own run metrics in as time series via
+      # --out experimental-prometheus-rw, rather than only ever reading a one-off JSON summary --
+      # the whole point of feeding load-test results in here is comparing one run against another
+      # over time in the same dashboard the app's own metrics already live in.
+      - '--web.enable-remote-write-receiver'
     restart: unless-stopped
     networks:
       - default
       - recon-app
+      - recon-stage-app
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - recon-observability-prometheus-data:/prometheus
