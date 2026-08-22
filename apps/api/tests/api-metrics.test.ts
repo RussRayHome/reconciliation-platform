@@ -57,7 +57,7 @@ describe('createApiMetrics', () => {
     expect(rendered.body).toContain('route="/api"');
   });
 
-  it('falls back to the request path when neither a route nor a mount path is available', async () => {
+  it('labels a request with neither a matched route nor a mount path as "/unmatched", not the raw path', async () => {
     const metrics = createApiMetrics();
     const app = express();
     app.use(metrics.middleware);
@@ -66,7 +66,34 @@ describe('createApiMetrics', () => {
     await request(app).get('/totally-unmatched').expect(200);
 
     const rendered = await metrics.render();
-    expect(rendered.body).toContain('route="/totally-unmatched"');
+    expect(rendered.body).toContain('route="/unmatched"');
+    expect(rendered.body).not.toContain('route="/totally-unmatched"');
+  });
+
+  it('collapses every unmatched path into the same "/unmatched" series, not one series per path', async () => {
+    // This app sits behind deny-by-default auth, reachable from the open internet -- labeling by
+    // the raw request path would let a scanner (or anyone probing bogus URLs) inflate this
+    // metric's cardinality without bound. Confirmed live: a ZAP scan against four long-removed
+    // routes left five permanent, distinct "route" label values behind in production Prometheus
+    // data before this fix.
+    const metrics = createApiMetrics();
+    const app = express();
+    app.use(metrics.middleware);
+    app.use((_request, response) => response.status(200).send('ok'));
+
+    await request(app).get('/scanner-probe-one').expect(200);
+    await request(app).get('/completely-different-bogus-path').expect(200);
+    await request(app).get('/yet-another-nonexistent-route').expect(200);
+
+    const rendered = await metrics.render();
+    const unmatchedLine = rendered.body
+      .split('\n')
+      .find((line) => line.startsWith('recon_api_http_requests_total{') && line.includes('route="/unmatched"'));
+
+    expect(unmatchedLine).toContain('} 3');
+    expect(rendered.body).not.toContain('scanner-probe-one');
+    expect(rendered.body).not.toContain('completely-different-bogus-path');
+    expect(rendered.body).not.toContain('yet-another-nonexistent-route');
   });
 
   it('increments the request-errors counter only for 5xx responses', async () => {
