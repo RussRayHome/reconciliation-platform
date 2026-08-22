@@ -121,6 +121,56 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.exceptionCategory).toBe('DateVariance');
   });
 
+  it('does not classify a same-day, same-amount pair as DateVariance just because text similarity is low', () => {
+    // Regression test: the "Amount + Extended Date Window Match" branch previously checked only
+    // dateDifference <= timingDifferenceDays, with no lower bound requiring the date to actually
+    // be outside the primary tolerance. A same-day pair whose text similarity falls below even
+    // reviewSimilarityThreshold (real example: bank ACH remittance text vs. a terse GL memo like
+    // "RENT OR LEASE") fell through every text-gated branch above on text grounds, not date
+    // grounds, and landed here — mislabeled DateVariance despite a 0-day difference. Confirmed
+    // directly against real production data (Jan 2025 Premier Electrical Staffing dataset,
+    // 864 transactions): before this fix, 208/208 of that dataset's "DateVariance" exceptions
+    // had a 0-day counterpart date; after, 0/1. A decoy same-amount GL transaction is included
+    // below so this reduced 2-vs-3-transaction case isn't instead absorbed by the separate
+    // "distinctive short-context" exact-match bypass (isDistinctiveShortContextExactMatch),
+    // which requires the amount to occur at most once per side — not the behavior under test.
+    const bank = buildTransaction({
+      id: 'bank-same-day-low-similarity',
+      source: 'bank',
+      lineNumber: 13,
+      transactionDate: '2025-01-02',
+      description: 'ACH CORP DEBIT SIGONFILE BKMCAPITAL-927DE Premier Electrical StaCUSTOMER ID 5V32QH',
+      normalizedComparisonTokens: ['ach', 'corp', 'debit', 'sigonfile', 'bkmcapital', '927de'],
+      amount: -1675,
+    });
+    const gl = buildTransaction({
+      id: 'gl-same-day-low-similarity',
+      source: 'gl',
+      lineNumber: 4,
+      transactionDate: '2025-01-02',
+      description: 'RENT OR LEASE',
+      normalizedComparisonTokens: ['rent', 'lease'],
+      amount: -1675,
+    });
+    const glDecoy = buildTransaction({
+      id: 'gl-same-amount-decoy',
+      source: 'gl',
+      lineNumber: 400,
+      transactionDate: '2025-01-30',
+      description: 'RENT OR LEASE',
+      normalizedComparisonTokens: ['rent', 'lease'],
+      amount: -1675,
+    });
+
+    const result = reconcileMatches([bank, gl, glDecoy], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults.some((match) => match.exceptionCategory === 'DateVariance')).toBe(
+      false,
+    );
+    expect(result.unmatchedBankTransactionIds.has('bank-same-day-low-similarity')).toBe(true);
+    expect(result.unmatchedGlTransactionIds.has('gl-same-day-low-similarity')).toBe(true);
+  });
+
   it('produces a probable match with CheckNumberMismatch when check numbers differ but amounts and text align', () => {
     const bank = buildTransaction({
       id: 'bank-check-var',

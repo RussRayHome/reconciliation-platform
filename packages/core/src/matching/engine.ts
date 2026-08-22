@@ -620,8 +620,13 @@ const rankCandidates = (
         continue;
       }
 
+      // The lower-bound check is load-bearing, not redundant with the branches above: a same-day,
+      // same-amount pair with text similarity below even reviewSimilarityThreshold falls through
+      // every earlier branch on text grounds, not date grounds, and would otherwise land here and
+      // get mislabeled DateVariance despite dateDifference being 0.
       if (
         sameAmount &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) > config.dateToleranceDays &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
         candidates.push(
