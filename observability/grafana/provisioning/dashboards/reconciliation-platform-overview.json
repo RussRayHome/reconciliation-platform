@@ -425,7 +425,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum by (compose_service) (count_over_time({compose_project=\"$environment\", level=\"error\"}[$__interval]))",
+          "expr": "sum by (compose_service) (count_over_time({compose_project=\"$environment\", level=~\"50|60\"}[$__interval]))",
           "legendFormat": "{{compose_service}}"
         }
       ]
@@ -662,7 +662,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{compose_project=\"$environment\", level=\"error\"} | json",
+          "expr": "{compose_project=\"$environment\", level=~\"50|60\"} | json",
           "queryType": "range",
           "maxLines": 1000
         }
@@ -843,6 +843,6 @@
   "timezone": "",
   "title": "Reconciliation Platform Overview",
   "uid": "reconciliation-platform-overview",
-  "version": 9,
+  "version": 10,
   "weekStart": ""
 }
