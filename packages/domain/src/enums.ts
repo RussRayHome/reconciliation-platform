@@ -117,9 +117,13 @@ export const errorCategories = [
 /** Union of all assignable exception category strings. */
 export type ErrorCategory = (typeof errorCategories)[number];
 
-/** Identifiers for the two pre-built chart series included in every reconciliation summary. */
-export const chartIdentifiers = ['countByCategory', 'exposureByCategory'] as const;
-/** Union of the two chart series identifiers included in every reconciliation summary. */
+/** Identifiers for the pre-built chart series included in every reconciliation summary. */
+export const chartIdentifiers = [
+  'countByCategory',
+  'exposureByCategory',
+  'outstandingCheckAging',
+] as const;
+/** Union of the chart series identifiers included in every reconciliation summary. */
 export type ChartIdentifier = (typeof chartIdentifiers)[number];
 
 /** Lifecycle status of a mapping profile or one of its versions. */

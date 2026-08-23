@@ -95,6 +95,7 @@ export const createException = (params: {
   ruleTrace?: ExceptionRuleTrace;
   priorRuleTraces?: ExceptionItem['priorRuleTraces'];
   customMessage?: string;
+  ageInDays?: number;
 }): ExceptionItem => ({
   id: randomUUID(),
   runId: params.runId,
@@ -105,6 +106,7 @@ export const createException = (params: {
   lineNumber: params.transaction.lineNumber,
   transactionDate: params.transaction.transactionDate ?? params.transaction.postingDate,
   amount: params.transaction.amount,
+  ageInDays: params.ageInDays,
   errorMessage: params.customMessage ?? professionalErrorMessages[params.category],
   ruleTrace: params.ruleTrace,
   priorRuleTraces: params.priorRuleTraces,

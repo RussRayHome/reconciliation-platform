@@ -273,6 +273,7 @@ const classifyStaleOutstandingChecksStage = (params: ResidualStageParams): Set<s
         category: 'StaleOutstandingCheck',
         reporting,
         matchConfidence: 'Unmatched',
+        ageInDays,
         ruleTrace: buildExceptionRuleTrace(
           'stale-outstanding-check',
           'Stale Outstanding Check',
@@ -343,6 +344,7 @@ const classifyOutstandingChecksStage = (
         category: 'OutstandingCheck',
         reporting,
         matchConfidence: 'Unmatched',
+        ageInDays,
         ruleTrace: buildExceptionRuleTrace(
           'outstanding-check',
           'Outstanding Check',

@@ -21,12 +21,19 @@ describe('GET /api/rules/catalog', () => {
     };
 
     expect(body.rules.length).toBeGreaterThan(0);
-    expect(body.metrics).toHaveLength(17);
+    expect(body.metrics).toHaveLength(18);
 
     const wireFeeRule = body.rules.find((rule) => rule.name === 'Wire Correspondent Fee Deduction');
     expect(wireFeeRule).toBeDefined();
     expect(wireFeeRule?.risk).toBe('elevated');
     expect(wireFeeRule?.varianceMetricIds).toContain('wireFeeTolerance');
+
+    const creditCardFeeRule = body.rules.find(
+      (rule) => rule.name === 'Credit Card Service Fee Deduction',
+    );
+    expect(creditCardFeeRule).toBeDefined();
+    expect(creditCardFeeRule?.risk).toBe('elevated');
+    expect(creditCardFeeRule?.varianceMetricIds).toContain('creditCardFeeTolerance');
 
     // A rule with no adjustable metric is present with tunable:false, not omitted.
     const untunable = body.rules.find((rule) => rule.varianceMetricIds.length === 0);
@@ -38,6 +45,7 @@ describe('GET /api/rules/catalog', () => {
       'groupedCandidatePoolSize',
       'groupedMatchMaxSize',
       'wireFeeTolerance',
+      'creditCardFeeTolerance',
     ]) {
       expect(body.metrics.some((metric) => metric.id === knob)).toBe(true);
     }

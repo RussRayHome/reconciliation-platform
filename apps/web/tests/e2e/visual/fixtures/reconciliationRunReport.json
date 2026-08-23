@@ -348,6 +348,28 @@
             "value": 3325.5
           }
         ]
+      },
+      {
+        "id": "outstandingCheckAging",
+        "title": "Outstanding Check Aging",
+        "data": [
+          {
+            "label": "0-5 days",
+            "value": 2
+          },
+          {
+            "label": "6-30 days",
+            "value": 1
+          },
+          {
+            "label": "31-60 days",
+            "value": 1
+          },
+          {
+            "label": "60+ days",
+            "value": 1
+          }
+        ]
       }
     ]
   },

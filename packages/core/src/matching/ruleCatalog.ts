@@ -36,6 +36,7 @@ const METRIC_RANGES: Record<keyof MatchingConfig, MetricRange> = {
   depositInTransitDays: { unit: 'days', min: 0, max: 30 },
   partialPaymentWindowDays: { unit: 'days', min: 0, max: 180 },
   wireFeeTolerance: { unit: 'USD', min: 0, max: 5000 },
+  creditCardFeeTolerance: { unit: 'percent', min: 0, max: 0.15 },
 };
 
 const buildMetrics = (): RuleVarianceMetric[] =>
@@ -135,6 +136,12 @@ const MATCHING_RULE_METADATA: Record<MatchingRuleName, RuleMetadata> = {
     description:
       'Flags a same-direction, strongly-matching pair whose amount difference is within the wire-fee tolerance as a likely correspondent-bank or processing fee deducted in transit.',
     varianceMetricIds: ['dateToleranceDays', 'wireFeeTolerance', 'textSimilarityThreshold'],
+    risk: 'elevated',
+  },
+  'Credit Card Service Fee Deduction': {
+    description:
+      'Flags a same-direction, strongly-matching pair whose percentage amount difference is within the credit-card fee tolerance as a likely card processor or merchant services fee deducted before settlement.',
+    varianceMetricIds: ['dateToleranceDays', 'creditCardFeeTolerance', 'textSimilarityThreshold'],
     risk: 'elevated',
   },
   'FX Rate Variance': {
