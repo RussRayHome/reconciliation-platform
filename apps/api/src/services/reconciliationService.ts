@@ -55,6 +55,10 @@ interface RunReconciliationPipelineInput {
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
+  /** The run's declared period end (`reconciliation_run.period_end`), ISO date string -- see
+   * `ExceptionClassifierInput.declaredAnchorDate`'s doc comment. Undefined for a caller with no
+   * declared period end yet (the pre-File-Imports pipeline, or a run predating this column). */
+  declaredAnchorDate?: string;
   aliases: PayeeAlias[];
   t0: number;
   log: pino.Logger;
@@ -104,6 +108,7 @@ const runReconciliationPipeline = async ({
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
+  declaredAnchorDate,
   aliases,
   t0,
   log,
@@ -289,6 +294,7 @@ const runReconciliationPipeline = async ({
       reporting: config.reporting,
       matching: config.matching,
       reconciliationFrequency,
+      declaredAnchorDate,
     });
     const exceptionsByCategory = exceptionOutput.exceptions.reduce<Record<string, number>>(
       (acc, exception) => {
@@ -467,6 +473,11 @@ export interface ExecuteReconciliationFromNormalizedInput {
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
+  /** See `RunReconciliationPipelineInput.declaredAnchorDate`'s doc comment. Only the Import flow
+   * (`triggerMatchingForImportRun`) has a `reconciliation_run.period_end` to supply here today --
+   * the standalone atomic route has no declared period at all, so it always passes undefined and
+   * keeps today's derived-anchor behavior exactly as it is. */
+  declaredAnchorDate?: string;
   aliases?: PayeeAlias[];
   /** See `RunReconciliationPipelineInput.onStep`'s doc comment. */
   onStep?: QueueStepReporter;
@@ -493,6 +504,7 @@ export const executeReconciliationFromNormalized = async ({
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
+  declaredAnchorDate,
   aliases = [],
   onStep,
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
@@ -528,6 +540,7 @@ export const executeReconciliationFromNormalized = async ({
     accountIdentifier,
     reconciliationFrequency,
     periodLabel,
+    declaredAnchorDate,
     aliases,
     t0,
     log,

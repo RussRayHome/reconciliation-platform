@@ -67,6 +67,7 @@ export const runReconciliation = async (
     reporting: input.config.reporting,
     matching: input.config.matching,
     reconciliationFrequency: input.reconciliationFrequency,
+    declaredAnchorDate: input.declaredAnchorDate,
   });
   appendAuditEvent('reconciliation.classify.completed', {
     exceptionCount: exceptionOutput.exceptions.length,

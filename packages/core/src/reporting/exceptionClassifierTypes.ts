@@ -131,6 +131,11 @@ export interface ResidualStageParams {
   normalizedTransactions: NormalizedTransaction[];
   upsertTransactionException: UpsertTransactionException;
   engineReservedGroups: GroupedMatchResult[];
+  /** The run's declared period end (`reconciliation_run.period_end`), ISO date string. When
+   * present, this is the reconciliation anchor date every exception's `ageInDays` is computed
+   * against, in preference to the derived max(transactionDate) fallback -- see
+   * buildReconciliationAnchorDate's own doc comment for why. */
+  declaredAnchorDate?: string;
 }
 
 export interface ResidualStageState {

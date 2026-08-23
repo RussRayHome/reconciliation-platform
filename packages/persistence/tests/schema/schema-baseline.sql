@@ -6,9 +6,9 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(1396);
+SELECT plan(1448);
 
-SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
+SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
 SELECT col_is_pk('public', 'canonical_record', ARRAY['id']::name[], 'canonical_record primary key');
 SELECT indexes_are('public', 'canonical_record', ARRAY['canonical_record_counterparty_id_idx', 'normalized_record_account_txn_date_idx', 'normalized_record_organization_idx', 'normalized_record_pkey', 'normalized_record_reconciliation_run_idx', 'normalized_record_signed_amount_idx']::name[], 'canonical_record has exactly the expected indexes');
@@ -310,6 +310,39 @@ mapping_rule_version_source_type_check => CHECK (((source_type IS NULL) OR (sour
 mapping_rule_version_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'DEPRECATED'::text])))
 mapping_rule_version_version_number_check => CHECK ((version_number > 0))$chk$,
   'mapping_rule_version check/unique/exclusion constraints'
+);
+SELECT columns_are('public', 'reconciliation_account', ARRAY['id', 'organization_id', 'account_identifier', 'institution_name', 'display_name', 'currency_code', 'is_active', 'created_at', 'updated_at']::name[], 'reconciliation_account has exactly the expected columns');
+SELECT col_is_pk('public', 'reconciliation_account', ARRAY['id']::name[], 'reconciliation_account primary key');
+SELECT indexes_are('public', 'reconciliation_account', ARRAY['reconciliation_account_org_identifier_key', 'reconciliation_account_organization_idx', 'reconciliation_account_pkey']::name[], 'reconciliation_account has exactly the expected indexes');
+SELECT is(
+  (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_account' AND relnamespace = 'public'::regnamespace),
+  true,
+  'reconciliation_account has row-level security enabled'
+);
+SELECT col_type_is('public', 'reconciliation_account', 'id', 'uuid', 'reconciliation_account.id is uuid');
+SELECT col_not_null('public', 'reconciliation_account', 'id', 'reconciliation_account.id is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_account', 'organization_id', 'uuid', 'reconciliation_account.organization_id is uuid');
+SELECT col_not_null('public', 'reconciliation_account', 'organization_id', 'reconciliation_account.organization_id is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_account', 'account_identifier', 'text', 'reconciliation_account.account_identifier is text');
+SELECT col_not_null('public', 'reconciliation_account', 'account_identifier', 'reconciliation_account.account_identifier is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_account', 'institution_name', 'text', 'reconciliation_account.institution_name is text');
+SELECT col_is_null('public', 'reconciliation_account', 'institution_name', 'reconciliation_account.institution_name is nullable');
+SELECT col_type_is('public', 'reconciliation_account', 'display_name', 'text', 'reconciliation_account.display_name is text');
+SELECT col_is_null('public', 'reconciliation_account', 'display_name', 'reconciliation_account.display_name is nullable');
+SELECT col_type_is('public', 'reconciliation_account', 'currency_code', 'text', 'reconciliation_account.currency_code is text');
+SELECT col_not_null('public', 'reconciliation_account', 'currency_code', 'reconciliation_account.currency_code is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_account', 'is_active', 'boolean', 'reconciliation_account.is_active is boolean');
+SELECT col_not_null('public', 'reconciliation_account', 'is_active', 'reconciliation_account.is_active is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_account', 'created_at', 'timestamp with time zone', 'reconciliation_account.created_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_account', 'created_at', 'reconciliation_account.created_at is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_account', 'updated_at', 'timestamp with time zone', 'reconciliation_account.updated_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_account', 'updated_at', 'reconciliation_account.updated_at is NOT NULL');
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.reconciliation_account'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$reconciliation_account_org_identifier_key => UNIQUE (organization_id, account_identifier)$chk$,
+  'reconciliation_account check/unique/exclusion constraints'
 );
 SELECT columns_are('public', 'reconciliation_approval_history', ARRAY['id', 'approval_id', 'from_status', 'to_status', 'actor', 'note', 'created_at', 'organization_id']::name[], 'reconciliation_approval_history has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_approval_history', ARRAY['id']::name[], 'reconciliation_approval_history primary key');
@@ -1318,7 +1351,7 @@ SELECT is(
   $chk$reconciliation_rule_result_target_kind_check => CHECK ((target_kind = ANY (ARRAY['MATCH_RESULT'::text, 'MATCH_GROUP'::text, 'EXCEPTION_ITEM'::text])))$chk$,
   'reconciliation_rule_result check/unique/exclusion constraints'
 );
-SELECT columns_are('public', 'reconciliation_run', ARRAY['id', 'organization_id', 'label', 'account_identifier', 'frequency', 'period_year', 'period_month', 'status', 'submitted_by', 'submitted_at', 'decided_by', 'decided_at', 'decision_note', 'excluded_row_count', 'created_at', 'matching_job_id', 'skip_invalid_rows_by', 'skip_invalid_rows_at']::name[], 'reconciliation_run has exactly the expected columns');
+SELECT columns_are('public', 'reconciliation_run', ARRAY['id', 'organization_id', 'label', 'account_identifier', 'frequency', 'period_year', 'period_month', 'status', 'submitted_by', 'submitted_at', 'decided_by', 'decided_at', 'decision_note', 'excluded_row_count', 'created_at', 'matching_job_id', 'skip_invalid_rows_by', 'skip_invalid_rows_at', 'period_start', 'period_end']::name[], 'reconciliation_run has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_run', ARRAY['id']::name[], 'reconciliation_run primary key');
 SELECT indexes_are('public', 'reconciliation_run', ARRAY['reconciliation_run_matching_job_idx', 'reconciliation_run_organization_idx', 'reconciliation_run_pkey', 'reconciliation_run_status_submitted_by_idx']::name[], 'reconciliation_run has exactly the expected indexes');
 SELECT is(
@@ -1362,15 +1395,51 @@ SELECT col_type_is('public', 'reconciliation_run', 'skip_invalid_rows_by', 'uuid
 SELECT col_is_null('public', 'reconciliation_run', 'skip_invalid_rows_by', 'reconciliation_run.skip_invalid_rows_by is nullable');
 SELECT col_type_is('public', 'reconciliation_run', 'skip_invalid_rows_at', 'timestamp with time zone', 'reconciliation_run.skip_invalid_rows_at is timestamp with time zone');
 SELECT col_is_null('public', 'reconciliation_run', 'skip_invalid_rows_at', 'reconciliation_run.skip_invalid_rows_at is nullable');
+SELECT col_type_is('public', 'reconciliation_run', 'period_start', 'date', 'reconciliation_run.period_start is date');
+SELECT col_is_null('public', 'reconciliation_run', 'period_start', 'reconciliation_run.period_start is nullable');
+SELECT col_type_is('public', 'reconciliation_run', 'period_end', 'date', 'reconciliation_run.period_end is date');
+SELECT col_is_null('public', 'reconciliation_run', 'period_end', 'reconciliation_run.period_end is nullable');
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
      FROM pg_constraint con
     WHERE con.conrelid = 'public.reconciliation_run'::regclass AND con.contype IN ('c', 'u', 'x')),
   $chk$reconciliation_run_frequency_check => CHECK ((frequency = ANY (ARRAY['MONTHLY'::text, 'ANNUAL'::text])))
 reconciliation_run_period_month_check => CHECK (((period_month IS NULL) OR ((period_month >= 1) AND (period_month <= 12))))
+reconciliation_run_period_start_before_end_check => CHECK (((period_end IS NULL) OR (period_start IS NULL) OR (period_end >= period_start)))
 reconciliation_run_segregation_of_duty_check => CHECK (((decided_by IS NULL) OR (submitted_by IS DISTINCT FROM decided_by) OR (COALESCE(current_setting('app.allow_self_approval'::text, true), 'false'::text) = 'true'::text)))
 reconciliation_run_status_check => CHECK ((status = ANY (ARRAY['DRAFT'::text, 'VALIDATING'::text, 'VALIDATION_FAILED'::text, 'PENDING_APPROVAL'::text, 'APPROVED'::text, 'RECONCILING'::text, 'RECONCILED'::text, 'REJECTED'::text])))$chk$,
   'reconciliation_run check/unique/exclusion constraints'
+);
+SELECT columns_are('public', 'reconciliation_run_account', ARRAY['id', 'organization_id', 'reconciliation_run_id', 'account_id', 'created_at', 'period_year', 'period_month', 'is_terminal_good']::name[], 'reconciliation_run_account has exactly the expected columns');
+SELECT col_is_pk('public', 'reconciliation_run_account', ARRAY['id']::name[], 'reconciliation_run_account primary key');
+SELECT indexes_are('public', 'reconciliation_run_account', ARRAY['reconciliation_run_account_account_idx', 'reconciliation_run_account_organization_idx', 'reconciliation_run_account_period_reconciled_key', 'reconciliation_run_account_pkey', 'reconciliation_run_account_run_account_key', 'reconciliation_run_account_run_idx']::name[], 'reconciliation_run_account has exactly the expected indexes');
+SELECT is(
+  (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_run_account' AND relnamespace = 'public'::regnamespace),
+  true,
+  'reconciliation_run_account has row-level security enabled'
+);
+SELECT col_type_is('public', 'reconciliation_run_account', 'id', 'uuid', 'reconciliation_run_account.id is uuid');
+SELECT col_not_null('public', 'reconciliation_run_account', 'id', 'reconciliation_run_account.id is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_run_account', 'organization_id', 'uuid', 'reconciliation_run_account.organization_id is uuid');
+SELECT col_not_null('public', 'reconciliation_run_account', 'organization_id', 'reconciliation_run_account.organization_id is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_run_account', 'reconciliation_run_id', 'uuid', 'reconciliation_run_account.reconciliation_run_id is uuid');
+SELECT col_not_null('public', 'reconciliation_run_account', 'reconciliation_run_id', 'reconciliation_run_account.reconciliation_run_id is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_run_account', 'account_id', 'uuid', 'reconciliation_run_account.account_id is uuid');
+SELECT col_not_null('public', 'reconciliation_run_account', 'account_id', 'reconciliation_run_account.account_id is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_run_account', 'created_at', 'timestamp with time zone', 'reconciliation_run_account.created_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_run_account', 'created_at', 'reconciliation_run_account.created_at is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_run_account', 'period_year', 'integer', 'reconciliation_run_account.period_year is integer');
+SELECT col_not_null('public', 'reconciliation_run_account', 'period_year', 'reconciliation_run_account.period_year is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_run_account', 'period_month', 'integer', 'reconciliation_run_account.period_month is integer');
+SELECT col_is_null('public', 'reconciliation_run_account', 'period_month', 'reconciliation_run_account.period_month is nullable');
+SELECT col_type_is('public', 'reconciliation_run_account', 'is_terminal_good', 'boolean', 'reconciliation_run_account.is_terminal_good is boolean');
+SELECT col_not_null('public', 'reconciliation_run_account', 'is_terminal_good', 'reconciliation_run_account.is_terminal_good is NOT NULL');
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.reconciliation_run_account'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$reconciliation_run_account_run_account_key => UNIQUE (reconciliation_run_id, account_id)$chk$,
+  'reconciliation_run_account check/unique/exclusion constraints'
 );
 SELECT columns_are('public', 'reconciliation_source_file', ARRAY['id', 'job_id', 'source_system', 'source_format', 'file_name', 'mime_type', 'size_bytes', 'sha256', 'storage_uri', 'worksheet_name', 'header_row', 'transaction_start_row', 'excluded_row_numbers', 'imported_row_count', 'uploaded_at', 'created_at', 'updated_at', 'organization_id', 'uploaded_by', 'approval_status', 'ingestion_mode']::name[], 'reconciliation_source_file has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_source_file', ARRAY['id']::name[], 'reconciliation_source_file primary key');
@@ -1759,6 +1828,7 @@ SELECT fk_ok('public', 'import_file_content', ARRAY['import_file_id']::name[], '
 SELECT fk_ok('public', 'import_file_content', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'import_job', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'import_job', ARRAY['reconciliation_run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_account', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_approval_history', ARRAY['actor']::name[], 'public', 'reconciliation_user', ARRAY['user_name']::name[]);
 SELECT fk_ok('public', 'reconciliation_approval_history', ARRAY['approval_id']::name[], 'public', 'reconciliation_import_approval', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_approval_history', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
@@ -1822,6 +1892,9 @@ SELECT fk_ok('public', 'reconciliation_run', ARRAY['matching_job_id']::name[], '
 SELECT fk_ok('public', 'reconciliation_run', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_run', ARRAY['skip_invalid_rows_by']::name[], 'public', 'reconciliation_user', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_run', ARRAY['submitted_by']::name[], 'public', 'reconciliation_user', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_run_account', ARRAY['account_id']::name[], 'public', 'reconciliation_account', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_run_account', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_run_account', ARRAY['reconciliation_run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_source_file', ARRAY['job_id']::name[], 'public', 'reconciliation_job', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_source_file', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_source_file', ARRAY['uploaded_by']::name[], 'public', 'reconciliation_user', ARRAY['user_name']::name[]);

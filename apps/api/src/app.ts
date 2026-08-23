@@ -772,6 +772,10 @@ const triggerMatchingForImportRun = async (input: {
   sessionId?: string;
   /** See reconciliationService.ts's `RunReconciliationPipelineInput.onStep` doc comment. */
   onStep?: QueueStepReporter;
+  /** The `reconciliation_run.period_end` this import run declared at submission (changeset 0061),
+   * ISO date string -- see `ExecuteReconciliationFromNormalizedInput.declaredAnchorDate`'s doc
+   * comment. Both callers below fetch it from the run row before calling this function. */
+  declaredAnchorDate?: string;
 }): Promise<{ matchingJobId: string }> => {
   const correlationId = randomUUID();
 
@@ -853,6 +857,7 @@ const triggerMatchingForImportRun = async (input: {
     normalizedTransactions,
     aliases,
     onStep: input.onStep,
+    declaredAnchorDate: input.declaredAnchorDate,
   });
 
   input.repository.save(run);
@@ -905,7 +910,7 @@ export const processImportValidationJob = async (input: {
       importRunStore: new PostgresImportRunStore(input.pool),
       importValidationStore,
       onStep: input.onStep,
-      triggerMatching: (files) =>
+      triggerMatching: ({ declaredAnchorDate, ...files }) =>
         triggerMatchingForImportRun({
           files,
           organizationId: input.organizationId,
@@ -915,6 +920,7 @@ export const processImportValidationJob = async (input: {
           requestLog: log,
           sessionId: input.sessionId,
           onStep: input.onStep,
+          declaredAnchorDate,
         }),
     });
 
@@ -3499,6 +3505,7 @@ export const createApp = (
         pool: pool!,
         requestLog: request.log,
         sessionId: request.auth!.jti,
+        declaredAnchorDate: summary!.periodEnd ?? undefined,
       });
 
       await importValidationStore.recordMatchingJobId(organizationId, runId, matchingJobId);

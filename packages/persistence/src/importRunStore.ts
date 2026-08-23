@@ -86,6 +86,11 @@ export interface ImportRunSummary {
   frequency: 'MONTHLY' | 'ANNUAL';
   periodYear: number;
   periodMonth: number | null;
+  /** Declared period end (`reconciliation_run.period_end`, changeset 0061), ISO date string --
+   * the reconciliation anchor date the matching engine ages every exception against, in
+   * preference to the derived max(transactionDate) fallback. Null only for a run created before
+   * this column existed and never backfilled. */
+  periodEnd: string | null;
   status: string;
   createdAt: string;
   matchingJobId: string | null;
@@ -150,11 +155,25 @@ export class PostgresImportRunStore {
       }
 
       const runId = randomUUID();
-      const runResult = await client.query<{ created_at: string; status: string }>(
+      // period_start/period_end are computed here with the exact same derivation changeset 0061's
+      // backfill used (first/last calendar day of the month for MONTHLY, Jan 1/Dec 31 for ANNUAL)
+      // -- new runs get a declared period end from day one rather than relying on a later
+      // backfill pass, since this is what the matching engine's reconciliation anchor date now
+      // prefers over the derived max(transactionDate) fallback (Unreconciled Item Roll-Forward
+      // PR A, exceptionClassifierStages.ts's buildReconciliationAnchorDate).
+      const runResult = await client.query<{ created_at: string; status: string; period_end: string }>(
         `INSERT INTO reconciliation_run
-           (id, organization_id, label, account_identifier, frequency, period_year, period_month)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING created_at, status`,
+           (id, organization_id, label, account_identifier, frequency, period_year, period_month,
+            period_start, period_end)
+         VALUES (
+           $1, $2, $3, $4, $5, $6, $7,
+           CASE WHEN $5 = 'ANNUAL' THEN make_date($6, 1, 1) ELSE make_date($6, $7, 1) END,
+           CASE
+             WHEN $5 = 'ANNUAL' THEN make_date($6, 12, 31)
+             ELSE (make_date($6, $7, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date
+           END
+         )
+         RETURNING created_at, status, period_end::text`,
         [
           runId,
           input.organizationId,
@@ -185,6 +204,7 @@ export class PostgresImportRunStore {
         frequency: input.frequency,
         periodYear: input.periodYear,
         periodMonth: input.periodMonth ?? null,
+        periodEnd: runRow.period_end,
         status: runRow.status,
         createdAt: runRow.created_at,
         matchingJobId: null,
@@ -253,6 +273,7 @@ export class PostgresImportRunStore {
       frequency: 'MONTHLY' | 'ANNUAL';
       period_year: number;
       period_month: number | null;
+      period_end: string | null;
       status: string;
       created_at: string;
       matching_job_id: string | null;
@@ -262,7 +283,7 @@ export class PostgresImportRunStore {
       job_completed_at: string | null;
     }>(
       `SELECT r.id, r.label, r.account_identifier, r.frequency, r.period_year, r.period_month,
-              r.status, r.created_at, r.matching_job_id,
+              r.period_end::text, r.status, r.created_at, r.matching_job_id,
               j.current_state AS job_current_state, j.failure_code AS job_failure_code,
               j.failure_message AS job_failure_message, j.completed_at AS job_completed_at
          FROM reconciliation_run r
@@ -315,6 +336,7 @@ export class PostgresImportRunStore {
       frequency: runRow.frequency,
       periodYear: runRow.period_year,
       periodMonth: runRow.period_month,
+      periodEnd: runRow.period_end,
       status: runRow.status,
       createdAt: runRow.created_at,
       matchingJobId: runRow.matching_job_id,

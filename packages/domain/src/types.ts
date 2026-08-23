@@ -558,6 +558,12 @@ export interface ReconciliationInput {
   accountIdentifier?: string;
   periodLabel?: string;
   reconciliationFrequency?: ReconciliationFrequency;
+  /** The run's declared period end (`reconciliation_run.period_end`), ISO date string. When
+   * present, this is the reconciliation anchor date every exception's `ageInDays` is computed
+   * against, in preference to the derived max(transactionDate) fallback. Undefined for a caller
+   * with no declared period end -- e.g. a run predating this column, or a standalone caller with
+   * no period concept at all -- in which case the derived fallback still applies. */
+  declaredAnchorDate?: string;
 }
 
 /** Full output produced by `runReconciliation`; persisted to PostgreSQL by the lifecycle store. */
