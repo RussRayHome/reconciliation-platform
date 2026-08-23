@@ -864,6 +864,9 @@ const triggerMatchingForImportRun = async (input: {
     declaredAnchorDate: input.declaredAnchorDate,
     reconciliationRunId: input.reconciliationRunId,
     openItemStore: input.pool ? new PostgresOpenItemStore(input.pool) : undefined,
+    // Default on -- the env var is purely an ops kill switch; the real per-organization control
+    // is reconciliation_organization.carry_forward_enabled (PR C.5).
+    carryForwardEnvEnabled: parseBooleanFlag(process.env.ENABLE_CARRY_FORWARD) !== false,
   });
 
   input.repository.save(run);

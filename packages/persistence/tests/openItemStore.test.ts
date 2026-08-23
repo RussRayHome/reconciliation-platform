@@ -184,4 +184,74 @@ describe('PostgresOpenItemStore', () => {
     );
     expect(row.rows[0]?.status).toBe('RECONCILED');
   });
+
+  it('getCarryForwardEnabled reads reconciliation_organization.carry_forward_enabled, false by default', async () => {
+    if (startupError) throw startupError;
+
+    const store = new PostgresOpenItemStore(runtimePool);
+    expect(await store.getCarryForwardEnabled(defaultOrganizationId)).toBe(false);
+
+    await pool.query('UPDATE reconciliation_organization SET carry_forward_enabled = TRUE WHERE id = $1', [
+      defaultOrganizationId,
+    ]);
+    expect(await store.getCarryForwardEnabled(defaultOrganizationId)).toBe(true);
+  });
+
+  it('stampCarryForwardDecision persists an enabled decision with a null skip reason', async () => {
+    if (startupError) throw startupError;
+
+    const runId = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO reconciliation_run (id, organization_id, label, frequency, period_year)
+       VALUES ($1, $2, 'Stamp Enabled Run', 'MONTHLY', 2026)`,
+      [runId, defaultOrganizationId],
+    );
+
+    const store = new PostgresOpenItemStore(runtimePool);
+    await store.stampCarryForwardDecision(defaultOrganizationId, runId, { enabled: true });
+
+    const row = await pool.query<{ carry_forward_applied: boolean; carry_forward_skip_reason: string | null }>(
+      'SELECT carry_forward_applied, carry_forward_skip_reason FROM reconciliation_run WHERE id = $1',
+      [runId],
+    );
+    expect(row.rows[0]).toEqual({ carry_forward_applied: true, carry_forward_skip_reason: null });
+  });
+
+  it('stampCarryForwardDecision persists a disabled decision with its skip reason', async () => {
+    if (startupError) throw startupError;
+
+    const runId = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO reconciliation_run (id, organization_id, label, frequency, period_year)
+       VALUES ($1, $2, 'Stamp Disabled Run', 'MONTHLY', 2026)`,
+      [runId, defaultOrganizationId],
+    );
+
+    const store = new PostgresOpenItemStore(runtimePool);
+    await store.stampCarryForwardDecision(defaultOrganizationId, runId, {
+      enabled: false,
+      reason: 'ORG_NOT_ENABLED',
+    });
+
+    const row = await pool.query<{ carry_forward_applied: boolean; carry_forward_skip_reason: string | null }>(
+      'SELECT carry_forward_applied, carry_forward_skip_reason FROM reconciliation_run WHERE id = $1',
+      [runId],
+    );
+    expect(row.rows[0]).toEqual({
+      carry_forward_applied: false,
+      carry_forward_skip_reason: 'ORG_NOT_ENABLED',
+    });
+  });
+
+  it('stampCarryForwardDecision is a no-op when reconciliationRunId is undefined', async () => {
+    if (startupError) throw startupError;
+
+    const store = new PostgresOpenItemStore(runtimePool);
+    // No reconciliation_run row exists for this call at all -- if this tried to UPDATE anything,
+    // it would be a query against a nonexistent id, not a true no-op. Passing undefined must
+    // short-circuit before any query runs.
+    await expect(
+      store.stampCarryForwardDecision(defaultOrganizationId, undefined, { enabled: true }),
+    ).resolves.toBeUndefined();
+  });
 });

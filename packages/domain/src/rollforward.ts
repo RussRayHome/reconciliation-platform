@@ -127,3 +127,39 @@ export interface OpenItemCandidate {
   referenceNumber?: string;
   descriptionSnapshot?: string;
 }
+
+/** Why carry-forward is or isn't active for a given run -- the two reasons are ordered by which
+ * one wins: the env var is the ops kill switch, checked first, so it can disable carry-forward
+ * deployment-wide during an incident regardless of any organization's own setting. */
+export type CarryForwardSkipReason = 'ENV_DISABLED' | 'ORG_NOT_ENABLED';
+
+export type CarryForwardDecision =
+  | { enabled: true }
+  | { enabled: false; reason: CarryForwardSkipReason };
+
+/**
+ * Whether carry-forward should apply to this run -- PR C.5 (see
+ * docs/PR-D-Gating-Change-Document.pdf), gating PR D's carry-forward-into-matching mechanism.
+ * Deliberately NOT read from `reconciliation_matching_config_version.variance_overrides`: that
+ * column is `Partial<Record<keyof MatchingConfig, number>>`, every `MatchingConfig` field is
+ * numeric, and the whole versioning stack isn't wired to the engine yet
+ * (`OVERRIDES_APPLIED_TO_ENGINE = false`) -- a value stored there would be silently ignored.
+ * Enablement is a rollout property (closer to a subscription flag than a tuned threshold), read
+ * directly from `reconciliation_organization.carry_forward_enabled` instead.
+ *
+ * Pure decision logic only -- `envEnabled` (the `ENABLE_CARRY_FORWARD` kill switch, default on)
+ * and `orgEnabled` (the organization's own column) are both resolved by the caller, which has the
+ * environment and database access this function deliberately doesn't need.
+ */
+export const resolveCarryForwardDecision = (input: {
+  envEnabled: boolean;
+  orgEnabled: boolean;
+}): CarryForwardDecision => {
+  if (!input.envEnabled) {
+    return { enabled: false, reason: 'ENV_DISABLED' };
+  }
+  if (!input.orgEnabled) {
+    return { enabled: false, reason: 'ORG_NOT_ENABLED' };
+  }
+  return { enabled: true };
+};

@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 
-import type { OpenItemCandidate } from '@recon/domain';
+import type { CarryForwardDecision, OpenItemCandidate } from '@recon/domain';
 
 import { runInTenantScope } from './postgres';
 
@@ -138,6 +138,43 @@ export class PostgresOpenItemStore {
       client.query(
         `UPDATE reconciliation_run SET status = 'RECONCILED' WHERE id = $1 AND status <> 'RECONCILED'`,
         [reconciliationRunId],
+      ),
+    );
+  }
+
+  /** Reads `reconciliation_organization.carry_forward_enabled` (changeset 0066) -- the org half of
+   * `resolveCarryForwardDecision`'s input (`@recon/domain`). Uses the plain pool, not
+   * `runInTenantScope`: `reconciliation_organization` is the tenant table itself and carries no
+   * RLS policy (changeset 0030's own documented exclusion, matching ADR-0001's scope), so a
+   * session-scoped query would add nothing here. Returns `false` (never carry-forward) for an
+   * organization id that doesn't resolve, rather than throwing -- a caller mid-request already
+   * knows the organization exists from auth; this is a defensive default, not an expected path. */
+  async getCarryForwardEnabled(organizationId: string): Promise<boolean> {
+    const result = await this.pool.query<{ carry_forward_enabled: boolean }>(
+      'SELECT carry_forward_enabled FROM reconciliation_organization WHERE id = $1',
+      [organizationId],
+    );
+    return result.rows[0]?.carry_forward_enabled ?? false;
+  }
+
+  /** Persists the resolver's outcome on the run itself (changeset 0067) -- see that changeset's
+   * own doc comment for why NULL (never evaluated) is kept distinct from `false` (evaluated,
+   * declined, with a reason). No-op when `reconciliationRunId` is undefined -- the standalone
+   * atomic route has no `reconciliation_run` row to stamp. */
+  async stampCarryForwardDecision(
+    organizationId: string,
+    reconciliationRunId: string | undefined,
+    decision: CarryForwardDecision,
+  ): Promise<void> {
+    if (!reconciliationRunId) {
+      return;
+    }
+    await runInTenantScope(this.pool, organizationId, (client) =>
+      client.query(
+        `UPDATE reconciliation_run
+            SET carry_forward_applied = $2, carry_forward_skip_reason = $3
+          WHERE id = $1`,
+        [reconciliationRunId, decision.enabled, decision.enabled ? null : decision.reason],
       ),
     );
   }

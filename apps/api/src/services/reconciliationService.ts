@@ -14,14 +14,16 @@ import {
 
 import type { PostgresOpenItemStore, PostgresReconciliationLifecycleStore } from '@recon/persistence';
 
-import type {
-  AuditEvent,
-  NormalizedTransaction,
-  PayeeAlias,
-  RawTransactionRow,
-  ReconciliationConfig,
-  ReconciliationRun,
-  SourceFile,
+import {
+  resolveCarryForwardDecision,
+  type AuditEvent,
+  type CarryForwardDecision,
+  type NormalizedTransaction,
+  type PayeeAlias,
+  type RawTransactionRow,
+  type ReconciliationConfig,
+  type ReconciliationRun,
+  type SourceFile,
 } from '@recon/domain';
 import pino from 'pino';
 import { resolveLogLevelAtLeastInfo } from './logLevel';
@@ -67,6 +69,12 @@ interface RunReconciliationPipelineInput {
    * undefined together on the standalone atomic route, which has no `reconciliation_run` row. */
   reconciliationRunId?: string;
   openItemStore?: PostgresOpenItemStore;
+  /** The `ENABLE_CARRY_FORWARD` ops kill switch, already resolved by app.ts (env parsing lives
+   * there, not in this service module) -- the env half of `resolveCarryForwardDecision`'s input
+   * (`@recon/domain`, Unreconciled Item Roll-Forward PR C.5). Optional, defaults true (matching
+   * the env var's own documented default), so a caller with no opinion about carry-forward --
+   * most tests -- doesn't need to pass it. */
+  carryForwardEnvEnabled?: boolean;
   aliases: PayeeAlias[];
   t0: number;
   log: pino.Logger;
@@ -119,6 +127,7 @@ const runReconciliationPipeline = async ({
   declaredAnchorDate,
   reconciliationRunId,
   openItemStore,
+  carryForwardEnvEnabled = true,
   aliases,
   t0,
   log,
@@ -203,6 +212,11 @@ const runReconciliationPipeline = async ({
   let exceptionOutput: ReturnType<typeof classifyExceptions>;
   let summary: ReturnType<typeof buildSummaryMetrics>;
   let outputWorkbook: Awaited<ReturnType<typeof exportWorkbook>>;
+  // Undefined for the standalone atomic route (no openItemStore/reconciliationRunId) -- carry-
+  // forward has no organization-scoped concept there. Resolved once, "before matching" per
+  // resolveCarryForwardDecision's own doc comment, so PR D's future seeding step can read the
+  // already-resolved decision rather than re-resolving it.
+  let carryForwardDecision: CarryForwardDecision | undefined;
 
   try {
     normalizedTransactions = getNormalizedTransactions();
@@ -236,6 +250,39 @@ const runReconciliationPipeline = async ({
       await runPersistStep('service.persist.normalizedRows.completed', () =>
         lifecycleStore.persistNormalizedRows(organizationId, runId, normalizedTransactions),
       );
+    }
+
+    // Unreconciled Item Roll-Forward PR C.5: resolve carry-forward enablement before matching so
+    // PR D's future seeding step (which needs the decision *before* the candidate pool is built)
+    // can read it already-resolved. Nothing consumes `carryForwardDecision.enabled` yet -- PR D
+    // hasn't landed -- but the decision is still stamped on the run below (after finalize) so
+    // today's runs already carry an accurate, non-retroactive audit trail once PR D does land.
+    // Best-effort, matching the projection step below: a lookup failure here must not be able to
+    // fail an otherwise-successful reconciliation run over a side concern that doesn't even
+    // change behavior yet -- `carryForwardDecision` simply stays undefined, which also skips the
+    // stamp step below.
+    if (openItemStore) {
+      try {
+        const orgEnabled = await openItemStore.getCarryForwardEnabled(organizationId);
+        carryForwardDecision = resolveCarryForwardDecision({
+          envEnabled: carryForwardEnvEnabled,
+          orgEnabled,
+        });
+        log.info({
+          action: 'service.rollforward.carryForwardDecision.resolved',
+          enabled: carryForwardDecision.enabled,
+          reason: carryForwardDecision.enabled ? undefined : carryForwardDecision.reason,
+        });
+      } catch (carryForwardResolveError) {
+        log.warn({
+          action: 'service.rollforward.carryForwardDecision.failed',
+          runId,
+          message:
+            carryForwardResolveError instanceof Error
+              ? carryForwardResolveError.message
+              : String(carryForwardResolveError),
+        });
+      }
     }
 
     const matchStart = Date.now();
@@ -456,6 +503,13 @@ const runReconciliationPipeline = async ({
       if (reconciliationRunId) {
         await openItemStore.markRunReconciled(organizationId, reconciliationRunId);
       }
+      if (carryForwardDecision) {
+        await openItemStore.stampCarryForwardDecision(
+          organizationId,
+          reconciliationRunId,
+          carryForwardDecision,
+        );
+      }
       log.info({
         action: 'service.rollforward.projectOpenItems.completed',
         opened: projection.opened,
@@ -527,6 +581,8 @@ export interface ExecuteReconciliationFromNormalizedInput {
   /** See `RunReconciliationPipelineInput.reconciliationRunId`/`openItemStore`'s doc comments. */
   reconciliationRunId?: string;
   openItemStore?: PostgresOpenItemStore;
+  /** See `RunReconciliationPipelineInput.carryForwardEnvEnabled`'s doc comment. */
+  carryForwardEnvEnabled?: boolean;
   aliases?: PayeeAlias[];
   /** See `RunReconciliationPipelineInput.onStep`'s doc comment. */
   onStep?: QueueStepReporter;
@@ -556,6 +612,7 @@ export const executeReconciliationFromNormalized = async ({
   declaredAnchorDate,
   reconciliationRunId,
   openItemStore,
+  carryForwardEnvEnabled,
   aliases = [],
   onStep,
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
@@ -594,6 +651,7 @@ export const executeReconciliationFromNormalized = async ({
     declaredAnchorDate,
     reconciliationRunId,
     openItemStore,
+    carryForwardEnvEnabled,
     aliases,
     t0,
     log,

@@ -5,6 +5,7 @@ import {
   assertCarryEligibilityIsExhaustive,
   CARRY_ELIGIBLE_CATEGORIES,
   isCarryEligible,
+  resolveCarryForwardDecision,
 } from './rollforward';
 
 describe('CARRY_ELIGIBLE_CATEGORIES', () => {
@@ -46,5 +47,34 @@ describe('CARRY_ELIGIBLE_CATEGORIES', () => {
   it('carries exactly 9 categories -- every other errorCategories value is never-carry', () => {
     const carried = errorCategories.filter((category) => isCarryEligible(category));
     expect(carried).toHaveLength(9);
+  });
+});
+
+describe('resolveCarryForwardDecision', () => {
+  it('returns ORG_NOT_ENABLED for a default (not yet onboarded) organization', () => {
+    expect(resolveCarryForwardDecision({ envEnabled: true, orgEnabled: false })).toEqual({
+      enabled: false,
+      reason: 'ORG_NOT_ENABLED',
+    });
+  });
+
+  it('returns ENV_DISABLED when the env kill switch is off, even when the org column is true', () => {
+    expect(resolveCarryForwardDecision({ envEnabled: false, orgEnabled: true })).toEqual({
+      enabled: false,
+      reason: 'ENV_DISABLED',
+    });
+  });
+
+  it('returns ENV_DISABLED (not ORG_NOT_ENABLED) when both are off -- the kill switch is checked first', () => {
+    expect(resolveCarryForwardDecision({ envEnabled: false, orgEnabled: false })).toEqual({
+      enabled: false,
+      reason: 'ENV_DISABLED',
+    });
+  });
+
+  it('returns enabled:true only when both the env switch and the org column allow it', () => {
+    expect(resolveCarryForwardDecision({ envEnabled: true, orgEnabled: true })).toEqual({
+      enabled: true,
+    });
   });
 });
