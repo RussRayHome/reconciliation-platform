@@ -571,6 +571,25 @@ export class ReconciliationFileValidationError extends Error {
   }
 }
 
+/** Thrown by `runReconciliationWorkflow` for any failure *after* `registerLifecycleJob` has already
+ * created a Postgres lifecycle row (i.e. everything past the File Validation check above). Carries
+ * that row's id so both callers (`handleFailedReconciliationRun`'s call sites, in the synchronous
+ * route and the queue consumer) can actually mark it failed. Without this, `persistenceJobId` is
+ * only ever assigned from a *successful* `runReconciliationWorkflow` return -- a failure never
+ * reaches that `return` statement, so the row this run created would otherwise be silently left in
+ * its initial in-progress state forever, regardless of whether the failure came from the
+ * synchronous route or a queued/retried run. */
+export class ReconciliationWorkflowError extends Error {
+  constructor(
+    message: string,
+    public readonly persistenceJobId: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'ReconciliationWorkflowError';
+  }
+}
+
 /** Exported for `worker.ts` (Issue #134 phase 3) -- the standalone consumer process calls this
  * directly, same function the synchronous in-request path and the (now removed) in-process queue
  * Worker both used. */
@@ -632,87 +651,98 @@ export const runReconciliationWorkflow = async (input: {
 
   log.info({ action: 'reconciliation.run.received', accountIdentifier, periodLabel });
 
-  const aliases = input.pool
-    ? await loadPayeeAliases(input.pool, input.organizationId, accountIdentifier)
-    : [];
+  // Everything from here on runs against an already-created lifecycle row (lifecycleContext.runId)
+  // -- any failure past this point must carry that id back out so the caller can mark the row
+  // failed instead of leaving it stuck in progress. See ReconciliationWorkflowError's doc comment.
+  try {
+    const aliases = input.pool
+      ? await loadPayeeAliases(input.pool, input.organizationId, accountIdentifier)
+      : [];
 
-  const bankTransactionContext = {
-    runId: lifecycleContext.runId,
-    sourceFileId: lifecycleContext.bankSourceFileId,
-    spreadsheetFileName: input.files.bankFile.originalname,
-    config: defaultReconciliationConfig,
-  };
-  const glTransactionContext = {
-    runId: lifecycleContext.runId,
-    sourceFileId: lifecycleContext.glSourceFileId,
-    spreadsheetFileName: input.files.glFile.originalname,
-    config: defaultReconciliationConfig,
-  };
+    const bankTransactionContext = {
+      runId: lifecycleContext.runId,
+      sourceFileId: lifecycleContext.bankSourceFileId,
+      spreadsheetFileName: input.files.bankFile.originalname,
+      config: defaultReconciliationConfig,
+    };
+    const glTransactionContext = {
+      runId: lifecycleContext.runId,
+      sourceFileId: lifecycleContext.glSourceFileId,
+      spreadsheetFileName: input.files.glFile.originalname,
+      config: defaultReconciliationConfig,
+    };
 
-  const normalizedTransactions = [
-    ...toNormalizedTransactions(bankOutcome.normalized, bankTransactionContext),
-    ...toNormalizedTransactions(glOutcome.normalized, glTransactionContext),
-  ];
-  const rawRows = [
-    ...toRawTransactionRows(bankOutcome.normalized, bankTransactionContext),
-    ...toRawTransactionRows(glOutcome.normalized, glTransactionContext),
-  ];
-  const sourceFiles = [
-    {
-      id: lifecycleContext.bankSourceFileId,
-      source: 'bank' as const,
-      fileName: input.files.bankFile.originalname,
-      mimeType: input.files.bankFile.mimetype,
-      sizeBytes: input.files.bankFile.size,
-      uploadedAt: new Date().toISOString(),
-      ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
-    },
-    {
-      id: lifecycleContext.glSourceFileId,
-      source: 'gl' as const,
-      fileName: input.files.glFile.originalname,
-      mimeType: input.files.glFile.mimetype,
-      sizeBytes: input.files.glFile.size,
-      uploadedAt: new Date().toISOString(),
-      ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
-    },
-  ];
+    const normalizedTransactions = [
+      ...toNormalizedTransactions(bankOutcome.normalized, bankTransactionContext),
+      ...toNormalizedTransactions(glOutcome.normalized, glTransactionContext),
+    ];
+    const rawRows = [
+      ...toRawTransactionRows(bankOutcome.normalized, bankTransactionContext),
+      ...toRawTransactionRows(glOutcome.normalized, glTransactionContext),
+    ];
+    const sourceFiles = [
+      {
+        id: lifecycleContext.bankSourceFileId,
+        source: 'bank' as const,
+        fileName: input.files.bankFile.originalname,
+        mimeType: input.files.bankFile.mimetype,
+        sizeBytes: input.files.bankFile.size,
+        uploadedAt: new Date().toISOString(),
+        ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
+      },
+      {
+        id: lifecycleContext.glSourceFileId,
+        source: 'gl' as const,
+        fileName: input.files.glFile.originalname,
+        mimeType: input.files.glFile.mimetype,
+        sizeBytes: input.files.glFile.size,
+        uploadedAt: new Date().toISOString(),
+        ...FILE_VALIDATION_SOURCE_FILE_DEFAULTS,
+      },
+    ];
 
-  const run = await executeReconciliationFromNormalized({
-    correlationId,
-    sessionId: input.sessionId,
-    runId: lifecycleContext.runId,
-    organizationId: input.organizationId,
-    lifecycleStore: input.lifecycleStore,
-    sourceFiles,
-    rawRows,
-    normalizedTransactions,
-    accountIdentifier,
-    reconciliationFrequency,
-    periodLabel,
-    aliases,
-    onStep: input.onStep,
-  });
+    const run = await executeReconciliationFromNormalized({
+      correlationId,
+      sessionId: input.sessionId,
+      runId: lifecycleContext.runId,
+      organizationId: input.organizationId,
+      lifecycleStore: input.lifecycleStore,
+      sourceFiles,
+      rawRows,
+      normalizedTransactions,
+      accountIdentifier,
+      reconciliationFrequency,
+      periodLabel,
+      aliases,
+      onStep: input.onStep,
+    });
 
-  input.repository.save(run);
-  log.info({
-    action: 'reconciliation.run.completed',
-    runId: run.id,
-    exceptions: run.exceptions.length,
-  });
+    input.repository.save(run);
+    log.info({
+      action: 'reconciliation.run.completed',
+      runId: run.id,
+      exceptions: run.exceptions.length,
+    });
 
-  if (varianceOverrides) {
-    run.appliedVarianceOverrides = varianceOverrides;
+    if (varianceOverrides) {
+      run.appliedVarianceOverrides = varianceOverrides;
+    }
+
+    return {
+      accountIdentifier,
+      periodLabel,
+      reconciliationFrequency,
+      varianceOverrides,
+      persistenceJobId: lifecycleContext.runId,
+      run,
+    };
+  } catch (error) {
+    throw new ReconciliationWorkflowError(
+      error instanceof Error ? error.message : 'Unexpected reconciliation workflow failure',
+      lifecycleContext.runId,
+      { cause: error },
+    );
   }
-
-  return {
-    accountIdentifier,
-    periodLabel,
-    reconciliationFrequency,
-    varianceOverrides,
-    persistenceJobId: lifecycleContext.runId,
-    run,
-  };
 };
 
 /** The "trigger the existing GL<->Bank matching pipeline immediately" half of Phase 6 (submit &
@@ -1117,6 +1147,8 @@ export type ReconciliationQueueConfiguration = {
   queueName: string;
   prefix: string;
   concurrency: number;
+  maxAttempts: number;
+  backoffDelayMs: number;
 };
 
 /** File Imports & Validation's own queue config, deliberately separate from
@@ -1129,6 +1161,8 @@ export type ImportValidationQueueConfiguration = {
   queueName: string;
   prefix: string;
   concurrency: number;
+  maxAttempts: number;
+  backoffDelayMs: number;
 };
 
 const resolveRateLimitRedisConfiguration = (): {
@@ -1243,6 +1277,15 @@ export const resolveReconciliationQueueConfiguration = (): ReconciliationQueueCo
     queueName: process.env.RECONCILIATION_QUEUE_NAME?.trim() || 'reconciliation-runs',
     prefix: process.env.RECONCILIATION_QUEUE_PREFIX?.trim() || 'recon',
     concurrency: parsePositiveInteger(process.env.RECONCILIATION_QUEUE_CONCURRENCY, 1, 8),
+    // Default: 1 initial attempt + 4 retries, exponential backoff starting at 5s (5s/10s/20s/40s)
+    // -- enough tolerance for a transient DB/Redis blip without leaving a truly broken run
+    // retrying for very long before it reaches the dead-letter queue.
+    maxAttempts: parsePositiveInteger(process.env.RECONCILIATION_QUEUE_MAX_ATTEMPTS, 5, 20),
+    backoffDelayMs: parsePositiveInteger(
+      process.env.RECONCILIATION_QUEUE_BACKOFF_DELAY_MS,
+      5000,
+      600_000,
+    ),
   };
 };
 
@@ -1262,6 +1305,13 @@ export const resolveImportValidationQueueConfiguration = (): ImportValidationQue
     queueName: process.env.IMPORT_VALIDATION_QUEUE_NAME?.trim() || 'import-validation-runs',
     prefix: process.env.IMPORT_VALIDATION_QUEUE_PREFIX?.trim() || 'recon',
     concurrency: parsePositiveInteger(process.env.IMPORT_VALIDATION_QUEUE_CONCURRENCY, 1, 4),
+    // Same retry policy as the reconciliation queue -- see its resolver's comment.
+    maxAttempts: parsePositiveInteger(process.env.IMPORT_VALIDATION_QUEUE_MAX_ATTEMPTS, 5, 20),
+    backoffDelayMs: parsePositiveInteger(
+      process.env.IMPORT_VALIDATION_QUEUE_BACKOFF_DELAY_MS,
+      5000,
+      600_000,
+    ),
   };
 };
 
@@ -1551,6 +1601,8 @@ export const createApp = (
     queueName: queueConfiguration.queueName,
     prefix: queueConfiguration.prefix,
     logger: httpLogger,
+    maxAttempts: queueConfiguration.maxAttempts,
+    backoffDelayMs: queueConfiguration.backoffDelayMs,
   });
 
   // worker-N (not a random id): if two worker processes are ever run side by side, import_job.
@@ -1564,7 +1616,22 @@ export const createApp = (
     queueName: importValidationQueueConfiguration.queueName,
     prefix: importValidationQueueConfiguration.prefix,
     logger: httpLogger,
+    maxAttempts: importValidationQueueConfiguration.maxAttempts,
+    backoffDelayMs: importValidationQueueConfiguration.backoffDelayMs,
   });
+
+  // Only registered when the queue is actually enabled -- a permanent zero series for a
+  // permanently-disabled queue would misleadingly suggest it exists and is just empty, rather
+  // than being off entirely.
+  if (apiMetrics && reconciliationQueue.enabled) {
+    apiMetrics.registerQueueDepthSource(queueConfiguration.queueName, reconciliationQueue);
+  }
+  if (apiMetrics && importValidationQueue.enabled) {
+    apiMetrics.registerQueueDepthSource(
+      importValidationQueueConfiguration.queueName,
+      importValidationQueue,
+    );
+  }
 
   // Issue #154 (live status push): one shared `QueueEvents` listener per queue for the whole API
   // process, constructed here alongside the producers -- not one per SSE connection, which would
@@ -1576,6 +1643,8 @@ export const createApp = (
     queueName: queueConfiguration.queueName,
     prefix: queueConfiguration.prefix,
     logger: httpLogger,
+    maxAttempts: queueConfiguration.maxAttempts,
+    backoffDelayMs: queueConfiguration.backoffDelayMs,
   });
   const importValidationQueueEvents = createImportValidationQueueEvents({
     enabled: importValidationQueueConfiguration.enabled,
@@ -1583,6 +1652,8 @@ export const createApp = (
     queueName: importValidationQueueConfiguration.queueName,
     prefix: importValidationQueueConfiguration.prefix,
     logger: httpLogger,
+    maxAttempts: importValidationQueueConfiguration.maxAttempts,
+    backoffDelayMs: importValidationQueueConfiguration.backoffDelayMs,
   });
 
   app.set('trust proxy', true);
@@ -2463,6 +2534,14 @@ export const createApp = (
             glIssues: error.glIssues,
           });
           return;
+        }
+
+        // ReconciliationWorkflowError carries the lifecycle row's id for any failure past
+        // registerLifecycleJob -- without it, persistenceJobId stays undefined here (it's only
+        // ever assigned from a successful runReconciliationWorkflow return above) and
+        // handleFailedReconciliationRun's markFailed call becomes a silent no-op.
+        if (error instanceof ReconciliationWorkflowError) {
+          persistenceJobId = error.persistenceJobId;
         }
 
         const requestBody = (request.body ?? {}) as Record<string, unknown>;

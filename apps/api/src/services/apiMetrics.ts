@@ -1,14 +1,26 @@
 import type { NextFunction, Request, Response } from 'express';
-import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
+import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 type ApiMetricsRenderer = {
   contentType: string;
   body: string;
 };
 
+/** Read-only depth source a queue producer exposes -- see reconciliationQueue.ts's
+ * `getJobCounts`/`getDeadLetterCount` doc comments for why this is read from the producer (the
+ * `api` process) rather than the consumer (`worker`, which has no HTTP server to scrape at all). */
+type QueueDepthSource = {
+  getJobCounts: () => Promise<{ waiting: number; active: number; delayed: number }>;
+  getDeadLetterCount: () => Promise<number>;
+};
+
 type ApiMetricsService = {
   middleware: (request: Request, response: Response, next: NextFunction) => void;
   render: () => Promise<ApiMetricsRenderer>;
+  /** Registers a queue whose depth should be reported under `recon_api_queue_depth`, labeled by
+   * `queue_name`. Counts are pulled lazily (Redis round-trips only happen on an actual Prometheus
+   * scrape, via the Gauge's own `collect` callback below) rather than polled on a timer. */
+  registerQueueDepthSource: (queueName: string, source: QueueDepthSource) => void;
 };
 
 const normalizeRoute = (value: string): string => {
@@ -85,6 +97,30 @@ export const createApiMetrics = (): ApiMetricsService => {
     registers: [registry],
   });
 
+  const queueDepthSources = new Map<string, QueueDepthSource>();
+
+  new Gauge({
+    name: 'recon_api_queue_depth',
+    help: 'BullMQ job counts by queue and state (waiting, active, delayed, dead_letter).',
+    labelNames: ['queue_name', 'state'] as const,
+    registers: [registry],
+    // Pulled lazily, once per actual Prometheus scrape -- not polled on a timer, so an idle
+    // /api/metrics endpoint never generates Redis traffic for queues nobody is watching.
+    async collect() {
+      for (const [queueName, source] of queueDepthSources) {
+        const [counts, deadLetterCount] = await Promise.all([
+          source.getJobCounts(),
+          source.getDeadLetterCount(),
+        ]);
+
+        this.set({ queue_name: queueName, state: 'waiting' }, counts.waiting);
+        this.set({ queue_name: queueName, state: 'active' }, counts.active);
+        this.set({ queue_name: queueName, state: 'delayed' }, counts.delayed);
+        this.set({ queue_name: queueName, state: 'dead_letter' }, deadLetterCount);
+      }
+    },
+  });
+
   return {
     middleware: (request, response, next) => {
       const startedAt = process.hrtime.bigint();
@@ -110,5 +146,8 @@ export const createApiMetrics = (): ApiMetricsService => {
       contentType: registry.contentType,
       body: await registry.metrics(),
     }),
+    registerQueueDepthSource: (queueName, source) => {
+      queueDepthSources.set(queueName, source);
+    },
   };
 };

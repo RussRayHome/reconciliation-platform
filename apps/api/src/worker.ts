@@ -11,6 +11,7 @@ import pino from 'pino';
 
 import {
   ReconciliationFileValidationError,
+  ReconciliationWorkflowError,
   fromQueuedReconciliationFiles,
   handleFailedReconciliationRun,
   processImportValidationJob,
@@ -172,13 +173,22 @@ export const createWorkerRuntime = async (): Promise<WorkerRuntime> => {
         };
       } catch (error) {
         // Same rationale as the (now removed) in-process queue Worker this replaces: a File
-        // Validation failure is expected user-input rejection, not an application bug.
+        // Validation failure is expected user-input rejection, not an application bug -- resolve
+        // (not throw) so BullMQ never retries a file that will fail the exact same way every time.
         if (error instanceof ReconciliationFileValidationError) {
           return {
             status: 'failed',
             failedAt: new Date().toISOString(),
             reason: `File Validation failed: ${error.bankIssues.length} bank issue(s), ${error.glIssues.length} GL issue(s).`,
           };
+        }
+
+        // ReconciliationWorkflowError carries the lifecycle row's id for any failure past
+        // registerLifecycleJob -- without it, persistenceJobId stays undefined here (it's only
+        // ever assigned from a successful runReconciliationWorkflow return above) and
+        // handleFailedReconciliationRun's markFailed call becomes a silent no-op.
+        if (error instanceof ReconciliationWorkflowError) {
+          persistenceJobId = error.persistenceJobId;
         }
 
         await handleFailedReconciliationRun({
@@ -195,12 +205,11 @@ export const createWorkerRuntime = async (): Promise<WorkerRuntime> => {
           extra: { requestId: payload.requestId },
         });
 
-        return {
-          status: 'failed',
-          failedAt: new Date().toISOString(),
-          reason:
-            error instanceof Error ? error.message : 'Unexpected reconciliation queue failure',
-        };
+        // Rethrow (rather than resolving with a failed status) so BullMQ actually sees this
+        // attempt as failed -- that's what makes `attempts`/`backoff` retry it, and what makes
+        // `worker.on('failed')` fire for real once retries are exhausted (see
+        // reconciliationQueue.ts's dead-letter routing).
+        throw error;
       }
     },
   });
