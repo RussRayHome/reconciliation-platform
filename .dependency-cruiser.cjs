@@ -57,6 +57,14 @@ module.exports = {
     tsConfig: {
       fileName: 'tsconfig.typecheck.json',
     },
+    // Without this, a local import used only in a type position (`import type { X } from './y'`,
+    // or a named import whose only use is a type annotation) is invisible to dependency-cruiser --
+    // it mirrors what `tsc` erases when emitting JS, so a file whose *every* local import happens
+    // to be type-only-used ends up looking like it has zero dependencies at all. Confirmed live:
+    // apps/api/src/services/queueProgress.ts and developerStatusTypes.ts are genuinely imported
+    // (reconciliationQueue.ts, importValidationQueue.ts, developerStatusParsing.ts) but showed up
+    // as false-positive "orphans" on the Developer Dashboard before this was set.
+    tsPreCompilationDeps: true,
     enhancedResolveOptions: {
       extensions: ['.ts', '.tsx', '.js', '.mjs', '.cjs', '.json'],
     },

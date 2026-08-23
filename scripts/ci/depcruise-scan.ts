@@ -46,6 +46,7 @@ type DependencyModule = {
   fanOut: number;
   instability: number;
   cyclic: boolean;
+  isEntryPoint: boolean;
 };
 
 type DependencyViolation = {
@@ -75,6 +76,44 @@ const folderFor = (sourcePath: string): string => {
   const segments = sourcePath.split('/');
   return segments.length > 1 && segments[0] !== 'scripts' ? (segments[1] as string) : (segments[0] as string);
 };
+
+/** Files vitest loads by exact path via `vitest.config.ts`'s `setupFiles`, not via `import` -- zero
+ *  fan-in is correct and permanent for these, not a dead-code signal. Keep in sync with
+ *  vitest.config.ts's own `setupFiles` entries. */
+const KNOWN_CONFIG_REFERENCED_FILES = new Set([
+  'apps/web/src/test/setup.ts',
+  'apps/api/tests/testHelpers/integrationSetup.ts',
+]);
+
+/** Test files that verify behavior without importing any local source module (subprocess/fs/
+ *  config-parsing checks, not unit tests of a specific function) -- real, currently-passing tests
+ *  (confirmed by running each directly), each individually verified rather than matched by a
+ *  blanket `*.test.ts` pattern. A blanket pattern would also hide a genuinely abandoned future test
+ *  file that never got wired into anything; an explicit, per-file list doesn't have that risk. Add
+ *  a new entry here only after actually running the file and confirming it passes and is
+ *  intentionally import-free -- this list is a verified allowlist, not a convenience escape hatch. */
+const KNOWN_NON_IMPORTING_TEST_FILES = new Set([
+  'apps/api/tests/coverage-config.test.ts',
+  'apps/api/tests/deploy-cleanup.test.ts',
+  'apps/api/tests/docker-compose.test.ts',
+  'apps/api/tests/nginx-config.test.ts',
+  'packages/core/src/security/noExternalSources.test.ts',
+  'packages/persistence/tests/reconciliationUserAccessGuard.test.ts',
+]);
+
+/** Files that are *supposed* to have zero local dependents -- standalone CLI entry points
+ *  (`scripts/**`, invoked via `tsx scripts/x.ts` from an npm script or a GitHub workflow's `run:`
+ *  step directly, never `import`ed by app code), build-tool config files (`*.config.ts`/
+ *  `*.config.mjs`, loaded by vite/tsup via filename convention, not import), vitest setup files,
+ *  and the handful of individually-verified non-importing test files above. Zero fan-in for these
+ *  is correct and permanent, not a sign of dead code -- excluded from the dashboard's "Orphans"
+ *  count so that count stays a meaningful dead-code signal instead of a fixed, ignorable floor of
+ *  false positives. */
+const isKnownEntryPoint = (sourcePath: string): boolean =>
+  sourcePath.startsWith('scripts/') ||
+  /\.config\.(ts|mjs|cjs)$/.test(sourcePath) ||
+  KNOWN_CONFIG_REFERENCED_FILES.has(sourcePath) ||
+  KNOWN_NON_IMPORTING_TEST_FILES.has(sourcePath);
 
 const countLines = (sourcePath: string): number => {
   if (!existsSync(sourcePath)) return 0;
@@ -132,6 +171,7 @@ function main(): void {
       fanOut,
       instability: total > 0 ? fanOut / total : 0,
       cyclic: localDeps.some((dep) => dep.circular),
+      isEntryPoint: isKnownEntryPoint(module.source),
     };
   });
 
