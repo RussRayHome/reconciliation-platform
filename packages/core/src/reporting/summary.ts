@@ -119,6 +119,6 @@ export const buildSummaryMetrics = (
     charts: [],
   };
 
-  summary.charts = buildChartSeries(summary);
+  summary.charts = buildChartSeries(summary, exceptions);
   return summary;
 };

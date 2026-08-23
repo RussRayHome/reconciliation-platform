@@ -256,6 +256,34 @@ const addSummaryCharts = (
     tl: { col: 3, row: 29.4 },
     ext: { width: 700, height: 300 },
   });
+
+  // Row 95 gives the exposure table above (up to errorCategories.length rows starting at D49) a
+  // safe margin even in the worst case of every category having nonzero exposure -- the aging
+  // table itself is always exactly 4 rows (fixed buckets), so no similar margin is needed below it.
+  const agingChartData = summary.charts.find((chart) => chart.id === 'outstandingCheckAging')?.data ?? [];
+
+  worksheet.getCell('D95').value = `${accountLabel} Outstanding Check Aging`;
+  worksheet.getCell('D95').font = { bold: true, size: 16 };
+  worksheet.mergeCells('D95:J95');
+
+  addChartDataTable(worksheet, 'D115', 'Aging chart data', agingChartData, false);
+
+  const agingChartPng = createBarChartPng(agingChartData, {
+    width: 700,
+    height: 360,
+    barColor: [242, 183, 5, 255],
+    accentColor: [166, 120, 5, 255],
+  });
+
+  const agingChartImageId = workbook.addImage({
+    base64: `data:image/png;base64,${agingChartPng.toString('base64')}`,
+    extension: 'png',
+  });
+
+  worksheet.addImage(agingChartImageId, {
+    tl: { col: 3, row: 95.4 },
+    ext: { width: 600, height: 260 },
+  });
 };
 
 /** All inputs needed to generate the multi-tab reconciliation workbook export. */

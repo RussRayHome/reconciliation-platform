@@ -64,6 +64,16 @@ describe('ChartsPanel', () => {
             title: 'Exposure',
             data: [{ label: 'Timing Difference', value: 125.5 }],
           },
+          {
+            id: 'outstandingCheckAging',
+            title: 'Outstanding Check Aging',
+            data: [
+              { label: '0-5 days', value: 1 },
+              { label: '6-30 days', value: 0 },
+              { label: '31-60 days', value: 0 },
+              { label: '60+ days', value: 2 },
+            ],
+          },
         ])}
       />,
     );
@@ -73,6 +83,9 @@ describe('ChartsPanel', () => {
     expect(screen.getByText('Missing from GL')).toBeInTheDocument();
     expect(screen.getByText('Timing Difference')).toBeInTheDocument();
     expect(screen.getByText('$126')).toBeInTheDocument();
+    expect(screen.getByText('Outstanding Check Aging')).toBeInTheDocument();
+    expect(screen.getByText('0-5 days')).toBeInTheDocument();
+    expect(screen.getByText('60+ days')).toBeInTheDocument();
   });
 
   it('renders empty chart tables safely when expected chart series are missing', () => {
@@ -80,8 +93,11 @@ describe('ChartsPanel', () => {
 
     expect(screen.getByText('Counts by Category')).toBeInTheDocument();
     expect(screen.getByText('Dollar Exposure by Category')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Count' })).toBeInTheDocument();
+    expect(screen.getByText('Outstanding Check Aging')).toBeInTheDocument();
+    // "Count" is the column header for both the count-by-category table and the aging table.
+    expect(screen.getAllByRole('columnheader', { name: 'Count' })).toHaveLength(2);
     expect(screen.getByRole('columnheader', { name: 'Exposure' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Age bucket' })).toBeInTheDocument();
     expect(screen.queryByText('Missing from GL')).toBeNull();
   });
 });
