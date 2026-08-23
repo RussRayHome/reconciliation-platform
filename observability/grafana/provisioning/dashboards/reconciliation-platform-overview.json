@@ -996,6 +996,189 @@
           "legendFormat": "utilization"
         }
       ]
+    },
+    {
+      "id": 600,
+      "type": "row",
+      "title": "Web Server & Database Audit Activity",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 87
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 601,
+      "type": "timeseries",
+      "title": "Web gateway request rate by status",
+      "description": "apps/web/nginx.conf's json_access log format, purpose-built for Loki ingestion. |= \"remote_addr\" scopes to real access-log lines only, excluding nginx's own plain-text worker-process notices sharing this container's log stream.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 88
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (status) (count_over_time({compose_project=\"$environment\", compose_service=\"web\"} |= \"remote_addr\" | json [$__interval]))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 602,
+      "type": "timeseries",
+      "title": "Web gateway request latency (p95)",
+      "description": "nginx's own $request_time (full proxy round trip). Extracts only request_time (not a bare `| json`) so unwrap doesn't fragment into one series per request -- every request has a distinct uri/remote_addr/timestamp that a bare `| json` would otherwise promote into the label set.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 88
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {compose_project=\"$environment\", compose_service=\"web\"} |= \"remote_addr\" | json request_time | unwrap request_time [$__interval]) by (compose_service)",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 603,
+      "type": "timeseries",
+      "title": "Postgres audit event rate (DDL / role changes)",
+      "description": "pgaudit.log=ddl,role -- schema and privilege/grant changes only, deliberately not every INSERT/UPDATE/DELETE (volume, not signal, for a live reconciliation workload; see ISSUE-047). Regular business activity is covered by the Reconciliation runs / Import validation runs / Auth activity panels above; this answers a narrower question: is anything touching schema or privileges right now.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 96
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({compose_project=\"$environment\", compose_service=\"postgres\"} |= \"AUDIT:\" [$__interval]))",
+          "legendFormat": "DDL/role events"
+        }
+      ]
+    },
+    {
+      "id": 604,
+      "type": "logs",
+      "title": "Recent Postgres audit log lines",
+      "description": "Raw pgaudit output -- CSV-shaped (class,command,object_type,object_name,statement,parameter), not JSON, so this is a direct log view rather than a parsed/labeled panel.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 96
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{compose_project=\"$environment\", compose_service=\"postgres\"} |= \"AUDIT:\"",
+          "queryType": "range",
+          "maxLines": 500
+        }
+      ]
     }
   ],
   "schemaVersion": 39,
@@ -1039,6 +1222,6 @@
   "timezone": "",
   "title": "Reconciliation Platform Overview",
   "uid": "reconciliation-platform-overview",
-  "version": 11,
+  "version": 12,
   "weekStart": ""
 }
