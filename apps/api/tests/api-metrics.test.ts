@@ -114,4 +114,52 @@ describe('createApiMetrics', () => {
     expect(errorLine).toContain('route="/broken"');
     expect(rendered.body).not.toMatch(/recon_api_http_request_errors_total\{[^}]*route="\/ok"/);
   });
+
+  it('reports queue depth for every registered queue, including its dead-letter count', async () => {
+    const metrics = createApiMetrics();
+    metrics.registerQueueDepthSource('reconciliation-runs', {
+      getJobCounts: () => Promise.resolve({ waiting: 3, active: 1, delayed: 0 }),
+      getDeadLetterCount: () => Promise.resolve(2),
+    });
+
+    const rendered = await metrics.render();
+    const lines = rendered.body.split('\n').filter((line) => line.startsWith('recon_api_queue_depth{'));
+
+    expect(lines.find((l) => l.includes('state="waiting"'))).toContain(
+      'queue_name="reconciliation-runs",state="waiting"} 3',
+    );
+    expect(lines.find((l) => l.includes('state="active"'))).toContain(
+      'queue_name="reconciliation-runs",state="active"} 1',
+    );
+    expect(lines.find((l) => l.includes('state="delayed"'))).toContain(
+      'queue_name="reconciliation-runs",state="delayed"} 0',
+    );
+    expect(lines.find((l) => l.includes('state="dead_letter"'))).toContain(
+      'queue_name="reconciliation-runs",state="dead_letter"} 2',
+    );
+  });
+
+  it('reports depth for multiple registered queues independently', async () => {
+    const metrics = createApiMetrics();
+    metrics.registerQueueDepthSource('reconciliation-runs', {
+      getJobCounts: () => Promise.resolve({ waiting: 5, active: 0, delayed: 0 }),
+      getDeadLetterCount: () => Promise.resolve(0),
+    });
+    metrics.registerQueueDepthSource('import-validation-runs', {
+      getJobCounts: () => Promise.resolve({ waiting: 0, active: 0, delayed: 0 }),
+      getDeadLetterCount: () => Promise.resolve(7),
+    });
+
+    const rendered = await metrics.render();
+
+    expect(rendered.body).toContain('queue_name="reconciliation-runs",state="waiting"} 5');
+    expect(rendered.body).toContain('queue_name="import-validation-runs",state="dead_letter"} 7');
+  });
+
+  it('reports no queue series at all when nothing has been registered', async () => {
+    const metrics = createApiMetrics();
+    const rendered = await metrics.render();
+
+    expect(rendered.body).not.toContain('recon_api_queue_depth{');
+  });
 });

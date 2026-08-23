@@ -11,6 +11,12 @@ const bullmqState = vi.hoisted(() => ({
     | ((job: { id: string; data: Record<string, unknown> }) => Promise<Record<string, unknown>>)
     | null,
   lastWorkerOptions: null as Record<string, unknown> | null,
+  // Tracks every `new Queue(name, ...)` call, in construction order -- lets tests assert the
+  // dead-letter queue was actually constructed with the expected `${queueName}-dlq` name, without
+  // needing separate mock instances per queue (each describe block below only ever exercises one
+  // queue "role" at a time -- the producer's primary queue, or the consumer's DLQ -- so the single
+  // shared `add`/`getJob` mocks stay unambiguous).
+  queueNames: [] as string[],
 }));
 
 vi.mock('bullmq', () => {
@@ -18,6 +24,10 @@ vi.mock('bullmq', () => {
     add = bullmqState.add;
     getJob = bullmqState.getJob;
     close = bullmqState.queueClose;
+
+    constructor(name: string) {
+      bullmqState.queueNames.push(name);
+    }
   }
 
   class Worker {
@@ -66,6 +76,7 @@ describe('importValidationQueue producer', () => {
     bullmqState.getJob.mockReset();
     bullmqState.queueClose.mockReset();
     bullmqState.queueClose.mockResolvedValue(undefined);
+    bullmqState.queueNames.length = 0;
   });
 
   it('returns disabled producer behavior when queue feature flag is off', async () => {
@@ -77,6 +88,8 @@ describe('importValidationQueue producer', () => {
       queueName: 'import-validation-runs',
       prefix: 'import',
       logger: logger as never,
+      maxAttempts: 5,
+      backoffDelayMs: 5000,
     });
 
     expect(producer.enabled).toBe(false);
@@ -95,6 +108,8 @@ describe('importValidationQueue producer', () => {
       queueName: 'import-validation-runs',
       prefix: 'import',
       logger: logger as never,
+      maxAttempts: 5,
+      backoffDelayMs: 5000,
     });
 
     expect(producer.enabled).toBe(false);
@@ -104,7 +119,7 @@ describe('importValidationQueue producer', () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it('enqueues jobs and resolves status purely from BullMQ-reported job state', async () => {
+  it('enqueues jobs with the configured retry/backoff policy and resolves status purely from BullMQ-reported job state', async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     bullmqState.add.mockResolvedValue({ id: 'job-7' });
 
@@ -114,6 +129,8 @@ describe('importValidationQueue producer', () => {
       queueName: 'import-validation-runs',
       prefix: 'import',
       logger: logger as never,
+      maxAttempts: 5,
+      backoffDelayMs: 5000,
     });
 
     expect(producer.enabled).toBe(true);
@@ -129,6 +146,8 @@ describe('importValidationQueue producer', () => {
       expect.objectContaining({
         removeOnComplete: { count: 200 },
         removeOnFail: { count: 500 },
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 5000 },
       }),
     );
 
@@ -172,10 +191,25 @@ describe('importValidationQueue consumer', () => {
     bullmqState.workerClose.mockReset();
     bullmqState.workerRun.mockResolvedValue(undefined);
     bullmqState.workerClose.mockResolvedValue(undefined);
+    bullmqState.add.mockReset();
+    bullmqState.add.mockResolvedValue({ id: 'dlq-job' });
+    bullmqState.queueClose.mockReset();
+    bullmqState.queueClose.mockResolvedValue(undefined);
+    bullmqState.queueNames.length = 0;
     bullmqState.handlers.clear();
     bullmqState.processor = null;
     bullmqState.lastWorkerOptions = null;
   });
+
+  const baseConsumerOptions = {
+    enabled: true,
+    redisUrl: 'rediss://user:pass@localhost:6380/3',
+    queueName: 'import-validation-runs',
+    prefix: 'import',
+    concurrency: 2,
+    maxAttempts: 5,
+    backoffDelayMs: 5000,
+  };
 
   it('returns a no-op consumer when the queue feature flag is off', async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -186,6 +220,8 @@ describe('importValidationQueue consumer', () => {
       queueName: 'import-validation-runs',
       prefix: 'import',
       concurrency: 1,
+      maxAttempts: 5,
+      backoffDelayMs: 5000,
       logger: logger as never,
       processJob: vi.fn(),
     });
@@ -204,6 +240,8 @@ describe('importValidationQueue consumer', () => {
       queueName: 'import-validation-runs',
       prefix: 'import',
       concurrency: 1,
+      maxAttempts: 5,
+      backoffDelayMs: 5000,
       logger: logger as never,
       processJob: vi.fn(),
     });
@@ -211,6 +249,18 @@ describe('importValidationQueue consumer', () => {
     expect(() => consumer.start()).not.toThrow();
     await expect(consumer.stop()).resolves.toBeUndefined();
     expect(bullmqState.processor).toBeNull();
+  });
+
+  it('constructs a dead-letter queue named `${queueName}-dlq` alongside the Worker', () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    createImportValidationConsumer({
+      ...baseConsumerOptions,
+      logger: logger as never,
+      processJob: vi.fn(),
+    });
+
+    expect(bullmqState.queueNames).toContain('import-validation-runs-dlq');
   });
 
   it('builds the Worker with autorun disabled, processes jobs, and logs worker/job errors', async () => {
@@ -221,11 +271,7 @@ describe('importValidationQueue consumer', () => {
       .mockRejectedValueOnce(new Error('processor boom'));
 
     const consumer = createImportValidationConsumer({
-      enabled: true,
-      redisUrl: 'rediss://user:pass@localhost:6380/3',
-      queueName: 'import-validation-runs',
-      prefix: 'import',
-      concurrency: 2,
+      ...baseConsumerOptions,
       logger: logger as never,
       processJob,
     });
@@ -256,12 +302,124 @@ describe('importValidationQueue consumer', () => {
 
     logger.error.mockClear();
     const failedHandler = bullmqState.handlers.get('failed');
-    failedHandler?.({ id: 'job-handler' }, new Error('handler-failure'));
+    failedHandler?.(
+      { id: 'job-handler', data: samplePayload, isFailed: vi.fn().mockResolvedValue(false) },
+      new Error('handler-failure'),
+    );
     failedHandler?.(undefined, new Error('unknown-failure'));
     expect(logger.error).toHaveBeenCalledTimes(2);
 
     bullmqState.workerClose.mockRejectedValueOnce(new Error('close worker failed'));
     await expect(consumer.stop()).resolves.toBeUndefined();
+    // stop() closes both the Worker and the dead-letter Queue.
+    expect(bullmqState.queueClose).toHaveBeenCalled();
+  });
+
+  it('rethrows when processJob resolves with a failed status, so BullMQ actually retries it', async () => {
+    // processImportValidationJob (app.ts) never rejects -- it always resolves, even on failure,
+    // to preserve the synchronous in-request route's "200 + status:'failed' body" contract. The
+    // Worker processor built here must translate that into a thrown error itself, or `attempts`/
+    // `backoff` configured on the producer would be a no-op.
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const processJob = vi.fn().mockResolvedValue({
+      status: 'failed',
+      failedAt: '2026-08-23T00:00:00.000Z',
+      reason: 'Unexpected import validation failure',
+    });
+
+    createImportValidationConsumer({
+      ...baseConsumerOptions,
+      logger: logger as never,
+      processJob,
+    });
+
+    const workerProcessor = bullmqState.processor;
+    await expect(workerProcessor?.({ id: 'job-fail', data: samplePayload })).rejects.toThrow(
+      'Unexpected import validation failure',
+    );
+  });
+
+  it('moves a job to the dead-letter queue once BullMQ reports it as genuinely, terminally failed', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    createImportValidationConsumer({
+      ...baseConsumerOptions,
+      logger: logger as never,
+      processJob: vi.fn(),
+    });
+
+    const failedHandler = bullmqState.handlers.get('failed');
+    const job = {
+      id: 'job-exhausted',
+      data: samplePayload,
+      attemptsMade: 5,
+      failedReason: 'Unexpected import validation failure',
+      isFailed: vi.fn().mockResolvedValue(true),
+    };
+
+    failedHandler?.(job, new Error('Unexpected import validation failure'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bullmqState.add).toHaveBeenCalledWith(
+      'dead-letter',
+      expect.objectContaining({
+        originalPayload: samplePayload,
+        originalJobId: 'job-exhausted',
+        failedReason: 'Unexpected import validation failure',
+        attemptsMade: 5,
+      }),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'import-validation.queue.job.dead-lettered' }),
+      expect.any(String),
+    );
+  });
+
+  it('does not dead-letter a job that failed an attempt but still has retries remaining', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    createImportValidationConsumer({
+      ...baseConsumerOptions,
+      logger: logger as never,
+      processJob: vi.fn(),
+    });
+
+    const failedHandler = bullmqState.handlers.get('failed');
+    const job = {
+      id: 'job-retrying',
+      data: samplePayload,
+      attemptsMade: 2,
+      failedReason: 'transient error',
+      isFailed: vi.fn().mockResolvedValue(false),
+    };
+
+    failedHandler?.(job, new Error('transient error'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bullmqState.add).not.toHaveBeenCalled();
+  });
+
+  it('logs a warning when BullMQ reports a stalled job', () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    createImportValidationConsumer({
+      ...baseConsumerOptions,
+      logger: logger as never,
+      processJob: vi.fn(),
+    });
+
+    const stalledHandler = bullmqState.handlers.get('stalled');
+    stalledHandler?.('job-stalled');
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'import-validation.queue.job.stalled',
+        jobId: 'job-stalled',
+      }),
+      expect.any(String),
+    );
   });
 
   it('Issue #154: passes an onStep to processJob that publishes via Job.updateProgress', async () => {
@@ -274,11 +432,7 @@ describe('importValidationQueue consumer', () => {
     });
 
     createImportValidationConsumer({
-      enabled: true,
-      redisUrl: 'rediss://user:pass@localhost:6380/3',
-      queueName: 'import-validation-runs',
-      prefix: 'import',
-      concurrency: 2,
+      ...baseConsumerOptions,
       logger: logger as never,
       processJob,
     });
@@ -309,11 +463,7 @@ describe('importValidationQueue consumer', () => {
     });
 
     createImportValidationConsumer({
-      enabled: true,
-      redisUrl: 'rediss://user:pass@localhost:6380/3',
-      queueName: 'import-validation-runs',
-      prefix: 'import',
-      concurrency: 2,
+      ...baseConsumerOptions,
       logger: logger as never,
       processJob,
     });

@@ -54,6 +54,21 @@ type ReconciliationQueueConnectionOptions = {
   queueName: string;
   prefix: string;
   logger: pino.Logger;
+  /** Total attempts (including the first) before a job is considered permanently failed and moves
+   * to the dead-letter queue. Only consulted by the producer's `enqueue` -- BullMQ enforces it. */
+  maxAttempts: number;
+  /** Delay in ms before the first retry; each subsequent retry doubles it (BullMQ's `exponential`
+   * backoff type). */
+  backoffDelayMs: number;
+};
+
+/** Metadata attached to a job when it's moved to the dead-letter queue after exhausting all
+ * retries -- the DLQ job's payload is the original job's data plus this. */
+type DeadLetterMetadata = {
+  originalJobId: string;
+  failedReason: string;
+  attemptsMade: number;
+  failedAt: string;
 };
 
 export type ReconciliationQueueProducerOptions = ReconciliationQueueConnectionOptions;
@@ -75,6 +90,14 @@ export type ReconciliationQueueProducer = {
     payload: QueuedReconciliationJobPayload,
   ) => Promise<{ jobId: string; status: 'queued' }>;
   getStatus: (jobId: string) => Promise<QueuedReconciliationResult | undefined>;
+  /** Backlog on the live queue -- `worker` (Issue #134) never starts an HTTP server, so it has no
+   * metrics endpoint of its own (see prometheus.yml's comment); this is why queue depth is read
+   * from here, the producer side, which already lives in the scraped `api` process. */
+  getJobCounts: () => Promise<{ waiting: number; active: number; delayed: number }>;
+  /** Depth of the dead-letter queue -- every job here is a permanently exhausted failure sitting
+   * in its default 'waiting' state (nothing ever consumes this queue, see
+   * `createReconciliationConsumer`'s doc comment), so 'waiting' count is the DLQ's entire depth. */
+  getDeadLetterCount: () => Promise<number>;
   close: () => Promise<void>;
 };
 
@@ -167,6 +190,8 @@ const disabledProducer = (reason: string): ReconciliationQueueProducer => ({
   enabled: false,
   enqueue: () => Promise.reject(new Error(reason)),
   getStatus: () => Promise.resolve(undefined),
+  getJobCounts: () => Promise.resolve({ waiting: 0, active: 0, delayed: 0 }),
+  getDeadLetterCount: () => Promise.resolve(0),
   close: () => Promise.resolve(),
 });
 
@@ -205,6 +230,14 @@ export const createReconciliationProducer = (
     connection,
     prefix: options.prefix,
   });
+  // Read-only handle onto the dead-letter queue -- no Worker attached here either, same as the
+  // consumer's own DLQ handle (createReconciliationConsumer). Constructed on the producer side
+  // purely so its depth can be reported from the `api` process's /api/metrics, the only HTTP
+  // surface either queue role actually has.
+  const dlqQueue = new Queue<{ originalPayload: QueuedReconciliationJobPayload } & DeadLetterMetadata>(
+    `${options.queueName}-dlq`,
+    { connection, prefix: options.prefix },
+  );
 
   options.logger.info(
     {
@@ -221,6 +254,8 @@ export const createReconciliationProducer = (
       const job = await queue.add('reconciliation-run', payload, {
         removeOnComplete: { count: 200 },
         removeOnFail: { count: 500 },
+        attempts: options.maxAttempts,
+        backoff: { type: 'exponential', delay: options.backoffDelayMs },
       });
 
       return {
@@ -232,8 +267,21 @@ export const createReconciliationProducer = (
       const job = await queue.getJob(jobId);
       return resolveResultFromJob(job);
     },
+    getJobCounts: async () => {
+      const counts = await queue.getJobCounts('waiting', 'active', 'delayed');
+      return {
+        waiting: counts.waiting ?? 0,
+        active: counts.active ?? 0,
+        delayed: counts.delayed ?? 0,
+      };
+    },
+    getDeadLetterCount: async () => {
+      const counts = await dlqQueue.getJobCounts('waiting');
+      return counts.waiting ?? 0;
+    },
     close: async () => {
       await queue.close().catch(() => undefined);
+      await dlqQueue.close().catch(() => undefined);
     },
   };
 };
@@ -264,6 +312,16 @@ export const createReconciliationConsumer = (
   }
 
   const connection = resolveConnectionOptions(options.redisUrl);
+
+  // Dead-letter queue: never given a Worker, so nothing auto-consumes it -- that's what makes it
+  // a *dead* letter queue rather than another retry tier. A job lands here only once BullMQ has
+  // genuinely given up on it (see the 'failed' handler below), and it sits there for a human to
+  // inspect (redis-cli for now, or `npm run queue:clear-dlq` to purge it during development).
+  const dlqQueue = new Queue<{ originalPayload: QueuedReconciliationJobPayload } & DeadLetterMetadata>(
+    `${options.queueName}-dlq`,
+    { connection, prefix: options.prefix },
+  );
+
   const worker = new Worker<QueuedReconciliationJobPayload, PersistedQueuedReconciliationResult>(
     options.queueName,
     async (job) => {
@@ -303,6 +361,52 @@ export const createReconciliationConsumer = (
       { action: 'reconciliation.queue.job.failed', jobId: job?.id, err: error },
       'Reconciliation queue job failed',
     );
+
+    if (!job) {
+      return;
+    }
+
+    // 'failed' fires on every failed attempt, including ones BullMQ is about to retry -- job's
+    // own isFailed() is the authoritative check for "attempts are genuinely exhausted" (correctly
+    // covers both a thrown error exceeding `attempts` and a stall exceeding `maxStalledCount`,
+    // without this file needing to separately reason about which one happened).
+    void job
+      .isFailed()
+      .then(async (isTerminal) => {
+        if (!isTerminal) {
+          return;
+        }
+
+        await dlqQueue.add('dead-letter', {
+          originalPayload: job.data,
+          originalJobId: String(job.id),
+          failedReason: job.failedReason ?? error.message,
+          attemptsMade: job.attemptsMade,
+          failedAt: new Date().toISOString(),
+        });
+
+        options.logger.error(
+          {
+            action: 'reconciliation.queue.job.dead-lettered',
+            jobId: job.id,
+            attemptsMade: job.attemptsMade,
+          },
+          'Reconciliation queue job exhausted all retries and moved to the dead-letter queue',
+        );
+      })
+      .catch((dlqError: unknown) => {
+        options.logger.error(
+          { action: 'reconciliation.queue.dlq.enqueue_error', jobId: job.id, err: dlqError },
+          'Failed to move exhausted reconciliation queue job to the dead-letter queue',
+        );
+      });
+  });
+
+  worker.on('stalled', (jobId) => {
+    options.logger.warn(
+      { action: 'reconciliation.queue.job.stalled', jobId },
+      'Reconciliation queue job stalled -- its worker likely crashed or hung mid-job; BullMQ will retry it on another worker',
+    );
   });
 
   return {
@@ -320,6 +424,7 @@ export const createReconciliationConsumer = (
     },
     stop: async () => {
       await worker.close().catch(() => undefined);
+      await dlqQueue.close().catch(() => undefined);
     },
   };
 };

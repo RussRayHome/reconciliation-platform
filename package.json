@@ -40,6 +40,7 @@
     "harness:restart": "NODE_OPTIONS=--no-deprecation tsx scripts/runtime-harness.ts restart",
     "harness:stop": "NODE_OPTIONS=--no-deprecation tsx scripts/runtime-harness.ts stop",
     "harness:status": "NODE_OPTIONS=--no-deprecation tsx scripts/runtime-harness.ts status",
+    "queue:clear-dlq": "NODE_OPTIONS=--no-deprecation tsx scripts/clear-dead-letter-queue.ts",
     "runtime:status": "NODE_OPTIONS=--no-deprecation tsx scripts/runtime-status.ts",
     "docker:validate-env": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/validate-env.sh",
     "docker:preflight": "npm run docker:preflight:dev",

@@ -1179,6 +1179,120 @@
           "maxLines": 500
         }
       ]
+    },
+    {
+      "id": 700,
+      "type": "row",
+      "title": "Queue Depth & Dead-Letter Monitoring",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 104
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 701,
+      "type": "timeseries",
+      "title": "Queue depth (waiting / active / delayed)",
+      "description": "recon_api_queue_depth, read from the producer side (api) via each queue's BullMQ getJobCounts() -- worker has no HTTP server of its own to scrape (see prometheus.yml). A sustained rise in 'waiting' with 'active' stuck near zero usually means the worker process is down or stalled, not just busy.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 105
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "recon_api_queue_depth{compose_project=\"$environment\", state!=\"dead_letter\"}",
+          "legendFormat": "{{queue_name}} - {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 702,
+      "type": "timeseries",
+      "title": "Dead-letter queue depth",
+      "description": "Jobs that exhausted every retry (see reconciliationQueue.ts/importValidationQueue.ts's 'failed' handler) and were moved to `${queueName}-dlq`. This should sit at zero -- any sustained nonzero value means real, permanently-failed work is waiting for a human to look at it. Clear a queue during development with `npm run queue:clear-dlq -- <reconciliation|import-validation|all>`.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 105
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "recon_api_queue_depth{compose_project=\"$environment\", state=\"dead_letter\"}",
+          "legendFormat": "{{queue_name}}"
+        }
+      ]
     }
   ],
   "schemaVersion": 39,
@@ -1222,6 +1336,6 @@
   "timezone": "",
   "title": "Reconciliation Platform Overview",
   "uid": "reconciliation-platform-overview",
-  "version": 12,
+  "version": 13,
   "weekStart": ""
 }
