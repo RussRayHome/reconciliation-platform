@@ -1171,6 +1171,7 @@ const normalizeDependencyModule = (value: unknown): DependencyModule | null => {
     fanOut: toNonNegativeInteger(source.fanOut),
     instability: Math.min(1, Math.max(0, instability)),
     cyclic: source.cyclic === true,
+    isEntryPoint: source.isEntryPoint === true,
   };
 };
 

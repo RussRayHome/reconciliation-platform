@@ -165,6 +165,7 @@ export type DependencyModule = {
   fanOut: number;
   instability: number;
   cyclic: boolean;
+  isEntryPoint: boolean;
 };
 
 /** One dependency-cruiser rule violation (from `.dependency-cruiser.cjs`'s `forbidden` rules). */

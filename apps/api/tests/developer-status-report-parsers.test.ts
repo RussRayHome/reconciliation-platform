@@ -716,6 +716,7 @@ describe('report parsers', () => {
           fanOut: 17,
           instability: 0.586,
           cyclic: false,
+          isEntryPoint: false,
         },
       ],
       violations: [
@@ -736,6 +737,7 @@ describe('report parsers', () => {
             fanOut: 17,
             instability: 0.586,
             cyclic: false,
+            isEntryPoint: false,
           },
         ],
         violations: [
@@ -748,6 +750,16 @@ describe('report parsers', () => {
           },
         ],
       });
+    });
+
+    it('passes through isEntryPoint: true for a known CLI-script/config module', () => {
+      const scan = JSON.stringify({
+        scannedAt: '2026-08-11T00:00:00.000Z',
+        modules: [{ name: 'scripts/check-licenses', folder: 'scripts', isEntryPoint: true }],
+        violations: [],
+      });
+
+      expect(parseDependencyScan(scan)?.modules[0]?.isEntryPoint).toBe(true);
     });
 
     it('drops a module with no name or no folder', () => {
@@ -787,7 +799,7 @@ describe('report parsers', () => {
       expect(parseDependencyScan(scan)?.modules.map((m) => m.instability)).toEqual([1, 0, 0]);
     });
 
-    it('treats missing loc/fanIn/fanOut/deps/cyclic as their zero/empty/false defaults', () => {
+    it('treats missing loc/fanIn/fanOut/deps/cyclic/isEntryPoint as their zero/empty/false defaults', () => {
       const scan = JSON.stringify({
         scannedAt: '2026-08-11T00:00:00.000Z',
         modules: [{ name: 'a', folder: 'x' }],
@@ -803,6 +815,7 @@ describe('report parsers', () => {
         fanOut: 0,
         instability: 0,
         cyclic: false,
+        isEntryPoint: false,
       });
     });
 
