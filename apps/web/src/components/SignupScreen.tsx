@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
-import type { AuthenticatedUserSession } from '../App';
+import type { AuthenticatedUserSession } from '../lib/authSession';
 import {
   entityVerificationCheckRequest,
   identityConfirmRequest,

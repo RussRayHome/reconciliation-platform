@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter } from 'react-router';
 
 import { SignupScreen } from './SignupScreen';
-import type { AuthenticatedUserSession } from '../App';
+import type { AuthenticatedUserSession } from '../lib/authSession';
 
 afterEach(() => {
   cleanup();
