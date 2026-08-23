@@ -580,6 +580,11 @@ export class ReconciliationFileValidationError extends Error {
  * its initial in-progress state forever, regardless of whether the failure came from the
  * synchronous route or a queued/retried run. */
 export class ReconciliationWorkflowError extends Error {
+  /**
+   * @param message Human-readable failure reason, surfaced as-is via `Error.message`.
+   * @param persistenceJobId Id of the Postgres lifecycle row this run had already created.
+   * @param options Standard `ErrorOptions` -- used to attach the original error as `cause`.
+   */
   constructor(
     message: string,
     public readonly persistenceJobId: string,
