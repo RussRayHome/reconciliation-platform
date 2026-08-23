@@ -72,6 +72,7 @@ import {
 import { resolveLatestRunPhase, type LatestRunPhase } from './lib/latestRunState';
 import { subscribeToRunStatus } from './lib/runStatusStream';
 import { clearAuthToken, getAuthToken } from './lib/authToken';
+import type { AuthenticatedUserSession } from './lib/authSession';
 import { countFixedRules, countRulesByFamily } from './lib/ruleFilters';
 import type { AppTab } from './lib/appCatalog';
 import { resolveEnvironmentPaths } from './lib/environmentPath';
@@ -98,21 +99,6 @@ type ReconciliationModel = ReturnType<typeof useImportRunSubmit>;
 type UploadTransferModel = ReturnType<typeof useImportUploadTransfer>;
 type PartialAcceptModel = ReturnType<typeof useImportPartialAccept>;
 type RunData = NonNullable<ReconciliationModel['data']>;
-/** The authenticated principal, as reported by the server (login response or /api/auth/me) --
- * ADR-0002 step 6: role travels with the session instead of being looked up from a hardcoded
- * client-side username map. */
-export type AuthenticatedUserSession = {
-  username: string;
-  role: UserRole;
-  organizationId: string;
-  firstName?: string;
-  lastName?: string;
-  // Login/signup don't return these -- both start out 'pending'/'pending'/false and are corrected
-  // moments later by the /api/auth/me effect below, which reads them live from the database.
-  identityVerificationStatus: IdentityVerificationStatus;
-  entityVerificationStatus: EntityVerificationStatus;
-  isFullyVerified: boolean;
-};
 
 type SelectOption = {
   value: string;
