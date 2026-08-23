@@ -12,6 +12,10 @@ export type DependencyModule = {
   fanOut: number;
   instability: number;
   cyclic: boolean;
+  /** True for a standalone CLI script, build-tool config file, or vitest setupFiles entry -- zero
+   *  fan-in is correct and permanent for these, not a dead-code signal, so they're excluded from
+   *  the "Orphans" count (see scripts/ci/depcruise-scan.ts's isKnownEntryPoint). */
+  isEntryPoint: boolean;
 };
 
 /** One dependency-cruiser rule violation -- mirrors apps/api's DependencyViolation. */
@@ -59,7 +63,9 @@ function InstabilityBar({ instability }: Readonly<{ instability: number }>) {
 const statusFor = (module: DependencyModule, hasViolation: boolean): { label: string; tone: Verdict } => {
   if (module.cyclic) return { label: 'Cycle', tone: 'fail' };
   if (hasViolation) return { label: 'Rule', tone: 'warn' };
-  if (module.fanIn === 0 && module.fanOut === 0) return { label: 'Orphan', tone: 'neutral' };
+  if (module.fanIn === 0 && module.fanOut === 0) {
+    return module.isEntryPoint ? { label: 'Entry point', tone: 'neutral' } : { label: 'Orphan', tone: 'neutral' };
+  }
   return { label: 'Clean', tone: 'pass' };
 };
 
@@ -115,7 +121,7 @@ export function DependencyCruiserPanel({ scan }: Readonly<{ scan: DependencyScan
   }
 
   const cycleCount = scan.modules.filter((m) => m.cyclic).length;
-  const orphanCount = scan.modules.filter((m) => m.fanIn === 0 && m.fanOut === 0).length;
+  const orphanCount = scan.modules.filter((m) => m.fanIn === 0 && m.fanOut === 0 && !m.isEntryPoint).length;
   const edgeCount = scan.modules.reduce((sum, m) => sum + m.fanOut, 0);
   const errorCount = scan.violations.filter((v) => v.sev === 'error').length;
 
