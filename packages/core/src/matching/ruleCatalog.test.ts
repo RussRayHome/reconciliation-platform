@@ -52,18 +52,20 @@ describe('buildRuleCatalog', () => {
     }
   });
 
-  it('only flags the wire-fee rule as elevated risk', () => {
+  it('only flags the wire-fee and credit-card-fee rules as elevated risk', () => {
     const catalog = buildRuleCatalog();
     const elevated = catalog.rules.filter((rule) => rule.risk === 'elevated');
 
-    expect(elevated).toHaveLength(1);
-    expect(elevated[0]?.name).toBe('Wire Correspondent Fee Deduction');
+    expect(elevated).toHaveLength(2);
+    expect(elevated.map((rule) => rule.name)).toEqual(
+      expect.arrayContaining(['Wire Correspondent Fee Deduction', 'Credit Card Service Fee Deduction']),
+    );
   });
 
-  it('returns all 17 MatchingConfig fields as metrics, each referenced by at least one rule', () => {
+  it('returns all 18 MatchingConfig fields as metrics, each referenced by at least one rule', () => {
     const catalog = buildRuleCatalog();
 
-    expect(catalog.metrics).toHaveLength(17);
+    expect(catalog.metrics).toHaveLength(18);
 
     const referencedMetricIds = new Set(catalog.rules.flatMap((rule) => rule.varianceMetricIds));
     const metricIds = new Set(catalog.metrics.map((metric) => metric.id));
@@ -77,6 +79,7 @@ describe('buildRuleCatalog', () => {
       'groupedCandidatePoolSize',
       'groupedMatchMaxSize',
       'wireFeeTolerance',
+      'creditCardFeeTolerance',
     ] as const) {
       expect(metricIds.has(knob)).toBe(true);
     }

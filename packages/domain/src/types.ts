@@ -235,6 +235,10 @@ export interface ExceptionItem {
   lineNumber: number;
   transactionDate?: string;
   amount: number | null;
+  /** Age in days relative to the reconciliation anchor date, populated only for
+   * `OutstandingCheck`/`StaleOutstandingCheck` exceptions -- drives the Outstanding Check Aging
+   * chart. `undefined` for every other category. */
+  ageInDays?: number;
   errorMessage: string;
   ruleTrace?: ExceptionRuleTrace;
   priorRuleTraces?: ExceptionRuleTrace[];
@@ -440,6 +444,7 @@ export interface MatchingConfig {
   depositInTransitDays: number;
   partialPaymentWindowDays: number;
   wireFeeTolerance: number;
+  creditCardFeeTolerance: number;
 }
 
 /** Unit of measure for a tunable `MatchingConfig` threshold, as shown in the rule catalog. */

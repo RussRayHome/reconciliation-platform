@@ -43,6 +43,7 @@ export const MATCHING_RULE_NAMES = [
   'Amount + Date Match, Weak Description',
   'Amount + Extended Date Window Match',
   'Wire Correspondent Fee Deduction',
+  'Credit Card Service Fee Deduction',
   'FX Rate Variance',
   'Possible Amount Mismatch',
 ] as const;
@@ -694,6 +695,44 @@ const rankCandidates = (
           ),
         );
         continue;
+      }
+
+      // Credit Card Service Fee: same direction, percentage amount difference within tolerance,
+      // strong text match. Checked before FX Rate Variance below (whose own window, 0.5%-15%, is
+      // wide enough to otherwise swallow a genuine ~1-3% card-processing-fee pair under the wrong,
+      // less-specific FX label -- each block `continue`s on match, so order picks the winner).
+      if (
+        !sameAmount &&
+        Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        textSimilarity >= config.textSimilarityThreshold
+      ) {
+        const largerAmount = Math.max(
+          Math.abs(bankTransaction.amount),
+          Math.abs(glTransaction.amount),
+        );
+        const creditCardDiffPct =
+          largerAmount > 0
+            ? Math.abs(bankTransaction.amount - glTransaction.amount) / largerAmount
+            : 0;
+        if (creditCardDiffPct > 0 && creditCardDiffPct <= config.creditCardFeeTolerance) {
+          candidates.push(
+            buildCandidate(
+              bankTransaction,
+              glTransaction,
+              'Credit Card Service Fee Deduction',
+              0.77,
+              'AmountMismatch',
+              [
+                `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${glTransaction.amount.toFixed(2)} differ by ${(creditCardDiffPct * 100).toFixed(2)}%.`,
+                'Amounts share the same sign and the percentage variance is within the credit-card fee tolerance, suggesting a card processor or merchant services fee was deducted before settlement.',
+                'Reviewer should confirm against the card processor statement or merchant services fee schedule.',
+              ],
+              'AmountMismatch',
+            ),
+          );
+          continue;
+        }
       }
 
       // FX Rate Variance: same direction, percentage amount difference 0.5%–15%, strong text match.

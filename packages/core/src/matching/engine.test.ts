@@ -818,6 +818,64 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.exceptionCategory).toBe('AmountMismatch');
   });
 
+  it('classifies a card settlement where the bank amount is 2% lower than GL as Credit Card Service Fee Deduction', () => {
+    // Amounts large enough that the dollar difference ($1,000) exceeds Wire Correspondent Fee
+    // Deduction's own flat-$ tolerance (wireFeeTolerance, $500 default) -- otherwise Wire's block,
+    // which runs first, would preempt this rule before the percentage check is ever reached.
+    const bank = buildTransaction({
+      id: 'bank-cc',
+      source: 'bank',
+      lineNumber: 9,
+      transactionDate: '2025-06-15',
+      description: 'MERCHANT SERVICES DEPOSIT ACME RETAIL',
+      normalizedComparisonTokens: ['MERCHANT', 'SERVICES', 'DEPOSIT', 'ACME', 'RETAIL'],
+      amount: 49000,
+    });
+    const gl = buildTransaction({
+      id: 'gl-cc',
+      source: 'gl',
+      lineNumber: 10,
+      transactionDate: '2025-06-15',
+      description: 'Acme Retail Merchant Services Batch',
+      normalizedComparisonTokens: ['ACME', 'RETAIL', 'MERCHANT', 'SERVICES', 'BATCH'],
+      amount: 50000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Credit Card Service Fee Deduction');
+    expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
+    expect(result.matchResults[0]?.exceptionCategory).toBe('AmountMismatch');
+  });
+
+  it('does not classify a 10% variance as Credit Card Service Fee Deduction (exceeds tolerance; falls through to FX Rate Variance instead)', () => {
+    const bank = buildTransaction({
+      id: 'bank-cc-over',
+      source: 'bank',
+      lineNumber: 11,
+      transactionDate: '2025-06-20',
+      description: 'MERCHANT SERVICES DEPOSIT BETA RETAIL',
+      normalizedComparisonTokens: ['MERCHANT', 'SERVICES', 'DEPOSIT', 'BETA', 'RETAIL'],
+      amount: 9000,
+    });
+    const gl = buildTransaction({
+      id: 'gl-cc-over',
+      source: 'gl',
+      lineNumber: 12,
+      transactionDate: '2025-06-20',
+      description: 'Beta Retail Merchant Services Batch',
+      normalizedComparisonTokens: ['BETA', 'RETAIL', 'MERCHANT', 'SERVICES', 'BATCH'],
+      amount: 10000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).not.toBe('Credit Card Service Fee Deduction');
+    expect(result.matchResults[0]?.ruleName).toBe('FX Rate Variance');
+  });
+
   it('ignores inactive aliases', () => {
     const alias: PayeeAlias = {
       id: crypto.randomUUID(),
