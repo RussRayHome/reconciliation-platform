@@ -6,7 +6,7 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(1394);
+SELECT plan(1396);
 
 SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
@@ -530,7 +530,7 @@ SELECT is(
 reconciliation_canonical_row_source_system_check => CHECK ((source_system = ANY (ARRAY['bank'::text, 'gl'::text])))$chk$,
   'reconciliation_canonical_row check/unique/exclusion constraints'
 );
-SELECT columns_are('public', 'reconciliation_exception', ARRAY['id', 'job_id', 'canonical_row_id', 'category', 'severity', 'source_system', 'spreadsheet_file_name', 'line_number', 'transaction_date', 'amount', 'error_message', 'rule_trace_json', 'prior_rule_traces_json', 'recommended_next_actions', 'likely_matching_reference', 'reviewer_notes', 'match_confidence', 'normalized_comparison_tokens', 'related_transaction_ids', 'created_at', 'organization_id']::name[], 'reconciliation_exception has exactly the expected columns');
+SELECT columns_are('public', 'reconciliation_exception', ARRAY['id', 'job_id', 'canonical_row_id', 'category', 'severity', 'source_system', 'spreadsheet_file_name', 'line_number', 'transaction_date', 'amount', 'error_message', 'rule_trace_json', 'prior_rule_traces_json', 'recommended_next_actions', 'likely_matching_reference', 'reviewer_notes', 'match_confidence', 'normalized_comparison_tokens', 'related_transaction_ids', 'created_at', 'organization_id', 'age_in_days']::name[], 'reconciliation_exception has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_exception', ARRAY['id']::name[], 'reconciliation_exception primary key');
 SELECT indexes_are('public', 'reconciliation_exception', ARRAY['reconciliation_exception_canonical_row_idx', 'reconciliation_exception_job_category_line_order_idx', 'reconciliation_exception_job_idx', 'reconciliation_exception_job_line_order_idx', 'reconciliation_exception_organization_idx', 'reconciliation_exception_pkey']::name[], 'reconciliation_exception has exactly the expected indexes');
 SELECT is(
@@ -580,6 +580,8 @@ SELECT col_type_is('public', 'reconciliation_exception', 'created_at', 'timestam
 SELECT col_not_null('public', 'reconciliation_exception', 'created_at', 'reconciliation_exception.created_at is NOT NULL');
 SELECT col_type_is('public', 'reconciliation_exception', 'organization_id', 'uuid', 'reconciliation_exception.organization_id is uuid');
 SELECT col_not_null('public', 'reconciliation_exception', 'organization_id', 'reconciliation_exception.organization_id is NOT NULL');
+SELECT col_type_is('public', 'reconciliation_exception', 'age_in_days', 'integer', 'reconciliation_exception.age_in_days is integer');
+SELECT col_is_null('public', 'reconciliation_exception', 'age_in_days', 'reconciliation_exception.age_in_days is nullable');
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
      FROM pg_constraint con

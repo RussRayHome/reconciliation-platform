@@ -61,25 +61,26 @@ Rows marked excluded or with data-quality issues are not eligible for matching.
 
 The default matching and reporting profile is defined in `packages/config/src/default-config.ts`.
 
-| Setting                                   | Default   |
-| ----------------------------------------- | --------- |
-| amount tolerance                          | `0.01`    |
-| primary date tolerance                    | `5` days  |
-| timing-difference window                  | `21` days |
-| stale outstanding check threshold         | `45` days |
-| reversal detection window                 | `7` days  |
-| deposit-in-transit window                 | `7` days  |
-| partial payment window                    | `90` days |
-| wire fee tolerance                        | `500.00`  |
-| exact text similarity threshold           | `0.70`    |
-| probable text similarity threshold        | `0.62`    |
-| reference similarity threshold            | `0.90`    |
-| distinctive amount max occurrences        | `1`       |
-| grouped candidate pool size               | `6`       |
-| grouped match max size                    | `3`       |
-| duplicate date window                     | `3` days  |
-| duplicate similarity threshold            | `0.78`    |
-| amount-mismatch text similarity threshold | `0.65`    |
+| Setting                                   | Default     |
+| ----------------------------------------- | ----------- |
+| amount tolerance                          | `0.01`      |
+| primary date tolerance                    | `5` days    |
+| timing-difference window                  | `21` days   |
+| stale outstanding check threshold         | `45` days   |
+| reversal detection window                 | `7` days    |
+| deposit-in-transit window                 | `7` days    |
+| partial payment window                    | `90` days   |
+| wire fee tolerance                        | `500.00`    |
+| credit card fee tolerance                 | `0.03` (3%) |
+| exact text similarity threshold           | `0.70`      |
+| probable text similarity threshold        | `0.62`      |
+| reference similarity threshold            | `0.90`      |
+| distinctive amount max occurrences        | `1`         |
+| grouped candidate pool size               | `6`         |
+| grouped match max size                    | `3`         |
+| duplicate date window                     | `3` days    |
+| duplicate similarity threshold            | `0.78`      |
+| amount-mismatch text similarity threshold | `0.65`      |
 
 Account-specific overrides can change source parsing options, matching thresholds, and severity mapping.
 
@@ -102,17 +103,36 @@ Duplicate rows are removed from cross-source matching and later classified as `D
 
 ### One-to-one candidate ranking order
 
-For each remaining bank/GL pair, the engine evaluates rules in this order:
+For each remaining bank/GL pair, the primary pass (`rankCandidates`) evaluates rules in this order;
+the first rule whose conditions hold wins and the pair moves on (`continue`), so placement order
+only matters between rules whose conditions can both be true for the same pair:
 
-1. `Reference + Amount Match` -> exact candidate
-2. `Month-End Transfer Review Match` -> probable timing-review candidate
-3. `Amount + Date + Text with Reference Variance` -> probable review candidate (`CheckNumberMismatch` or `ReferenceNumberMismatch`)
-4. `Amount + Date + Text Match` -> exact candidate (includes low-context exact shortcut)
-5. `Amount + Date with Description Variance` -> probable review candidate (`DescriptionMerchantVariance`)
-6. `Amount + Extended Date Window Match` -> date-variance candidate
-7. `Possible Amount Mismatch` -> amount-mismatch candidate
+1. `Check Number Amount Mismatch` -> amount-mismatch candidate (`CheckNumberMismatch`) when both sides carry a matching check number but amounts differ
+2. `Check Number Date Variance` -> date-variance candidate when both sides carry a matching check number, amounts agree, but the date falls outside the primary tolerance and inside the extended timing window
+3. `Reference + Amount Match` -> exact candidate
+4. `Reference Match with Amount Variance` -> amount-mismatch candidate when reference/document numbers align strongly but amounts differ
+5. `Historical Pattern Match` -> exact or date-variance candidate via a learned payee alias
+6. `Month-End Transfer Review Match` -> probable timing-review candidate
+7. `Amount + Date + Text with Reference Variance` -> probable review candidate (`CheckNumberMismatch` or `ReferenceNumberMismatch`)
+8. `Amount + Date + Text Match` -> exact candidate (includes low-context exact shortcut)
+9. `Amount + Date with Description Variance` -> probable review candidate (`DescriptionMerchantVariance`)
+10. `Amount + Extended Date Window Match` -> date-variance candidate
+11. `Wire Correspondent Fee Deduction` -> amount-mismatch candidate; requires wire evidence (transaction type or narrative text) on one side, an absolute difference within `wireFeeTolerance`, and that difference also within a 5% sanity ceiling
+12. `Credit Card Service Fee Deduction` -> amount-mismatch candidate; requires card evidence (transaction type or narrative text) on one side and a percentage difference between a 0.1% floor and `creditCardFeeTolerance`
+13. `FX Rate Variance` -> amount-mismatch candidate; percentage difference between 0.5% and 15%, no instrument evidence required
+14. `Possible Amount Mismatch` -> amount-mismatch candidate; the catch-all when no more specific rule applies
 
-If no rule applies, the pair remains unmatched.
+If no rule applies, the pair remains unmatched by the primary pass. A second pass
+(`Amount + Date Match, Weak Description`) then runs only against whatever the primary pass and
+grouped-reservation stage left unmatched — same-day, same-amount pairs with little vocabulary
+overlap, gated on the amount being distinctive enough (`distinctiveAmountMaxOccurrences`) to trust
+without narrative confirmation.
+
+Rules 11 and 12 (Wire, Credit Card) are deliberately disjoint by instrument evidence rather than by
+evaluation order: a pair with the right amount shape but no evidence for either instrument falls
+through to `Possible Amount Mismatch` instead of being claimed by whichever rule happens to run
+first. If a pair somehow satisfies both instruments' evidence, Wire wins purely because it is
+checked first — no tie-break logic beyond that placement.
 
 ### Amount-driven mode
 

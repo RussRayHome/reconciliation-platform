@@ -76,6 +76,8 @@ export const runReconciliation = async (
     normalizedTransactions,
     matching.matchResults,
     exceptionOutput.exceptions,
+    input.config.matching.staleOutstandingCheckDays,
+    input.reconciliationFrequency,
   );
 
   const outputWorkbook = await exportWorkbook({

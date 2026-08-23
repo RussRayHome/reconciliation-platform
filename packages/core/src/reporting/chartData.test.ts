@@ -1,8 +1,8 @@
-import type { ExceptionItem, SummaryMetrics } from '@recon/domain';
+import type { ExceptionItem, ReconciliationFrequency, SummaryMetrics } from '@recon/domain';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
-import { buildChartSeries } from './chartData';
+import { buildAgingBuckets, buildChartSeries } from './chartData';
 
 const buildException = (overrides: Partial<ExceptionItem>): ExceptionItem => ({
   id: overrides.id ?? randomUUID(),
@@ -46,37 +46,93 @@ const baseSummary: SummaryMetrics = {
   charts: [],
 };
 
-const agingDataFor = (exceptions: ExceptionItem[]) =>
-  buildChartSeries(baseSummary, exceptions).find((chart) => chart.id === 'outstandingCheckAging')
-    ?.data;
+const agingDataFor = (
+  exceptions: ExceptionItem[],
+  staleOutstandingCheckDays = 45,
+  reconciliationFrequency: ReconciliationFrequency = 'Monthly',
+) =>
+  buildChartSeries(baseSummary, exceptions, staleOutstandingCheckDays, reconciliationFrequency).find(
+    (chart) => chart.id === 'outstandingCheckAging',
+  )?.data;
 
-describe('buildChartSeries — outstandingCheckAging', () => {
-  it('always returns all four buckets, in order, even with no matching exceptions', () => {
-    expect(agingDataFor([])).toEqual([
-      { label: '0-5 days', value: 0 },
-      { label: '6-30 days', value: 0 },
-      { label: '31-60 days', value: 0 },
-      { label: '60+ days', value: 0 },
+describe('buildAgingBuckets', () => {
+  it('derives 0-5 / 6-30 / 31-44 / 45+ from the default 45-day Monthly stale threshold', () => {
+    expect(buildAgingBuckets(45, 'Monthly').map((bucket) => bucket.label)).toEqual([
+      '0-5 days',
+      '6-30 days',
+      '31-44 days',
+      '45+ days',
     ]);
   });
 
-  it('sorts ages at each bucket boundary into the correct (inclusive) bucket', () => {
+  it('derives 0-30 / 31-90 / 91-119 / 120+ for an Annual account with a 120-day threshold', () => {
+    expect(buildAgingBuckets(120, 'Annual').map((bucket) => bucket.label)).toEqual([
+      '0-30 days',
+      '31-90 days',
+      '91-119 days',
+      '120+ days',
+    ]);
+  });
+
+  it('collapses to a single open bucket at a 0-day stale threshold, never an empty or inverted band set', () => {
+    expect(buildAgingBuckets(0, 'Monthly').map((bucket) => bucket.label)).toEqual(['0+ days']);
+  });
+
+  it('collapses to two gap-free buckets at a small stale threshold (<= 6 days)', () => {
+    expect(buildAgingBuckets(5, 'Monthly').map((bucket) => bucket.label)).toEqual([
+      '0-4 days',
+      '5+ days',
+    ]);
+    expect(buildAgingBuckets(6, 'Monthly').map((bucket) => bucket.label)).toEqual([
+      '0-5 days',
+      '6+ days',
+    ]);
+  });
+
+  it('produces non-overlapping, gap-free bounds up to the METRIC_RANGES max of 120 days', () => {
+    const buckets = buildAgingBuckets(120, 'Monthly');
+    expect(buckets.map((bucket) => bucket.label)).toEqual([
+      '0-5 days',
+      '6-30 days',
+      '31-119 days',
+      '120+ days',
+    ]);
+    // Every non-open bound strictly increases and the final bucket is unbounded.
+    const closed = buckets.slice(0, -1);
+    for (let i = 1; i < closed.length; i += 1) {
+      expect(closed[i]!.maxDays).toBeGreaterThan(closed[i - 1]!.maxDays);
+    }
+    expect(buckets.at(-1)?.maxDays).toBe(Infinity);
+  });
+});
+
+describe('buildChartSeries — outstandingCheckAging', () => {
+  it('always returns every bucket, in order, even with no matching exceptions', () => {
+    expect(agingDataFor([])).toEqual([
+      { label: '0-5 days', value: 0 },
+      { label: '6-30 days', value: 0 },
+      { label: '31-44 days', value: 0 },
+      { label: '45+ days', value: 0 },
+    ]);
+  });
+
+  it('sorts ages at each bucket boundary into the correct (inclusive) bucket, including the 44/45 boundary the stale threshold now sits on', () => {
     const data = agingDataFor([
       buildException({ category: 'OutstandingCheck', ageInDays: 0 }),
       buildException({ category: 'OutstandingCheck', ageInDays: 5 }),
       buildException({ category: 'OutstandingCheck', ageInDays: 6 }),
       buildException({ category: 'OutstandingCheck', ageInDays: 30 }),
       buildException({ category: 'StaleOutstandingCheck', ageInDays: 31 }),
-      buildException({ category: 'StaleOutstandingCheck', ageInDays: 60 }),
-      buildException({ category: 'StaleOutstandingCheck', ageInDays: 61 }),
+      buildException({ category: 'StaleOutstandingCheck', ageInDays: 44 }),
+      buildException({ category: 'StaleOutstandingCheck', ageInDays: 45 }),
       buildException({ category: 'StaleOutstandingCheck', ageInDays: 400 }),
     ]);
 
     expect(data).toEqual([
       { label: '0-5 days', value: 2 },
       { label: '6-30 days', value: 2 },
-      { label: '31-60 days', value: 2 },
-      { label: '60+ days', value: 2 },
+      { label: '31-44 days', value: 2 },
+      { label: '45+ days', value: 2 },
     ]);
   });
 
@@ -90,8 +146,27 @@ describe('buildChartSeries — outstandingCheckAging', () => {
     expect(data).toEqual([
       { label: '0-5 days', value: 1 },
       { label: '6-30 days', value: 0 },
-      { label: '31-60 days', value: 0 },
-      { label: '60+ days', value: 0 },
+      { label: '31-44 days', value: 0 },
+      { label: '45+ days', value: 0 },
+    ]);
+  });
+
+  it('derives Annual bands (0-30 / 31-90 / 91-.../.../+) instead of the Monthly bands', () => {
+    const data = agingDataFor(
+      [
+        buildException({ category: 'OutstandingCheck', ageInDays: 30 }),
+        buildException({ category: 'StaleOutstandingCheck', ageInDays: 91 }),
+        buildException({ category: 'StaleOutstandingCheck', ageInDays: 120 }),
+      ],
+      120,
+      'Annual',
+    );
+
+    expect(data).toEqual([
+      { label: '0-30 days', value: 1 },
+      { label: '31-90 days', value: 0 },
+      { label: '91-119 days', value: 1 },
+      { label: '120+ days', value: 1 },
     ]);
   });
 });

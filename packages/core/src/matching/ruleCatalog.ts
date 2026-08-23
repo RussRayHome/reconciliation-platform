@@ -134,13 +134,13 @@ const MATCHING_RULE_METADATA: Record<MatchingRuleName, RuleMetadata> = {
   },
   'Wire Correspondent Fee Deduction': {
     description:
-      'Flags a same-direction, strongly-matching pair whose amount difference is within the wire-fee tolerance as a likely correspondent-bank or processing fee deducted in transit.',
+      'Flags a same-direction, strongly-matching pair with wire evidence (transaction type or narrative text) on one side, whose amount difference is within the wire-fee tolerance, as a likely correspondent-bank or processing fee deducted in transit.',
     varianceMetricIds: ['dateToleranceDays', 'wireFeeTolerance', 'textSimilarityThreshold'],
     risk: 'elevated',
   },
   'Credit Card Service Fee Deduction': {
     description:
-      'Flags a same-direction, strongly-matching pair whose percentage amount difference is within the credit-card fee tolerance as a likely card processor or merchant services fee deducted before settlement.',
+      'Flags a same-direction, strongly-matching pair with card evidence (transaction type or narrative text) on one side, whose percentage amount difference is within the credit-card fee tolerance, as a likely card processor or merchant services fee.',
     varianceMetricIds: ['dateToleranceDays', 'creditCardFeeTolerance', 'textSimilarityThreshold'],
     risk: 'elevated',
   },

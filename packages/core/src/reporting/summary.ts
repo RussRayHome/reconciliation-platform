@@ -2,6 +2,7 @@ import type {
   ExceptionItem,
   MatchResult,
   NormalizedTransaction,
+  ReconciliationFrequency,
   SummaryMetrics,
 } from '@recon/domain';
 
@@ -39,6 +40,8 @@ export const buildSummaryMetrics = (
   normalizedTransactions: NormalizedTransaction[],
   matchResults: MatchResult[],
   exceptions: ExceptionItem[],
+  staleOutstandingCheckDays = 45,
+  reconciliationFrequency: ReconciliationFrequency = 'Monthly',
 ): SummaryMetrics => {
   const exactMatches = matchResults.filter((result) => result.disposition === 'ExactMatch');
   const probableMatches = matchResults.filter((result) =>
@@ -119,6 +122,11 @@ export const buildSummaryMetrics = (
     charts: [],
   };
 
-  summary.charts = buildChartSeries(summary, exceptions);
+  summary.charts = buildChartSeries(
+    summary,
+    exceptions,
+    staleOutstandingCheckDays,
+    reconciliationFrequency,
+  );
   return summary;
 };

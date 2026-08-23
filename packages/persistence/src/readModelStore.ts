@@ -109,6 +109,7 @@ type ExceptionRow = {
   match_confidence: ExceptionItem['matchConfidence'] | null;
   normalized_comparison_tokens: unknown;
   related_transaction_ids: unknown;
+  age_in_days: number | null;
 };
 
 type ReviewerObservationRow = {
@@ -287,6 +288,7 @@ const mapException = (runId: string, row: ExceptionRow): ExceptionItem => ({
   matchConfidence: row.match_confidence ?? undefined,
   normalizedComparisonTokens: asStringArray(row.normalized_comparison_tokens),
   relatedTransactionIds: asStringArray(row.related_transaction_ids),
+  ageInDays: row.age_in_days ?? undefined,
 });
 
 const mapReviewerObservation = (
@@ -391,7 +393,7 @@ const fetchExceptions = async (client: PoolClient, runId: string): Promise<Excep
     `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
             transaction_date, amount, error_message, rule_trace_json, prior_rule_traces_json,
             recommended_next_actions, likely_matching_reference, reviewer_notes,
-            match_confidence, normalized_comparison_tokens, related_transaction_ids
+            match_confidence, normalized_comparison_tokens, related_transaction_ids, age_in_days
        FROM reconciliation_exception
       WHERE job_id = $1
       ORDER BY line_number ASC, id ASC`,
@@ -667,7 +669,7 @@ export class PostgresReconciliationReadModelStore {
         `SELECT id, category, severity, source_system, spreadsheet_file_name, line_number,
                 transaction_date, amount, error_message, rule_trace_json, prior_rule_traces_json,
                 recommended_next_actions, likely_matching_reference, reviewer_notes,
-                match_confidence, normalized_comparison_tokens, related_transaction_ids
+                match_confidence, normalized_comparison_tokens, related_transaction_ids, age_in_days
            FROM reconciliation_exception
           WHERE ${whereClause}
           ORDER BY line_number ASC, id ASC
