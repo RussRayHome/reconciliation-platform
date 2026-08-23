@@ -800,6 +800,202 @@
           "legendFormat": "failure rate"
         }
       ]
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Container & Host Resources (cAdvisor / Node Exporter)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 501,
+      "type": "timeseries",
+      "title": "CPU usage by container (cores)",
+      "description": "Real per-container CPU consumption, scoped to whichever stack $environment selects (recon-observability itself included when that's the selection). Added to make Dev/Stage's shared-laptop CPU contention visible during a k6 run instead of inferred -- see compose.observability.yaml's own cadvisor comment. Shown in cores, not percent: rate(container_cpu_usage_seconds_total) is fractional cores consumed per second and 'percent of what' is ambiguous on a multi-core host, so cores is the conventional cAdvisor unit.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 71
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_project=\"$environment\", name!=\"\"}[5m]))",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    },
+    {
+      "id": 502,
+      "type": "timeseries",
+      "title": "Memory usage by container (working set)",
+      "description": "Real per-container memory (working set, not raw RSS -- excludes reclaimable page cache, the number that actually matters for OOM risk), scoped to $environment.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 71
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (name) (container_memory_working_set_bytes{container_label_com_docker_compose_project=\"$environment\", name!=\"\"})",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    },
+    {
+      "id": 503,
+      "type": "timeseries",
+      "title": "Host CPU utilization (Docker Desktop VM)",
+      "description": "On Docker Desktop for macOS, 'host' means Docker Desktop's own Linux VM, not literally the Mac's hardware -- that VM is what every container in every stack actually competes for CPU inside, which is exactly the right scope for a shared-laptop-contention question. Single node-exporter instance, so this is not scoped by $environment -- it reflects total VM-wide utilization regardless of which stack is selected above.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 79
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "utilization"
+        }
+      ]
+    },
+    {
+      "id": 504,
+      "type": "timeseries",
+      "title": "Host memory utilization (Docker Desktop VM)",
+      "description": "Same VM-wide scope as the CPU panel to its left -- not scoped by $environment.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 79
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "legendFormat": "utilization"
+        }
+      ]
     }
   ],
   "schemaVersion": 39,
@@ -843,6 +1039,6 @@
   "timezone": "",
   "title": "Reconciliation Platform Overview",
   "uid": "reconciliation-platform-overview",
-  "version": 10,
+  "version": 11,
   "weekStart": ""
 }
