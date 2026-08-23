@@ -1,9 +1,6 @@
-import type { NormalizedTransaction } from '@recon/domain';
+import type { NaturalKeyTier, NormalizedTransaction } from '@recon/domain';
 
-/** Which of the three tiers (strongest first) produced a natural key -- recorded alongside the
- * key itself (`reconciliation_open_item.natural_key_tier`) so a Tier-3 match can be flagged for
- * manual review rather than trusted the same way a Tier-1 check-number match is. */
-export type NaturalKeyTier = 1 | 2 | 3;
+export type { NaturalKeyTier };
 
 export interface NaturalKeyResult {
   key: string;

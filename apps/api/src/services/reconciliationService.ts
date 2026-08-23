@@ -1,4 +1,5 @@
 import {
+  buildOpenItemCandidates,
   buildSummaryMetrics,
   classifyExceptions,
   exportWorkbook,
@@ -11,7 +12,7 @@ import {
   sampleAccountOverrides,
 } from '@recon/config';
 
-import type { PostgresReconciliationLifecycleStore } from '@recon/persistence';
+import type { PostgresOpenItemStore, PostgresReconciliationLifecycleStore } from '@recon/persistence';
 
 import type {
   AuditEvent,
@@ -59,6 +60,13 @@ interface RunReconciliationPipelineInput {
    * `ExceptionClassifierInput.declaredAnchorDate`'s doc comment. Undefined for a caller with no
    * declared period end yet (the pre-File-Imports pipeline, or a run predating this column). */
   declaredAnchorDate?: string;
+  /** `reconciliation_run.id`, when this pipeline run is File-Imports-triggered -- distinct from
+   * `runId` above, which is the `reconciliation_job.id`. Present, `openItemStore` projects this
+   * run's carry-eligible exceptions into open items and flips `reconciliation_run.status` to
+   * RECONCILED once export/finalize succeeds (Unreconciled Item Roll-Forward PR C.4). Both
+   * undefined together on the standalone atomic route, which has no `reconciliation_run` row. */
+  reconciliationRunId?: string;
+  openItemStore?: PostgresOpenItemStore;
   aliases: PayeeAlias[];
   t0: number;
   log: pino.Logger;
@@ -109,6 +117,8 @@ const runReconciliationPipeline = async ({
   reconciliationFrequency,
   periodLabel,
   declaredAnchorDate,
+  reconciliationRunId,
+  openItemStore,
   aliases,
   t0,
   log,
@@ -427,6 +437,42 @@ const runReconciliationPipeline = async ({
     );
   }
 
+  // Unreconciled Item Roll-Forward PR C.4: project this run's carry-eligible exceptions into
+  // open items once the run has genuinely finished (export/finalize succeeded above -- this is
+  // deliberately *after* that step, not before, so a projection failure can never leave a
+  // finalized run un-exported). Best-effort: an already-successful reconciliation run must not be
+  // turned into a failure by a problem in this newer, separate side path, so failures here are
+  // logged, not rethrown. Only runs when the caller wired an openItemStore in (production, via
+  // app.ts) -- most tests exercise this pipeline without one.
+  if (openItemStore) {
+    try {
+      const { candidates, skippedNoTransaction, skippedNoAccountIdentifier, skippedMissingRequiredField } =
+        buildOpenItemCandidates(exceptionOutput.exceptions, normalizedTransactions);
+      const projection = await openItemStore.projectOpenItems(organizationId, {
+        jobId: runId,
+        reconciliationRunId,
+        candidates,
+      });
+      if (reconciliationRunId) {
+        await openItemStore.markRunReconciled(organizationId, reconciliationRunId);
+      }
+      log.info({
+        action: 'service.rollforward.projectOpenItems.completed',
+        opened: projection.opened,
+        carriedForward: projection.carriedForward,
+        skippedNoTransaction,
+        skippedNoAccountIdentifier,
+        skippedMissingRequiredField,
+      });
+    } catch (rollforwardError) {
+      log.warn({
+        action: 'service.rollforward.projectOpenItems.failed',
+        runId,
+        message: rollforwardError instanceof Error ? rollforwardError.message : String(rollforwardError),
+      });
+    }
+  }
+
   return {
     id: runId,
     correlationId,
@@ -478,6 +524,9 @@ export interface ExecuteReconciliationFromNormalizedInput {
    * the standalone atomic route has no declared period at all, so it always passes undefined and
    * keeps today's derived-anchor behavior exactly as it is. */
   declaredAnchorDate?: string;
+  /** See `RunReconciliationPipelineInput.reconciliationRunId`/`openItemStore`'s doc comments. */
+  reconciliationRunId?: string;
+  openItemStore?: PostgresOpenItemStore;
   aliases?: PayeeAlias[];
   /** See `RunReconciliationPipelineInput.onStep`'s doc comment. */
   onStep?: QueueStepReporter;
@@ -505,6 +554,8 @@ export const executeReconciliationFromNormalized = async ({
   reconciliationFrequency,
   periodLabel,
   declaredAnchorDate,
+  reconciliationRunId,
+  openItemStore,
   aliases = [],
   onStep,
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
@@ -541,6 +592,8 @@ export const executeReconciliationFromNormalized = async ({
     reconciliationFrequency,
     periodLabel,
     declaredAnchorDate,
+    reconciliationRunId,
+    openItemStore,
     aliases,
     t0,
     log,

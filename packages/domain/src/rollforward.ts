@@ -1,4 +1,4 @@
-import { errorCategories, type ErrorCategory } from './enums';
+import { errorCategories, type ErrorCategory, type SourceSystem } from './enums';
 
 /**
  * Whether an exception in this category is a genuine reconciling item that should survive into
@@ -98,3 +98,32 @@ export const assertCarryEligibilityIsExhaustive = (): void => {
     throw new Error(`CARRY_ELIGIBLE_CATEGORIES is missing: ${missing.join(', ')}`);
   }
 };
+
+/** Which tier of `deriveNaturalKey` (packages/core/src/rollforward/naturalKey.ts) produced a
+ * candidate's natural key -- recorded alongside the key itself so a Tier-3 (fingerprint-only)
+ * match can be flagged for manual review differently than a Tier-1 (check-number) match. Defined
+ * here, not in packages/core, so both packages/core (which derives it) and packages/persistence
+ * (which persists it) can share the same type without persistence taking on a dependency on core
+ * -- persistence only ever depends on domain. */
+export type NaturalKeyTier = 1 | 2 | 3;
+
+/**
+ * One carry-eligible exception, reduced to exactly what's needed to project (or re-confirm) an
+ * open item -- the output of packages/core's `buildOpenItemCandidates` and the input to
+ * packages/persistence's `PostgresOpenItemStore.projectOpenItems` (PR C.4). `accountIdentifier`
+ * is still the raw free-text value at this point (from the underlying `NormalizedTransaction`) --
+ * resolving it to a real `reconciliation_account.id` (find-or-create) is the persistence layer's
+ * job, not core's, since core has no database access.
+ */
+export interface OpenItemCandidate {
+  accountIdentifier: string;
+  sourceSystem: SourceSystem;
+  category: ErrorCategory;
+  naturalKey: string;
+  naturalKeyTier: NaturalKeyTier;
+  originalTransactionDate: string;
+  amount: number;
+  checkNumber?: string;
+  referenceNumber?: string;
+  descriptionSnapshot?: string;
+}

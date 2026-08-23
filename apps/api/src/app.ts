@@ -37,6 +37,7 @@ import {
   PostgresBlobStorage,
   PostgresImportRunStore,
   PostgresImportValidationStore,
+  PostgresOpenItemStore,
   publishMatchingConfigVersion,
   recordApprovalDecision,
   recordApprovalRequestDecision,
@@ -776,6 +777,9 @@ const triggerMatchingForImportRun = async (input: {
    * ISO date string -- see `ExecuteReconciliationFromNormalizedInput.declaredAnchorDate`'s doc
    * comment. Both callers below fetch it from the run row before calling this function. */
   declaredAnchorDate?: string;
+  /** `reconciliation_run.id` -- both callers below already have it in scope as their own `runId`.
+   * See `ExecuteReconciliationFromNormalizedInput.reconciliationRunId`'s doc comment. */
+  reconciliationRunId: string;
 }): Promise<{ matchingJobId: string }> => {
   const correlationId = randomUUID();
 
@@ -858,6 +862,8 @@ const triggerMatchingForImportRun = async (input: {
     aliases,
     onStep: input.onStep,
     declaredAnchorDate: input.declaredAnchorDate,
+    reconciliationRunId: input.reconciliationRunId,
+    openItemStore: input.pool ? new PostgresOpenItemStore(input.pool) : undefined,
   });
 
   input.repository.save(run);
@@ -921,6 +927,7 @@ export const processImportValidationJob = async (input: {
           sessionId: input.sessionId,
           onStep: input.onStep,
           declaredAnchorDate,
+          reconciliationRunId: input.runId,
         }),
     });
 
@@ -3506,6 +3513,7 @@ export const createApp = (
         requestLog: request.log,
         sessionId: request.auth!.jti,
         declaredAnchorDate: summary!.periodEnd ?? undefined,
+        reconciliationRunId: runId,
       });
 
       await importValidationStore.recordMatchingJobId(organizationId, runId, matchingJobId);
