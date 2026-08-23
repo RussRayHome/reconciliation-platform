@@ -325,6 +325,8 @@ const runReconciliationPipeline = async ({
       normalizedTransactions,
       matching.matchResults,
       exceptionOutput.exceptions,
+      config.matching.staleOutstandingCheckDays,
+      reconciliationFrequency,
     );
     log.debug({
       action: 'service.summary.completed',

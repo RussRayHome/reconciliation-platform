@@ -946,6 +946,7 @@ export class PostgresReconciliationLifecycleStore {
               exception.matchConfidence ?? null,
               exception.normalizedComparisonTokens,
               exception.relatedTransactionIds,
+              exception.ageInDays ?? null,
             ] as const,
         );
 
@@ -972,6 +973,7 @@ export class PostgresReconciliationLifecycleStore {
             'match_confidence',
             'normalized_comparison_tokens',
             'related_transaction_ids',
+            'age_in_days',
           ],
           values,
         );

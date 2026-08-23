@@ -624,6 +624,24 @@ describe('PostgresReconciliationLifecycleStore', () => {
       normalizedComparisonTokens: ['ROW', '3'],
       relatedTransactionIds: [canonicalRows[1]?.id ?? ''],
     };
+    // ageInDays round-trip (BUG-3 regression): populated for an OutstandingCheck exception, and a
+    // MissingFromGL exception (which never sets it) must round-trip as undefined, not 0 or null.
+    const outstandingCheckException: ExceptionItem = {
+      id: randomUUID(),
+      runId: jobId,
+      category: 'OutstandingCheck',
+      severity: 'Medium',
+      source: 'bank',
+      spreadsheetFileName: 'bank.xlsx',
+      lineNumber: 4,
+      transactionDate: '2024-12-01',
+      amount: 250,
+      errorMessage: 'Check has not cleared the bank',
+      recommendedNextActions: ['Confirm check has been cashed'],
+      normalizedComparisonTokens: ['ROW', '4'],
+      relatedTransactionIds: [canonicalRows[1]?.id ?? ''],
+      ageInDays: 37,
+    };
     const observation: ReviewerObservation = {
       id: randomUUID(),
       runId: jobId,
@@ -637,7 +655,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
 
     await store.persistReviewArtifacts(defaultOrganizationId, {
       jobId,
-      exceptions: [exception],
+      exceptions: [exception, outstandingCheckException],
       reviewerObservations: [observation],
       summary: buildSummary(),
     });
@@ -722,7 +740,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(counts[3].rows[0]?.count).toBe(4);
     expect(counts[4].rows[0]?.count).toBe(2);
     expect(counts[5].rows[0]?.count).toBe(1);
-    expect(counts[6].rows[0]?.count).toBe(1);
+    expect(counts[6].rows[0]?.count).toBe(2);
     expect(counts[7].rows[0]?.count).toBeGreaterThanOrEqual(4);
     expect(counts[8].rows[0]?.count).toBe(1);
     expect(counts[9].rows[0]?.checksum_sha256).toBe(computeSha256Hex(workbookBinary));
@@ -730,7 +748,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     const readModelStore = new PostgresReconciliationReadModelStore(pool);
     const latestRun = await readModelStore.findLatestRunReport(defaultOrganizationId);
     const runReport = await readModelStore.findRunReportById(defaultOrganizationId, jobId);
-    const exceptionPage = await readModelStore.listRunExceptionsPage(defaultOrganizationId, jobId, 1, 0);
+    const exceptionPage = await readModelStore.listRunExceptionsPage(defaultOrganizationId, jobId, 2, 0);
 
     expect(latestRun?.id).toBe(jobId);
     expect(runReport?.summary.totalRecordsReviewed).toBe(4);
@@ -738,9 +756,14 @@ describe('PostgresReconciliationLifecycleStore', () => {
     expect(runReport?.groupedMatchResults).toHaveLength(1);
     expect(runReport?.reviewerDecisions).toHaveLength(1);
     expect(runReport?.outputWorkbook?.fileName).toBe('reconciliation.xlsx');
-    expect(exceptionPage.total).toBe(1);
-    expect(exceptionPage.items).toHaveLength(1);
+    expect(exceptionPage.total).toBe(2);
+    expect(exceptionPage.items).toHaveLength(2);
     expect(exceptionPage.hasMore).toBe(false);
+
+    const missingFromGlItem = exceptionPage.items.find((item) => item.category === 'MissingFromGL');
+    const outstandingCheckItem = exceptionPage.items.find((item) => item.category === 'OutstandingCheck');
+    expect(missingFromGlItem?.ageInDays).toBeUndefined();
+    expect(outstandingCheckItem?.ageInDays).toBe(37);
 
     // Clearing the decision removes it and is idempotent.
     await store.deleteReviewerDecision(defaultOrganizationId, jobId, decision.targetType, decision.targetId);

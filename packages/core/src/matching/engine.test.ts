@@ -819,9 +819,6 @@ describe('reconcileMatches', () => {
   });
 
   it('classifies a card settlement where the bank amount is 2% lower than GL as Credit Card Service Fee Deduction', () => {
-    // Amounts large enough that the dollar difference ($1,000) exceeds Wire Correspondent Fee
-    // Deduction's own flat-$ tolerance (wireFeeTolerance, $500 default) -- otherwise Wire's block,
-    // which runs first, would preempt this rule before the percentage check is ever reached.
     const bank = buildTransaction({
       id: 'bank-cc',
       source: 'bank',
@@ -874,6 +871,226 @@ describe('reconcileMatches', () => {
     expect(result.matchResults).toHaveLength(1);
     expect(result.matchResults[0]?.ruleName).not.toBe('Credit Card Service Fee Deduction');
     expect(result.matchResults[0]?.ruleName).toBe('FX Rate Variance');
+  });
+
+  it('classifies a small real-world card fee ($335.45/$345.45, below the old $16,666 Wire-preemption floor) as Credit Card Service Fee Deduction', () => {
+    // Regression test for BUG-1: before instrument gating, Wire Correspondent Fee Deduction ran
+    // first and unconditionally claimed any pair within its flat $500 tolerance, so a small
+    // percentage-based card fee like this one (an amount drawn from the real Jan 2025 fixtures)
+    // was mislabeled as a wire fee. This description carries card evidence and none for wire, so
+    // Wire's now-required evidence gate correctly skips it and Credit Card claims it instead.
+    const bank = buildTransaction({
+      id: 'bank-cc-small',
+      source: 'bank',
+      lineNumber: 13,
+      transactionDate: '2025-01-02',
+      description: 'INTERNET PAYMENT CREDITCARD BARCLAYCARD US 1214198303',
+      normalizedComparisonTokens: ['INTERNET', 'CREDITCARD', 'BARCLAYCARD'],
+      amount: -335.45,
+    });
+    const gl = buildTransaction({
+      id: 'gl-cc-small',
+      source: 'gl',
+      lineNumber: 14,
+      transactionDate: '2025-01-02',
+      transactionType: 'Credit Card Payment',
+      description: 'Barclay Card',
+      normalizedComparisonTokens: ['CREDITCARD', 'BARCLAYCARD'],
+      amount: -345.45,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Credit Card Service Fee Deduction');
+  });
+
+  it('describes an outbound card fee (|bank| > |gl|) as added to a disbursement, confirmed against the bank fee schedule', () => {
+    const bank = buildTransaction({
+      id: 'bank-cc-outbound',
+      source: 'bank',
+      lineNumber: 15,
+      transactionDate: '2025-06-01',
+      description: 'CREDIT CARD PMT TO VENDOR',
+      normalizedComparisonTokens: ['CREDIT', 'CARD', 'PMT', 'VENDOR'],
+      amount: -1030,
+    });
+    const gl = buildTransaction({
+      id: 'gl-cc-outbound',
+      source: 'gl',
+      lineNumber: 16,
+      transactionDate: '2025-06-01',
+      description: 'Vendor Credit Card Pmt',
+      normalizedComparisonTokens: ['VENDOR', 'CREDIT', 'CARD', 'PMT'],
+      amount: -1000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Credit Card Service Fee Deduction');
+    expect(result.matchResults[0]?.evidence.join(' ')).toContain("bank's card fee schedule");
+  });
+
+  it('describes an inbound card fee (|bank| < |gl|) as netted out of a receipt, confirmed against the processor statement', () => {
+    const bank = buildTransaction({
+      id: 'bank-cc-inbound',
+      source: 'bank',
+      lineNumber: 17,
+      transactionDate: '2025-06-01',
+      description: 'MERCHANT SERVICES DEPOSIT GAMMA RETAIL',
+      normalizedComparisonTokens: ['MERCHANT', 'SERVICES', 'DEPOSIT', 'GAMMA', 'RETAIL'],
+      amount: 970,
+    });
+    const gl = buildTransaction({
+      id: 'gl-cc-inbound',
+      source: 'gl',
+      lineNumber: 18,
+      transactionDate: '2025-06-01',
+      description: 'Gamma Retail Merchant Services Batch',
+      normalizedComparisonTokens: ['GAMMA', 'RETAIL', 'MERCHANT', 'SERVICES', 'BATCH'],
+      amount: 1000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Credit Card Service Fee Deduction');
+    expect(result.matchResults[0]?.evidence.join(' ')).toContain('processor statement');
+  });
+
+  it('falls through to Possible Amount Mismatch when the amount shape fits Wire but neither side carries wire evidence', () => {
+    const bank = buildTransaction({
+      id: 'bank-no-wire-evidence',
+      source: 'bank',
+      lineNumber: 19,
+      transactionDate: '2025-06-01',
+      description: 'ACB INTERNATIONAL INVOICE SETTLEMENT',
+      normalizedComparisonTokens: ['ACB', 'INTERNATIONAL', 'INVOICE', 'SETTLEMENT'],
+      amount: 9960,
+    });
+    const gl = buildTransaction({
+      id: 'gl-no-wire-evidence',
+      source: 'gl',
+      lineNumber: 20,
+      transactionDate: '2025-06-01',
+      description: 'ACB International Invoice Batch',
+      normalizedComparisonTokens: ['ACB', 'INTERNATIONAL', 'INVOICE', 'BATCH'],
+      amount: 10000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Possible Amount Mismatch');
+    expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
+  });
+
+  it('falls through to Possible Amount Mismatch when the amount shape fits Credit Card but neither side carries card evidence', () => {
+    const bank = buildTransaction({
+      id: 'bank-no-card-evidence',
+      source: 'bank',
+      lineNumber: 21,
+      transactionDate: '2025-06-01',
+      description: 'ACB INTERNATIONAL INVOICE SETTLEMENT',
+      normalizedComparisonTokens: ['ACB', 'INTERNATIONAL', 'INVOICE', 'SETTLEMENT'],
+      amount: 998000,
+    });
+    const gl = buildTransaction({
+      id: 'gl-no-card-evidence',
+      source: 'gl',
+      lineNumber: 22,
+      transactionDate: '2025-06-01',
+      description: 'ACB International Invoice Batch',
+      normalizedComparisonTokens: ['ACB', 'INTERNATIONAL', 'INVOICE', 'BATCH'],
+      amount: 1000000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Possible Amount Mismatch');
+    expect(result.matchResults[0]?.disposition).toBe('AmountMismatch');
+  });
+
+  it('classifies a genuine wire with a sub-$500 difference as Wire Correspondent Fee Deduction', () => {
+    const bank = buildTransaction({
+      id: 'bank-wire-ref',
+      source: 'bank',
+      lineNumber: 23,
+      transactionDate: '2025-01-22',
+      description: 'PC NON-REPETITIVE WIRE WIRE REF# 20250122-00015886',
+      normalizedComparisonTokens: ['NON', 'REPETITIVE', 'WIRE', 'REF'],
+      amount: 9850,
+    });
+    const gl = buildTransaction({
+      id: 'gl-wire-ref',
+      source: 'gl',
+      lineNumber: 24,
+      transactionDate: '2025-01-22',
+      description: 'Wire Ref Non-Repetitive Payment',
+      normalizedComparisonTokens: ['WIRE', 'REF', 'NON', 'REPETITIVE'],
+      amount: 10000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Wire Correspondent Fee Deduction');
+  });
+
+  it('rejects a $500 difference on a $600 wire under the R-6 percentage ceiling, falling through to Possible Amount Mismatch', () => {
+    const bank = buildTransaction({
+      id: 'bank-wire-ceiling',
+      source: 'bank',
+      lineNumber: 25,
+      transactionDate: '2025-06-01',
+      description: 'WIRE TRANSFER SMALL REMITTANCE',
+      normalizedComparisonTokens: ['WIRE', 'TRANSFER', 'SMALL', 'REMITTANCE'],
+      amount: 100,
+    });
+    const gl = buildTransaction({
+      id: 'gl-wire-ceiling',
+      source: 'gl',
+      lineNumber: 26,
+      transactionDate: '2025-06-01',
+      description: 'Wire Transfer Small Remittance',
+      normalizedComparisonTokens: ['WIRE', 'TRANSFER', 'SMALL', 'REMITTANCE'],
+      amount: 600,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).not.toBe('Wire Correspondent Fee Deduction');
+    expect(result.matchResults[0]?.ruleName).toBe('Possible Amount Mismatch');
+  });
+
+  it('rejects a 0.06% difference on a $1M card pair under the R-5 floor, falling through to Possible Amount Mismatch', () => {
+    const bank = buildTransaction({
+      id: 'bank-cc-floor',
+      source: 'bank',
+      lineNumber: 27,
+      transactionDate: '2025-06-01',
+      description: 'MERCHANT SERVICES DEPOSIT DELTA RETAIL',
+      normalizedComparisonTokens: ['MERCHANT', 'SERVICES', 'DEPOSIT', 'DELTA', 'RETAIL'],
+      amount: 999400,
+    });
+    const gl = buildTransaction({
+      id: 'gl-cc-floor',
+      source: 'gl',
+      lineNumber: 28,
+      transactionDate: '2025-06-01',
+      description: 'Delta Retail Merchant Services Batch',
+      normalizedComparisonTokens: ['DELTA', 'RETAIL', 'MERCHANT', 'SERVICES', 'BATCH'],
+      amount: 1000000,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).not.toBe('Credit Card Service Fee Deduction');
+    expect(result.matchResults[0]?.ruleName).toBe('Possible Amount Mismatch');
   });
 
   it('ignores inactive aliases', () => {

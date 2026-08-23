@@ -18,6 +18,7 @@ import {
   reserveGroupedTransactionIds,
   type GroupedReservationCandidate,
 } from './groupedReservations';
+import { isCardLikeTransaction, isWireLikeTransaction } from './instrumentSignals';
 
 import { randomUUID } from 'node:crypto';
 
@@ -670,42 +671,57 @@ const rankCandidates = (
         continue;
       }
 
-      // Wire Correspondent Fee: same direction, small absolute amount difference, strong text match.
+      // Wire Correspondent Fee: same direction, small absolute amount difference (and, as a sanity
+      // ceiling, a small percentage difference too -- an absolute-only gate would let a $500
+      // difference on a $600 wire read as a "fee"), strong text match, and actual wire evidence on
+      // one side or the other (transaction type or narrative text) -- without that gate this rule
+      // was a pure amount-shape classifier wearing a wire label; see instrumentSignals.ts.
+      const WIRE_FEE_MAX_PCT = 0.05;
       if (
         !sameAmount &&
         Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
         Math.abs(bankTransaction.amount - glTransaction.amount) <= config.wireFeeTolerance &&
-        textSimilarity >= config.textSimilarityThreshold
+        textSimilarity >= config.textSimilarityThreshold &&
+        (isWireLikeTransaction(bankTransaction) || isWireLikeTransaction(glTransaction))
       ) {
         const feeDeducted = Math.abs(bankTransaction.amount - glTransaction.amount);
-        candidates.push(
-          buildCandidate(
-            bankTransaction,
-            glTransaction,
-            'Wire Correspondent Fee Deduction',
-            0.77,
-            'AmountMismatch',
-            [
-              `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${glTransaction.amount.toFixed(2)} differ by ${feeDeducted.toFixed(2)}.`,
-              'Amounts share the same sign and the difference is within the wire-fee tolerance, suggesting a correspondent bank or processing fee was deducted in transit.',
-              'Reviewer should confirm against wire advice or settlement detail.',
-            ],
-            'AmountMismatch',
-          ),
-        );
-        continue;
+        const wireLarger = Math.max(Math.abs(bankTransaction.amount), Math.abs(glTransaction.amount));
+        const wireDiffPct = wireLarger > 0 ? feeDeducted / wireLarger : 0;
+        if (wireDiffPct <= WIRE_FEE_MAX_PCT) {
+          candidates.push(
+            buildCandidate(
+              bankTransaction,
+              glTransaction,
+              'Wire Correspondent Fee Deduction',
+              0.77,
+              'AmountMismatch',
+              [
+                `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${glTransaction.amount.toFixed(2)} differ by ${feeDeducted.toFixed(2)}.`,
+                'Amounts share the same sign and the difference is within the wire-fee tolerance, suggesting a correspondent bank or processing fee was deducted in transit.',
+                'Reviewer should confirm against wire advice or settlement detail.',
+              ],
+              'AmountMismatch',
+            ),
+          );
+          continue;
+        }
       }
 
-      // Credit Card Service Fee: same direction, percentage amount difference within tolerance,
-      // strong text match. Checked before FX Rate Variance below (whose own window, 0.5%-15%, is
-      // wide enough to otherwise swallow a genuine ~1-3% card-processing-fee pair under the wrong,
-      // less-specific FX label -- each block `continue`s on match, so order picks the winner).
+      // Credit Card Service Fee: same direction, percentage amount difference within tolerance
+      // (and above a small floor -- below that, a difference is more likely a rounding or keying
+      // error than a fee), strong text match, and actual card evidence on one side or the other.
+      // Placement relative to Wire/FX no longer matters for correctness now that each rule gates on
+      // its own instrument evidence and is therefore disjoint from the others; Wire is still
+      // checked first purely as a documented tie-break for the (rare) case a pair satisfies both
+      // predicates.
+      const CREDIT_CARD_FEE_MIN_PCT = 0.001;
       if (
         !sameAmount &&
         Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
-        textSimilarity >= config.textSimilarityThreshold
+        textSimilarity >= config.textSimilarityThreshold &&
+        (isCardLikeTransaction(bankTransaction) || isCardLikeTransaction(glTransaction))
       ) {
         const largerAmount = Math.max(
           Math.abs(bankTransaction.amount),
@@ -715,7 +731,11 @@ const rankCandidates = (
           largerAmount > 0
             ? Math.abs(bankTransaction.amount - glTransaction.amount) / largerAmount
             : 0;
-        if (creditCardDiffPct > 0 && creditCardDiffPct <= config.creditCardFeeTolerance) {
+        if (
+          creditCardDiffPct >= CREDIT_CARD_FEE_MIN_PCT &&
+          creditCardDiffPct <= config.creditCardFeeTolerance
+        ) {
+          const feeNettedFromReceipt = Math.abs(bankTransaction.amount) < Math.abs(glTransaction.amount);
           candidates.push(
             buildCandidate(
               bankTransaction,
@@ -725,8 +745,10 @@ const rankCandidates = (
               'AmountMismatch',
               [
                 `Bank amount of ${bankTransaction.amount.toFixed(2)} and GL amount of ${glTransaction.amount.toFixed(2)} differ by ${(creditCardDiffPct * 100).toFixed(2)}%.`,
-                'Amounts share the same sign and the percentage variance is within the credit-card fee tolerance, suggesting a card processor or merchant services fee was deducted before settlement.',
-                'Reviewer should confirm against the card processor statement or merchant services fee schedule.',
+                'Amounts share the same sign and the percentage variance is within the credit-card fee tolerance, suggesting a card processor or merchant services fee was deducted.',
+                feeNettedFromReceipt
+                  ? 'Reviewer should confirm against the card processor statement -- the fee appears netted out of a receipt.'
+                  : "Reviewer should confirm against the bank's card fee schedule -- the fee appears added to a disbursement.",
               ],
               'AmountMismatch',
             ),

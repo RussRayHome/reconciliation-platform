@@ -70,8 +70,8 @@ describe('ChartsPanel', () => {
             data: [
               { label: '0-5 days', value: 1 },
               { label: '6-30 days', value: 0 },
-              { label: '31-60 days', value: 0 },
-              { label: '60+ days', value: 2 },
+              { label: '31-44 days', value: 0 },
+              { label: '45+ days', value: 2 },
             ],
           },
         ])}
@@ -85,7 +85,7 @@ describe('ChartsPanel', () => {
     expect(screen.getByText('$126')).toBeInTheDocument();
     expect(screen.getByText('Outstanding Check Aging')).toBeInTheDocument();
     expect(screen.getByText('0-5 days')).toBeInTheDocument();
-    expect(screen.getByText('60+ days')).toBeInTheDocument();
+    expect(screen.getByText('45+ days')).toBeInTheDocument();
   });
 
   it('renders empty chart tables safely when expected chart series are missing', () => {
