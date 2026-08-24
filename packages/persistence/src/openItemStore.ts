@@ -98,6 +98,9 @@ export interface ProjectOpenItemsResult {
  * stop being a dead status).
  */
 export class PostgresOpenItemStore {
+  /** @param pool Tenant-agnostic pool; every method scopes its own queries via
+   * `runInTenantScope` (or, for `reconciliation_organization`, the plain pool -- see
+   * `getCarryForwardEnabled`'s own doc comment for why). */
   constructor(private readonly pool: Pool) {}
 
   /** Resolves `accountIdentifier` to a `reconciliation_account.id`, creating the row if this is
@@ -120,6 +123,12 @@ export class PostgresOpenItemStore {
     return result.rows[0]!.id;
   }
 
+  /**
+   * Projects this run's carry-eligible exceptions (`input.candidates`, already reduced by
+   * `buildOpenItemCandidates`) into open items: an existing OPEN row for the same
+   * `(organization_id, account_id, natural_key)` gets a `CARRIED_FORWARD` event; anything new is
+   * inserted and gets an `OPENED` event. See the class's own doc comment for when this runs.
+   */
   async projectOpenItems(
     organizationId: string,
     input: ProjectOpenItemsInput,

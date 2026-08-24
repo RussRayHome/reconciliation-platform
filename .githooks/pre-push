@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Blocks a push if the fast, no-Docker-needed slice of CI (.github/workflows/docker-validate.yml)
+# would fail -- typecheck, lint, docs:api:check, docs:openapi:check, npm audit, licenses:check,
+# and the unit/integration test suite. Every one of these has failed in CI at least once because
+# it was skipped locally before pushing (docs:api:check most recently, PR #185: two undocumented
+# PostgresOpenItemStore members) -- this hook exists so that stops being possible to forget,
+# instead of relying on remembering to run `npm run verify:push` by hand every time.
+#
+# Deliberately does NOT mirror the Docker image build/vulnerability-scan/smoke-test job, the E2E
+# functional/visual jobs, or the Stage OWASP ZAP job -- those need real Docker infrastructure and
+# take minutes, which would make every push punishing rather than just catching preventable
+# mistakes. Those stages remain CI's job to catch; this hook covers the parts that are fast enough
+# to run on every push and that have actually caused repeat CI failures.
+#
+# Enabled automatically via `npm install` (see the root "prepare" script, which sets
+# `git config core.hooksPath .githooks`). Escape hatch: `git push --no-verify` skips this hook,
+# same as any git hook -- use it only when you've already verified CI will pass some other way
+# (e.g. this exact check already ran moments ago), not to routinely bypass it.
+#
+# Known flake, not a reason to distrust this hook: apps/api/tests/deploy-cleanup.test.ts (Issue
+# #180) spins up a real local Docker stack as part of `npm run test:integration` and can time out
+# under system load -- root-caused as "no Docker cache locally," not a hang or a real regression.
+# If only that one test fails, re-run `npx vitest run --project integration
+# apps/api/tests/deploy-cleanup.test.ts` in isolation to confirm before assuming your change broke
+# something.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-push: running the local CI mirror (npm run verify:push) before allowing this push..." >&2
+
+if ! npm run verify:push; then
+  echo "" >&2
+  echo "pre-push: local CI mirror failed -- push blocked. Fix the failure above, or if you've" >&2
+  echo "pre-push: already confirmed this exact state passes CI, rerun with 'git push --no-verify'." >&2
+  exit 1
+fi
