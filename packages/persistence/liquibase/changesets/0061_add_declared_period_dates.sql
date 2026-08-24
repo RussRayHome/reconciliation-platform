@@ -16,6 +16,15 @@
 ALTER TABLE reconciliation_run ADD COLUMN period_start DATE;
 ALTER TABLE reconciliation_run ADD COLUMN period_end DATE;
 
+-- A bulk UPDATE re-validates every CHECK constraint on the whole row, not just the columns being
+-- set -- discovered against a real dev database carrying a row from changeset 0056's dev-only
+-- self-approval bypass (submitted_by = decided_by, legitimately inserted at the time under
+-- app.allow_self_approval='true'). Without this, that row fails
+-- reconciliation_run_segregation_of_duty_check here even though this backfill never touches
+-- submitted_by/decided_by. Session-local (set_config's third argument), so it only covers this
+-- migration's own transaction -- the same mechanism 0056 itself introduced, not a new one.
+SELECT set_config('app.allow_self_approval', 'true', true);
+
 -- Backfill from the existing period_year/period_month: first/last calendar day of the month for
 -- MONTHLY, Jan 1/Dec 31 of the year for ANNUAL.
 UPDATE reconciliation_run
