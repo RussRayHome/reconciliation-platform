@@ -14,8 +14,8 @@ import { FILE_VALIDATION_RULES } from './ruleCatalog';
  * actual validation logic.
  */
 
-// STRUCT_*/BANK_*/GL_* -- matches every code this engine emits (ruleCatalog.ts's own convention).
-const CODE_LITERAL_PATTERN = /'((?:STRUCT|BANK|GL)_[A-Z_]+)'/g;
+// STRUCT_*/BANK_*/GL_*/AP_* -- matches every code this engine emits (ruleCatalog.ts's own convention).
+const CODE_LITERAL_PATTERN = /'((?:STRUCT|BANK|GL|AP)_[A-Z_]+)'/g;
 
 const extractCodesFromSource = (relativePath: string): Set<string> => {
   const source = readFileSync(join(__dirname, relativePath), 'utf8');
@@ -46,10 +46,11 @@ describe('FILE_VALIDATION_RULES', () => {
     expect(stale, 'codes in FILE_VALIDATION_RULES that the engine no longer emits').toEqual([]);
   });
 
-  it('every BANK_*/GL_* entry declares the matching sourceType, STRUCT_* declares null', () => {
+  it('every BANK_*/GL_*/AP_* entry declares the matching sourceType, STRUCT_* declares null', () => {
     for (const rule of FILE_VALIDATION_RULES) {
       if (rule.code.startsWith('BANK_')) expect(rule.sourceType).toBe('BANK');
       else if (rule.code.startsWith('GL_')) expect(rule.sourceType).toBe('GL');
+      else if (rule.code.startsWith('AP_')) expect(rule.sourceType).toBe('BILLING');
       else if (rule.code.startsWith('STRUCT_')) expect(rule.sourceType).toBeNull();
     }
   });

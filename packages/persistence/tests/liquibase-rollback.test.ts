@@ -72,13 +72,16 @@ describe('Liquibase rollback', () => {
       // different table), 0067 (reconciliation_run.carry_forward_applied/_skip_reason, a
       // different table's columns), 0068 (reconciliation_run.closed_at/closed_by/reopen_count plus
       // a status CHECK constraint redefinition adding CLOSED -- still reconciliation_run, but none
-      // of the columns/index this test observes), and 0069 (creates reconciliation_run_event, a
-      // new table) all sit on top of it without touching the schema this test cares about, so
-      // rolling back 20 changesets (0069 down through 0050) lands on the same DDL diff a
-      // --count=1 rollback used to produce when 0050 was HEAD. When a future changeset lands
-      // here, extend the count again rather than re-pinning this test to a single changeset
-      // number.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=20');
+      // of the columns/index this test observes), 0069 (creates reconciliation_run_event, a
+      // new table), 0070 (widens canonical_record's source_type CHECK constraint to add BILLING,
+      // a constraint redefinition on a different table), and 0071 (seeds validation_rule_version
+      // with BILLING rule rows and widens its own source_type CHECK -- data plus a constraint
+      // redefinition, still a different table) all sit on top of it without touching the schema
+      // this test cares about, so rolling back 22 changesets (0071 down through 0050) lands on the
+      // same DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a future
+      // changeset lands here, extend the count again rather than re-pinning this test to a single
+      // changeset number.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=22');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -110,10 +113,11 @@ describe('Liquibase rollback', () => {
       // column to reconciliation_exception, 0059/0060 create new tables, 0061/0062 touch
       // reconciliation_run/reconciliation_run_account, 0063/0064/0065 create new tables, 0066
       // touches reconciliation_organization, 0067 touches reconciliation_run, 0068 adds more
-      // reconciliation_run columns and redefines its status CHECK constraint, and 0069 creates
-      // reconciliation_run_event -- none touch reconciliation_login_event, so 0050 remains the
-      // most recent changeset with a schema diff this test's col_type_is approach can observe.
-      // See the --count=20 comment above.
+      // reconciliation_run columns and redefines its status CHECK constraint, 0069 creates
+      // reconciliation_run_event, 0070 redefines canonical_record's source_type CHECK, and 0071
+      // seeds validation_rule_version plus redefines its own source_type CHECK -- none touch
+      // reconciliation_login_event, so 0050 remains the most recent changeset with a schema diff
+      // this test's col_type_is approach can observe. See the --count=22 comment above.
       expect(migratedSchema).toContain(
         "col_type_is('public', 'reconciliation_login_event', 'session_id', 'uuid'",
       );
@@ -132,7 +136,7 @@ describe('Liquibase rollback', () => {
     });
   });
 
-  describe('rolling back forty-three changesets (0069 down through 0026 schema-changing)', () => {
+  describe('rolling back forty-six changesets (0071 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -144,7 +148,7 @@ describe('Liquibase rollback', () => {
       runLiquibase(containerId, database.name, 'update');
       migratedSchema = await generateSchemaBaseline(database.pool);
 
-      // 0026 is now forty-four changesets back from HEAD (0069): 0027 (verify-only), 0028 (adds
+      // 0026 is now forty-six changesets back from HEAD (0071): 0027 (verify-only), 0028 (adds
       // organization_id elsewhere, doesn't touch reconciliation_user's auth columns), 0029
       // (grants only), 0030 (RLS policies only), 0031 (app_user role, grants only), 0032
       // (disables RLS on reconciliation_user only), 0033 (role check constraint only), 0034 (adds
@@ -177,10 +181,13 @@ describe('Liquibase rollback', () => {
       // 0066/0067 (reconciliation_organization.carry_forward_enabled/_at + updated_at, and
       // reconciliation_run.carry_forward_applied/_skip_reason -- neither touches
       // reconciliation_user), 0068 (reconciliation_run.closed_at/closed_by/reopen_count plus a
-      // status CHECK constraint redefinition, no reconciliation_user changes), and 0069 (creates
-      // reconciliation_run_event, a new table, no reconciliation_user changes) all sit on top of
-      // it without reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=44');
+      // status CHECK constraint redefinition, no reconciliation_user changes), 0069 (creates
+      // reconciliation_run_event, a new table, no reconciliation_user changes), 0070 (widens
+      // canonical_record's source_type CHECK to add BILLING, no reconciliation_user changes), and
+      // 0071 (seeds validation_rule_version with BILLING rows and widens its own source_type
+      // CHECK, no reconciliation_user changes) all sit on top of it without reversing anything
+      // this test cares about.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=46');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

@@ -32,6 +32,34 @@ export const REQUIRED_BANKING_HEADERS: readonly string[] = ['Date', 'Description
 /** Required GL columns. */
 export const REQUIRED_GL_HEADERS: readonly string[] = ['Date', 'Memo', 'Amount'];
 
+/** Expected AP/Billing subledger header names, in required order (R1 work plan WP0.1). */
+export const BILLING_HEADERS = [
+  'Entity Id',
+  'Vendor Id',
+  'Vendor Name',
+  'Doc Type',
+  'Doc No',
+  'Doc Date',
+  'Due Date',
+  'Amount',
+  'Currency',
+  'GL Account',
+  'Applied To Doc No',
+  'Status',
+] as const;
+
+/** Required AP/Billing columns -- the identity + amount backbone. Due Date is deliberately NOT
+ * required here: a row missing it is still importable (flagged AP_DUE_DATE_MISSING and left
+ * unbandable for aging), matching Bank's own Debit/Credit split between structural presence and
+ * per-row content enforcement. */
+export const REQUIRED_BILLING_HEADERS: readonly string[] = [
+  'Entity Id',
+  'Vendor Id',
+  'Doc No',
+  'Doc Date',
+  'Amount',
+];
+
 /** Raw banking row as read from either parser (all values are strings before validation). */
 export interface RawBankingRow {
   Date: string;
@@ -54,13 +82,29 @@ export interface RawGeneralLedgerRow {
   Amount: string;
 }
 
+/** Raw AP/Billing subledger row as read from either parser. */
+export interface RawApBillingRow {
+  'Entity Id': string;
+  'Vendor Id': string;
+  'Vendor Name'?: string;
+  'Doc Type'?: string;
+  'Doc No': string;
+  'Doc Date': string;
+  'Due Date'?: string;
+  Amount: string;
+  Currency?: string;
+  'GL Account'?: string;
+  'Applied To Doc No'?: string;
+  Status?: string;
+}
+
 /** Canonical record both formats normalize into -- the reconciliation unit. Mirrors the
  * `canonical_record` table (changesets 0042/0046). Note: this TypeScript type keeps the
  * `NormalizedRecord`/`sourceSystem: 'BANK'|'GL'` shape unchanged -- the mapping onto
  * `canonical_record`'s wider envelope (`source_type`, `counterparty_*`, `reference_ids`,
  * `evidence`) happens at the persistence boundary, not here. */
 export interface NormalizedRecord {
-  sourceSystem: 'BANK' | 'GL';
+  sourceSystem: 'BANK' | 'GL' | 'BILLING';
   /** Stable id: Sequence Number (bank), unique within its own file. GL rows have no equivalent
    * input column -- `import_file_id` + `sourceLineNumber` already uniquely identifies a GL row
    * (transaction-csv-spec.md §5), so GL's recordId is a file-scoped position marker, not a
@@ -101,7 +145,7 @@ export interface NormalizedRecord {
   /** Source line number, 1-based, excluding the header row -- preserved for audit. */
   sourceLineNumber: number;
   /** Everything from the source row, preserved for audit (raw JSONB column). */
-  raw: RawBankingRow | RawGeneralLedgerRow;
+  raw: RawBankingRow | RawGeneralLedgerRow | RawApBillingRow;
   /** This row's own Step 3 validation issues (ERROR and WARNING), carried through even though the
    * row is still normalized -- nothing is excluded from the reconciliation pipeline on a content
    * issue any more (only a structural gate-1/2 failure excludes rows, by aborting the whole file).

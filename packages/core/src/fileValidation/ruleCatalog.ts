@@ -17,8 +17,8 @@ export interface FileValidationRuleDefinition {
   code: string;
   severity: Severity;
   scope: FileValidationRuleScope;
-  /** null for STRUCT_* codes, which apply to both formats identically. */
-  sourceType: 'BANK' | 'GL' | null;
+  /** null for STRUCT_* codes, which apply to every format identically. */
+  sourceType: 'BANK' | 'GL' | 'BILLING' | null;
   description: string;
 }
 
@@ -195,5 +195,105 @@ export const FILE_VALIDATION_RULES: readonly FileValidationRuleDefinition[] = [
     scope: 'ROW',
     sourceType: 'GL',
     description: 'Amount is zero.',
+  },
+
+  // ── BILLING (Step 3, rowValidators.ts validateBillingRows) ───────────────────────────────────
+  {
+    code: 'AP_ENTITY_ID_REQUIRED',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Entity Id is required.',
+  },
+  {
+    code: 'AP_ENTITY_MISMATCH',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: "Entity Id does not match this file's entity -- one AP ledger slot holds exactly one entity.",
+  },
+  {
+    code: 'AP_VENDOR_ID_REQUIRED',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Vendor Id is required.',
+  },
+  {
+    code: 'AP_DOC_NO_REQUIRED',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Doc No is required.',
+  },
+  {
+    code: 'AP_DOC_NO_DUPLICATE',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Doc No duplicates another row within the same file.',
+  },
+  {
+    code: 'AP_DOC_DATE_REQUIRED',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Doc Date is required.',
+  },
+  {
+    code: 'AP_DOC_DATE_FORMAT',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Doc Date must be YYYY-MM-DD.',
+  },
+  {
+    code: 'AP_DOC_DATE_FUTURE',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Doc Date is in the future.',
+  },
+  {
+    code: 'AP_DUE_DATE_MISSING',
+    severity: 'WARNING',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Due Date is missing; the row will be unbandable for aging.',
+  },
+  {
+    code: 'AP_DUE_DATE_FORMAT',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Due Date must be YYYY-MM-DD.',
+  },
+  {
+    code: 'AP_AMOUNT_FORMAT',
+    severity: 'ERROR',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Amount is required and must be a valid signed amount.',
+  },
+  {
+    code: 'AP_AMOUNT_ZERO',
+    severity: 'WARNING',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Amount is zero.',
+  },
+  {
+    code: 'AP_DOC_TYPE_UNRECOGNIZED',
+    severity: 'WARNING',
+    scope: 'ROW',
+    sourceType: 'BILLING',
+    description: 'Doc Type is not one of the recognized values (Bill, Payment, Credit Memo).',
+  },
+  {
+    code: 'AP_APPLIED_DOC_UNKNOWN',
+    severity: 'WARNING',
+    scope: 'CROSS_ROW',
+    sourceType: 'BILLING',
+    description: 'Applied To Doc No does not match any Doc No in this file.',
   },
 ] as const;
