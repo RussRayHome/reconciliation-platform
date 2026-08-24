@@ -754,4 +754,116 @@ export class PostgresOpenItemStore {
       return { outcome: 'written_off' };
     });
   }
+
+  /**
+   * PR F.2: what backs `GET /api/reconciliation/runs/:id/rollforward` -- the frozen snapshot(s)
+   * a CLOSED run produced (empty array for a run that was never closed, since
+   * `reconciliation_period_rollforward` rows only exist post-close), plus this run's own
+   * contribution to the ledger: which items it opened and which it cleared. `null` only when the
+   * run itself doesn't exist (or isn't RLS-visible) -- a real run with no snapshot yet still
+   * returns a result, just with an empty `snapshots` array.
+   */
+  async getRunRollforward(
+    organizationId: string,
+    runId: string,
+  ): Promise<{
+    snapshots: PeriodRollforwardSnapshot[];
+    openedThisRun: OpenItemRecord[];
+    clearedThisRun: OpenItemRecord[];
+  } | null> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const runResult = await client.query<{ id: string }>(
+        `SELECT id FROM reconciliation_run WHERE id = $1 AND organization_id = $2`,
+        [runId, organizationId],
+      );
+      if (!runResult.rows[0]) {
+        return null;
+      }
+
+      const snapshotResult = await client.query<{
+        account_id: string;
+        account_identifier: string;
+        opening_count: number;
+        opening_amount: string;
+        new_count: number;
+        new_amount: string;
+        cleared_count: number;
+        cleared_amount: string;
+        written_off_count: number;
+        written_off_amount: string;
+        closing_count: number;
+        closing_amount: string;
+      }>(
+        `SELECT pr.account_id, a.account_identifier, pr.opening_count, pr.opening_amount,
+                pr.new_count, pr.new_amount, pr.cleared_count, pr.cleared_amount,
+                pr.written_off_count, pr.written_off_amount, pr.closing_count, pr.closing_amount
+           FROM reconciliation_period_rollforward pr
+           JOIN reconciliation_account a ON a.id = pr.account_id
+          WHERE pr.reconciliation_run_id = $1 AND pr.organization_id = $2
+          ORDER BY a.account_identifier`,
+        [runId, organizationId],
+      );
+      const snapshots: PeriodRollforwardSnapshot[] = snapshotResult.rows.map((row) => ({
+        accountId: row.account_id,
+        accountIdentifier: row.account_identifier,
+        openingCount: row.opening_count,
+        openingAmount: Number(row.opening_amount),
+        newCount: row.new_count,
+        newAmount: Number(row.new_amount),
+        clearedCount: row.cleared_count,
+        clearedAmount: Number(row.cleared_amount),
+        writtenOffCount: row.written_off_count,
+        writtenOffAmount: Number(row.written_off_amount),
+        closingCount: row.closing_count,
+        closingAmount: Number(row.closing_amount),
+      }));
+
+      const loadOpenItemsByRunColumn = async (column: 'opened_in_run_id' | 'cleared_in_run_id') => {
+        const result = await client.query<{
+          id: string;
+          account_identifier: string;
+          source_system: SourceSystem;
+          category: ErrorCategory;
+          natural_key: string;
+          natural_key_tier: NaturalKeyTier;
+          original_transaction_date: string;
+          amount: string;
+          check_number: string | null;
+          reference_number: string | null;
+          description_snapshot: string | null;
+        }>(
+          `SELECT oi.id, a.account_identifier, oi.source_system, oi.category, oi.natural_key,
+                  oi.natural_key_tier,
+                  oi.original_transaction_date::text AS original_transaction_date,
+                  oi.amount, oi.check_number, oi.reference_number, oi.description_snapshot
+             FROM reconciliation_open_item oi
+             JOIN reconciliation_account a ON a.id = oi.account_id
+            WHERE oi.${column} = $1 AND oi.organization_id = $2
+            ORDER BY a.account_identifier, oi.original_transaction_date`,
+          [runId, organizationId],
+        );
+        return result.rows.map((row) => ({
+          id: row.id,
+          accountIdentifier: row.account_identifier,
+          sourceSystem: row.source_system,
+          category: row.category,
+          naturalKey: row.natural_key,
+          naturalKeyTier: row.natural_key_tier,
+          originalTransactionDate: row.original_transaction_date,
+          amount: Number(row.amount),
+          checkNumber: row.check_number ?? undefined,
+          referenceNumber: row.reference_number ?? undefined,
+          descriptionSnapshot: row.description_snapshot ?? undefined,
+        }));
+      };
+
+      // Sequential, not Promise.all -- every other multi-query method in this store awaits one
+      // client.query at a time, matching the convention the rest of the codebase relies on for
+      // reasoning about a single PoolClient's query order.
+      const openedThisRun = await loadOpenItemsByRunColumn('opened_in_run_id');
+      const clearedThisRun = await loadOpenItemsByRunColumn('cleared_in_run_id');
+
+      return { snapshots, openedThisRun, clearedThisRun };
+    });
+  }
 }

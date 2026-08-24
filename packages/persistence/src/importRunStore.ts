@@ -432,6 +432,75 @@ export class PostgresImportRunStore {
     });
   }
 
+  /** Lightweight row for `listRuns` -- deliberately not the full `ImportRunSummary` (no files/
+   * matchingJob/validationJob joins), since a filtered list can return many rows and the caller
+   * (PR F.1's prior-runs endpoint) only needs enough to pick a run and link to its detail. */
+  async listRuns(
+    organizationId: string,
+    filters: { accountIdentifier?: string; periodYear?: number; periodMonth?: number },
+  ): Promise<
+    Array<{
+      id: string;
+      label: string;
+      accountIdentifier: string | null;
+      frequency: 'MONTHLY' | 'ANNUAL';
+      periodYear: number;
+      periodMonth: number | null;
+      periodEnd: string | null;
+      status: string;
+      createdAt: string;
+    }>
+  > {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const conditions = ['organization_id = $1'];
+      const params: unknown[] = [organizationId];
+
+      if (filters.accountIdentifier !== undefined) {
+        params.push(filters.accountIdentifier);
+        conditions.push(`account_identifier = $${params.length}`);
+      }
+      if (filters.periodYear !== undefined) {
+        params.push(filters.periodYear);
+        conditions.push(`period_year = $${params.length}`);
+      }
+      if (filters.periodMonth !== undefined) {
+        params.push(filters.periodMonth);
+        conditions.push(`period_month = $${params.length}`);
+      }
+
+      const result = await client.query<{
+        id: string;
+        label: string;
+        account_identifier: string | null;
+        frequency: 'MONTHLY' | 'ANNUAL';
+        period_year: number;
+        period_month: number | null;
+        period_end: string | null;
+        status: string;
+        created_at: string;
+      }>(
+        `SELECT id, label, account_identifier, frequency, period_year, period_month,
+                period_end::text, status, created_at
+           FROM reconciliation_run
+          WHERE ${conditions.join(' AND ')}
+          ORDER BY period_year DESC, period_month DESC NULLS LAST, created_at DESC`,
+        params,
+      );
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        label: row.label,
+        accountIdentifier: row.account_identifier,
+        frequency: row.frequency,
+        periodYear: row.period_year,
+        periodMonth: row.period_month,
+        periodEnd: row.period_end,
+        status: row.status,
+        createdAt: row.created_at,
+      }));
+    });
+  }
+
   /** Metadata + raw bytes for one file within a run (Phase 11's structure-failure/all-rows-
    * invalid screens re-parse the original to recover the header row, since it isn't persisted
    * anywhere -- see `ValidationIssue`'s own comment). Scoped through `run_source_file` so a file

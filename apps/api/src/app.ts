@@ -135,6 +135,7 @@ import {
   importRunBodySchema,
   importRunPartialImportBodySchema,
   isErrorCategory,
+  listReconciliationRunsQuerySchema,
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
   publishMatchingConfigVersionBodySchema,
@@ -2623,6 +2624,52 @@ export const createApp = (
       }
 
       response.json(run);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR F.1: the prior-runs endpoint AppWorkspacePanels' Verdict
+  // module names ("the API does not yet expose previous runs for this account and period").
+  // Registered before /api/reconciliation/:id (below), which would otherwise swallow this
+  // literal "runs" segment as its own :id parameter -- Express matches in registration order.
+  app.get('/api/reconciliation/runs', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const query = listReconciliationRunsQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        respondWithValidationError(response, query.error);
+        return;
+      }
+
+      const store = new PostgresImportRunStore(pool!);
+      const runs = await store.listRuns(request.auth!.organizationId, {
+        accountIdentifier: query.data.accountId,
+        periodYear: query.data.periodYear,
+        periodMonth: query.data.periodMonth,
+      });
+
+      response.json({ runs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR F.2. Same registration-order note as /api/reconciliation/
+  // runs above -- must precede /api/reconciliation/:id/summary's less-specific sibling shape.
+  app.get('/api/reconciliation/runs/:id/rollforward', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+      const result = await openItemStore.getRunRollforward(organizationId, request.params.id);
+
+      if (!result) {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+
+      response.json(result);
     } catch (error) {
       next(error);
     }

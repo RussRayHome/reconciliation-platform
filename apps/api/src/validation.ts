@@ -459,6 +459,19 @@ export const approvalDecisionBodySchema = z.object({
  * say why, even though no fixed code list exists yet (the plan's own §8 leaves the approval
  * policy, including any controlled vocabulary, as an open decision). dispositionNote is optional
  * free text for the specifics a fixed code can't capture. */
+/** Query filters for GET /api/reconciliation/runs (PR F.1). All optional -- accountId narrows to
+ * one account's history, periodYear/periodMonth narrow to one specific period; callers combine
+ * them however they need (e.g. the Verdict module's prior-period lookup passes all three). */
+export const listReconciliationRunsQuerySchema = z.object({
+  accountId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1))
+    .optional(),
+  periodYear: z.coerce.number().int().optional(),
+  periodMonth: z.coerce.number().int().min(1).max(12).optional(),
+});
+
 export const writeOffOpenItemBodySchema = z.object({
   dispositionCode: z.string().trim().min(1, 'dispositionCode is required.'),
   dispositionNote: z

@@ -1016,4 +1016,114 @@ describe('PostgresOpenItemStore', () => {
       });
     });
   });
+
+  describe('getRunRollforward (PR F.2)', () => {
+    it('returns null for an unknown run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      expect(await store.getRunRollforward(defaultOrganizationId, crypto.randomUUID())).toBeNull();
+    });
+
+    it('returns an empty snapshots array for a run that has never been closed', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'DRAFT' });
+
+      expect(await store.getRunRollforward(defaultOrganizationId, runId)).toEqual({
+        snapshots: [],
+        openedThisRun: [],
+        clearedThisRun: [],
+      });
+    });
+
+    it('returns the frozen snapshot plus this run\'s own opened/cleared open items after close', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const account = 'ROLLFORWARD-DETAIL-1';
+
+      // February closes first, with its own item still open at close -- gives that item a real
+      // "opening" pedigree for March. Periods must close in chronological order: an item left
+      // open in a later, not-yet-closed period would otherwise show up in an earlier period's
+      // "actual currently open" count and fail that earlier close's own tie-out.
+      const priorRunId = await insertRun({
+        status: 'RECONCILED',
+        submittedByUsername: 'close-submitter',
+        periodYear: 2026,
+        periodMonth: 2,
+        periodEnd: '2026-02-28',
+      });
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: priorRunId,
+        accountIdentifiers: [account],
+      });
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        reconciliationRunId: priorRunId,
+        candidates: [
+          buildCandidate({
+            accountIdentifier: account,
+            naturalKey: `check:${account}:9002`,
+            checkNumber: '9002',
+            amount: -20,
+          }),
+        ],
+      });
+      const priorClose = await store.closeRun(defaultOrganizationId, {
+        runId: priorRunId,
+        actorUsername: 'close-approver',
+      });
+      expect(priorClose.outcome).toBe('closed');
+
+      // March: opens a genuinely new item (9001) and clears February's carried item (9002).
+      const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: runId,
+        accountIdentifiers: [account],
+      });
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        reconciliationRunId: runId,
+        candidates: [
+          buildCandidate({
+            accountIdentifier: account,
+            naturalKey: `check:${account}:9001`,
+            checkNumber: '9001',
+            amount: -50,
+          }),
+        ],
+      });
+
+      const priorItemRow = await pool.query<{ id: string }>(
+        `SELECT oi.id FROM reconciliation_open_item oi
+           JOIN reconciliation_account a ON a.id = oi.account_id
+          WHERE a.account_identifier = $1 AND oi.natural_key = $2`,
+        [account, `check:${account}:9002`],
+      );
+      await store.clearOpenItems(defaultOrganizationId, {
+        reconciliationRunId: runId,
+        clearances: [{ openItemId: priorItemRow.rows[0]!.id }],
+      });
+
+      const closeResult = await store.closeRun(defaultOrganizationId, {
+        runId,
+        actorUsername: 'close-approver',
+      });
+      expect(closeResult.outcome).toBe('closed');
+
+      const result = await store.getRunRollforward(defaultOrganizationId, runId);
+      expect(result?.snapshots).toHaveLength(1);
+      expect(result?.snapshots[0]).toMatchObject({
+        accountIdentifier: account,
+        newCount: 1,
+        newAmount: -50,
+        clearedCount: 1,
+        clearedAmount: -20,
+      });
+      expect(result?.openedThisRun.map((i) => i.naturalKey)).toEqual([`check:${account}:9001`]);
+      expect(result?.clearedThisRun.map((i) => i.naturalKey)).toEqual([`check:${account}:9002`]);
+    });
+  });
 });

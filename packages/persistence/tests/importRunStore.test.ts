@@ -478,4 +478,42 @@ describe('PostgresImportRunStore', () => {
       expect(crossTenantRead).toBeNull();
     });
   });
+
+  describe('listRuns (PR F.1)', () => {
+    it('filters by accountIdentifier/periodYear/periodMonth and orders newest period first', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const account = 'LIST-RUNS-1';
+      const january = await store.createRun(
+        buildRunInput({ accountIdentifier: account, periodYear: 2026, periodMonth: 1, label: 'Jan' }),
+      );
+      const february = await store.createRun(
+        buildRunInput({ accountIdentifier: account, periodYear: 2026, periodMonth: 2, label: 'Feb' }),
+      );
+      // Different account -- must not appear when filtering by `account` above.
+      await store.createRun(
+        buildRunInput({ accountIdentifier: 'LIST-RUNS-OTHER', periodYear: 2026, periodMonth: 2, label: 'Other' }),
+      );
+
+      const forAccount = await store.listRuns(defaultOrganizationId, { accountIdentifier: account });
+      expect(forAccount.map((r) => r.id)).toEqual([february.id, january.id]);
+
+      const forExactPeriod = await store.listRuns(defaultOrganizationId, {
+        accountIdentifier: account,
+        periodYear: 2026,
+        periodMonth: 1,
+      });
+      expect(forExactPeriod.map((r) => r.id)).toEqual([january.id]);
+    });
+
+    it('returns an empty array when nothing matches', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      expect(
+        await store.listRuns(defaultOrganizationId, { accountIdentifier: 'LIST-RUNS-NONEXISTENT' }),
+      ).toEqual([]);
+    });
+  });
 });

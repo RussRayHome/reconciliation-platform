@@ -313,6 +313,67 @@ export const getLatestImportRunRequest = async (): Promise<ImportRunSummary | nu
   return (await parseResponse<ImportRunSummary | undefined>(response)) ?? null;
 };
 
+/** One `reconciliation_run` row from `GET /api/reconciliation/runs` (PR F.1), matching
+ * `PostgresImportRunStore.listRuns`'s lightweight row shape -- not the full `ImportRunSummary`
+ * (no files/matchingJob/validationJob). */
+export interface ReconciliationRunListItem {
+  id: string;
+  label: string;
+  accountIdentifier: string | null;
+  frequency: 'MONTHLY' | 'ANNUAL';
+  periodYear: number;
+  periodMonth: number | null;
+  periodEnd: string | null;
+  status: string;
+  createdAt: string;
+}
+
+/** Unreconciled Item Roll-Forward PR F.1: the prior-runs endpoint the Verdict module's Prior-
+ * period comparison slot needs. Every filter is optional; pass whichever you have -- the Verdict
+ * module always passes all three (account + the specific prior period it's looking for). Results
+ * are newest period first. */
+export const listReconciliationRunsRequest = async (filters: {
+  accountId?: string;
+  periodYear?: number;
+  periodMonth?: number;
+}): Promise<ReconciliationRunListItem[]> => {
+  const params = new URLSearchParams();
+  if (filters.accountId !== undefined) params.set('accountId', filters.accountId);
+  if (filters.periodYear !== undefined) params.set('periodYear', String(filters.periodYear));
+  if (filters.periodMonth !== undefined) params.set('periodMonth', String(filters.periodMonth));
+
+  const response = await apiFetch(`/api/reconciliation/runs?${params.toString()}`);
+  const { runs } = await parseResponse<{ runs: ReconciliationRunListItem[] }>(response);
+  return runs;
+};
+
+/** One account's frozen roll-forward snapshot, matching `PeriodRollforwardSnapshot`
+ * (packages/persistence/src/openItemStore.ts). Amounts are signed, matching the underlying
+ * items -- not the absolute-value exposure figures `SummaryMetrics` uses elsewhere. */
+export interface ReconciliationRunRollforwardSnapshot {
+  accountId: string;
+  accountIdentifier: string;
+  openingCount: number;
+  openingAmount: number;
+  newCount: number;
+  newAmount: number;
+  clearedCount: number;
+  clearedAmount: number;
+  writtenOffCount: number;
+  writtenOffAmount: number;
+  closingCount: number;
+  closingAmount: number;
+}
+
+/** Unreconciled Item Roll-Forward PR F.2. `snapshots` is empty for a run that was never closed --
+ * `reconciliation_period_rollforward` rows only exist post-close (PR E.2). */
+export const getReconciliationRunRollforwardRequest = async (
+  runId: string,
+): Promise<{ snapshots: ReconciliationRunRollforwardSnapshot[] }> => {
+  const response = await apiFetch(`/api/reconciliation/runs/${runId}/rollforward`);
+  return parseResponse<{ snapshots: ReconciliationRunRollforwardSnapshot[] }>(response);
+};
+
 /** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. `bankFiles` is 1-4 bank
  * account uploads (Issue #153) sent as one repeated `bankFiles` form field, not per-slot names. */
 export interface CreateImportRunPayload {
