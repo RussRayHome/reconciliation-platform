@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@recon/core": "0.1.0",
     "@recon/domain": "0.1.0",
     "exceljs": "^4.4.0"
   }
