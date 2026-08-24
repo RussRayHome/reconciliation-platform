@@ -121,10 +121,17 @@ if [[ "$DEPLOY_ENV" == "dev" || "$DEPLOY_ENV" == "stage" ]]; then
   export AUX_HEALTH_CHECK_RETRIES="${AUX_HEALTH_CHECK_RETRIES:-90}"
 fi
 
-if [[ "${DOCKER_BUILD_NO_CACHE:-false}" == "true" ]]; then
-  docker compose "${compose_args[@]}" build --no-cache
-else
-  docker compose "${compose_args[@]}" build
+if [[ "${DEPLOY_SKIP_BUILD:-false}" != "true" ]]; then
+  if [[ "${DOCKER_BUILD_NO_CACHE:-false}" == "true" ]]; then
+    docker compose "${compose_args[@]}" build --no-cache
+  else
+    docker compose "${compose_args[@]}" build
+  fi
+
+  if [[ "${DEPLOY_BUILD_ONLY:-false}" == "true" ]]; then
+    echo "Build phase complete."
+    exit 0
+  fi
 fi
 docker compose "${compose_args[@]}" up -d postgres
 bash "$ROOT_DIR/scripts/pre-flight/run-users.sh" "$DEPLOY_ENV"

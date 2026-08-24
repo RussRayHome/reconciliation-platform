@@ -56,25 +56,35 @@ const hasCommand = (command: string): boolean =>
 const canRunDeployChecks = hasCommand('bash') && hasCommand('docker');
 const deployTest = canRunDeployChecks ? it : it.skip;
 
-const runWithDockerEnv = (command: string): string =>
+const runWithDockerEnv = (command: string, extraEnv: Record<string, string> = {}): string =>
   execSync(command, {
     encoding: 'utf-8',
-    env: dockerEnv,
+    env: { ...dockerEnv, ...extraEnv },
     // Ignore Docker stderr progress output to keep integration logs concise.
     stdio: ['ignore', 'pipe', 'ignore'],
   });
 
 const deployWithRetry = (): string => {
   try {
-    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh');
+    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh', { DEPLOY_SKIP_BUILD: 'true' });
   } catch {
     runWithDockerEnv(cleanupCommand);
-    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh');
+    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh', { DEPLOY_SKIP_BUILD: 'true' });
   }
 };
 
 describe('Deploy and Cleanup Scripts', () => {
-  deployTest('deploys the stack successfully', { timeout: 240000 }, () => {
+  // Declared before the deploy test: vitest runs tests within a file in declaration order, and the
+  // images this builds persist in the shared local image store (keyed by COMPOSE_PROJECT_NAME) for
+  // the deploy test below to reuse via DEPLOY_SKIP_BUILD.
+  deployTest('builds the stack images successfully', { timeout: 300000 }, () => {
+    const output = runWithDockerEnv('bash scripts/pre-flight/deploy.sh', {
+      DEPLOY_BUILD_ONLY: 'true',
+    });
+    expect(output).toMatch(/Build phase complete\./);
+  });
+
+  deployTest('deploys the built stack successfully', { timeout: 180000 }, () => {
     const output = deployWithRetry();
     expect(output).toMatch(/Local (production-like )?stack deployed\./);
   });
