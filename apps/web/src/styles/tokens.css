@@ -30,6 +30,10 @@
     /* Bank-side series color (Create Mapping canvas) — a status-neutral hue, not semantic like the others. */
     --bank: #6fa8ff;
     --bank-hover: #8fbcff;
+    /* AP/Billing source hue (R1: AP inclusion & shared aging) — same status-neutral role as --bank,
+       one per source type. */
+    --ap: #dcc58f;
+    --ap-hover: #e6d5a8;
     /* Soft fills: 0.12 alpha bg + 0.28–0.32 alpha border + full-strength text */
     --accent-soft: rgba(31, 209, 161, 0.12);
     --accent-soft-border: rgba(31, 209, 161, 0.3);
@@ -37,6 +41,8 @@
     --negative-soft-border: rgba(242, 73, 92, 0.3);
     --bank-soft: rgba(111, 168, 255, 0.12);
     --bank-soft-border: rgba(111, 168, 255, 0.3);
+    --ap-soft: rgba(220, 197, 143, 0.12);
+    --ap-soft-border: rgba(220, 197, 143, 0.3);
     --severity-high-soft: rgba(240, 136, 62, 0.12);
     --severity-high-soft-border: rgba(240, 136, 62, 0.3);
     --severity-medium-soft: rgba(201, 154, 46, 0.12);
@@ -102,12 +108,16 @@
       --severity-medium: #92600a;
       --bank: #1d4ed8;
       --bank-hover: #1e40af;
+      --ap: #92702c;
+      --ap-hover: #7a5b1f;
       --accent-soft: rgba(15, 118, 110, 0.1);
       --accent-soft-border: rgba(15, 118, 110, 0.3);
       --negative-soft: rgba(179, 38, 30, 0.1);
       --negative-soft-border: rgba(179, 38, 30, 0.3);
       --bank-soft: rgba(29, 78, 216, 0.1);
       --bank-soft-border: rgba(29, 78, 216, 0.3);
+      --ap-soft: rgba(146, 112, 44, 0.1);
+      --ap-soft-border: rgba(146, 112, 44, 0.3);
       --severity-high-soft: rgba(194, 65, 12, 0.1);
       --severity-high-soft-border: rgba(194, 65, 12, 0.3);
       --severity-medium-soft: rgba(146, 96, 10, 0.1);

@@ -4,7 +4,13 @@ export const routePaths = {
   forgotPassword: '/forgot-password',
   signup: '/signup',
   support: '/support',
+  /** Alias for importFilesBank -- the two are deliberately the same string (R1 WP2), so every
+   * existing '/' call site (NavItemLink's `end` special-case, the legacy ?tab=&view= redirect
+   * guard, the initial-landing redirect, the in-app catch-all) keeps working unmodified: it just
+   * now resolves to what's explicitly the Bank Statements tab. */
   importFiles: '/',
+  importFilesBank: '/',
+  importFilesBilling: '/imports/billing',
   reconSummary: '/recon-summary',
   probableMatches: '/probable-matches',
   exceptions: '/exceptions',

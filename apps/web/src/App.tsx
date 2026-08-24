@@ -45,6 +45,7 @@ import { SignupScreen } from './components/SignupScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
 import { SourceDropZone } from './components/SourceDropZone';
+import { RovingTabList } from './components/RovingTabList';
 import {
   CloseExportSection,
   type ProgressStep,
@@ -667,6 +668,10 @@ function ReconciliationApp({
   // remove control removes one (floored at MIN_BANK_ACCOUNTS).
   const [bankFiles, setBankFiles] = useState<(File | null)[]>([null, null]);
   const [glFile, setGlFile] = useState<File | null>(null);
+  // R1 WP2/WP4: 1-4 AP/Billing entity ledgers per run, same cardinality/slot-growth shape as
+  // bankFiles above (MIN/MAX_AP_ENTITIES). Starts at one empty slot -- unlike bank's two, since a
+  // single-entity AP subledger export is the common case.
+  const [apFiles, setApFiles] = useState<(File | null)[]>([null]);
   const [accountIdentifier, setAccountIdentifier] = useState('');
   const [reconciliationFrequency, setReconciliationFrequency] =
     useState<ReconciliationFrequency>('Monthly');
@@ -1366,12 +1371,14 @@ function ReconciliationApp({
         <section className="tabbed-workspace" aria-label="Reconciliation workspace">
             <Routes>
               <Route
-                path={routePaths.importFiles}
+                path={routePaths.importFilesBank}
                 element={
                   <SourceUploadSection
+                    activeSourceType="bank"
                     annualYear={annualYear}
                     bankFiles={bankFiles}
                     glFile={glFile}
+                    apFiles={apFiles}
                     canSubmit={canSubmit}
                     currentYear={currentYear}
                     handleSubmit={handleSubmit}
@@ -1389,6 +1396,45 @@ function ReconciliationApp({
                     setMonthlyMonth={setMonthlyMonth}
                     setPeriodLabel={setPeriodLabel}
                     setGlFile={setGlFile}
+                    setApFiles={setApFiles}
+                    setReconciliationFrequency={setReconciliationFrequency}
+                    suggestedPeriodLabel={suggestedPeriodLabel}
+                    accountIdentifier={accountIdentifier}
+                    uploadTransfer={uploadTransfer}
+                    partialAccept={partialAccept}
+                    durableRunPhase={durableRunPhase}
+                    onDismissDurableRun={() => setLatestImportRun(null)}
+                  />
+                }
+              />
+
+              <Route
+                path={routePaths.importFilesBilling}
+                element={
+                  <SourceUploadSection
+                    activeSourceType="billing"
+                    annualYear={annualYear}
+                    bankFiles={bankFiles}
+                    glFile={glFile}
+                    apFiles={apFiles}
+                    canSubmit={canSubmit}
+                    currentYear={currentYear}
+                    handleSubmit={handleSubmit}
+                    isCustomPeriodLabel={isCustomPeriodLabel}
+                    isLabelMissing={isLabelMissing}
+                    monthlyMonth={monthlyMonth}
+                    periodLabel={periodLabel}
+                    previousSevenYears={previousSevenYears}
+                    reconciliation={reconciliation}
+                    reconciliationFrequency={reconciliationFrequency}
+                    setAccountIdentifier={setAccountIdentifier}
+                    setAnnualYear={setAnnualYear}
+                    setBankFiles={setBankFiles}
+                    setIsCustomPeriodLabel={setIsCustomPeriodLabel}
+                    setMonthlyMonth={setMonthlyMonth}
+                    setPeriodLabel={setPeriodLabel}
+                    setGlFile={setGlFile}
+                    setApFiles={setApFiles}
                     setReconciliationFrequency={setReconciliationFrequency}
                     suggestedPeriodLabel={suggestedPeriodLabel}
                     accountIdentifier={accountIdentifier}
@@ -1607,10 +1653,12 @@ function ReconciliationApp({
 }
 
 function SourceUploadSection({
+  activeSourceType,
   accountIdentifier,
   annualYear,
   bankFiles,
   glFile,
+  apFiles,
   canSubmit,
   currentYear,
   handleSubmit,
@@ -1628,6 +1676,7 @@ function SourceUploadSection({
   setMonthlyMonth,
   setPeriodLabel,
   setGlFile,
+  setApFiles,
   setReconciliationFrequency,
   suggestedPeriodLabel,
   uploadTransfer,
@@ -1635,10 +1684,15 @@ function SourceUploadSection({
   durableRunPhase,
   onDismissDurableRun,
 }: Readonly<{
+  /** Which Import Files tab is active, driven by the matched route (R1 WP2/WP3) -- not local
+   * component state, mirroring how the Reconciliation section's File-based/Rules-based split
+   * already works (ReviewSection's `activeView` prop, one <Route> per tab). */
+  activeSourceType: 'bank' | 'billing';
   accountIdentifier: string;
   annualYear: string;
   bankFiles: (File | null)[];
   glFile: File | null;
+  apFiles: (File | null)[];
   canSubmit: boolean;
   currentYear: number;
   handleSubmit: (event: { preventDefault: () => void }) => void;
@@ -1656,6 +1710,7 @@ function SourceUploadSection({
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
   setPeriodLabel: Dispatch<SetStateAction<string>>;
   setGlFile: Dispatch<SetStateAction<File | null>>;
+  setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
   uploadTransfer: UploadTransferModel;
@@ -1663,6 +1718,7 @@ function SourceUploadSection({
   durableRunPhase: LatestRunPhase;
   onDismissDurableRun: () => void;
 }>) {
+  const navigate = useNavigate();
   const reconciliationLabelErrorId = 'reconciliation-label-error';
   const reconciliationLabelHintId = 'reconciliation-label-hint';
 
@@ -1702,67 +1758,106 @@ function SourceUploadSection({
           </div>
         }
       >
+        <RovingTabList<'bank' | 'billing'>
+          items={[
+            { id: 'bank', label: 'Bank Statements', description: 'BANK · GL' },
+            { id: 'billing', label: 'AP / Billing', description: 'BILLING' },
+          ]}
+          activeId={activeSourceType}
+          onSelect={(id) =>
+            navigate(id === 'bank' ? routePaths.importFilesBank : routePaths.importFilesBilling)
+          }
+          ariaLabel="Import source type"
+          tabIdPrefix="import-tab"
+          panelIdPrefix="import-panel"
+          listClassName="tab-list"
+          tabClassName="tab-button"
+          activeTabClassName="tab-button tab-button--active"
+        />
+
         <form
           id="source-upload-form"
           className="import-screen__body"
           aria-busy={reconciliation.isPending}
           onSubmit={handleSubmit}
         >
-          <div className="import-screen__upload-column">
-            {uploadTransfer.transfer.kind === 'idle' ? (
-              <SourceDropZone
-                bankFiles={bankFiles}
-                glFile={glFile}
-                setBankFiles={setBankFiles}
-                setGlFile={setGlFile}
-              />
-            ) : (
-              (() => {
-                // Captured as a local const so TS's discriminated-union narrowing (kind !==
-                // 'idle', from the enclosing ternary) persists into the nested closures below --
-                // narrowing on a property access like `uploadTransfer.transfer.kind` doesn't
-                // survive into a callback the way narrowing on a local variable does.
-                const transfer = uploadTransfer.transfer;
-                return (
-                  <div className="import-upload-card-list" aria-label="Upload progress">
-                    {bankFiles.map((file, index) => {
-                      if (!file) {
-                        return null;
-                      }
-                      const precedingBytes = bankFiles
-                        .slice(0, index)
-                        .reduce((sum, previousFile) => sum + (previousFile?.size ?? 0), 0);
-                      return (
+          {activeSourceType === 'bank' ? (
+            <div
+              className="import-screen__upload-column"
+              role="tabpanel"
+              id="import-panel-bank"
+              aria-labelledby="import-tab-bank"
+            >
+              {uploadTransfer.transfer.kind === 'idle' ? (
+                <SourceDropZone
+                  mode="bank-gl"
+                  bankFiles={bankFiles}
+                  glFile={glFile}
+                  setBankFiles={setBankFiles}
+                  setGlFile={setGlFile}
+                />
+              ) : (
+                (() => {
+                  // Captured as a local const so TS's discriminated-union narrowing (kind !==
+                  // 'idle', from the enclosing ternary) persists into the nested closures below --
+                  // narrowing on a property access like `uploadTransfer.transfer.kind` doesn't
+                  // survive into a callback the way narrowing on a local variable does.
+                  const transfer = uploadTransfer.transfer;
+                  return (
+                    <div className="import-upload-card-list" aria-label="Upload progress">
+                      {bankFiles.map((file, index) => {
+                        if (!file) {
+                          return null;
+                        }
+                        const precedingBytes = bankFiles
+                          .slice(0, index)
+                          .reduce((sum, previousFile) => sum + (previousFile?.size ?? 0), 0);
+                        return (
+                          <ImportUploadCard
+                            key={index}
+                            {...buildTransferCardProps(
+                              transfer,
+                              file,
+                              `bank ${index + 1}`,
+                              precedingBytes,
+                              uploadTransfer.cancel,
+                              uploadTransfer.retry,
+                            )}
+                          />
+                        );
+                      })}
+                      {glFile ? (
                         <ImportUploadCard
-                          key={index}
                           {...buildTransferCardProps(
                             transfer,
-                            file,
-                            `bank ${index + 1}`,
-                            precedingBytes,
+                            glFile,
+                            'gl',
+                            bankFiles.reduce((sum, file) => sum + (file?.size ?? 0), 0),
                             uploadTransfer.cancel,
                             uploadTransfer.retry,
                           )}
                         />
-                      );
-                    })}
-                    {glFile ? (
-                      <ImportUploadCard
-                        {...buildTransferCardProps(
-                          transfer,
-                          glFile,
-                          'gl',
-                          bankFiles.reduce((sum, file) => sum + (file?.size ?? 0), 0),
-                          uploadTransfer.cancel,
-                          uploadTransfer.retry,
-                        )}
-                      />
-                    ) : null}
-                  </div>
-                );
-              })()
-            )}
-          </div>
+                      ) : null}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          ) : (
+            <div
+              className="import-screen__upload-column"
+              role="tabpanel"
+              id="import-panel-billing"
+              aria-labelledby="import-tab-billing"
+            >
+              {/* AP/Billing files aren't yet part of the Submit run request (uploadTransfer.start
+                  only takes bankFiles/glFile) -- how AP combines with an existing bank+GL run
+                  submission is an open product decision, not guessed at here. This tab is
+                  file-selection/validation only for now; it's never shown mid-transfer since
+                  nothing here drives uploadTransfer's state. */}
+              <SourceDropZone mode="billing" apFiles={apFiles} setApFiles={setApFiles} />
+            </div>
+          )}
 
           <aside className="run-configuration-panel">
             <h3 className="run-configuration-panel__title">Run configuration</h3>

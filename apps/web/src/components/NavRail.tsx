@@ -168,13 +168,32 @@ export function NavRail({
         </button>
 
         <NavRailCategory title="Work" first>
-          <NavItemLink
-            to={routePaths.importFiles}
+          <CollapsibleNavSection
+            sectionId="importFiles"
             label="Import Files"
             icon="upload"
-            isCollapsed={isCollapsed}
-            onNavigate={onMobileClose}
-          />
+            username={username}
+            bordered={false}
+          >
+            <NavItemLink
+              to={routePaths.importFilesBank}
+              label="Bank Statements"
+              icon="upload"
+              caption="BANK · GL"
+              hue="bank"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+            <NavItemLink
+              to={routePaths.importFilesBilling}
+              label="AP / Billing"
+              icon="upload"
+              caption="BILLING"
+              hue="ap"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+          </CollapsibleNavSection>
 
           <CollapsibleNavSection
             sectionId="reconciliation"
@@ -515,6 +534,7 @@ function NavItemLink({
   badgeTone = 'attention',
   caption,
   count,
+  hue,
   ariaLabel,
   onNavigate,
 }: Readonly<{
@@ -527,16 +547,22 @@ function NavItemLink({
   badgeTone?: 'attention' | 'neutral';
   caption?: string;
   count?: number;
+  /** Source-hue edge marker (e.g. the Import Files children) -- omit for items with no source
+   * association. */
+  hue?: 'bank' | 'ap';
   ariaLabel?: string;
   onNavigate: () => void;
 }>) {
   const link = (
     <NavLink
       to={to}
-      end={to === routePaths.importFiles}
-      className={({ isActive }) =>
-        isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'
-      }
+      end={to === routePaths.importFilesBank}
+      className={({ isActive }) => {
+        const classes = ['nav-rail__item'];
+        if (isActive) classes.push('nav-rail__item--active');
+        if (hue) classes.push(`nav-rail__item--${hue}`);
+        return classes.join(' ');
+      }}
       title={isCollapsed ? label : undefined}
       aria-label={ariaLabel}
       onClick={onNavigate}
@@ -546,7 +572,11 @@ function NavItemLink({
       </span>
       <span className="nav-rail__item-label-group">
         <span className="nav-rail__item-label">{label}</span>
-        {caption ? <span className="nav-rail__item-caption">{caption}</span> : null}
+        {caption ? (
+          <span className="nav-rail__item-caption" aria-hidden="true">
+            {caption}
+          </span>
+        ) : null}
       </span>
       {badge !== null && badge !== undefined && badge > 0 ? (
         <span

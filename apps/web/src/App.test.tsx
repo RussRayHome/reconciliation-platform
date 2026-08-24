@@ -779,7 +779,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
     });
   });
 
@@ -806,7 +806,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
     });
     expect(globalThis.location.pathname).toBe('/');
   });
@@ -980,7 +980,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    expect(screen.getByRole('link', { name: /Import Files/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Bank Statements' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -2529,10 +2529,10 @@ describe('App', () => {
       );
     });
 
-    await user.click(screen.getByRole('link', { name: /Import Files/i }));
+    await user.click(screen.getByRole('link', { name: 'Bank Statements' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Import Files/i })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Bank Statements' })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -2578,7 +2578,7 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
   });
 
@@ -2609,7 +2609,7 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: /Import Files/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));

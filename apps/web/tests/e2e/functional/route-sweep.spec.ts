@@ -66,14 +66,21 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   support: { heading: 'Contact Support' },
 };
 
-// importFiles ('/') renders SourceUploadSection, which has no heading element at all -- every
-// other e2e spec already targets its "Submit run" button instead (see auth.ts's openSetup), so
-// this sweep does the same rather than inventing a heading that isn't there.
+// importFilesBank ('/') and importFilesBilling ('/imports/billing', R1 WP2/WP3) both render
+// SourceUploadSection (the tab strip just swaps which panel is active inside it) -- neither route
+// has a heading element at all, so every other e2e spec already targets the "Submit run" button
+// instead (see auth.ts's openSetup, and R1 WP3: Run Configuration -- and its Submit button -- is
+// a sibling of the tab panels, always rendered regardless of which tab is active).
 const IMPORT_FILES_LANDMARK_ROLE = 'button';
 const IMPORT_FILES_LANDMARK_NAME = 'Submit run';
 
 const accountedForKeys = [
+  // importFiles is a plain alias for importFilesBank (same string, '/', R1 WP2) -- not a
+  // separate rendered route, so no dedicated test.step for it; importFilesBank's own step below
+  // covers the path both keys resolve to.
   'importFiles',
+  'importFilesBank',
+  'importFilesBilling',
   'documentationRunBook',
   'approvalsPolicy',
   ...Object.keys(PUBLIC_ROUTES),
@@ -137,8 +144,8 @@ test.describe('route sweep', () => {
 
       await loginToApplication(page);
 
-      await test.step(`importFiles (${routePaths.importFiles})`, async () => {
-        await page.goto(routePaths.importFiles);
+      await test.step(`importFilesBank (${routePaths.importFilesBank})`, async () => {
+        await page.goto(routePaths.importFilesBank);
 
         // App.tsx intentionally redirects '/' -> reconSummary when the logged-in account
         // already has a completed reconciliation run (same behavior reconciliation-edge-
@@ -153,13 +160,28 @@ test.describe('route sweep', () => {
           page
             .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
             .waitFor({ state: 'visible', timeout: 60_000 })
-            .then(() => 'importFiles' as const),
+            .then(() => 'importFilesBank' as const),
           page
             .getByRole('heading', { name: 'Review' })
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'reconSummary' as const),
         ]).catch(() => null);
         expect.soft(result).not.toBeNull();
+      });
+
+      await test.step(`importFilesBilling (${routePaths.importFilesBilling})`, async () => {
+        await page.goto(routePaths.importFilesBilling);
+
+        // Unlike importFilesBank, this route has no legacy redirect-to-reconSummary behavior --
+        // that guard is gated on pathname === importFiles ('/') specifically (App.tsx), so
+        // landing here always renders SourceUploadSection with the AP/Billing tab active. A
+        // plain wait suffices; still soft so one route's failure doesn't abort the sweep.
+        await expect
+          .soft(page.getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME }))
+          .toBeVisible({ timeout: 60_000 });
+        expect.soft(new URL(page.url()).pathname).toBe(
+          expectedPathname(routePaths.importFilesBilling),
+        );
       });
 
       for (const [routeKey, { heading }] of Object.entries(AUTHENTICATED_ROUTES)) {
