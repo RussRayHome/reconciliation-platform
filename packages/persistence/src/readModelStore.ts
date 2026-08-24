@@ -342,6 +342,22 @@ const mapSummary = (row: SummaryRow): SummaryMetrics => ({
   countsByCategory: asObject<Record<string, number>>(row.counts_by_category_json, {}),
   amountByCategory: asObject<Record<string, number>>(row.amount_by_category_json, {}),
   charts: asObject<SummaryMetrics['charts']>(row.charts_json, []),
+  // Not persisted here -- `reconciliation_job_summary` has no roll-forward columns yet.
+  // PR D's rollForward figures live only on the in-flight run (export workbook, HTTP response);
+  // `reconciliation_period_rollforward` (PR B, unused until PR E's close operation writes it) is
+  // the intended persisted source of truth, not a retrofit of this per-run summary row.
+  rollForward: {
+    openingCount: 0,
+    openingAmount: 0,
+    newCount: 0,
+    newAmount: 0,
+    clearedCount: 0,
+    clearedAmount: 0,
+    writtenOffCount: 0,
+    writtenOffAmount: 0,
+    closingCount: 0,
+    closingAmount: 0,
+  },
 });
 
 const mapOutputWorkbook = (row?: ExportRow): OutputWorkbookManifest | undefined => {
@@ -563,6 +579,18 @@ const loadFullReportWithClient = async (
       countsByCategory: {},
       amountByCategory: {},
       charts: [],
+      rollForward: {
+        openingCount: 0,
+        openingAmount: 0,
+        newCount: 0,
+        newAmount: 0,
+        clearedCount: 0,
+        clearedAmount: 0,
+        writtenOffCount: 0,
+        writtenOffAmount: 0,
+        closingCount: 0,
+        closingAmount: 0,
+      },
     },
     reviewerObservations,
     reviewerDecisions,

@@ -11,3 +11,4 @@ export * from './reporting/exceptionClassifier';
 export * from './reporting/summary';
 export * from './rollforward/naturalKey';
 export * from './rollforward/openItemCandidates';
+export * from './rollforward/seedCarriedForward';

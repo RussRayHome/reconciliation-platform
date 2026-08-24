@@ -399,6 +399,14 @@ const rankCandidates = (
         bankTransaction.transactionDate ?? bankTransaction.postingDate,
         glTransaction.transactionDate ?? glTransaction.postingDate,
       );
+      // Carried-forward items (Unreconciled Item Roll-Forward PR D, §3.6) are by definition older
+      // than the primary window -- reusing config.dateToleranceDays for them would mean nothing
+      // ever clears. Every dateToleranceDays reference below this point uses this resolved value
+      // instead, scoped to this one pair; every other rule's own logic and ordering is unchanged.
+      const effectiveDateToleranceDays =
+        bankTransaction.isCarriedForward || glTransaction.isCarriedForward
+          ? Math.max(config.dateToleranceDays, config.carriedItemDateToleranceDays)
+          : config.dateToleranceDays;
       const textSimilarity = tokenSimilarity(
         bankTransaction.normalizedComparisonTokens,
         glTransaction.normalizedComparisonTokens,
@@ -419,7 +427,7 @@ const rankCandidates = (
           : 'ReferenceNumberMismatch';
       const lowContextExactMatch =
         sameAmount &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         textSimilarity === 0 &&
         isDistinctiveShortContextExactMatch(
           bankTransaction,
@@ -460,7 +468,7 @@ const rankCandidates = (
 
         if (
           sameAmount &&
-          (dateDifference ?? Number.POSITIVE_INFINITY) > config.dateToleranceDays &&
+          (dateDifference ?? Number.POSITIVE_INFINITY) > effectiveDateToleranceDays &&
           (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
         ) {
           candidates.push(
@@ -531,7 +539,7 @@ const rankCandidates = (
 
         if (effectiveSimilarity >= config.textSimilarityThreshold) {
           const withinPrimaryWindow =
-            (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays;
+            (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays;
           candidates.push(
             buildCandidate(
               bankTransaction,
@@ -576,7 +584,7 @@ const rankCandidates = (
         !amountDrivenMatching &&
         sameAmount &&
         hasCheckOrReferenceValues &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         textSimilarity >= config.textSimilarityThreshold &&
         referenceSimilarity < config.referenceSimilarityThreshold
       ) {
@@ -599,7 +607,7 @@ const rankCandidates = (
 
       if (
         sameAmount &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         (!hasCheckOrReferenceValues ||
           referenceSimilarity >= config.referenceSimilarityThreshold) &&
         (textSimilarity >= config.textSimilarityThreshold || lowContextExactMatch)
@@ -624,7 +632,7 @@ const rankCandidates = (
       if (
         !amountDrivenMatching &&
         sameAmount &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         textSimilarity >= reviewSimilarityThreshold &&
         textSimilarity < config.textSimilarityThreshold
       ) {
@@ -651,7 +659,7 @@ const rankCandidates = (
       // get mislabeled DateVariance despite dateDifference being 0.
       if (
         sameAmount &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) > config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) > effectiveDateToleranceDays &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
         candidates.push(
@@ -680,7 +688,7 @@ const rankCandidates = (
       if (
         !sameAmount &&
         Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         Math.abs(bankTransaction.amount - glTransaction.amount) <= config.wireFeeTolerance &&
         textSimilarity >= config.textSimilarityThreshold &&
         (isWireLikeTransaction(bankTransaction) || isWireLikeTransaction(glTransaction))
@@ -719,7 +727,7 @@ const rankCandidates = (
       if (
         !sameAmount &&
         Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         textSimilarity >= config.textSimilarityThreshold &&
         (isCardLikeTransaction(bankTransaction) || isCardLikeTransaction(glTransaction))
       ) {
@@ -763,7 +771,7 @@ const rankCandidates = (
       if (
         !sameAmount &&
         Math.sign(bankTransaction.amount) === Math.sign(glTransaction.amount) &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         textSimilarity >= config.textSimilarityThreshold
       ) {
         const larger = Math.max(Math.abs(bankTransaction.amount), Math.abs(glTransaction.amount));
@@ -791,7 +799,7 @@ const rankCandidates = (
 
       if (
         !sameAmount &&
-        (dateDifference ?? Number.POSITIVE_INFINITY) <= config.dateToleranceDays &&
+        (dateDifference ?? Number.POSITIVE_INFINITY) <= effectiveDateToleranceDays &&
         textSimilarity >= config.amountMismatchTextSimilarityThreshold
       ) {
         candidates.push(
@@ -952,8 +960,18 @@ export const reconcileMatches = (
   );
   const glTransactions = activeTransactions.filter((transaction) => transaction.source === 'gl');
 
-  const duplicateBank = detectDuplicates(bankTransactions, config);
-  const duplicateGl = detectDuplicates(glTransactions, config);
+  // Carried-forward items (PR D, §3.6) are excluded from within-source duplicate detection: a
+  // carried GL check and the same check re-included in this period's own fresh GL export would
+  // otherwise flag each other as duplicates. They still flow into rankCandidates below via
+  // bankTransactions/glTransactions (unfiltered) -- only the dedup pool excludes them.
+  const duplicateBank = detectDuplicates(
+    bankTransactions.filter((transaction) => !transaction.isCarriedForward),
+    config,
+  );
+  const duplicateGl = detectDuplicates(
+    glTransactions.filter((transaction) => !transaction.isCarriedForward),
+    config,
+  );
   const duplicateIds = new Set<string>([
     ...duplicateBank.duplicateTransactionIds,
     ...duplicateGl.duplicateTransactionIds,

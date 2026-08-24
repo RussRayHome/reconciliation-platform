@@ -4,6 +4,7 @@ import {
   classifyExceptions,
   exportWorkbook,
   reconcileMatches,
+  seedCarriedForwardTransactions,
   type CandidateOutcomeObserver,
 } from '@recon/core';
 import {
@@ -285,6 +286,45 @@ const runReconciliationPipeline = async ({
       }
     }
 
+    // Unreconciled Item Roll-Forward PR D.1: seed prior periods' still-open items into this run's
+    // candidate pool, before matching so they can pair against this period's fresh data. Gated on
+    // the decision resolved above (never on openItemStore alone) -- an org that hasn't been
+    // enabled must see zero behavior change from PR C's ungated write-only projection. Best-
+    // effort, same as every other rollforward side path in this pipeline: a load/materialize
+    // failure here must not turn an otherwise-successful run into a failure, it just means
+    // nothing carries in this run (logged, not silent).
+    if (openItemStore && carryForwardDecision?.enabled) {
+      try {
+        const accountIdentifiers = [
+          ...new Set(
+            normalizedTransactions
+              .map((t) => t.accountIdentifier)
+              .filter((value): value is string => Boolean(value)),
+          ),
+        ];
+        const openItems = await openItemStore.loadOpenItems(organizationId, accountIdentifiers);
+        const { carriedTransactions, skippedAlreadyPresent } = seedCarriedForwardTransactions(
+          runId,
+          openItems,
+          normalizedTransactions,
+          config.textNormalization,
+        );
+        normalizedTransactions = [...normalizedTransactions, ...carriedTransactions];
+        log.info({
+          action: 'service.rollforward.seedCarriedForward.completed',
+          openItemCount: openItems.length,
+          carriedCount: carriedTransactions.length,
+          skippedAlreadyPresent,
+        });
+      } catch (seedError) {
+        log.warn({
+          action: 'service.rollforward.seedCarriedForward.failed',
+          runId,
+          message: seedError instanceof Error ? seedError.message : String(seedError),
+        });
+      }
+    }
+
     const matchStart = Date.now();
     matching = reconcileMatches(
       normalizedTransactions,
@@ -482,6 +522,51 @@ const runReconciliationPipeline = async ({
         completedAt: new Date().toISOString(),
       }),
     );
+  }
+
+  // Unreconciled Item Roll-Forward PR D.5: mark carried-forward items that found their
+  // counterpart this run as CLEARED. `matchResultId` is only passed when `lifecycleStore`
+  // actually persisted `matching.matchResults` into `reconciliation_match_result` this run --
+  // that column is a real FK, and writing an id that was never persisted would violate it. Same
+  // best-effort placement and reasoning as PR C.4's projection immediately below: after
+  // export/finalize, failures logged and swallowed, never able to turn a successful run into a
+  // failure.
+  if (openItemStore) {
+    try {
+      const matchedTransactionIds = new Set<string>();
+      const matchResultByTransactionId = new Map<string, string>();
+      matching.matchResults.forEach((result) => {
+        if (result.bankTransactionId) {
+          matchedTransactionIds.add(result.bankTransactionId);
+          matchResultByTransactionId.set(result.bankTransactionId, result.id);
+        }
+        if (result.glTransactionId) {
+          matchedTransactionIds.add(result.glTransactionId);
+          matchResultByTransactionId.set(result.glTransactionId, result.id);
+        }
+      });
+
+      const clearances = normalizedTransactions
+        .filter((t) => t.isCarriedForward && t.carriedFromOpenItemId && matchedTransactionIds.has(t.id))
+        .map((t) => ({
+          openItemId: t.carriedFromOpenItemId!,
+          matchResultId: lifecycleStore ? matchResultByTransactionId.get(t.id) : undefined,
+        }));
+
+      if (clearances.length > 0) {
+        const { cleared } = await openItemStore.clearOpenItems(organizationId, {
+          reconciliationRunId,
+          clearances,
+        });
+        log.info({ action: 'service.rollforward.clearOpenItems.completed', cleared });
+      }
+    } catch (clearError) {
+      log.warn({
+        action: 'service.rollforward.clearOpenItems.failed',
+        runId,
+        message: clearError instanceof Error ? clearError.message : String(clearError),
+      });
+    }
   }
 
   // Unreconciled Item Roll-Forward PR C.4: project this run's carry-eligible exceptions into

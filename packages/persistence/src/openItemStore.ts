@@ -1,7 +1,14 @@
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 
-import type { CarryForwardDecision, OpenItemCandidate } from '@recon/domain';
+import type {
+  CarryForwardDecision,
+  ErrorCategory,
+  NaturalKeyTier,
+  OpenItemCandidate,
+  OpenItemRecord,
+  SourceSystem,
+} from '@recon/domain';
 
 import { runInTenantScope } from './postgres';
 
@@ -177,5 +184,112 @@ export class PostgresOpenItemStore {
         [reconciliationRunId, decision.enabled, decision.enabled ? null : decision.reason],
       ),
     );
+  }
+
+  /**
+   * Loads every still-`OPEN` item for the given accounts (PR D.1) -- the read side of
+   * `projectOpenItems`. `accountIdentifiers` is raw free text (the run's own distinct
+   * `NormalizedTransaction.accountIdentifier` values, not resolved account UUIDs); the join to
+   * `reconciliation_account` resolves it the same way `findOrCreateAccount` does on the write
+   * side. `amount`/`original_transaction_date` get the same `::text`/`Number()` treatment as
+   * every other numeric/date column this store touches -- `pg` returns NUMERIC as a string and
+   * DATE as a `Date` object by default, neither of which matches `OpenItemRecord`'s declared
+   * shape without an explicit cast.
+   */
+  async loadOpenItems(
+    organizationId: string,
+    accountIdentifiers: string[],
+  ): Promise<OpenItemRecord[]> {
+    if (accountIdentifiers.length === 0) {
+      return [];
+    }
+
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const result = await client.query<{
+        id: string;
+        account_identifier: string;
+        source_system: SourceSystem;
+        category: ErrorCategory;
+        natural_key: string;
+        natural_key_tier: NaturalKeyTier;
+        original_transaction_date: string;
+        amount: string;
+        check_number: string | null;
+        reference_number: string | null;
+        description_snapshot: string | null;
+      }>(
+        `SELECT oi.id, a.account_identifier, oi.source_system, oi.category, oi.natural_key,
+                oi.natural_key_tier,
+                oi.original_transaction_date::text AS original_transaction_date,
+                oi.amount, oi.check_number, oi.reference_number, oi.description_snapshot
+           FROM reconciliation_open_item oi
+           JOIN reconciliation_account a ON a.id = oi.account_id
+          WHERE oi.organization_id = $1 AND oi.status = 'OPEN'
+            AND a.account_identifier = ANY($2::text[])`,
+        [organizationId, accountIdentifiers],
+      );
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        accountIdentifier: row.account_identifier,
+        sourceSystem: row.source_system,
+        category: row.category,
+        naturalKey: row.natural_key,
+        naturalKeyTier: row.natural_key_tier,
+        originalTransactionDate: row.original_transaction_date,
+        amount: Number(row.amount),
+        checkNumber: row.check_number ?? undefined,
+        referenceNumber: row.reference_number ?? undefined,
+        descriptionSnapshot: row.description_snapshot ?? undefined,
+      }));
+    });
+  }
+
+  /**
+   * Marks carried-forward items that found their counterpart this run as `CLEARED` (PR D.5).
+   * `matchResultId` is optional per clearance, not required: it's only safe to write when this
+   * run's `MatchResult`s were actually persisted into `reconciliation_match_result` (the column's
+   * FK target) -- the caller passes it only when a `lifecycleStore` did that persisting this run,
+   * and NULL otherwise, rather than this store guessing. Silently no-ops (zero rows affected) for
+   * an item that isn't `OPEN` any more -- re-running finalize twice against the same clearance
+   * must not double-write or throw.
+   */
+  async clearOpenItems(
+    organizationId: string,
+    input: {
+      reconciliationRunId?: string;
+      clearances: Array<{ openItemId: string; matchResultId?: string }>;
+    },
+  ): Promise<{ cleared: number }> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      let cleared = 0;
+
+      for (const clearance of input.clearances) {
+        const result = await client.query(
+          `UPDATE reconciliation_open_item
+              SET status = 'CLEARED', cleared_in_run_id = $2, cleared_at = NOW(),
+                  cleared_match_result_id = $3
+            WHERE id = $1 AND organization_id = $4 AND status = 'OPEN'`,
+          [
+            clearance.openItemId,
+            input.reconciliationRunId ?? null,
+            clearance.matchResultId ?? null,
+            organizationId,
+          ],
+        );
+
+        if ((result.rowCount ?? 0) > 0) {
+          await client.query(
+            `INSERT INTO reconciliation_open_item_event
+               (open_item_id, organization_id, run_id, event_type, from_status, to_status, actor)
+             VALUES ($1, $2, $3, 'CLEARED', 'OPEN', 'CLEARED', 'system')`,
+            [clearance.openItemId, organizationId, input.reconciliationRunId ?? null],
+          );
+          cleared += 1;
+        }
+      }
+
+      return { cleared };
+    });
   }
 }

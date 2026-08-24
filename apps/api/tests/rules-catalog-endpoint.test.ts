@@ -21,7 +21,7 @@ describe('GET /api/rules/catalog', () => {
     };
 
     expect(body.rules.length).toBeGreaterThan(0);
-    expect(body.metrics).toHaveLength(18);
+    expect(body.metrics).toHaveLength(19);
 
     const wireFeeRule = body.rules.find((rule) => rule.name === 'Wire Correspondent Fee Deduction');
     expect(wireFeeRule).toBeDefined();

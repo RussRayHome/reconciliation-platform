@@ -149,6 +149,7 @@ export const defaultReconciliationConfig: ReconciliationConfig = {
     partialPaymentWindowDays: 90,
     wireFeeTolerance: 500,
     creditCardFeeTolerance: 0.03,
+    carriedItemDateToleranceDays: 180,
   },
   reporting: reportingConfig,
   accountOverrides: [],

@@ -128,6 +128,30 @@ export interface OpenItemCandidate {
   descriptionSnapshot?: string;
 }
 
+/**
+ * One still-`OPEN` row read back from `reconciliation_open_item` (PR D.1) -- the read-side
+ * counterpart to `OpenItemCandidate` above. `accountIdentifier` is already resolved back to raw
+ * free text (via a join to `reconciliation_account`) so `packages/core`'s
+ * `seedCarriedForwardTransactions` can materialize it into a `NormalizedTransaction` and compare
+ * its `naturalKey` directly against this run's own freshly-derived keys, without either side
+ * needing database access. Defined here, not in packages/persistence, for the same
+ * layering reason as `OpenItemCandidate`: packages/core (which materializes these into
+ * transactions) never depends on packages/persistence.
+ */
+export interface OpenItemRecord {
+  id: string;
+  accountIdentifier: string;
+  sourceSystem: SourceSystem;
+  category: ErrorCategory;
+  naturalKey: string;
+  naturalKeyTier: NaturalKeyTier;
+  originalTransactionDate: string;
+  amount: number;
+  checkNumber?: string;
+  referenceNumber?: string;
+  descriptionSnapshot?: string;
+}
+
 /** Why carry-forward is or isn't active for a given run -- the two reasons are ordered by which
  * one wins: the env var is the ops kill switch, checked first, so it can disable carry-forward
  * deployment-wide during an incident regardless of any organization's own setting. */
