@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-17T21:18:21.131Z",
+  "generatedAt": "2026-08-24T17:49:39.958Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
   "packageCount": 506,
   "packages": [
@@ -524,11 +524,11 @@
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-virtual@3.14.9",
+      "package": "@tanstack/react-virtual@3.14.10",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/virtual-core@3.17.7",
+      "package": "@tanstack/virtual-core@3.17.8",
       "license": "MIT"
     },
     {
@@ -772,7 +772,7 @@
       "license": "UNKNOWN"
     },
     {
-      "package": "bullmq@6.1.1",
+      "package": "bullmq@6.2.0",
       "license": "MIT"
     },
     {
@@ -880,7 +880,7 @@
       "license": "MIT"
     },
     {
-      "package": "cron-parser@5.8.1",
+      "package": "cron-parser@5.10.0",
       "license": "MIT"
     },
     {
