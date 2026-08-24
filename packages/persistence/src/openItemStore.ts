@@ -866,4 +866,108 @@ export class PostgresOpenItemStore {
       return { snapshots, openedThisRun, clearedThisRun };
     });
   }
+
+  /**
+   * PR F.4: what backs the open-items schedule view -- the read-only replacement for the
+   * spreadsheet support schedule `packages/domain/src/messages.ts` currently tells reviewers to
+   * keep by hand. Every item regardless of status by default (a reviewer needs to see what
+   * cleared/was written off, not just what's still open), narrowable by account and/or status.
+   * `ageInDays` is computed here (CURRENT_DATE - original_transaction_date), not carried from any
+   * run's own anchor date -- this view has no single run to anchor to, it spans every period.
+   * `ownerUsername` is resolved via the same bounded, already-scoped join
+   * `resolveUsernamesByIds`/`resolveUserId` use elsewhere in this store -- always null today since
+   * nothing yet assigns `owner_user_id` (no write path exists; this is a read-only view).
+   */
+  async listOpenItemsSchedule(
+    organizationId: string,
+    filters: { accountIdentifier?: string; status?: string },
+  ): Promise<
+    Array<{
+      id: string;
+      accountIdentifier: string;
+      sourceSystem: SourceSystem;
+      category: ErrorCategory;
+      status: string;
+      naturalKey: string;
+      naturalKeyTier: NaturalKeyTier;
+      originalTransactionDate: string;
+      amount: number;
+      checkNumber?: string;
+      referenceNumber?: string;
+      descriptionSnapshot?: string;
+      ageInDays: number;
+      ownerUsername?: string;
+      dueDate?: string;
+      dispositionCode?: string;
+      dispositionNote?: string;
+    }>
+  > {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const conditions = ['oi.organization_id = $1'];
+      const params: unknown[] = [organizationId];
+
+      if (filters.accountIdentifier !== undefined) {
+        params.push(filters.accountIdentifier);
+        conditions.push(`a.account_identifier = $${params.length}`);
+      }
+      if (filters.status !== undefined) {
+        params.push(filters.status);
+        conditions.push(`oi.status = $${params.length}`);
+      }
+
+      const result = await client.query<{
+        id: string;
+        account_identifier: string;
+        source_system: SourceSystem;
+        category: ErrorCategory;
+        status: string;
+        natural_key: string;
+        natural_key_tier: NaturalKeyTier;
+        original_transaction_date: string;
+        amount: string;
+        check_number: string | null;
+        reference_number: string | null;
+        description_snapshot: string | null;
+        age_in_days: number;
+        owner_username: string | null;
+        due_date: string | null;
+        disposition_code: string | null;
+        disposition_note: string | null;
+      }>(
+        `SELECT oi.id, a.account_identifier, oi.source_system, oi.category, oi.status,
+                oi.natural_key, oi.natural_key_tier,
+                oi.original_transaction_date::text AS original_transaction_date,
+                oi.amount, oi.check_number, oi.reference_number, oi.description_snapshot,
+                (CURRENT_DATE - oi.original_transaction_date) AS age_in_days,
+                owner.user_name AS owner_username,
+                oi.due_date::text AS due_date, oi.disposition_code, oi.disposition_note
+           FROM reconciliation_open_item oi
+           JOIN reconciliation_account a ON a.id = oi.account_id
+           LEFT JOIN reconciliation_user owner ON owner.id = oi.owner_user_id
+          WHERE ${conditions.join(' AND ')}
+          ORDER BY age_in_days DESC, a.account_identifier`,
+        params,
+      );
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        accountIdentifier: row.account_identifier,
+        sourceSystem: row.source_system,
+        category: row.category,
+        status: row.status,
+        naturalKey: row.natural_key,
+        naturalKeyTier: row.natural_key_tier,
+        originalTransactionDate: row.original_transaction_date,
+        amount: Number(row.amount),
+        checkNumber: row.check_number ?? undefined,
+        referenceNumber: row.reference_number ?? undefined,
+        descriptionSnapshot: row.description_snapshot ?? undefined,
+        ageInDays: row.age_in_days,
+        ownerUsername: row.owner_username ?? undefined,
+        dueDate: row.due_date ?? undefined,
+        dispositionCode: row.disposition_code ?? undefined,
+        dispositionNote: row.disposition_note ?? undefined,
+      }));
+    });
+  }
 }

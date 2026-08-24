@@ -54,6 +54,7 @@ import {
 } from './components/AppWorkspacePanels';
 import { RunBar } from './components/RunBar';
 import { NavRail } from './components/NavRail';
+import { OpenItemsScheduleSection } from './components/OpenItemsScheduleSection';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import {
   createRuleVersionDraftRequest,
@@ -1435,6 +1436,13 @@ function ReconciliationApp({
                       );
                     }}
                   />
+                }
+              />
+
+              <Route
+                path={routePaths.openItemsSchedule}
+                element={
+                  <OpenItemsScheduleSection accountIdentifier={runBarAccountIdentifier || undefined} />
                 }
               />
 

@@ -135,6 +135,7 @@ import {
   importRunBodySchema,
   importRunPartialImportBodySchema,
   isErrorCategory,
+  listOpenItemsScheduleQuerySchema,
   listReconciliationRunsQuerySchema,
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
@@ -2670,6 +2671,30 @@ export const createApp = (
       }
 
       response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR F.4: the read-only open-items schedule -- what replaces the
+  // spreadsheet support schedule packages/domain/src/messages.ts tells reviewers to keep by hand.
+  // Same registration-order note as the two routes above.
+  app.get('/api/reconciliation/open-items', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const query = listOpenItemsScheduleQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        respondWithValidationError(response, query.error);
+        return;
+      }
+
+      const openItemStore = new PostgresOpenItemStore(pool!);
+      const items = await openItemStore.listOpenItemsSchedule(request.auth!.organizationId, {
+        accountIdentifier: query.data.accountId,
+        status: query.data.status,
+      });
+
+      response.json({ items });
     } catch (error) {
       next(error);
     }

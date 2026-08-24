@@ -16,6 +16,26 @@ interface FakeRun {
   created_at: string;
 }
 
+interface FakeOpenItem {
+  id: string;
+  account_identifier: string;
+  source_system: string;
+  category: string;
+  status: string;
+  natural_key: string;
+  natural_key_tier: number;
+  original_transaction_date: string;
+  amount: string;
+  check_number: string | null;
+  reference_number: string | null;
+  description_snapshot: string | null;
+  age_in_days: number;
+  owner_username: string | null;
+  due_date: string | null;
+  disposition_code: string | null;
+  disposition_note: string | null;
+}
+
 /**
  * Unreconciled Item Roll-Forward PR F.1/F.2. Route-layer coverage only (query param validation,
  * 404 handling, response shape) -- PostgresImportRunStore.listRuns and
@@ -45,6 +65,28 @@ const createFakePool = () => {
       period_end: '2026-02-28',
       status: 'RECONCILED',
       created_at: '2026-03-01T00:00:00.000Z',
+    },
+  ];
+
+  const openItems: FakeOpenItem[] = [
+    {
+      id: 'item-1',
+      account_identifier: 'ACCT-1',
+      source_system: 'gl',
+      category: 'OutstandingCheck',
+      status: 'OPEN',
+      natural_key: 'check:ACCT-1:5001',
+      natural_key_tier: 1,
+      original_transaction_date: '2026-01-05',
+      amount: '-250.00',
+      check_number: '5001',
+      reference_number: null,
+      description_snapshot: 'CHECK 5001',
+      age_in_days: 60,
+      owner_username: null,
+      due_date: null,
+      disposition_code: null,
+      disposition_note: null,
     },
   ];
 
@@ -84,6 +126,21 @@ const createFakePool = () => {
 
     if (text.includes('opened_in_run_id = $1') || text.includes('cleared_in_run_id = $1')) {
       return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
+    if (text.includes('FROM reconciliation_open_item oi') && text.includes('age_in_days')) {
+      let matches = openItems;
+      let paramIndex = 1;
+      if (text.includes(`a.account_identifier = $${paramIndex + 1}`)) {
+        const accountIdentifier = params[paramIndex] as string;
+        matches = matches.filter((item) => item.account_identifier === accountIdentifier);
+        paramIndex += 1;
+      }
+      if (text.includes(`oi.status = $${paramIndex + 1}`)) {
+        const status = params[paramIndex] as string;
+        matches = matches.filter((item) => item.status === status);
+      }
+      return Promise.resolve({ rows: matches, rowCount: matches.length });
     }
 
     throw new Error(`createFakePool: unexpected query: ${text}`);
@@ -164,5 +221,51 @@ describe('GET /api/reconciliation/runs/:id/rollforward', () => {
     );
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe('GET /api/reconciliation/open-items', () => {
+  it('lists open items filtered by account', async () => {
+    const app = appWithPool(createFakePool());
+
+    const response = await authedApp(app).get('/api/reconciliation/open-items?accountId=ACCT-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0]).toMatchObject({
+      id: 'item-1',
+      accountIdentifier: 'ACCT-1',
+      status: 'OPEN',
+      naturalKey: 'check:ACCT-1:5001',
+      amount: -250,
+      ageInDays: 60,
+    });
+  });
+
+  it('filters by status', async () => {
+    const app = appWithPool(createFakePool());
+
+    const response = await authedApp(app).get(
+      '/api/reconciliation/open-items?accountId=ACCT-1&status=CLEARED',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.items).toEqual([]);
+  });
+
+  it('returns 400 for an unknown status value', async () => {
+    const app = appWithPool(createFakePool());
+
+    const response = await authedApp(app).get('/api/reconciliation/open-items?status=BOGUS');
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 501 when no database pool is configured', async () => {
+    const app = createApp(undefined, undefined, undefined, undefined);
+
+    const response = await authedApp(app).get('/api/reconciliation/open-items');
+
+    expect(response.status).toBe(501);
   });
 });

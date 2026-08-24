@@ -374,6 +374,45 @@ export const getReconciliationRunRollforwardRequest = async (
   return parseResponse<{ snapshots: ReconciliationRunRollforwardSnapshot[] }>(response);
 };
 
+/** One row from `GET /api/reconciliation/open-items` (PR F.4), matching
+ * `PostgresOpenItemStore.listOpenItemsSchedule`'s return shape. `ownerUsername`/`dueDate` are
+ * always undefined today -- nothing in the app assigns them yet; this is a read-only view. */
+export interface OpenItemScheduleRow {
+  id: string;
+  accountIdentifier: string;
+  sourceSystem: string;
+  category: ErrorCategory;
+  status: string;
+  naturalKey: string;
+  naturalKeyTier: number;
+  originalTransactionDate: string;
+  amount: number;
+  checkNumber?: string;
+  referenceNumber?: string;
+  descriptionSnapshot?: string;
+  ageInDays: number;
+  ownerUsername?: string;
+  dueDate?: string;
+  dispositionCode?: string;
+  dispositionNote?: string;
+}
+
+/** Unreconciled Item Roll-Forward PR F.4: the open-items schedule -- the read-only replacement
+ * for the spreadsheet support schedule reviewers have been keeping by hand. Every status by
+ * default; narrow with `status` to just OPEN, CLEARED, etc. */
+export const listOpenItemsScheduleRequest = async (filters: {
+  accountId?: string;
+  status?: string;
+}): Promise<OpenItemScheduleRow[]> => {
+  const params = new URLSearchParams();
+  if (filters.accountId !== undefined) params.set('accountId', filters.accountId);
+  if (filters.status !== undefined) params.set('status', filters.status);
+
+  const response = await apiFetch(`/api/reconciliation/open-items?${params.toString()}`);
+  const { items } = await parseResponse<{ items: OpenItemScheduleRow[] }>(response);
+  return items;
+};
+
 /** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. `bankFiles` is 1-4 bank
  * account uploads (Issue #153) sent as one repeated `bankFiles` form field, not per-slot names. */
 export interface CreateImportRunPayload {

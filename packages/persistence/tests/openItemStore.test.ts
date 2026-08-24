@@ -1126,4 +1126,87 @@ describe('PostgresOpenItemStore', () => {
       expect(result?.clearedThisRun.map((i) => i.naturalKey)).toEqual([`check:${account}:9002`]);
     });
   });
+
+  describe('listOpenItemsSchedule (PR F.4)', () => {
+    it('lists items with a computed ageInDays and a null owner (nothing assigns it yet)', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        candidates: [
+          buildCandidate({
+            accountIdentifier: 'SCHEDULE-1',
+            naturalKey: 'check:SCHEDULE-1:1001',
+            checkNumber: '1001',
+            originalTransactionDate: '2026-01-01',
+            amount: -300,
+          }),
+        ],
+      });
+
+      const items = await store.listOpenItemsSchedule(defaultOrganizationId, {
+        accountIdentifier: 'SCHEDULE-1',
+      });
+
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        accountIdentifier: 'SCHEDULE-1',
+        status: 'OPEN',
+        naturalKey: 'check:SCHEDULE-1:1001',
+        amount: -300,
+        ownerUsername: undefined,
+        dueDate: undefined,
+      });
+      expect(items[0]!.ageInDays).toBeGreaterThan(0);
+    });
+
+    it('filters by status', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        candidates: [
+          buildCandidate({
+            accountIdentifier: 'SCHEDULE-2',
+            naturalKey: 'check:SCHEDULE-2:2001',
+            checkNumber: '2001',
+          }),
+        ],
+      });
+      const openItemRow = await pool.query<{ id: string }>(
+        `SELECT oi.id FROM reconciliation_open_item oi
+           JOIN reconciliation_account a ON a.id = oi.account_id
+          WHERE a.account_identifier = 'SCHEDULE-2'`,
+      );
+      await store.clearOpenItems(defaultOrganizationId, {
+        clearances: [{ openItemId: openItemRow.rows[0]!.id }],
+      });
+
+      const openOnly = await store.listOpenItemsSchedule(defaultOrganizationId, {
+        accountIdentifier: 'SCHEDULE-2',
+        status: 'OPEN',
+      });
+      const clearedOnly = await store.listOpenItemsSchedule(defaultOrganizationId, {
+        accountIdentifier: 'SCHEDULE-2',
+        status: 'CLEARED',
+      });
+
+      expect(openOnly).toHaveLength(0);
+      expect(clearedOnly).toHaveLength(1);
+      expect(clearedOnly[0]?.status).toBe('CLEARED');
+    });
+
+    it('returns an empty array when nothing matches', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      expect(
+        await store.listOpenItemsSchedule(defaultOrganizationId, {
+          accountIdentifier: 'SCHEDULE-NONEXISTENT',
+        }),
+      ).toEqual([]);
+    });
+  });
 });

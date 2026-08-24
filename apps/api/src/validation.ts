@@ -472,6 +472,17 @@ export const listReconciliationRunsQuerySchema = z.object({
   periodMonth: z.coerce.number().int().min(1).max(12).optional(),
 });
 
+/** Query filters for GET /api/reconciliation/open-items (PR F.4). status matches
+ * reconciliation_open_item's own CHECK constraint (changeset 0063). */
+export const listOpenItemsScheduleQuerySchema = z.object({
+  accountId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1))
+    .optional(),
+  status: z.enum(['OPEN', 'CLEARED', 'WRITTEN_OFF', 'ADJUSTED', 'VOIDED', 'SUPERSEDED']).optional(),
+});
+
 export const writeOffOpenItemBodySchema = z.object({
   dispositionCode: z.string().trim().min(1, 'dispositionCode is required.'),
   dispositionNote: z
