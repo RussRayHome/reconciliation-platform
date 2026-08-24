@@ -12,6 +12,61 @@ import type {
 
 import { runInTenantScope } from './postgres';
 
+/** One account's roll-forward snapshot, frozen at period close (PR E.2) -- the persisted
+ * counterpart to `SummaryMetrics.rollForward` (PR D.4), but independently recomputed from
+ * `reconciliation_open_item`/`reconciliation_open_item_event` rather than trusting an in-memory
+ * figure: `SummaryMetrics.rollForward` is never persisted (see `readModelStore.ts`'s `mapSummary`
+ * doc comment), and a close-time recompute is the more authoritative source anyway -- it is what
+ * actually gets frozen and asserted against the control equation.
+ *
+ * Every `*Amount` field here is SIGNED (matching `reconciliation_open_item.amount` itself), not
+ * `abs()`-ed like `SummaryMetrics.rollForward`'s UI-facing exposure figures -- this is a genuine
+ * dollar-balance rollforward meant to be reconciled against a GL control account, not an exposure
+ * count for a review screen. */
+export interface PeriodRollforwardSnapshot {
+  accountId: string;
+  accountIdentifier: string;
+  openingCount: number;
+  openingAmount: number;
+  newCount: number;
+  newAmount: number;
+  clearedCount: number;
+  clearedAmount: number;
+  writtenOffCount: number;
+  writtenOffAmount: number;
+  closingCount: number;
+  closingAmount: number;
+}
+
+/** One account's tie-out failure at close time -- the independently-counted current OPEN balance
+ * disagreed with the roll-forward arithmetic (opening + new - cleared - written off). Surfaced so
+ * the close error can name exactly which account and by how much, per plan §3.8/E.2 ("Reject the
+ * close on a tie-out failure with the discrepancy in the error"). */
+export interface PeriodRollforwardDiscrepancy {
+  accountId: string;
+  accountIdentifier: string;
+  expectedClosingCount: number;
+  actualClosingCount: number;
+  expectedClosingAmount: number;
+  actualClosingAmount: number;
+}
+
+export type CloseRunResult =
+  | { outcome: 'closed'; snapshots: PeriodRollforwardSnapshot[] }
+  | { outcome: 'not_found' }
+  | { outcome: 'not_closable'; status: string }
+  | { outcome: 'tie_out_failed'; discrepancies: PeriodRollforwardDiscrepancy[] };
+
+export type ReopenRunResult =
+  | { outcome: 'reopened'; reopenCount: number; staleSnapshotCount: number }
+  | { outcome: 'not_found' }
+  | { outcome: 'not_closed'; status: string };
+
+export type WriteOffOpenItemResult =
+  | { outcome: 'written_off' }
+  | { outcome: 'not_found' }
+  | { outcome: 'not_open'; status: string };
+
 export interface ProjectOpenItemsInput {
   /** `reconciliation_job.id` -- recorded on a newly-opened item as `first_detected_job_id`. */
   jobId: string;
@@ -290,6 +345,413 @@ export class PostgresOpenItemStore {
       }
 
       return { cleared };
+    });
+  }
+
+  /** Single-row lookup by user_name AND organization_id -- the same narrow, already-tenant-scoped
+   * shape `PostgresImportValidationStore.resolveUserId` uses (see
+   * reconciliationUserAccessGuard.test.ts's allowlist entry for this file: never a list/filter
+   * across reconciliation_user, which has RLS fully disabled). Not shared with that class since
+   * the two stores don't otherwise depend on each other. */
+  private async resolveUserId(
+    client: PoolClient,
+    organizationId: string,
+    username: string,
+  ): Promise<string | null> {
+    const result = await client.query<{ id: string }>(
+      'SELECT id FROM reconciliation_user WHERE user_name = $1 AND organization_id = $2',
+      [username, organizationId],
+    );
+    return result.rows[0]?.id ?? null;
+  }
+
+  /**
+   * Links a run to the real accounts its own normalized transactions touch (PR E.1's prerequisite
+   * fix, not a plan work item by name -- see this method's own investigation note below). Upserts
+   * each `reconciliation_account` row (same `findOrCreateAccount` used by `projectOpenItems`) and
+   * links it via `reconciliation_run_account` (PR A.2, changeset 0060).
+   *
+   * `reconciliation_run_account` was created "unused on landing" in PR A -- its own changeset
+   * backfilled one row per *existing* run at migration time, but nothing in the application ever
+   * wrote a new row for a run created afterward. PR E's close operation needs a reliable way to
+   * enumerate a run's accounts (§3.8: "recomputes the roll-forward snapshot per account"), and the
+   * per-transaction `accountIdentifier` values aren't known until normalization runs -- well after
+   * `PostgresImportRunStore.createRun` -- so this is called from the reconciliation pipeline
+   * itself (`reconciliationService.ts`), the same place PR D.1 already computes the run's distinct
+   * account identifiers for carry-forward seeding.
+   */
+  async linkRunAccounts(
+    organizationId: string,
+    input: { reconciliationRunId: string; accountIdentifiers: string[] },
+  ): Promise<void> {
+    if (input.accountIdentifiers.length === 0) {
+      return;
+    }
+    await runInTenantScope(this.pool, organizationId, async (client) => {
+      // period_year/period_month/is_terminal_good are denormalized onto this join row (changeset
+      // 0062, write-once by design -- a run's period never changes after submission) so the
+      // partial unique index enforcing "at most one terminal-good run per account+period" can
+      // filter on columns of this table alone. Read once per call, not once per account: every
+      // account linked in this call belongs to the same run.
+      const runResult = await client.query<{
+        period_year: number;
+        period_month: number | null;
+        status: string;
+      }>(
+        `SELECT period_year, period_month, status FROM reconciliation_run
+          WHERE id = $1 AND organization_id = $2`,
+        [input.reconciliationRunId, organizationId],
+      );
+      const run = runResult.rows[0];
+      if (!run) {
+        throw new Error(`linkRunAccounts: reconciliation_run "${input.reconciliationRunId}" not found.`);
+      }
+      const isTerminalGood = run.status === 'RECONCILED' || run.status === 'CLOSED';
+
+      for (const accountIdentifier of input.accountIdentifiers) {
+        const accountId = await this.findOrCreateAccount(client, organizationId, accountIdentifier);
+        await client.query(
+          `INSERT INTO reconciliation_run_account
+             (id, organization_id, reconciliation_run_id, account_id, period_year, period_month,
+              is_terminal_good)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (reconciliation_run_id, account_id) DO NOTHING`,
+          [
+            randomUUID(),
+            organizationId,
+            input.reconciliationRunId,
+            accountId,
+            run.period_year,
+            run.period_month,
+            isTerminalGood,
+          ],
+        );
+      }
+    });
+  }
+
+  /**
+   * Closes a period (PR E.2, plan §3.8): for every account linked to this run
+   * (`reconciliation_run_account`), recomputes the roll-forward snapshot, asserts the control
+   * equation against an independently-counted current OPEN balance, and only if every account
+   * ties does it freeze the snapshots and flip the run to CLOSED. All in one transaction -- a
+   * partial close (some accounts frozen, others not) would defeat the point of a tie-out gate.
+   *
+   * Only a `RECONCILED` run can close -- period close is the last step after reconciliation
+   * finishes, not a substitute for it.
+   */
+  async closeRun(
+    organizationId: string,
+    input: { runId: string; actorUsername: string },
+  ): Promise<CloseRunResult> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const actorUserId = await this.resolveUserId(client, organizationId, input.actorUsername);
+      if (!actorUserId) {
+        throw new Error(
+          `closeRun: actor username "${input.actorUsername}" has no matching reconciliation_user row.`,
+        );
+      }
+
+      const runResult = await client.query<{ id: string; status: string }>(
+        `SELECT id, status FROM reconciliation_run WHERE id = $1 AND organization_id = $2`,
+        [input.runId, organizationId],
+      );
+      const run = runResult.rows[0];
+      if (!run) {
+        return { outcome: 'not_found' };
+      }
+      if (run.status !== 'RECONCILED') {
+        return { outcome: 'not_closable', status: run.status };
+      }
+
+      const accountsResult = await client.query<{ account_id: string; account_identifier: string }>(
+        `SELECT ra.account_id, a.account_identifier
+           FROM reconciliation_run_account ra
+           JOIN reconciliation_account a ON a.id = ra.account_id
+          WHERE ra.reconciliation_run_id = $1 AND ra.organization_id = $2`,
+        [input.runId, organizationId],
+      );
+
+      const snapshots: PeriodRollforwardSnapshot[] = [];
+      const discrepancies: PeriodRollforwardDiscrepancy[] = [];
+
+      for (const account of accountsResult.rows) {
+        const priorResult = await client.query<{ closing_count: number; closing_amount: string }>(
+          `SELECT closing_count, closing_amount
+             FROM reconciliation_period_rollforward
+            WHERE organization_id = $1 AND account_id = $2 AND reconciliation_run_id <> $3
+            ORDER BY computed_at DESC
+            LIMIT 1`,
+          [organizationId, account.account_id, input.runId],
+        );
+        const openingCount = priorResult.rows[0]?.closing_count ?? 0;
+        const openingAmount = Number(priorResult.rows[0]?.closing_amount ?? 0);
+
+        const activityResult = await client.query<{
+          event_type: string;
+          count: string;
+          amount: string;
+        }>(
+          `SELECT ev.event_type, COUNT(*)::text AS count, COALESCE(SUM(oi.amount), 0)::text AS amount
+             FROM reconciliation_open_item_event ev
+             JOIN reconciliation_open_item oi ON oi.id = ev.open_item_id
+            WHERE ev.organization_id = $1 AND ev.run_id = $2 AND oi.account_id = $3
+              AND ev.event_type IN ('OPENED', 'CLEARED', 'WRITTEN_OFF')
+            GROUP BY ev.event_type`,
+          [organizationId, input.runId, account.account_id],
+        );
+        const activity = Object.fromEntries(
+          activityResult.rows.map((row) => [row.event_type, { count: Number(row.count), amount: Number(row.amount) }]),
+        ) as Partial<Record<'OPENED' | 'CLEARED' | 'WRITTEN_OFF', { count: number; amount: number }>>;
+        const newCount = activity.OPENED?.count ?? 0;
+        const newAmount = activity.OPENED?.amount ?? 0;
+        const clearedCount = activity.CLEARED?.count ?? 0;
+        const clearedAmount = activity.CLEARED?.amount ?? 0;
+        const writtenOffCount = activity.WRITTEN_OFF?.count ?? 0;
+        const writtenOffAmount = activity.WRITTEN_OFF?.amount ?? 0;
+
+        const expectedClosingCount = openingCount + newCount - clearedCount - writtenOffCount;
+        const expectedClosingAmount = openingAmount + newAmount - clearedAmount - writtenOffAmount;
+
+        const actualResult = await client.query<{ count: string; amount: string }>(
+          `SELECT COUNT(*)::text AS count, COALESCE(SUM(amount), 0)::text AS amount
+             FROM reconciliation_open_item
+            WHERE organization_id = $1 AND account_id = $2 AND status = 'OPEN'`,
+          [organizationId, account.account_id],
+        );
+        const actualClosingCount = Number(actualResult.rows[0]?.count ?? 0);
+        const actualClosingAmount = Number(actualResult.rows[0]?.amount ?? 0);
+
+        // Compare rounded to the cent -- NUMERIC(18,2) arithmetic on both sides should already
+        // match exactly, but floating-point comparison of two independently-summed paths is
+        // exactly the kind of thing worth a tolerance rather than a bitwise ===.
+        const amountsTie = Math.abs(actualClosingAmount - expectedClosingAmount) < 0.005;
+
+        if (actualClosingCount !== expectedClosingCount || !amountsTie) {
+          discrepancies.push({
+            accountId: account.account_id,
+            accountIdentifier: account.account_identifier,
+            expectedClosingCount,
+            actualClosingCount,
+            expectedClosingAmount,
+            actualClosingAmount,
+          });
+          continue;
+        }
+
+        snapshots.push({
+          accountId: account.account_id,
+          accountIdentifier: account.account_identifier,
+          openingCount,
+          openingAmount,
+          newCount,
+          newAmount,
+          clearedCount,
+          clearedAmount,
+          writtenOffCount,
+          writtenOffAmount,
+          closingCount: actualClosingCount,
+          closingAmount: actualClosingAmount,
+        });
+      }
+
+      if (discrepancies.length > 0) {
+        return { outcome: 'tie_out_failed', discrepancies };
+      }
+
+      for (const snapshot of snapshots) {
+        await client.query(
+          `INSERT INTO reconciliation_period_rollforward
+             (id, organization_id, reconciliation_run_id, account_id, opening_count, new_count,
+              cleared_count, written_off_count, closing_count, opening_amount, new_amount,
+              cleared_amount, written_off_amount, closing_amount)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            randomUUID(),
+            organizationId,
+            input.runId,
+            snapshot.accountId,
+            snapshot.openingCount,
+            snapshot.newCount,
+            snapshot.clearedCount,
+            snapshot.writtenOffCount,
+            snapshot.closingCount,
+            snapshot.openingAmount,
+            snapshot.newAmount,
+            snapshot.clearedAmount,
+            snapshot.writtenOffAmount,
+            snapshot.closingAmount,
+          ],
+        );
+      }
+
+      await client.query(
+        `UPDATE reconciliation_run SET status = 'CLOSED', closed_at = NOW(), closed_by = $2
+          WHERE id = $1`,
+        [input.runId, actorUserId],
+      );
+      // changeset 0062's sync_reconciliation_run_account_terminal_good() trigger fires on this
+      // UPDATE too, but its CASE only recognizes the literal 'RECONCILED' -- CLOSED is still the
+      // terminal-good outcome for this account+period (a stricter state than RECONCILED, not a
+      // different one), so this explicit follow-up corrects it back in the same transaction.
+      // Deliberately not a migration touching the trigger function itself: this codebase's own
+      // Liquibase --rollback directive can't safely hold a second dollar-quoted PL/pgSQL body
+      // (splits on the function's internal semicolons regardless of the changeset's own
+      // splitStatements:false -- see changeset 0055's doc comment for the same finding), and a
+      // plain DROP FUNCTION rollback would leave 0062's still-applied trigger referencing a
+      // dropped function if 0062 itself isn't also rolled back in the same operation.
+      await client.query(
+        `UPDATE reconciliation_run_account SET is_terminal_good = TRUE WHERE reconciliation_run_id = $1`,
+        [input.runId],
+      );
+      await client.query(
+        `INSERT INTO reconciliation_run_event
+           (run_id, organization_id, event_type, from_status, to_status, actor)
+         VALUES ($1, $2, 'CLOSED', 'RECONCILED', 'CLOSED', $3)`,
+        [input.runId, organizationId, input.actorUsername],
+      );
+
+      return { outcome: 'closed', snapshots };
+    });
+  }
+
+  /**
+   * Reopens a closed period (PR E.3, plan §3.8): puts the run back to `RECONCILED`, increments
+   * `reopen_count`, writes a `REOPENED` event, and -- the part that actually protects downstream
+   * audit trails -- marks every *later* closed period's own snapshot for the same accounts
+   * `is_stale = true` rather than silently recomputing it. A later period's own numbers are only
+   * suspect, not wrong, until someone re-closes it deliberately.
+   */
+  async reopenRun(
+    organizationId: string,
+    input: { runId: string; actorUsername: string },
+  ): Promise<ReopenRunResult> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const actorUserId = await this.resolveUserId(client, organizationId, input.actorUsername);
+      if (!actorUserId) {
+        throw new Error(
+          `reopenRun: actor username "${input.actorUsername}" has no matching reconciliation_user row.`,
+        );
+      }
+
+      const runResult = await client.query<{ id: string; status: string; period_end: string | null }>(
+        `SELECT id, status, period_end::text AS period_end
+           FROM reconciliation_run WHERE id = $1 AND organization_id = $2`,
+        [input.runId, organizationId],
+      );
+      const run = runResult.rows[0];
+      if (!run) {
+        return { outcome: 'not_found' };
+      }
+      if (run.status !== 'CLOSED') {
+        return { outcome: 'not_closed', status: run.status };
+      }
+
+      const updateResult = await client.query<{ reopen_count: number }>(
+        `UPDATE reconciliation_run
+            SET status = 'RECONCILED', closed_at = NULL, closed_by = NULL,
+                reopen_count = reopen_count + 1
+          WHERE id = $1
+        RETURNING reopen_count`,
+        [input.runId],
+      );
+      const reopenCount = updateResult.rows[0]!.reopen_count;
+
+      await client.query(
+        `INSERT INTO reconciliation_run_event
+           (run_id, organization_id, event_type, from_status, to_status, actor)
+         VALUES ($1, $2, 'REOPENED', 'CLOSED', 'RECONCILED', $3)`,
+        [input.runId, organizationId, input.actorUsername],
+      );
+
+      // "Later" is determined by declared period_end, not run creation order or database id --
+      // period_end is the field PR A introduced specifically to make period comparisons
+      // reproducible. A run with no declared period_end (predates PR A, never backfilled) can't
+      // be compared, so it's simply excluded rather than treated as either "earlier" or "later".
+      let staleSnapshotCount = 0;
+      if (run.period_end) {
+        const staleResult = await client.query(
+          `UPDATE reconciliation_period_rollforward pr
+              SET is_stale = TRUE
+             FROM reconciliation_run_account ra, reconciliation_run r
+            WHERE pr.reconciliation_run_id = r.id
+              AND ra.reconciliation_run_id = $1
+              AND ra.account_id = pr.account_id
+              AND pr.organization_id = $2
+              AND r.period_end > $3
+              AND pr.is_stale = FALSE`,
+          [input.runId, organizationId, run.period_end],
+        );
+        staleSnapshotCount = staleResult.rowCount ?? 0;
+      }
+
+      return { outcome: 'reopened', reopenCount, staleSnapshotCount };
+    });
+  }
+
+  /**
+   * Writes off an open item (PR E.4, mechanism only): sets it to `WRITTEN_OFF` with a required
+   * disposition code/note, and logs the transition -- same append-only event trail as every other
+   * status change on this entity. Never deletes the row.
+   *
+   * Deliberately has no automatic amount/age approval gate: the plan's own §8 open decisions list
+   * the write-off approval thresholds (dollar and age bands, and who approves) as an unresolved
+   * policy question, not an engineering one. Whoever calls this with a valid actor is the
+   * approver, the same lightweight posture `scripts/ops/set-carry-forward-enabled.ts` already
+   * uses for carry-forward enablement -- a real threshold can be layered on top of this mechanism
+   * once that policy answer exists, without changing this method's own contract.
+   */
+  async writeOffOpenItem(
+    organizationId: string,
+    input: {
+      openItemId: string;
+      reconciliationRunId?: string;
+      actorUsername: string;
+      dispositionCode: string;
+      dispositionNote?: string;
+    },
+  ): Promise<WriteOffOpenItemResult> {
+    return runInTenantScope(this.pool, organizationId, async (client) => {
+      const actorUserId = await this.resolveUserId(client, organizationId, input.actorUsername);
+      if (!actorUserId) {
+        throw new Error(
+          `writeOffOpenItem: actor username "${input.actorUsername}" has no matching reconciliation_user row.`,
+        );
+      }
+
+      const existing = await client.query<{ status: string }>(
+        `SELECT status FROM reconciliation_open_item WHERE id = $1 AND organization_id = $2`,
+        [input.openItemId, organizationId],
+      );
+      const current = existing.rows[0];
+      if (!current) {
+        return { outcome: 'not_found' };
+      }
+      if (current.status !== 'OPEN') {
+        return { outcome: 'not_open', status: current.status };
+      }
+
+      await client.query(
+        `UPDATE reconciliation_open_item
+            SET status = 'WRITTEN_OFF', disposition_code = $2, disposition_note = $3
+          WHERE id = $1`,
+        [input.openItemId, input.dispositionCode, input.dispositionNote ?? null],
+      );
+      await client.query(
+        `INSERT INTO reconciliation_open_item_event
+           (open_item_id, organization_id, run_id, event_type, from_status, to_status, actor,
+            details_json)
+         VALUES ($1, $2, $3, 'WRITTEN_OFF', 'OPEN', 'WRITTEN_OFF', $4, $5)`,
+        [
+          input.openItemId,
+          organizationId,
+          input.reconciliationRunId ?? null,
+          input.actorUsername,
+          JSON.stringify({ dispositionCode: input.dispositionCode, dispositionNote: input.dispositionNote ?? null }),
+        ],
+      );
+
+      return { outcome: 'written_off' };
     });
   }
 }

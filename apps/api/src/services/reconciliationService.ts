@@ -286,6 +286,34 @@ const runReconciliationPipeline = async ({
       }
     }
 
+    // Unreconciled Item Roll-Forward PR E.1's prerequisite fix: link this run to the real accounts
+    // its own normalized transactions touch (reconciliation_run_account, PR A.2) -- nothing wrote
+    // this join going forward before now, only the one-time migration backfill for pre-existing
+    // runs. PR E's close operation needs it to enumerate a run's accounts, and it belongs here
+    // regardless of carry-forward enablement (E doesn't depend on D). Best-effort, matching every
+    // other rollforward side path in this pipeline.
+    const accountIdentifiers = [
+      ...new Set(
+        normalizedTransactions
+          .map((t) => t.accountIdentifier)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    if (openItemStore && reconciliationRunId && accountIdentifiers.length > 0) {
+      try {
+        await openItemStore.linkRunAccounts(organizationId, {
+          reconciliationRunId,
+          accountIdentifiers,
+        });
+      } catch (linkError) {
+        log.warn({
+          action: 'service.rollforward.linkRunAccounts.failed',
+          runId,
+          message: linkError instanceof Error ? linkError.message : String(linkError),
+        });
+      }
+    }
+
     // Unreconciled Item Roll-Forward PR D.1: seed prior periods' still-open items into this run's
     // candidate pool, before matching so they can pair against this period's fresh data. Gated on
     // the decision resolved above (never on openItemStore alone) -- an org that hasn't been
@@ -295,13 +323,6 @@ const runReconciliationPipeline = async ({
     // nothing carries in this run (logged, not silent).
     if (openItemStore && carryForwardDecision?.enabled) {
       try {
-        const accountIdentifiers = [
-          ...new Set(
-            normalizedTransactions
-              .map((t) => t.accountIdentifier)
-              .filter((value): value is string => Boolean(value)),
-          ),
-        ];
         const openItems = await openItemStore.loadOpenItems(organizationId, accountIdentifiers);
         const { carriedTransactions, skippedAlreadyPresent } = seedCarriedForwardTransactions(
           runId,

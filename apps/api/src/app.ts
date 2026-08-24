@@ -148,6 +148,7 @@ import {
   saveMappingProfileBodySchema,
   signupBodySchema,
   updateAliasBodySchema,
+  writeOffOpenItemBodySchema,
 } from './validation';
 
 import { InMemoryRunRepository } from './services/runRepository';
@@ -3402,6 +3403,125 @@ export const createApp = (
       const importRunStore = new PostgresImportRunStore(pool!);
       const run = await importRunStore.getRunSummary(organizationId, runId);
       response.json({ run });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR E.2. Same canApprove gate as the polymorphic approval
+  // decision endpoint (RailMenuMods: Controller/VP Finance/CFO/Admin/Superuser) -- closing a
+  // period is a comptroller-level action, not a self-service one, matching the segregation-of-duty
+  // CHECK on closed_by/submitted_by this same call is subject to.
+  app.post('/api/imports/runs/:id/close', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only an approver may close a reconciliation period.' });
+      return;
+    }
+
+    try {
+      const { organizationId, username } = request.auth!;
+      const runId = request.params.id;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+
+      const result = await openItemStore.closeRun(organizationId, { runId, actorUsername: username });
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+      if (result.outcome === 'not_closable') {
+        response.status(409).json({
+          message: `Run cannot be closed from status ${result.status}. A period can only be closed once its reconciliation has finished (status RECONCILED).`,
+        });
+        return;
+      }
+      if (result.outcome === 'tie_out_failed') {
+        response.status(409).json({
+          message: 'Period close rejected: roll-forward tie-out failed for one or more accounts.',
+          discrepancies: result.discrepancies,
+        });
+        return;
+      }
+
+      response.json({ snapshots: result.snapshots });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR E.3.
+  app.post('/api/imports/runs/:id/reopen', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only an approver may reopen a reconciliation period.' });
+      return;
+    }
+
+    try {
+      const { organizationId, username } = request.auth!;
+      const runId = request.params.id;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+
+      const result = await openItemStore.reopenRun(organizationId, { runId, actorUsername: username });
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+      if (result.outcome === 'not_closed') {
+        response
+          .status(409)
+          .json({ message: `Run cannot be reopened from status ${result.status}; it is not CLOSED.` });
+        return;
+      }
+
+      response.json({ reopenCount: result.reopenCount, staleSnapshotCount: result.staleSnapshotCount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR E.4. Mechanism only -- see writeOffOpenItemBodySchema and
+  // PostgresOpenItemStore.writeOffOpenItem's own doc comments for why there is no automatic
+  // amount/age approval gate here yet.
+  app.post('/api/imports/open-items/:id/write-off', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only an approver may write off an open item.' });
+      return;
+    }
+
+    try {
+      const bodyResult = writeOffOpenItemBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+
+      const { organizationId, username } = request.auth!;
+      const openItemId = request.params.id;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+
+      const result = await openItemStore.writeOffOpenItem(organizationId, {
+        openItemId,
+        actorUsername: username,
+        dispositionCode: bodyResult.data.dispositionCode,
+        dispositionNote: bodyResult.data.dispositionNote,
+      });
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Open item not found.' });
+        return;
+      }
+      if (result.outcome === 'not_open') {
+        response
+          .status(409)
+          .json({ message: `Open item cannot be written off from status ${result.status}; it is not OPEN.` });
+        return;
+      }
+
+      response.json({ outcome: 'written_off' });
     } catch (error) {
       next(error);
     }

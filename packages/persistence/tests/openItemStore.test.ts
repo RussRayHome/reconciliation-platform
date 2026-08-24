@@ -37,6 +37,44 @@ const insertJob = async (): Promise<string> => {
   return jobId;
 };
 
+/** Minimal reconciliation_run row for PR E's close/reopen tests -- status/period/submitted_by all
+ * configurable since each test exercises a different lifecycle stage or account/period pairing. */
+const insertRun = async (
+  overrides: {
+    status?: string;
+    periodYear?: number;
+    periodMonth?: number | null;
+    periodEnd?: string | null;
+    submittedByUsername?: string;
+  } = {},
+): Promise<string> => {
+  const runId = crypto.randomUUID();
+  const submittedById = overrides.submittedByUsername
+    ? (
+        await pool.query<{ id: string }>(
+          'SELECT id FROM reconciliation_user WHERE user_name = $1 AND organization_id = $2',
+          [overrides.submittedByUsername, defaultOrganizationId],
+        )
+      ).rows[0]?.id
+    : null;
+  await pool.query(
+    `INSERT INTO reconciliation_run
+       (id, organization_id, label, frequency, period_year, period_month, period_end, status,
+        submitted_by)
+     VALUES ($1, $2, 'PR E Test Run', 'MONTHLY', $3, $4, $5, $6, $7)`,
+    [
+      runId,
+      defaultOrganizationId,
+      overrides.periodYear ?? 2026,
+      overrides.periodMonth ?? 3,
+      overrides.periodEnd ?? '2026-03-31',
+      overrides.status ?? 'RECONCILED',
+      submittedById,
+    ],
+  );
+  return runId;
+};
+
 describe('PostgresOpenItemStore', () => {
   beforeAll(async () => {
     try {
@@ -54,6 +92,19 @@ describe('PostgresOpenItemStore', () => {
         throw new Error("Expected migrations to seed a 'Default Organization' row.");
       }
       defaultOrganizationId = organizationId;
+
+      await pool.query(
+        `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+         VALUES ('close-submitter', 'Sam', 'Submitter', 'hash', 'senior-analyst', $1)
+         ON CONFLICT DO NOTHING`,
+        [defaultOrganizationId],
+      );
+      await pool.query(
+        `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+         VALUES ('close-approver', 'Ana', 'Approver', 'hash', 'controller', $1)
+         ON CONFLICT DO NOTHING`,
+        [defaultOrganizationId],
+      );
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       console.warn(`PostgreSQL integration setup failed: ${startupError.message}`);
@@ -519,5 +570,450 @@ describe('PostgresOpenItemStore', () => {
 
     // opening (1) + new (1) - cleared (1) = closing (1).
     expect(opening.length + 1 - clearResult.cleared).toBe(closing.length);
+  });
+
+  describe('linkRunAccounts (PR E.1 prerequisite fix)', () => {
+    it('links a run to its accounts, creating them if needed, idempotently', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'DRAFT' });
+
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: runId,
+        accountIdentifiers: ['LINK-ACCOUNT-1', 'LINK-ACCOUNT-2'],
+      });
+      // Same call again -- must not duplicate or throw.
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: runId,
+        accountIdentifiers: ['LINK-ACCOUNT-1', 'LINK-ACCOUNT-2'],
+      });
+
+      const linked = await pool.query<{ account_identifier: string }>(
+        `SELECT a.account_identifier FROM reconciliation_run_account ra
+           JOIN reconciliation_account a ON a.id = ra.account_id
+          WHERE ra.reconciliation_run_id = $1
+          ORDER BY a.account_identifier`,
+        [runId],
+      );
+      expect(linked.rows.map((r) => r.account_identifier)).toEqual([
+        'LINK-ACCOUNT-1',
+        'LINK-ACCOUNT-2',
+      ]);
+    });
+
+    it('is a no-op for an empty account list', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'DRAFT' });
+
+      await expect(
+        store.linkRunAccounts(defaultOrganizationId, {
+          reconciliationRunId: runId,
+          accountIdentifiers: [],
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('closeRun (PR E.2)', () => {
+    it('returns not_found for an unknown run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      expect(
+        await store.closeRun(defaultOrganizationId, {
+          runId: crypto.randomUUID(),
+          actorUsername: 'close-approver',
+        }),
+      ).toEqual({ outcome: 'not_found' });
+    });
+
+    it('returns not_closable for a run that has not reached RECONCILED', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'DRAFT' });
+
+      expect(
+        await store.closeRun(defaultOrganizationId, { runId, actorUsername: 'close-approver' }),
+      ).toEqual({ outcome: 'not_closable', status: 'DRAFT' });
+    });
+
+    it('closes a clean RECONCILED run with no linked accounts, freezing zero snapshots', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
+
+      const result = await store.closeRun(defaultOrganizationId, {
+        runId,
+        actorUsername: 'close-approver',
+      });
+      expect(result).toEqual({ outcome: 'closed', snapshots: [] });
+
+      const row = await pool.query<{ status: string; closed_at: Date | null; closed_by: string }>(
+        'SELECT status, closed_at, closed_by FROM reconciliation_run WHERE id = $1',
+        [runId],
+      );
+      expect(row.rows[0]?.status).toBe('CLOSED');
+      expect(row.rows[0]?.closed_at).not.toBeNull();
+
+      const events = await pool.query<{ event_type: string; from_status: string; to_status: string }>(
+        'SELECT event_type, from_status, to_status FROM reconciliation_run_event WHERE run_id = $1',
+        [runId],
+      );
+      expect(events.rows).toEqual([
+        { event_type: 'CLOSED', from_status: 'RECONCILED', to_status: 'CLOSED' },
+      ]);
+    });
+
+    it('keeps reconciliation_run_account.is_terminal_good TRUE across the RECONCILED -> CLOSED transition', async () => {
+      if (startupError) throw startupError;
+
+      // Regression coverage for changeset 0062's own trigger, which only recognizes the literal
+      // 'RECONCILED' status -- without closeRun's explicit follow-up UPDATE, this transition
+      // would silently flip is_terminal_good to FALSE and reopen the account+period to a second
+      // concurrent RECONCILED run, defeating changeset 0062's own uniqueness guarantee.
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: runId,
+        accountIdentifiers: ['CLOSE-TERMINAL-GOOD-1'],
+      });
+
+      const beforeClose = await pool.query<{ is_terminal_good: boolean }>(
+        'SELECT is_terminal_good FROM reconciliation_run_account WHERE reconciliation_run_id = $1',
+        [runId],
+      );
+      expect(beforeClose.rows[0]?.is_terminal_good).toBe(true);
+
+      await store.closeRun(defaultOrganizationId, { runId, actorUsername: 'close-approver' });
+
+      const afterClose = await pool.query<{ is_terminal_good: boolean }>(
+        'SELECT is_terminal_good FROM reconciliation_run_account WHERE reconciliation_run_id = $1',
+        [runId],
+      );
+      expect(afterClose.rows[0]?.is_terminal_good).toBe(true);
+    });
+
+    it('recomputes and freezes a snapshot reflecting this run\'s own open-item activity', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
+      const jobId = await insertJob();
+
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: runId,
+        accountIdentifiers: ['CLOSE-SNAPSHOT-1'],
+      });
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId,
+        reconciliationRunId: runId,
+        candidates: [
+          buildCandidate({
+            accountIdentifier: 'CLOSE-SNAPSHOT-1',
+            naturalKey: 'check:CLOSE-SNAPSHOT-1:7001',
+            checkNumber: '7001',
+            amount: -125.5,
+          }),
+        ],
+      });
+
+      const result = await store.closeRun(defaultOrganizationId, {
+        runId,
+        actorUsername: 'close-approver',
+      });
+
+      expect(result.outcome).toBe('closed');
+      if (result.outcome !== 'closed') throw new Error('expected closed');
+      expect(result.snapshots).toHaveLength(1);
+      // Snapshot amounts are stored SIGNED (matching reconciliation_open_item.amount itself), not
+      // abs()-ed like SummaryMetrics.rollForward's UI-facing exposure figures -- a genuine dollar
+      // rollforward, not an exposure count. The candidate's amount is -125.5.
+      expect(result.snapshots[0]).toMatchObject({
+        accountIdentifier: 'CLOSE-SNAPSHOT-1',
+        openingCount: 0,
+        openingAmount: 0,
+        newCount: 1,
+        newAmount: -125.5,
+        clearedCount: 0,
+        clearedAmount: 0,
+        writtenOffCount: 0,
+        writtenOffAmount: 0,
+        closingCount: 1,
+        closingAmount: -125.5,
+      });
+
+      const persisted = await pool.query<{
+        opening_count: number;
+        new_count: number;
+        closing_count: number;
+        closing_amount: string;
+        is_stale: boolean;
+      }>(
+        `SELECT opening_count, new_count, closing_count, closing_amount, is_stale
+           FROM reconciliation_period_rollforward WHERE reconciliation_run_id = $1`,
+        [runId],
+      );
+      expect(persisted.rows[0]).toMatchObject({
+        opening_count: 0,
+        new_count: 1,
+        closing_count: 1,
+        closing_amount: '-125.50',
+        is_stale: false,
+      });
+    });
+
+    it('rejects closing with the same actor who submitted the run (segregation of duty)', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
+
+      await expect(
+        store.closeRun(defaultOrganizationId, { runId, actorUsername: 'close-submitter' }),
+      ).rejects.toThrow();
+    });
+
+    it('returns not_closable when closing an already-CLOSED run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
+      await store.closeRun(defaultOrganizationId, { runId, actorUsername: 'close-approver' });
+
+      expect(
+        await store.closeRun(defaultOrganizationId, { runId, actorUsername: 'close-approver' }),
+      ).toEqual({ outcome: 'not_closable', status: 'CLOSED' });
+    });
+  });
+
+  describe('reopenRun (PR E.3)', () => {
+    it('returns not_found for an unknown run', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      expect(
+        await store.reopenRun(defaultOrganizationId, {
+          runId: crypto.randomUUID(),
+          actorUsername: 'close-approver',
+        }),
+      ).toEqual({ outcome: 'not_found' });
+    });
+
+    it('returns not_closed for a run that is not CLOSED', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'RECONCILED' });
+
+      expect(
+        await store.reopenRun(defaultOrganizationId, { runId, actorUsername: 'close-approver' }),
+      ).toEqual({ outcome: 'not_closed', status: 'RECONCILED' });
+    });
+
+    it('reopens a closed run: status back to RECONCILED, reopen_count incremented, closed_at/closed_by cleared, event written', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
+      await store.closeRun(defaultOrganizationId, { runId, actorUsername: 'close-approver' });
+
+      const result = await store.reopenRun(defaultOrganizationId, {
+        runId,
+        actorUsername: 'close-approver',
+      });
+      expect(result).toMatchObject({ outcome: 'reopened', reopenCount: 1 });
+
+      const row = await pool.query<{
+        status: string;
+        closed_at: Date | null;
+        closed_by: string | null;
+        reopen_count: number;
+      }>('SELECT status, closed_at, closed_by, reopen_count FROM reconciliation_run WHERE id = $1', [
+        runId,
+      ]);
+      expect(row.rows[0]).toMatchObject({
+        status: 'RECONCILED',
+        closed_at: null,
+        closed_by: null,
+        reopen_count: 1,
+      });
+
+      const events = await pool.query<{ event_type: string }>(
+        `SELECT event_type FROM reconciliation_run_event WHERE run_id = $1 ORDER BY event_id`,
+        [runId],
+      );
+      expect(events.rows.map((r) => r.event_type)).toEqual(['CLOSED', 'REOPENED']);
+    });
+
+    it('marks a later closed period\'s snapshot is_stale, but leaves an earlier one alone', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      const account = 'REOPEN-STALE-1';
+
+      const januaryRunId = await insertRun({
+        status: 'RECONCILED',
+        submittedByUsername: 'close-submitter',
+        periodYear: 2026,
+        periodMonth: 1,
+        periodEnd: '2026-01-31',
+      });
+      const februaryRunId = await insertRun({
+        status: 'RECONCILED',
+        submittedByUsername: 'close-submitter',
+        periodYear: 2026,
+        periodMonth: 2,
+        periodEnd: '2026-02-28',
+      });
+      const marchRunId = await insertRun({
+        status: 'RECONCILED',
+        submittedByUsername: 'close-submitter',
+        periodYear: 2026,
+        periodMonth: 3,
+        periodEnd: '2026-03-31',
+      });
+
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: januaryRunId,
+        accountIdentifiers: [account],
+      });
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: februaryRunId,
+        accountIdentifiers: [account],
+      });
+      await store.linkRunAccounts(defaultOrganizationId, {
+        reconciliationRunId: marchRunId,
+        accountIdentifiers: [account],
+      });
+
+      await store.closeRun(defaultOrganizationId, { runId: januaryRunId, actorUsername: 'close-approver' });
+      await store.closeRun(defaultOrganizationId, { runId: februaryRunId, actorUsername: 'close-approver' });
+      await store.closeRun(defaultOrganizationId, { runId: marchRunId, actorUsername: 'close-approver' });
+
+      // Reopening February should flag March's snapshot (later) as stale but leave January's
+      // (earlier) alone.
+      const result = await store.reopenRun(defaultOrganizationId, {
+        runId: februaryRunId,
+        actorUsername: 'close-approver',
+      });
+      expect(result).toMatchObject({ outcome: 'reopened', staleSnapshotCount: 1 });
+
+      const staleFlags = await pool.query<{ reconciliation_run_id: string; is_stale: boolean }>(
+        `SELECT reconciliation_run_id, is_stale FROM reconciliation_period_rollforward
+          WHERE reconciliation_run_id = ANY($1::uuid[])`,
+        [[januaryRunId, marchRunId]],
+      );
+      const staleByRun = Object.fromEntries(
+        staleFlags.rows.map((row) => [row.reconciliation_run_id, row.is_stale]),
+      );
+      expect(staleByRun[januaryRunId]).toBe(false);
+      expect(staleByRun[marchRunId]).toBe(true);
+    });
+  });
+
+  describe('writeOffOpenItem (PR E.4)', () => {
+    it('returns not_found for an unknown open item', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      expect(
+        await store.writeOffOpenItem(defaultOrganizationId, {
+          openItemId: crypto.randomUUID(),
+          actorUsername: 'close-approver',
+          dispositionCode: 'STALE_UNCLAIMED',
+        }),
+      ).toEqual({ outcome: 'not_found' });
+    });
+
+    it('returns not_open for an item that is not OPEN', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        candidates: [
+          buildCandidate({
+            accountIdentifier: 'WRITEOFF-NOT-OPEN-1',
+            naturalKey: 'check:WRITEOFF-NOT-OPEN-1:8001',
+            checkNumber: '8001',
+          }),
+        ],
+      });
+      const store2 = new PostgresOpenItemStore(runtimePool);
+      const openItemRow = await pool.query<{ id: string }>(
+        `SELECT oi.id FROM reconciliation_open_item oi
+           JOIN reconciliation_account a ON a.id = oi.account_id
+          WHERE a.account_identifier = 'WRITEOFF-NOT-OPEN-1'`,
+      );
+      const openItemId = openItemRow.rows[0]!.id;
+      await store2.clearOpenItems(defaultOrganizationId, { clearances: [{ openItemId }] });
+
+      expect(
+        await store.writeOffOpenItem(defaultOrganizationId, {
+          openItemId,
+          actorUsername: 'close-approver',
+          dispositionCode: 'STALE_UNCLAIMED',
+        }),
+      ).toEqual({ outcome: 'not_open', status: 'CLEARED' });
+    });
+
+    it('writes off an OPEN item: status WRITTEN_OFF, disposition persisted, event written, row never deleted', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresOpenItemStore(runtimePool);
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        candidates: [
+          buildCandidate({
+            accountIdentifier: 'WRITEOFF-OPEN-1',
+            naturalKey: 'check:WRITEOFF-OPEN-1:8002',
+            checkNumber: '8002',
+          }),
+        ],
+      });
+      const openItemRow = await pool.query<{ id: string }>(
+        `SELECT oi.id FROM reconciliation_open_item oi
+           JOIN reconciliation_account a ON a.id = oi.account_id
+          WHERE a.account_identifier = 'WRITEOFF-OPEN-1'`,
+      );
+      const openItemId = openItemRow.rows[0]!.id;
+
+      const result = await store.writeOffOpenItem(defaultOrganizationId, {
+        openItemId,
+        actorUsername: 'close-approver',
+        dispositionCode: 'STALE_UNCLAIMED',
+        dispositionNote: 'Escheatment review pending',
+      });
+      expect(result).toEqual({ outcome: 'written_off' });
+
+      const row = await pool.query<{
+        status: string;
+        disposition_code: string;
+        disposition_note: string;
+      }>(
+        'SELECT status, disposition_code, disposition_note FROM reconciliation_open_item WHERE id = $1',
+        [openItemId],
+      );
+      expect(row.rows[0]).toEqual({
+        status: 'WRITTEN_OFF',
+        disposition_code: 'STALE_UNCLAIMED',
+        disposition_note: 'Escheatment review pending',
+      });
+
+      const events = await pool.query<{ event_type: string; from_status: string; to_status: string }>(
+        'SELECT event_type, from_status, to_status FROM reconciliation_open_item_event WHERE open_item_id = $1 ORDER BY event_id',
+        [openItemId],
+      );
+      expect(events.rows[events.rows.length - 1]).toEqual({
+        event_type: 'WRITTEN_OFF',
+        from_status: 'OPEN',
+        to_status: 'WRITTEN_OFF',
+      });
+    });
   });
 });

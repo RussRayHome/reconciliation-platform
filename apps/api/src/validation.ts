@@ -455,6 +455,18 @@ export const approvalDecisionBodySchema = z.object({
     .optional(),
 });
 
+/** Unreconciled Item Roll-Forward PR E.4. dispositionCode is required -- a write-off must always
+ * say why, even though no fixed code list exists yet (the plan's own §8 leaves the approval
+ * policy, including any controlled vocabulary, as an open decision). dispositionNote is optional
+ * free text for the specifics a fixed code can't capture. */
+export const writeOffOpenItemBodySchema = z.object({
+  dispositionCode: z.string().trim().min(1, 'dispositionCode is required.'),
+  dispositionNote: z
+    .string()
+    .transform((value) => value.trim())
+    .optional(),
+});
+
 export const updateAliasBodySchema = z.object({
   bankPattern: z
     .string()

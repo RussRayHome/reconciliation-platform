@@ -154,6 +154,32 @@ export class PostgresImportRunStore {
         });
       }
 
+      // Unreconciled Item Roll-Forward PR E.2/§3.8 point 4: a closed period blocks further runs
+      // for that account + period without an explicit reopen. Matched on the scalar
+      // account_identifier (still populated at creation time, unlike the real per-transaction
+      // identifiers PR E.1's reconciliation_run_account link only learns once normalization runs
+      // later in the pipeline) -- a best-effort, single-account check, not the full multi-account
+      // enforcement the close/tie-out mechanism itself provides. Skipped entirely when no
+      // accountIdentifier is supplied, matching how every other account-scoped feature in this
+      // file treats an absent identifier as "nothing to check against."
+      if (input.accountIdentifier) {
+        const closedResult = await client.query<{ id: string }>(
+          `SELECT id FROM reconciliation_run
+            WHERE organization_id = $1 AND account_identifier = $2 AND period_year = $3
+              AND period_month IS NOT DISTINCT FROM $4 AND status = 'CLOSED'
+            LIMIT 1`,
+          [input.organizationId, input.accountIdentifier, input.periodYear, input.periodMonth ?? null],
+        );
+        if (closedResult.rows[0]) {
+          const periodLabel = input.periodMonth
+            ? `${input.periodYear}-${input.periodMonth}`
+            : `${input.periodYear}`;
+          throw new Error(
+            `createRun: period ${periodLabel} for account "${input.accountIdentifier}" is already closed (run ${closedResult.rows[0].id}). Reopen it before submitting a new run.`,
+          );
+        }
+      }
+
       const runId = randomUUID();
       // period_start/period_end are computed here with the exact same derivation changeset 0061's
       // backfill used (first/last calendar day of the month for MONTHLY, Jan 1/Dec 31 for ANNUAL)

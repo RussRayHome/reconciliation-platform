@@ -86,6 +86,13 @@ const createFakeImportsPool = () => {
       return Promise.resolve({ rows: [row], rowCount: 1 });
     }
 
+    // Unreconciled Item Roll-Forward PR E.2/§3.8 point 4: createRun's pre-check for an existing
+    // CLOSED run blocking the same account+period. No test in this file seeds a CLOSED run, so
+    // this always answers "no closed period blocks this create."
+    if (text.includes("status = 'CLOSED'") && text.includes('FROM reconciliation_run')) {
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
     if (text.includes('INSERT INTO reconciliation_run')) {
       const [id, organizationId, label, accountIdentifier, frequency, periodYear, periodMonth] =
         params as [string, string, string, string | null, string, number, number | null];
