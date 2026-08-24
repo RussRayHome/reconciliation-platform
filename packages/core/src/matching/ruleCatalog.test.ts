@@ -62,10 +62,10 @@ describe('buildRuleCatalog', () => {
     );
   });
 
-  it('returns all 18 MatchingConfig fields as metrics, each referenced by at least one rule', () => {
+  it('returns all 19 MatchingConfig fields as metrics, each referenced by at least one rule', () => {
     const catalog = buildRuleCatalog();
 
-    expect(catalog.metrics).toHaveLength(18);
+    expect(catalog.metrics).toHaveLength(19);
 
     const referencedMetricIds = new Set(catalog.rules.flatMap((rule) => rule.varianceMetricIds));
     const metricIds = new Set(catalog.metrics.map((metric) => metric.id));
@@ -80,6 +80,7 @@ describe('buildRuleCatalog', () => {
       'groupedMatchMaxSize',
       'wireFeeTolerance',
       'creditCardFeeTolerance',
+      'carriedItemDateToleranceDays',
     ] as const) {
       expect(metricIds.has(knob)).toBe(true);
     }

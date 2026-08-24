@@ -98,6 +98,48 @@ describe('PostgresImportRunStore', () => {
     expect(linkRows.rows.map((row: { role: string }) => row.role)).toEqual(['BANK_MERGED', 'GL']);
   });
 
+  it('derives period_start/period_end from period_year/period_month for a MONTHLY run (Unreconciled Item Roll-Forward PR A)', async () => {
+    if (startupError) throw startupError;
+
+    const store = new PostgresImportRunStore(pool);
+    const summary = await store.createRun(
+      buildRunInput({ label: 'February Run', periodYear: 2026, periodMonth: 2 }),
+    );
+
+    // 2026 is not a leap year -- proves this reads the real days-in-month, not a hardcoded 28/30/31.
+    expect(summary.periodEnd).toBe('2026-02-28');
+
+    const runRow = await pool.query<{ period_start: string; period_end: string }>(
+      'SELECT period_start::text, period_end::text FROM reconciliation_run WHERE id = $1',
+      [summary.id],
+    );
+    expect(runRow.rows[0]?.period_start).toBe('2026-02-01');
+    expect(runRow.rows[0]?.period_end).toBe('2026-02-28');
+  });
+
+  it('derives period_start/period_end as Jan 1/Dec 31 for an ANNUAL run', async () => {
+    if (startupError) throw startupError;
+
+    const store = new PostgresImportRunStore(pool);
+    const summary = await store.createRun(
+      buildRunInput({
+        label: 'Annual Run',
+        frequency: 'ANNUAL',
+        periodYear: 2026,
+        periodMonth: undefined,
+      }),
+    );
+
+    expect(summary.periodEnd).toBe('2026-12-31');
+
+    const runRow = await pool.query<{ period_start: string; period_end: string }>(
+      'SELECT period_start::text, period_end::text FROM reconciliation_run WHERE id = $1',
+      [summary.id],
+    );
+    expect(runRow.rows[0]?.period_start).toBe('2026-01-01');
+    expect(runRow.rows[0]?.period_end).toBe('2026-12-31');
+  });
+
   it('stores each file\'s bytes exactly as received, retrievable via the content table', async () => {
     if (startupError) throw startupError;
 
@@ -434,6 +476,44 @@ describe('PostgresImportRunStore', () => {
         bankFile.importFileId,
       );
       expect(crossTenantRead).toBeNull();
+    });
+  });
+
+  describe('listRuns (PR F.1)', () => {
+    it('filters by accountIdentifier/periodYear/periodMonth and orders newest period first', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const account = 'LIST-RUNS-1';
+      const january = await store.createRun(
+        buildRunInput({ accountIdentifier: account, periodYear: 2026, periodMonth: 1, label: 'Jan' }),
+      );
+      const february = await store.createRun(
+        buildRunInput({ accountIdentifier: account, periodYear: 2026, periodMonth: 2, label: 'Feb' }),
+      );
+      // Different account -- must not appear when filtering by `account` above.
+      await store.createRun(
+        buildRunInput({ accountIdentifier: 'LIST-RUNS-OTHER', periodYear: 2026, periodMonth: 2, label: 'Other' }),
+      );
+
+      const forAccount = await store.listRuns(defaultOrganizationId, { accountIdentifier: account });
+      expect(forAccount.map((r) => r.id)).toEqual([february.id, january.id]);
+
+      const forExactPeriod = await store.listRuns(defaultOrganizationId, {
+        accountIdentifier: account,
+        periodYear: 2026,
+        periodMonth: 1,
+      });
+      expect(forExactPeriod.map((r) => r.id)).toEqual([january.id]);
+    });
+
+    it('returns an empty array when nothing matches', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      expect(
+        await store.listRuns(defaultOrganizationId, { accountIdentifier: 'LIST-RUNS-NONEXISTENT' }),
+      ).toEqual([]);
     });
   });
 });

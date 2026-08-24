@@ -216,10 +216,24 @@ const findMatchResultByPair = (
       result.bankTransactionId === bankTransactionId && result.glTransactionId === glTransactionId,
   );
 
+/** The date every exception's `ageInDays` is computed against. Prefers the run's own *declared*
+ * period end (`reconciliation_run.period_end`, Unreconciled Item Roll-Forward PR A) when one is
+ * supplied -- an audit-facing aging report must not move with the file cut, must not read two
+ * days short when the bank export ends before the period does, and must not get contaminated by
+ * one stray next-period-dated row inflating every age in the run, all of which the derived
+ * max(transactionDate) fallback below is vulnerable to. That fallback exists only for callers
+ * that don't yet have a declared period end to supply (a run predating this column, or a
+ * standalone caller with no period concept at all). */
 const buildReconciliationAnchorDate = (
   normalizedTransactions: NormalizedTransaction[],
-): Date | undefined =>
-  normalizedTransactions.reduce<Date | undefined>((latest, transaction) => {
+  declaredAnchorDate?: string,
+): Date | undefined => {
+  const declared = parseIsoDate(declaredAnchorDate);
+  if (declared) {
+    return declared;
+  }
+
+  return normalizedTransactions.reduce<Date | undefined>((latest, transaction) => {
     const parsed = parseIsoDate(transaction.transactionDate ?? transaction.postingDate);
     if (!parsed) {
       return latest;
@@ -231,6 +245,7 @@ const buildReconciliationAnchorDate = (
 
     return latest;
   }, undefined);
+};
 
 const classifyStaleOutstandingChecksStage = (params: ResidualStageParams): Set<string> => {
   const {
@@ -240,9 +255,13 @@ const classifyStaleOutstandingChecksStage = (params: ResidualStageParams): Set<s
     remainingUnmatchedGl,
     normalizedTransactions,
     upsertTransactionException,
+    declaredAnchorDate,
   } = params;
   const staleOutstandingGlIds = new Set<string>();
-  const reconciliationAnchorDate = buildReconciliationAnchorDate(normalizedTransactions);
+  const reconciliationAnchorDate = buildReconciliationAnchorDate(
+    normalizedTransactions,
+    declaredAnchorDate,
+  );
 
   remainingUnmatchedGl.forEach((transactionId) => {
     const transaction = transactionById.get(transactionId);
@@ -1553,7 +1572,10 @@ const classifyMissingFallbackStage = (
 };
 
 export const classifyResidualStages = (params: ResidualStageParams): ResidualStageState => {
-  const anchorDate = buildReconciliationAnchorDate(params.normalizedTransactions);
+  const anchorDate = buildReconciliationAnchorDate(
+    params.normalizedTransactions,
+    params.declaredAnchorDate,
+  );
   const staleOutstandingGlIds = classifyStaleOutstandingChecksStage(params);
   const outstandingCheckGlIds = classifyOutstandingChecksStage(
     params,

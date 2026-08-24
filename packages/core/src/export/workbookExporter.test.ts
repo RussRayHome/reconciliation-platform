@@ -58,6 +58,18 @@ describe('exportWorkbook', () => {
             ],
           },
         ],
+        rollForward: {
+          openingCount: 0,
+          openingAmount: 0,
+          newCount: 0,
+          newAmount: 0,
+          clearedCount: 0,
+          clearedAmount: 0,
+          writtenOffCount: 0,
+          writtenOffAmount: 0,
+          closingCount: 0,
+          closingAmount: 0,
+        },
       },
       exceptions: [
         {
@@ -111,5 +123,73 @@ describe('exportWorkbook', () => {
         'Deposit Grouping Issue',
       ]),
     );
+  });
+
+  it('writes the Roll-Forward Summary tab from SummaryMetrics.rollForward (PR F.5)', async () => {
+    const workbookOutput = await exportWorkbook({
+      runId: 'export-test-run-rollforward',
+      accountIdentifier: 'OPERATING-001',
+      periodLabel: 'March 2026',
+      config: defaultReconciliationConfig,
+      summary: {
+        totalRecordsReviewed: 2,
+        bankRecords: 1,
+        glRecords: 1,
+        exactMatches: 0,
+        probableMatches: 0,
+        unmatchedItems: 0,
+        duplicates: 0,
+        bankDuplicates: 0,
+        glDuplicates: 0,
+        dateVariances: 0,
+        timingDifferences: 0,
+        dataQualityIssues: 0,
+        amountMismatches: 0,
+        missingFromBank: 0,
+        missingFromGL: 0,
+        unmatchedBankNetAmount: 0,
+        unmatchedGlNetAmount: 0,
+        cleanMatchedAmount: 0,
+        unresolvedExposure: 0,
+        countsByCategory: {},
+        amountByCategory: {},
+        charts: [],
+        rollForward: {
+          openingCount: 3,
+          openingAmount: -450,
+          newCount: 1,
+          newAmount: -75,
+          clearedCount: 1,
+          clearedAmount: -125.5,
+          writtenOffCount: 0,
+          writtenOffAmount: 0,
+          closingCount: 3,
+          closingAmount: -399.5,
+        },
+      },
+      exceptions: [],
+      probableMatches: [],
+      reviewerObservations: [],
+      normalizedTransactions: [],
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      workbookOutput.binary as unknown as Parameters<ExcelJS.Workbook['xlsx']['load']>[0],
+    );
+
+    expect(workbookOutput.tabNames).toContain('Roll-Forward Summary');
+
+    const rollForwardSheet = workbook.getWorksheet('Roll-Forward Summary');
+    const rows = rollForwardSheet?.getRows(1, 6)?.map((row) => [row.getCell(1).text, row.getCell(2).value, row.getCell(3).value]);
+
+    expect(rows).toEqual([
+      ['Line', 'Count', 'Amount'],
+      ['Opening (carried in from prior period)', 3, -450],
+      ['New this period', 1, -75],
+      ['Cleared this period', 1, -125.5],
+      ['Written off this period', 0, 0],
+      ['Closing (carries into next period)', 3, -399.5],
+    ]);
   });
 });

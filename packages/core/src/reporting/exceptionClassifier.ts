@@ -42,6 +42,9 @@ export interface ExceptionClassifierInput {
   reporting: ReportingConfig;
   matching: MatchingConfig;
   reconciliationFrequency?: ReconciliationFrequency;
+  /** The run's declared period end (`reconciliation_run.period_end`), ISO date string -- see
+   * `ResidualStageParams.declaredAnchorDate`'s doc comment. */
+  declaredAnchorDate?: string;
 }
 
 /** Classified exceptions and reviewer observations produced by `classifyExceptions`. */
@@ -76,6 +79,7 @@ export const classifyExceptions = ({
   reporting,
   matching,
   reconciliationFrequency,
+  declaredAnchorDate,
 }: ExceptionClassifierInput): ExceptionClassifierOutput => {
   const transactionById = new Map(
     normalizedTransactions.map((transaction) => [transaction.id, transaction]),
@@ -210,6 +214,7 @@ export const classifyExceptions = ({
     normalizedTransactions,
     upsertTransactionException,
     engineReservedGroups,
+    declaredAnchorDate,
   });
 
   // Whole-run amount frequency, for the DateVariance -> LikelyMiscoding reclassification below to

@@ -37,6 +37,7 @@ const METRIC_RANGES: Record<keyof MatchingConfig, MetricRange> = {
   partialPaymentWindowDays: { unit: 'days', min: 0, max: 180 },
   wireFeeTolerance: { unit: 'USD', min: 0, max: 5000 },
   creditCardFeeTolerance: { unit: 'percent', min: 0, max: 0.15 },
+  carriedItemDateToleranceDays: { unit: 'days', min: 30, max: 365 },
 };
 
 const buildMetrics = (): RuleVarianceMetric[] =>

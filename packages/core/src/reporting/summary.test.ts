@@ -38,6 +38,8 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
   contextFingerprint: overrides.contextFingerprint ?? `${overrides.id ?? 'row'}-fingerprint`,
   accountIdentifier: overrides.accountIdentifier,
   reviewerNotes: overrides.reviewerNotes,
+  isCarriedForward: overrides.isCarriedForward,
+  carriedFromOpenItemId: overrides.carriedFromOpenItemId,
 });
 
 const buildException = (overrides: Partial<ExceptionItem>): ExceptionItem => ({
@@ -214,5 +216,89 @@ describe('buildSummaryMetrics', () => {
         { label: 'Deposit Grouping Issue', value: 410 },
       ]),
     );
+  });
+
+  describe('rollForward (Unreconciled Item Roll-Forward PR D.4)', () => {
+    it('computes opening/new/cleared/closing from carried-forward transactions and this run\'s own exceptions', () => {
+      const transactions: NormalizedTransaction[] = [
+        // Stays open all period -- never matched.
+        buildTransaction({
+          id: 'gl-carried-open',
+          source: 'gl',
+          amount: -500,
+          isCarriedForward: true,
+          carriedFromOpenItemId: 'open-item-1',
+        }),
+        // Clears this period against bank-clear below.
+        buildTransaction({
+          id: 'gl-carried-clear',
+          source: 'gl',
+          amount: -200,
+          isCarriedForward: true,
+          carriedFromOpenItemId: 'open-item-2',
+        }),
+        buildTransaction({ id: 'bank-clear', source: 'bank', amount: -200 }),
+        // Fresh, unmatched -- this period's own genuinely new carry-eligible exception.
+        buildTransaction({ id: 'bank-new', source: 'bank', amount: -75 }),
+      ];
+      const matchResults: MatchResult[] = [
+        buildMatchResult({
+          bankTransactionId: 'bank-clear',
+          glTransactionId: 'gl-carried-clear',
+          disposition: 'ExactMatch',
+          confidence: 'Exact',
+        }),
+      ];
+      const exceptions: ExceptionItem[] = [
+        buildException({
+          category: 'MissingFromGL',
+          source: 'bank',
+          amount: -75,
+          relatedTransactionIds: ['bank-new'],
+        }),
+      ];
+
+      const summary = buildSummaryMetrics(transactions, matchResults, exceptions);
+
+      expect(summary.rollForward).toEqual({
+        openingCount: 2,
+        openingAmount: 700,
+        newCount: 1,
+        newAmount: 75,
+        clearedCount: 1,
+        clearedAmount: 200,
+        writtenOffCount: 0,
+        writtenOffAmount: 0,
+        closingCount: 2,
+        closingAmount: 575,
+      });
+      // Carried-forward transactions are seeded from a prior period, not this period's own
+      // upload -- they must not inflate totalRecordsReviewed/bankRecords/glRecords.
+      expect(summary.glRecords).toBe(0);
+      expect(summary.bankRecords).toBe(2);
+      expect(summary.totalRecordsReviewed).toBe(2);
+    });
+
+    it('is all-zero for a run with no carried-forward transactions', () => {
+      const transactions: NormalizedTransaction[] = [
+        buildTransaction({ id: 'bank-1', source: 'bank', amount: 10 }),
+        buildTransaction({ id: 'gl-1', source: 'gl', amount: 10 }),
+      ];
+
+      const summary = buildSummaryMetrics(transactions, [], []);
+
+      expect(summary.rollForward).toEqual({
+        openingCount: 0,
+        openingAmount: 0,
+        newCount: 0,
+        newAmount: 0,
+        clearedCount: 0,
+        clearedAmount: 0,
+        writtenOffCount: 0,
+        writtenOffAmount: 0,
+        closingCount: 0,
+        closingAmount: 0,
+      });
+    });
   });
 });

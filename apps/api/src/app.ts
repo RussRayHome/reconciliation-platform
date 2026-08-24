@@ -37,6 +37,7 @@ import {
   PostgresBlobStorage,
   PostgresImportRunStore,
   PostgresImportValidationStore,
+  PostgresOpenItemStore,
   publishMatchingConfigVersion,
   recordApprovalDecision,
   recordApprovalRequestDecision,
@@ -134,6 +135,8 @@ import {
   importRunBodySchema,
   importRunPartialImportBodySchema,
   isErrorCategory,
+  listOpenItemsScheduleQuerySchema,
+  listReconciliationRunsQuerySchema,
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
   publishMatchingConfigVersionBodySchema,
@@ -147,6 +150,7 @@ import {
   saveMappingProfileBodySchema,
   signupBodySchema,
   updateAliasBodySchema,
+  writeOffOpenItemBodySchema,
 } from './validation';
 
 import { InMemoryRunRepository } from './services/runRepository';
@@ -772,6 +776,13 @@ const triggerMatchingForImportRun = async (input: {
   sessionId?: string;
   /** See reconciliationService.ts's `RunReconciliationPipelineInput.onStep` doc comment. */
   onStep?: QueueStepReporter;
+  /** The `reconciliation_run.period_end` this import run declared at submission (changeset 0061),
+   * ISO date string -- see `ExecuteReconciliationFromNormalizedInput.declaredAnchorDate`'s doc
+   * comment. Both callers below fetch it from the run row before calling this function. */
+  declaredAnchorDate?: string;
+  /** `reconciliation_run.id` -- both callers below already have it in scope as their own `runId`.
+   * See `ExecuteReconciliationFromNormalizedInput.reconciliationRunId`'s doc comment. */
+  reconciliationRunId: string;
 }): Promise<{ matchingJobId: string }> => {
   const correlationId = randomUUID();
 
@@ -853,6 +864,12 @@ const triggerMatchingForImportRun = async (input: {
     normalizedTransactions,
     aliases,
     onStep: input.onStep,
+    declaredAnchorDate: input.declaredAnchorDate,
+    reconciliationRunId: input.reconciliationRunId,
+    openItemStore: input.pool ? new PostgresOpenItemStore(input.pool) : undefined,
+    // Default on -- the env var is purely an ops kill switch; the real per-organization control
+    // is reconciliation_organization.carry_forward_enabled (PR C.5).
+    carryForwardEnvEnabled: parseBooleanFlag(process.env.ENABLE_CARRY_FORWARD) !== false,
   });
 
   input.repository.save(run);
@@ -905,7 +922,7 @@ export const processImportValidationJob = async (input: {
       importRunStore: new PostgresImportRunStore(input.pool),
       importValidationStore,
       onStep: input.onStep,
-      triggerMatching: (files) =>
+      triggerMatching: ({ declaredAnchorDate, ...files }) =>
         triggerMatchingForImportRun({
           files,
           organizationId: input.organizationId,
@@ -915,6 +932,8 @@ export const processImportValidationJob = async (input: {
           requestLog: log,
           sessionId: input.sessionId,
           onStep: input.onStep,
+          declaredAnchorDate,
+          reconciliationRunId: input.runId,
         }),
     });
 
@@ -2611,6 +2630,76 @@ export const createApp = (
     }
   });
 
+  // Unreconciled Item Roll-Forward PR F.1: the prior-runs endpoint AppWorkspacePanels' Verdict
+  // module names ("the API does not yet expose previous runs for this account and period").
+  // Registered before /api/reconciliation/:id (below), which would otherwise swallow this
+  // literal "runs" segment as its own :id parameter -- Express matches in registration order.
+  app.get('/api/reconciliation/runs', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const query = listReconciliationRunsQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        respondWithValidationError(response, query.error);
+        return;
+      }
+
+      const store = new PostgresImportRunStore(pool!);
+      const runs = await store.listRuns(request.auth!.organizationId, {
+        accountIdentifier: query.data.accountId,
+        periodYear: query.data.periodYear,
+        periodMonth: query.data.periodMonth,
+      });
+
+      response.json({ runs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR F.2. Same registration-order note as /api/reconciliation/
+  // runs above -- must precede /api/reconciliation/:id/summary's less-specific sibling shape.
+  app.get('/api/reconciliation/runs/:id/rollforward', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const organizationId = request.auth!.organizationId;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+      const result = await openItemStore.getRunRollforward(organizationId, request.params.id);
+
+      if (!result) {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR F.4: the read-only open-items schedule -- what replaces the
+  // spreadsheet support schedule packages/domain/src/messages.ts tells reviewers to keep by hand.
+  // Same registration-order note as the two routes above.
+  app.get('/api/reconciliation/open-items', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    try {
+      const query = listOpenItemsScheduleQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        respondWithValidationError(response, query.error);
+        return;
+      }
+
+      const openItemStore = new PostgresOpenItemStore(pool!);
+      const items = await openItemStore.listOpenItemsSchedule(request.auth!.organizationId, {
+        accountIdentifier: query.data.accountId,
+        status: query.data.status,
+      });
+
+      response.json({ items });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/reconciliation/:id', async (request, response, next) => {
     try {
       const run = await loadRunReport(request.auth!.organizationId, request.params.id);
@@ -3391,6 +3480,125 @@ export const createApp = (
     }
   });
 
+  // Unreconciled Item Roll-Forward PR E.2. Same canApprove gate as the polymorphic approval
+  // decision endpoint (RailMenuMods: Controller/VP Finance/CFO/Admin/Superuser) -- closing a
+  // period is a comptroller-level action, not a self-service one, matching the segregation-of-duty
+  // CHECK on closed_by/submitted_by this same call is subject to.
+  app.post('/api/imports/runs/:id/close', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only an approver may close a reconciliation period.' });
+      return;
+    }
+
+    try {
+      const { organizationId, username } = request.auth!;
+      const runId = request.params.id;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+
+      const result = await openItemStore.closeRun(organizationId, { runId, actorUsername: username });
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+      if (result.outcome === 'not_closable') {
+        response.status(409).json({
+          message: `Run cannot be closed from status ${result.status}. A period can only be closed once its reconciliation has finished (status RECONCILED).`,
+        });
+        return;
+      }
+      if (result.outcome === 'tie_out_failed') {
+        response.status(409).json({
+          message: 'Period close rejected: roll-forward tie-out failed for one or more accounts.',
+          discrepancies: result.discrepancies,
+        });
+        return;
+      }
+
+      response.json({ snapshots: result.snapshots });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR E.3.
+  app.post('/api/imports/runs/:id/reopen', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only an approver may reopen a reconciliation period.' });
+      return;
+    }
+
+    try {
+      const { organizationId, username } = request.auth!;
+      const runId = request.params.id;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+
+      const result = await openItemStore.reopenRun(organizationId, { runId, actorUsername: username });
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Reconciliation run not found.' });
+        return;
+      }
+      if (result.outcome === 'not_closed') {
+        response
+          .status(409)
+          .json({ message: `Run cannot be reopened from status ${result.status}; it is not CLOSED.` });
+        return;
+      }
+
+      response.json({ reopenCount: result.reopenCount, staleSnapshotCount: result.staleSnapshotCount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Unreconciled Item Roll-Forward PR E.4. Mechanism only -- see writeOffOpenItemBodySchema and
+  // PostgresOpenItemStore.writeOffOpenItem's own doc comments for why there is no automatic
+  // amount/age approval gate here yet.
+  app.post('/api/imports/open-items/:id/write-off', async (request, response, next) => {
+    if (!requirePool(response)) return;
+    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
+      response.status(403).json({ message: 'Only an approver may write off an open item.' });
+      return;
+    }
+
+    try {
+      const bodyResult = writeOffOpenItemBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+
+      const { organizationId, username } = request.auth!;
+      const openItemId = request.params.id;
+      const openItemStore = new PostgresOpenItemStore(pool!);
+
+      const result = await openItemStore.writeOffOpenItem(organizationId, {
+        openItemId,
+        actorUsername: username,
+        dispositionCode: bodyResult.data.dispositionCode,
+        dispositionNote: bodyResult.data.dispositionNote,
+      });
+
+      if (result.outcome === 'not_found') {
+        response.status(404).json({ message: 'Open item not found.' });
+        return;
+      }
+      if (result.outcome === 'not_open') {
+        response
+          .status(409)
+          .json({ message: `Open item cannot be written off from status ${result.status}; it is not OPEN.` });
+        return;
+      }
+
+      response.json({ outcome: 'written_off' });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Phase 12 (Screen 06): accepts a VALIDATION_FAILED run's already-passing rows and triggers
   // matching -- per the decided scope, matching still processes the *original* file bytes in
   // full (the existing GL<->Bank engine has no concept of excluded rows and stays isolated from
@@ -3499,6 +3707,8 @@ export const createApp = (
         pool: pool!,
         requestLog: request.log,
         sessionId: request.auth!.jti,
+        declaredAnchorDate: summary!.periodEnd ?? undefined,
+        reconciliationRunId: runId,
       });
 
       await importValidationStore.recordMatchingJobId(organizationId, runId, matchingJobId);

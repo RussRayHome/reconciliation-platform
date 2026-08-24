@@ -60,6 +60,9 @@ export interface RunImportValidationWorkflowInput {
   triggerMatching: (files: {
     bankFile: ImportValidationTriggerFile;
     glFile: ImportValidationTriggerFile;
+    /** The run's declared period end (`reconciliation_run.period_end`), ISO date string -- see
+     * `ExecuteReconciliationFromNormalizedInput.declaredAnchorDate`'s doc comment. */
+    declaredAnchorDate?: string;
   }) => Promise<{ matchingJobId: string }>;
   /** Live push half of Issue #154 (Pub/Sub, not polling) -- present only when this job is
    * processing inside the import validation queue worker; undefined on the synchronous
@@ -244,6 +247,7 @@ export const runImportValidationWorkflow = async (
       originalname: glEntry.file.originalFilename,
       normalized: glEntry.normalized,
     },
+    declaredAnchorDate: run.periodEnd ?? undefined,
   });
 
   await input.importValidationStore.recordMatchingJobId(

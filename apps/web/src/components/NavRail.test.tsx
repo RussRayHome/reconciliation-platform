@@ -83,6 +83,7 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   probableMatches: 'Rules-based',
   exceptions: 'Exceptions',
   export: 'Reports',
+  openItemsSchedule: 'Open Items Schedule',
   documentationRunBook: 'Run Book',
 };
 

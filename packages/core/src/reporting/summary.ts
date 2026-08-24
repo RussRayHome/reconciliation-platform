@@ -5,6 +5,7 @@ import type {
   ReconciliationFrequency,
   SummaryMetrics,
 } from '@recon/domain';
+import { isCarryEligible } from '@recon/domain';
 
 import { buildChartSeries } from './chartData';
 
@@ -47,11 +48,17 @@ export const buildSummaryMetrics = (
   const probableMatches = matchResults.filter((result) =>
     ['ProbableMatch', 'AmbiguousReview'].includes(result.disposition),
   );
+  // Carried-forward transactions (Unreconciled Item Roll-Forward PR D, §3.6) are seeded from a
+  // prior period's open items, not parsed from this run's own uploaded files -- they don't belong
+  // in "records reviewed this period" (bankRecords/glRecords feed totalRecordsReviewed below).
+  // Their own contribution to this period's picture is the rollForward figures further down.
   const bankRecords = normalizedTransactions.filter(
-    (transaction) => transaction.source === 'bank' && !transaction.isExcluded,
+    (transaction) =>
+      transaction.source === 'bank' && !transaction.isExcluded && !transaction.isCarriedForward,
   );
   const glRecords = normalizedTransactions.filter(
-    (transaction) => transaction.source === 'gl' && !transaction.isExcluded,
+    (transaction) =>
+      transaction.source === 'gl' && !transaction.isExcluded && !transaction.isCarriedForward,
   );
 
   const countsByCategory = Object.fromEntries(
@@ -79,6 +86,43 @@ export const buildSummaryMetrics = (
   const glDuplicateItems = exceptions.filter((item) => item.category === 'DuplicateInGL');
   const dateVarianceCount = countExceptionCases(exceptions, 'DateVariance');
   const timingDifferenceCount = countExceptionCases(exceptions, 'TimingDifference');
+
+  // Roll-forward control-equation figures (PR D.4, §3.1): opening = this period's carried-forward
+  // transactions (PR D.1's seed, regardless of outcome); cleared = the subset of those that found
+  // a counterpart in this run's own matchResults; new = this period's own carry-eligible
+  // exceptions whose underlying transaction is NOT carried forward (a genuinely fresh detection,
+  // mirroring buildOpenItemCandidates' own eligibility filter without needing that function's
+  // database-aware open/carriedForward split, which this pure reporting figure doesn't need).
+  const carriedTransactions = normalizedTransactions.filter(
+    (transaction) => transaction.isCarriedForward,
+  );
+  const matchedTransactionIds = new Set<string>();
+  matchResults.forEach((result) => {
+    if (result.bankTransactionId) {
+      matchedTransactionIds.add(result.bankTransactionId);
+    }
+    if (result.glTransactionId) {
+      matchedTransactionIds.add(result.glTransactionId);
+    }
+  });
+  const clearedTransactions = carriedTransactions.filter((transaction) =>
+    matchedTransactionIds.has(transaction.id),
+  );
+  const transactionById = new Map(normalizedTransactions.map((item) => [item.id, item]));
+  const newItems = exceptions.filter((item) => {
+    if (!isCarryEligible(item.category)) {
+      return false;
+    }
+    const transactionId = item.relatedTransactionIds[0];
+    const transaction = transactionId ? transactionById.get(transactionId) : undefined;
+    return transaction !== undefined && !transaction.isCarriedForward;
+  });
+  const openingCount = carriedTransactions.length;
+  const openingAmount = sumAmounts(carriedTransactions.map((t) => Math.abs(t.amount ?? 0)));
+  const clearedCount = clearedTransactions.length;
+  const clearedAmount = sumAmounts(clearedTransactions.map((t) => Math.abs(t.amount ?? 0)));
+  const newCount = newItems.length;
+  const newAmount = sumAmounts(newItems.map((item) => Math.abs(item.amount ?? 0)));
 
   const summary: SummaryMetrics = {
     totalRecordsReviewed: bankRecords.length + glRecords.length,
@@ -120,6 +164,20 @@ export const buildSummaryMetrics = (
     countsByCategory,
     amountByCategory,
     charts: [],
+    rollForward: {
+      openingCount,
+      openingAmount,
+      newCount,
+      newAmount,
+      clearedCount,
+      clearedAmount,
+      // Write-off has no mechanism yet (PR E) -- stays 0 so the control equation still ties
+      // exactly (openingCount + newCount - clearedCount - 0 = closingCount) for every run today.
+      writtenOffCount: 0,
+      writtenOffAmount: 0,
+      closingCount: openingCount + newCount - clearedCount,
+      closingAmount: openingAmount + newAmount - clearedAmount,
+    },
   };
 
   summary.charts = buildChartSeries(

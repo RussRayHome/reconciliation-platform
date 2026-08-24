@@ -37,6 +37,8 @@ const buildTransaction = (overrides: Partial<NormalizedTransaction>): Normalized
   contextFingerprint: overrides.contextFingerprint ?? `${overrides.id ?? 'row'}-fingerprint`,
   accountIdentifier: overrides.accountIdentifier,
   reviewerNotes: overrides.reviewerNotes,
+  isCarriedForward: overrides.isCarriedForward,
+  carriedFromOpenItemId: overrides.carriedFromOpenItemId,
 });
 
 describe('reconcileMatches', () => {
@@ -1124,5 +1126,104 @@ describe('reconcileMatches', () => {
     const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching, [alias]);
 
     expect(result.matchResults.some((m) => m.ruleName === 'Historical Pattern Match')).toBe(false);
+  });
+
+  describe('Unreconciled Item Roll-Forward PR D: carried-forward transactions', () => {
+    it('clears a carried-forward GL item against a fresh bank transaction outside the primary and extended windows but within carriedItemDateToleranceDays', () => {
+      const carriedGl = buildTransaction({
+        id: 'gl-carried',
+        source: 'gl',
+        lineNumber: 1,
+        transactionDate: '2025-01-10',
+        normalizedComparisonTokens: ['OUTSTANDING', 'CHECK', 'VENDOR'],
+        amount: -500,
+        isCarriedForward: true,
+        carriedFromOpenItemId: 'open-item-1',
+      });
+      const freshBank = buildTransaction({
+        id: 'bank-clearing',
+        source: 'bank',
+        lineNumber: 1,
+        // 54 days later -- beyond dateToleranceDays (5) and timingDifferenceDays (21), but well
+        // within the default carriedItemDateToleranceDays (180).
+        transactionDate: '2025-03-05',
+        normalizedComparisonTokens: ['OUTSTANDING', 'CHECK', 'VENDOR'],
+        amount: -500,
+      });
+
+      const result = reconcileMatches([freshBank, carriedGl], defaultReconciliationConfig.matching);
+
+      expect(result.matchResults).toHaveLength(1);
+      expect(result.matchResults[0]?.ruleName).toBe('Amount + Date + Text Match');
+      expect(result.matchResults[0]?.disposition).toBe('ExactMatch');
+      expect(result.unmatchedGlTransactionIds.size).toBe(0);
+      expect(result.unmatchedBankTransactionIds.size).toBe(0);
+    });
+
+    it('does not match a carried-forward item whose counterpart falls outside even carriedItemDateToleranceDays', () => {
+      const carriedGl = buildTransaction({
+        id: 'gl-carried-too-old',
+        source: 'gl',
+        lineNumber: 1,
+        transactionDate: '2025-01-10',
+        normalizedComparisonTokens: ['OUTSTANDING', 'CHECK', 'VENDOR'],
+        amount: -500,
+        isCarriedForward: true,
+        carriedFromOpenItemId: 'open-item-2',
+      });
+      const tooFarBank = buildTransaction({
+        id: 'bank-too-far',
+        source: 'bank',
+        lineNumber: 1,
+        // 200 days later -- beyond the default carriedItemDateToleranceDays (180) too.
+        transactionDate: '2025-07-29',
+        normalizedComparisonTokens: ['OUTSTANDING', 'CHECK', 'VENDOR'],
+        amount: -500,
+      });
+
+      const result = reconcileMatches([tooFarBank, carriedGl], defaultReconciliationConfig.matching);
+
+      expect(result.matchResults).toHaveLength(0);
+      expect(result.unmatchedGlTransactionIds.has('gl-carried-too-old')).toBe(true);
+      expect(result.unmatchedBankTransactionIds.has('bank-too-far')).toBe(true);
+    });
+
+    it('excludes carried-forward transactions from within-source duplicate detection', () => {
+      const freshOne = buildTransaction({
+        id: 'gl-fresh-1',
+        source: 'gl',
+        lineNumber: 1,
+        transactionDate: '2025-02-01',
+        normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
+        amount: -300,
+      });
+      const freshTwo = buildTransaction({
+        id: 'gl-fresh-2',
+        source: 'gl',
+        lineNumber: 2,
+        transactionDate: '2025-02-01',
+        normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
+        amount: -300,
+      });
+      const carried = buildTransaction({
+        id: 'gl-carried-dup-shape',
+        source: 'gl',
+        lineNumber: 3,
+        transactionDate: '2025-02-01',
+        normalizedComparisonTokens: ['VENDOR', 'PAYMENT'],
+        amount: -300,
+        isCarriedForward: true,
+        carriedFromOpenItemId: 'open-item-3',
+      });
+
+      const result = reconcileMatches([freshOne, freshTwo, carried], defaultReconciliationConfig.matching);
+
+      // The two fresh, identically-shaped GL rows are still flagged as duplicates of each other.
+      expect(result.duplicateTransactionIds.has('gl-fresh-2')).toBe(true);
+      // The carried-forward transaction, despite the same shape, is excluded from the dedup pool
+      // entirely -- neither flagged itself nor treated as a peer any fresh row can duplicate.
+      expect(result.duplicateTransactionIds.has('gl-carried-dup-shape')).toBe(false);
+      expect(result.unmatchedGlTransactionIds.has('gl-carried-dup-shape')).toBe(true);
+    });
   });
 });

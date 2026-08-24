@@ -428,6 +428,13 @@ export function NavRail({
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
           />
+          <NavItemLink
+            to={routePaths.openItemsSchedule}
+            label="Open Items Schedule"
+            icon="clock"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
           {!isCollapsed && savedViewCounts.length > 0 ? (
             <>
               <p className="nav-rail__subgroup-label">Saved views</p>

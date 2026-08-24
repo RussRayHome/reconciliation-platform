@@ -106,6 +106,15 @@ export interface NormalizedTransaction {
   contextFingerprint: string;
   accountIdentifier?: string;
   reviewerNotes?: string;
+  /** True for a synthetic transaction seeded from a prior period's still-open item (Unreconciled
+   * Item Roll-Forward PR D, §3.6) rather than parsed from this run's own uploaded files. Widens
+   * the matching engine's date-tolerance gate (`carriedItemDateToleranceDays`) and excludes the
+   * transaction from within-source duplicate detection and `totalRecordsReviewed`. */
+  isCarriedForward?: boolean;
+  /** `reconciliation_open_item.id` this transaction was materialized from -- present only when
+   * `isCarriedForward` is true. Lets the pipeline write the `CLEARED` disposition back to the
+   * right open-item row (PR D.5) without re-deriving its natural key. */
+  carriedFromOpenItemId?: string;
 }
 
 /** Outcome of a single matching rule applied to one bank/GL transaction pair candidate. */
@@ -291,6 +300,23 @@ export interface SummaryMetrics {
   countsByCategory: Record<string, number>;
   amountByCategory: Record<string, number>;
   charts: ChartSeries[];
+  /** Roll-forward control-equation figures (Unreconciled Item Roll-Forward PR D, §3.1) --
+   * `opening + new - cleared - writtenOff = closing`, in both count and amount. All zero for a
+   * run with carry-forward disabled or with nothing open at period start. `writtenOff` stays 0
+   * until PR E's write-off path exists; kept here now so PR E only has to start populating it,
+   * not add a new field. */
+  rollForward: {
+    openingCount: number;
+    openingAmount: number;
+    newCount: number;
+    newAmount: number;
+    clearedCount: number;
+    clearedAmount: number;
+    writtenOffCount: number;
+    writtenOffAmount: number;
+    closingCount: number;
+    closingAmount: number;
+  };
 }
 
 /** Generated reconciliation workbook including the binary XLSX buffer. */
@@ -445,6 +471,11 @@ export interface MatchingConfig {
   partialPaymentWindowDays: number;
   wireFeeTolerance: number;
   creditCardFeeTolerance: number;
+  /** Date-tolerance gate applied instead of `dateToleranceDays` when either side of a candidate
+   * pair is carried forward from a prior period (Unreconciled Item Roll-Forward PR D, §3.6) --
+   * carried items are by definition older than the primary window, so reusing it would mean
+   * nothing ever clears. Default 180 days. */
+  carriedItemDateToleranceDays: number;
 }
 
 /** Unit of measure for a tunable `MatchingConfig` threshold, as shown in the rule catalog. */
@@ -558,6 +589,12 @@ export interface ReconciliationInput {
   accountIdentifier?: string;
   periodLabel?: string;
   reconciliationFrequency?: ReconciliationFrequency;
+  /** The run's declared period end (`reconciliation_run.period_end`), ISO date string. When
+   * present, this is the reconciliation anchor date every exception's `ageInDays` is computed
+   * against, in preference to the derived max(transactionDate) fallback. Undefined for a caller
+   * with no declared period end -- e.g. a run predating this column, or a standalone caller with
+   * no period concept at all -- in which case the derived fallback still applies. */
+  declaredAnchorDate?: string;
 }
 
 /** Full output produced by `runReconciliation`; persisted to PostgreSQL by the lifecycle store. */

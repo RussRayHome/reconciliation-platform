@@ -15,6 +15,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { downloadWorkbookRequest } from '../lib/api';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
+import type { PriorPeriodRollforward } from '../hooks/usePriorPeriodRollforward';
 import { formatCompactDate, formatCurrency, formatCurrencyWhole, formatShortDate } from '../lib/format';
 import { computeRuleVersionHeaderState, type RuleVersionHeaderState } from '../lib/ruleVersionState';
 import {
@@ -52,6 +53,13 @@ export type ProgressStep = {
 };
 
 type RunData = ReconciliationRunReport;
+
+/** usePriorPeriodRollforward's return shape (PR F.3) -- named here so every layer between
+ * ReviewSection and SummaryVerdict shares one type instead of re-deriving it. */
+type PriorPeriodRollforwardState = {
+  status: 'idle' | 'loading' | 'none' | 'loaded' | 'error';
+  data: PriorPeriodRollforward | null;
+};
 
 type CategorySummaryRow = {
   category: string;
@@ -294,11 +302,51 @@ function SummaryStatsGrid({
   );
 }
 
+/** Unreconciled Item Roll-Forward PR F.3: the Verdict module's Prior-period comparison content,
+ * split out for its own set of end states (loading/error/none/loaded) -- see
+ * usePriorPeriodRollforward's own doc comment for why each is shown differently rather than
+ * collapsing to a single "unavailable" message. */
+function PriorPeriodComparison({
+  priorPeriodRollforward,
+}: Readonly<{ priorPeriodRollforward: PriorPeriodRollforwardState }>) {
+  if (priorPeriodRollforward.status === 'idle' || priorPeriodRollforward.status === 'loading') {
+    return <p>Loading…</p>;
+  }
+
+  if (priorPeriodRollforward.status === 'error') {
+    return <p>Couldn&rsquo;t load the prior period&rsquo;s roll-forward. Try reloading.</p>;
+  }
+
+  if (priorPeriodRollforward.status === 'none' || !priorPeriodRollforward.data) {
+    return (
+      <p>
+        No closed prior period found for this account yet. This slot populates once a prior
+        period has been closed (see Close Period).
+      </p>
+    );
+  }
+
+  const { periodLabel, snapshots } = priorPeriodRollforward.data;
+  const closingCount = snapshots.reduce((total, snapshot) => total + snapshot.closingCount, 0);
+  const closingAmount = snapshots.reduce((total, snapshot) => total + snapshot.closingAmount, 0);
+  const clearedCount = snapshots.reduce((total, snapshot) => total + snapshot.clearedCount, 0);
+
+  return (
+    <p>
+      <strong>{periodLabel}</strong> closed with {closingCount} item{closingCount === 1 ? '' : 's'}{' '}
+      still open ({formatCurrencyWhole(closingAmount)}), carried into this period. {clearedCount}{' '}
+      item{clearedCount === 1 ? '' : 's'} cleared that period.
+    </p>
+  );
+}
+
 /** Verdict module: four KPI wells for the net figures the reviewer signs off on. */
 function SummaryVerdict({
   run,
+  priorPeriodRollforward,
 }: Readonly<{
   run: RunData;
+  priorPeriodRollforward: PriorPeriodRollforwardState;
 }>) {
   const summary = run.summary;
   const difference = summary.unmatchedBankNetAmount - summary.unmatchedGlNetAmount;
@@ -334,10 +382,7 @@ function SummaryVerdict({
       </p>
       <div className="bento-module__footer" aria-label="Prior-period comparison">
         <span className="eyebrow">Prior-period comparison</span>
-        <p>
-          Unavailable — the API does not yet expose previous runs for this account and period. This
-          slot will populate once a prior-runs endpoint exists.
-        </p>
+        <PriorPeriodComparison priorPeriodRollforward={priorPeriodRollforward} />
       </div>
     </BentoModule>
   );
@@ -521,11 +566,13 @@ function WatchlistModule({
 
 function SummaryReportContent({
   run,
+  priorPeriodRollforward,
   onOpenExceptions,
   starredIds,
   onToggleStar,
 }: Readonly<{
   run: RunData;
+  priorPeriodRollforward: PriorPeriodRollforwardState;
   onOpenExceptions: () => void;
   starredIds: string[];
   onToggleStar: (exceptionId: string) => void;
@@ -533,7 +580,7 @@ function SummaryReportContent({
   return (
     <div className="reports-display-stack">
       <div className="bento-grid">
-        <SummaryVerdict run={run} />
+        <SummaryVerdict run={run} priorPeriodRollforward={priorPeriodRollforward} />
         <MatchQualityModule summary={run.summary} exceptionCount={run.exceptions.length} />
         <MaterialityModule run={run} onOpenExceptions={onOpenExceptions} />
         <ExposureByCategoryModule run={run} />
@@ -787,6 +834,7 @@ function ExportArtifactsContent({
 /** Panel that renders the Review stage for the rail-selected view: Summary, Probable matches, or Exceptions. */
 export function ReviewSection({
   run,
+  priorPeriodRollforward,
   activeView,
   isHydrating,
   loadError,
@@ -806,6 +854,7 @@ export function ReviewSection({
   density = 'comfortable',
 }: Readonly<{
   run: RunData | undefined;
+  priorPeriodRollforward: PriorPeriodRollforwardState;
   activeView: ReportView;
   isHydrating: boolean;
   loadError: string | null;
@@ -831,6 +880,7 @@ export function ReviewSection({
       summary: (
         <SummaryReportContent
           run={run}
+          priorPeriodRollforward={priorPeriodRollforward}
           onOpenExceptions={onOpenExceptions}
           starredIds={starredIds}
           onToggleStar={onToggleStar}

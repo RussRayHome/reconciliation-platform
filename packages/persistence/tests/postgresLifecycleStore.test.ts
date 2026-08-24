@@ -119,6 +119,18 @@ const buildSummary = (): SummaryMetrics => ({
     { id: 'countByCategory', title: 'Counts', data: [{ label: 'MissingFromGL', value: 1 }] },
     { id: 'exposureByCategory', title: 'Exposure', data: [{ label: 'MissingFromGL', value: 10 }] },
   ],
+  rollForward: {
+    openingCount: 0,
+    openingAmount: 0,
+    newCount: 0,
+    newAmount: 0,
+    clearedCount: 0,
+    clearedAmount: 0,
+    writtenOffCount: 0,
+    writtenOffAmount: 0,
+    closingCount: 0,
+    closingAmount: 0,
+  },
 });
 
 const createRegisteredJob = async (

@@ -43,6 +43,11 @@ const RLS_EXCLUDED_TABLES: Record<string, ReadonlySet<string>> = {
     // organization_id, never an independent list/filter of reconciliation_user driven by
     // unbounded or client-supplied criteria.
     'packages/persistence/src/importValidationStore.ts',
+    // PostgresOpenItemStore: resolveUserId (used by closeRun/reopenRun/writeOffOpenItem, PR E) is
+    // the exact same single-row lookup by user_name AND organization_id as
+    // importValidationStore's own resolveUserId above -- not shared between the two classes, but
+    // identically narrow.
+    'packages/persistence/src/openItemStore.ts',
   ]),
   reconciliation_login_event: new Set([
     // recordLoginEvent: a single INSERT per authentication event, never a SELECT/list. See its

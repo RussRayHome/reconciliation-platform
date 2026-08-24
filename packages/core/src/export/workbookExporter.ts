@@ -391,6 +391,39 @@ export const exportWorkbook = async ({
   ]);
   assumptionsSheet.getColumn(1).font = { bold: true };
 
+  // Unreconciled Item Roll-Forward PR F.5. Summarizes the in-memory
+  // SummaryMetrics.rollForward figures already computed for this run (PR D.4) -- not a full
+  // open-item-level schedule: exportWorkbook runs mid-pipeline, before the post-finalize
+  // open-item projection/clearing step persists this run's own opened/cleared rows, so no
+  // per-item detail exists yet to list here. The persisted, item-level detail is available after
+  // the run finalizes via GET /api/reconciliation/runs/:id/rollforward (PR F.2).
+  const rollForwardSheet = workbook.addWorksheet('Roll-Forward Summary');
+  const rollForward = summary.rollForward;
+  const rollForwardRows: Array<{ label: string; count: number; amount: number }> = [
+    { label: 'Opening (carried in from prior period)', count: rollForward.openingCount, amount: rollForward.openingAmount },
+    { label: 'New this period', count: rollForward.newCount, amount: rollForward.newAmount },
+    { label: 'Cleared this period', count: rollForward.clearedCount, amount: rollForward.clearedAmount },
+    { label: 'Written off this period', count: rollForward.writtenOffCount, amount: rollForward.writtenOffAmount },
+    { label: 'Closing (carries into next period)', count: rollForward.closingCount, amount: rollForward.closingAmount },
+  ];
+  addHeaderRow(rollForwardSheet, ['Line', 'Count', 'Amount']);
+  rollForwardRows.forEach((item) => {
+    const row = rollForwardSheet.addRow([item.label, item.count, item.amount]);
+    row.getCell(2).numFmt = '#,##0';
+    row.getCell(3).numFmt = '$#,##0.00;[Red]-$#,##0.00';
+  });
+  rollForwardSheet.addRow([]);
+  const rollForwardNoteRow = rollForwardSheet.addRow([
+    'Opening + new - cleared - written off = closing. Amounts are signed (matching the ' +
+      'underlying items), not absolute exposure. Cleared/written-off/new counts reflect only ' +
+      'this run\'s own activity; a run with carry-forward disabled, or nothing yet carried, ' +
+      'shows all zeros here.',
+  ]);
+  rollForwardSheet.mergeCells(`A${rollForwardNoteRow.number}:C${rollForwardNoteRow.number}`);
+  rollForwardNoteRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+  rollForwardSheet.getColumn(1).font = { bold: true };
+  setAutoWidth(rollForwardSheet);
+
   const errorReportSheet = workbook.addWorksheet('Error Report');
   addHeaderRow(errorReportSheet, [
     'Severity',

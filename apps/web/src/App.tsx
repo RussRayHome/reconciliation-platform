@@ -54,6 +54,7 @@ import {
 } from './components/AppWorkspacePanels';
 import { RunBar } from './components/RunBar';
 import { NavRail } from './components/NavRail';
+import { OpenItemsScheduleSection } from './components/OpenItemsScheduleSection';
 import kinneyHighlander from './assets/kinney-highlander.png';
 import {
   createRuleVersionDraftRequest,
@@ -93,6 +94,7 @@ import {
 import { useReviewerDecisions } from './hooks/useReviewerDecisions';
 import { useDensity } from './hooks/useDensity';
 import { useWatchlist } from './hooks/useWatchlist';
+import { usePriorPeriodRollforward } from './hooks/usePriorPeriodRollforward';
 
 type ReconciliationFrequency = 'Monthly' | 'Annual';
 type ReconciliationModel = ReturnType<typeof useImportRunSubmit>;
@@ -705,6 +707,15 @@ function ReconciliationApp({
   const partialAccept = useImportPartialAccept();
   const run = partialAccept.data ?? reconciliation.data;
   const reportRun = run ?? persistedRun;
+  // Unreconciled Item Roll-Forward PR F.3: same reportRun-then-latestImportRun precedence the
+  // RunBar itself already uses (runBarAccountIdentifier, below) -- they represent the same
+  // underlying run in the common case, latestImportRun is just the durable fallback source.
+  const priorPeriodRollforward = usePriorPeriodRollforward({
+    accountIdentifier: reportRun?.accountIdentifier ?? latestImportRun?.accountIdentifier ?? undefined,
+    periodYear: latestImportRun?.periodYear,
+    periodMonth: latestImportRun?.periodMonth,
+    frequency: latestImportRun?.frequency,
+  });
   // Issue #154: the mount-time hydration effect below is async and only runs once -- if it
   // resolves *after* a live submission has already succeeded (a real race, not hypothetical: the
   // background fetch started at mount, a user's own submission can easily finish after it), its
@@ -1285,6 +1296,7 @@ function ReconciliationApp({
 
   const reviewSectionSharedProps = {
     run: reportRun,
+    priorPeriodRollforward,
     isHydrating: isHydratingLatestBackendReport,
     loadError: latestBackendReportError,
     onGoToSetup: goToImportFiles,
@@ -1424,6 +1436,13 @@ function ReconciliationApp({
                       );
                     }}
                   />
+                }
+              />
+
+              <Route
+                path={routePaths.openItemsSchedule}
+                element={
+                  <OpenItemsScheduleSection accountIdentifier={runBarAccountIdentifier || undefined} />
                 }
               />
 

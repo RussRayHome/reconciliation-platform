@@ -79,6 +79,18 @@ const buildRun = (probableMatchCount: number): ReconciliationRunReport => ({
       { id: 'countByCategory', title: 'Counts', data: [] },
       { id: 'exposureByCategory', title: 'Exposure', data: [] },
     ],
+    rollForward: {
+      openingCount: 0,
+      openingAmount: 0,
+      newCount: 0,
+      newAmount: 0,
+      clearedCount: 0,
+      clearedAmount: 0,
+      writtenOffCount: 0,
+      writtenOffAmount: 0,
+      closingCount: 0,
+      closingAmount: 0,
+    },
   },
   reviewerObservations: [],
   reviewerDecisions: [],
@@ -94,6 +106,7 @@ describe('ReviewSection probable matches performance rendering', () => {
     const { container } = render(
       <ReviewSection
         run={run}
+        priorPeriodRollforward={{ status: 'idle', data: null }}
         activeView="probable-matches"
         isHydrating={false}
         loadError={null}
@@ -124,6 +137,7 @@ describe('ReviewSection probable matches performance rendering', () => {
     const { container } = render(
       <ReviewSection
         run={run}
+        priorPeriodRollforward={{ status: 'idle', data: null }}
         activeView="probable-matches"
         isHydrating={false}
         loadError={null}
@@ -147,5 +161,77 @@ describe('ReviewSection probable matches performance rendering', () => {
       screen.queryByText('Virtualized view enabled for large probable-match result sets.'),
     ).toBeNull();
     expect(container.querySelector('.probable-match-table-shell__table table')).not.toBeNull();
+  });
+});
+
+describe('Verdict module Prior-period comparison (Unreconciled Item Roll-Forward PR F.3)', () => {
+  const renderSummary = (priorPeriodRollforward: Parameters<typeof ReviewSection>[0]['priorPeriodRollforward']) => {
+    const run = buildRun(0);
+    return render(
+      <ReviewSection
+        run={run}
+        priorPeriodRollforward={priorPeriodRollforward}
+        activeView="summary"
+        isHydrating={false}
+        loadError={null}
+        onGoToSetup={() => {}}
+        decisionByTargetId={{}}
+        pendingTargetId={null}
+        decisionError={null}
+        lastChange={null}
+        onDecide={() => {}}
+        onClearDecision={() => {}}
+        onUndoLastDecision={() => {}}
+        pendingSavedViewId={null}
+        onPendingSavedViewApplied={() => {}}
+        onOpenExceptions={() => {}}
+        starredIds={[]}
+        onToggleStar={() => {}}
+      />,
+    );
+  };
+
+  it('shows a loading message while the lookup is in flight', () => {
+    renderSummary({ status: 'loading', data: null });
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+  });
+
+  it('shows an error message when the lookup fails', () => {
+    renderSummary({ status: 'error', data: null });
+    expect(screen.getByText(/couldn.t load the prior period/i)).toBeInTheDocument();
+  });
+
+  it('shows a "no prior period" message when nothing was found', () => {
+    renderSummary({ status: 'none', data: null });
+    expect(screen.getByText(/no closed prior period found/i)).toBeInTheDocument();
+  });
+
+  it('shows the prior period\'s closing figures when loaded', () => {
+    renderSummary({
+      status: 'loaded',
+      data: {
+        periodLabel: 'February 2026',
+        snapshots: [
+          {
+            accountId: 'account-1',
+            accountIdentifier: 'OPERATING-001',
+            openingCount: 0,
+            openingAmount: 0,
+            newCount: 1,
+            newAmount: -125.5,
+            clearedCount: 2,
+            clearedAmount: -40,
+            writtenOffCount: 0,
+            writtenOffAmount: 0,
+            closingCount: 1,
+            closingAmount: -125.5,
+          },
+        ],
+      },
+    });
+
+    expect(screen.getByText('February 2026', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/1 item still open/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 items cleared/i)).toBeInTheDocument();
   });
 });

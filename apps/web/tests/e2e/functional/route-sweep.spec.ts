@@ -21,6 +21,7 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   probableMatches: { heading: 'Review' },
   exceptions: { heading: 'Review' },
   export: { heading: 'Export' },
+  openItemsSchedule: { heading: 'Open Items Schedule' },
   mappingProfiles: { heading: 'Mapping Profiles' },
   // Branches on the logged-in account's verification state (App.tsx ~1279): CreateMappingScreen
   // once fully verified, otherwise MappingVerificationRequiredNotice. Both are a correct render

@@ -36,6 +36,7 @@ const baseRun = (): ImportRunSummary => ({
   frequency: 'MONTHLY',
   periodYear: 2026,
   periodMonth: 8,
+  periodEnd: '2026-08-31',
   status: 'VALIDATING',
   createdAt: '2026-08-01T00:00:00.000Z',
   matchingJobId: null,
@@ -142,6 +143,7 @@ describe('runImportValidationWorkflow', () => {
     expect(triggerMatching).toHaveBeenCalledWith({
       bankFile: { buffer: bankCsv, originalname: 'bank.csv', normalized: expect.any(Array) },
       glFile: { buffer: glCsv, originalname: 'gl.csv', normalized: expect.any(Array) },
+      declaredAnchorDate: '2026-08-31',
     });
     expect(importValidationStore.recordMatchingJobId).toHaveBeenCalledWith(
       'org-1',
@@ -332,6 +334,7 @@ describe('runImportValidationWorkflow', () => {
     expect(triggerMatching).toHaveBeenCalledWith({
       bankFile: { buffer: bankCsv, originalname: 'bank.csv', normalized: expect.any(Array) },
       glFile: { buffer: glCsv, originalname: 'gl.csv', normalized: expect.any(Array) },
+      declaredAnchorDate: '2026-08-31',
     });
   });
 

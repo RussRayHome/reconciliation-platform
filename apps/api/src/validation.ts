@@ -455,6 +455,42 @@ export const approvalDecisionBodySchema = z.object({
     .optional(),
 });
 
+/** Unreconciled Item Roll-Forward PR E.4. dispositionCode is required -- a write-off must always
+ * say why, even though no fixed code list exists yet (the plan's own §8 leaves the approval
+ * policy, including any controlled vocabulary, as an open decision). dispositionNote is optional
+ * free text for the specifics a fixed code can't capture. */
+/** Query filters for GET /api/reconciliation/runs (PR F.1). All optional -- accountId narrows to
+ * one account's history, periodYear/periodMonth narrow to one specific period; callers combine
+ * them however they need (e.g. the Verdict module's prior-period lookup passes all three). */
+export const listReconciliationRunsQuerySchema = z.object({
+  accountId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1))
+    .optional(),
+  periodYear: z.coerce.number().int().optional(),
+  periodMonth: z.coerce.number().int().min(1).max(12).optional(),
+});
+
+/** Query filters for GET /api/reconciliation/open-items (PR F.4). status matches
+ * reconciliation_open_item's own CHECK constraint (changeset 0063). */
+export const listOpenItemsScheduleQuerySchema = z.object({
+  accountId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1))
+    .optional(),
+  status: z.enum(['OPEN', 'CLEARED', 'WRITTEN_OFF', 'ADJUSTED', 'VOIDED', 'SUPERSEDED']).optional(),
+});
+
+export const writeOffOpenItemBodySchema = z.object({
+  dispositionCode: z.string().trim().min(1, 'dispositionCode is required.'),
+  dispositionNote: z
+    .string()
+    .transform((value) => value.trim())
+    .optional(),
+});
+
 export const updateAliasBodySchema = z.object({
   bankPattern: z
     .string()

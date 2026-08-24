@@ -1,8 +1,10 @@
 import {
+  buildOpenItemCandidates,
   buildSummaryMetrics,
   classifyExceptions,
   exportWorkbook,
   reconcileMatches,
+  seedCarriedForwardTransactions,
   type CandidateOutcomeObserver,
 } from '@recon/core';
 import {
@@ -11,16 +13,18 @@ import {
   sampleAccountOverrides,
 } from '@recon/config';
 
-import type { PostgresReconciliationLifecycleStore } from '@recon/persistence';
+import type { PostgresOpenItemStore, PostgresReconciliationLifecycleStore } from '@recon/persistence';
 
-import type {
-  AuditEvent,
-  NormalizedTransaction,
-  PayeeAlias,
-  RawTransactionRow,
-  ReconciliationConfig,
-  ReconciliationRun,
-  SourceFile,
+import {
+  resolveCarryForwardDecision,
+  type AuditEvent,
+  type CarryForwardDecision,
+  type NormalizedTransaction,
+  type PayeeAlias,
+  type RawTransactionRow,
+  type ReconciliationConfig,
+  type ReconciliationRun,
+  type SourceFile,
 } from '@recon/domain';
 import pino from 'pino';
 import { resolveLogLevelAtLeastInfo } from './logLevel';
@@ -55,6 +59,23 @@ interface RunReconciliationPipelineInput {
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
+  /** The run's declared period end (`reconciliation_run.period_end`), ISO date string -- see
+   * `ExceptionClassifierInput.declaredAnchorDate`'s doc comment. Undefined for a caller with no
+   * declared period end yet (the pre-File-Imports pipeline, or a run predating this column). */
+  declaredAnchorDate?: string;
+  /** `reconciliation_run.id`, when this pipeline run is File-Imports-triggered -- distinct from
+   * `runId` above, which is the `reconciliation_job.id`. Present, `openItemStore` projects this
+   * run's carry-eligible exceptions into open items and flips `reconciliation_run.status` to
+   * RECONCILED once export/finalize succeeds (Unreconciled Item Roll-Forward PR C.4). Both
+   * undefined together on the standalone atomic route, which has no `reconciliation_run` row. */
+  reconciliationRunId?: string;
+  openItemStore?: PostgresOpenItemStore;
+  /** The `ENABLE_CARRY_FORWARD` ops kill switch, already resolved by app.ts (env parsing lives
+   * there, not in this service module) -- the env half of `resolveCarryForwardDecision`'s input
+   * (`@recon/domain`, Unreconciled Item Roll-Forward PR C.5). Optional, defaults true (matching
+   * the env var's own documented default), so a caller with no opinion about carry-forward --
+   * most tests -- doesn't need to pass it. */
+  carryForwardEnvEnabled?: boolean;
   aliases: PayeeAlias[];
   t0: number;
   log: pino.Logger;
@@ -104,6 +125,10 @@ const runReconciliationPipeline = async ({
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
+  declaredAnchorDate,
+  reconciliationRunId,
+  openItemStore,
+  carryForwardEnvEnabled = true,
   aliases,
   t0,
   log,
@@ -188,6 +213,11 @@ const runReconciliationPipeline = async ({
   let exceptionOutput: ReturnType<typeof classifyExceptions>;
   let summary: ReturnType<typeof buildSummaryMetrics>;
   let outputWorkbook: Awaited<ReturnType<typeof exportWorkbook>>;
+  // Undefined for the standalone atomic route (no openItemStore/reconciliationRunId) -- carry-
+  // forward has no organization-scoped concept there. Resolved once, "before matching" per
+  // resolveCarryForwardDecision's own doc comment, so PR D's future seeding step can read the
+  // already-resolved decision rather than re-resolving it.
+  let carryForwardDecision: CarryForwardDecision | undefined;
 
   try {
     normalizedTransactions = getNormalizedTransactions();
@@ -221,6 +251,99 @@ const runReconciliationPipeline = async ({
       await runPersistStep('service.persist.normalizedRows.completed', () =>
         lifecycleStore.persistNormalizedRows(organizationId, runId, normalizedTransactions),
       );
+    }
+
+    // Unreconciled Item Roll-Forward PR C.5: resolve carry-forward enablement before matching so
+    // PR D's future seeding step (which needs the decision *before* the candidate pool is built)
+    // can read it already-resolved. Nothing consumes `carryForwardDecision.enabled` yet -- PR D
+    // hasn't landed -- but the decision is still stamped on the run below (after finalize) so
+    // today's runs already carry an accurate, non-retroactive audit trail once PR D does land.
+    // Best-effort, matching the projection step below: a lookup failure here must not be able to
+    // fail an otherwise-successful reconciliation run over a side concern that doesn't even
+    // change behavior yet -- `carryForwardDecision` simply stays undefined, which also skips the
+    // stamp step below.
+    if (openItemStore) {
+      try {
+        const orgEnabled = await openItemStore.getCarryForwardEnabled(organizationId);
+        carryForwardDecision = resolveCarryForwardDecision({
+          envEnabled: carryForwardEnvEnabled,
+          orgEnabled,
+        });
+        log.info({
+          action: 'service.rollforward.carryForwardDecision.resolved',
+          enabled: carryForwardDecision.enabled,
+          reason: carryForwardDecision.enabled ? undefined : carryForwardDecision.reason,
+        });
+      } catch (carryForwardResolveError) {
+        log.warn({
+          action: 'service.rollforward.carryForwardDecision.failed',
+          runId,
+          message:
+            carryForwardResolveError instanceof Error
+              ? carryForwardResolveError.message
+              : String(carryForwardResolveError),
+        });
+      }
+    }
+
+    // Unreconciled Item Roll-Forward PR E.1's prerequisite fix: link this run to the real accounts
+    // its own normalized transactions touch (reconciliation_run_account, PR A.2) -- nothing wrote
+    // this join going forward before now, only the one-time migration backfill for pre-existing
+    // runs. PR E's close operation needs it to enumerate a run's accounts, and it belongs here
+    // regardless of carry-forward enablement (E doesn't depend on D). Best-effort, matching every
+    // other rollforward side path in this pipeline.
+    const accountIdentifiers = [
+      ...new Set(
+        normalizedTransactions
+          .map((t) => t.accountIdentifier)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    if (openItemStore && reconciliationRunId && accountIdentifiers.length > 0) {
+      try {
+        await openItemStore.linkRunAccounts(organizationId, {
+          reconciliationRunId,
+          accountIdentifiers,
+        });
+      } catch (linkError) {
+        log.warn({
+          action: 'service.rollforward.linkRunAccounts.failed',
+          runId,
+          message: linkError instanceof Error ? linkError.message : String(linkError),
+        });
+      }
+    }
+
+    // Unreconciled Item Roll-Forward PR D.1: seed prior periods' still-open items into this run's
+    // candidate pool, before matching so they can pair against this period's fresh data. Gated on
+    // the decision resolved above (never on openItemStore alone) -- an org that hasn't been
+    // enabled must see zero behavior change from PR C's ungated write-only projection. Best-
+    // effort, same as every other rollforward side path in this pipeline: a load/materialize
+    // failure here must not turn an otherwise-successful run into a failure, it just means
+    // nothing carries in this run (logged, not silent).
+    if (openItemStore && carryForwardDecision?.enabled) {
+      try {
+        const openItems = await openItemStore.loadOpenItems(organizationId, accountIdentifiers);
+        const { carriedTransactions, skippedAlreadyPresent } = seedCarriedForwardTransactions(
+          runId,
+          openItems,
+          normalizedTransactions,
+          config.textNormalization,
+        );
+        normalizedTransactions = [...normalizedTransactions, ...carriedTransactions];
+        log.info({
+          action: 'service.rollforward.seedCarriedForward.completed',
+          openItemCount: openItems.length,
+          carriedCount: carriedTransactions.length,
+          skippedAlreadyPresent,
+        });
+      } catch (seedError) {
+        log.warn({
+          action: 'service.rollforward.seedCarriedForward.failed',
+          runId,
+          message: seedError instanceof Error ? seedError.message : String(seedError),
+        });
+      }
     }
 
     const matchStart = Date.now();
@@ -289,6 +412,7 @@ const runReconciliationPipeline = async ({
       reporting: config.reporting,
       matching: config.matching,
       reconciliationFrequency,
+      declaredAnchorDate,
     });
     const exceptionsByCategory = exceptionOutput.exceptions.reduce<Record<string, number>>(
       (acc, exception) => {
@@ -421,6 +545,94 @@ const runReconciliationPipeline = async ({
     );
   }
 
+  // Unreconciled Item Roll-Forward PR D.5: mark carried-forward items that found their
+  // counterpart this run as CLEARED. `matchResultId` is only passed when `lifecycleStore`
+  // actually persisted `matching.matchResults` into `reconciliation_match_result` this run --
+  // that column is a real FK, and writing an id that was never persisted would violate it. Same
+  // best-effort placement and reasoning as PR C.4's projection immediately below: after
+  // export/finalize, failures logged and swallowed, never able to turn a successful run into a
+  // failure.
+  if (openItemStore) {
+    try {
+      const matchedTransactionIds = new Set<string>();
+      const matchResultByTransactionId = new Map<string, string>();
+      matching.matchResults.forEach((result) => {
+        if (result.bankTransactionId) {
+          matchedTransactionIds.add(result.bankTransactionId);
+          matchResultByTransactionId.set(result.bankTransactionId, result.id);
+        }
+        if (result.glTransactionId) {
+          matchedTransactionIds.add(result.glTransactionId);
+          matchResultByTransactionId.set(result.glTransactionId, result.id);
+        }
+      });
+
+      const clearances = normalizedTransactions
+        .filter((t) => t.isCarriedForward && t.carriedFromOpenItemId && matchedTransactionIds.has(t.id))
+        .map((t) => ({
+          openItemId: t.carriedFromOpenItemId!,
+          matchResultId: lifecycleStore ? matchResultByTransactionId.get(t.id) : undefined,
+        }));
+
+      if (clearances.length > 0) {
+        const { cleared } = await openItemStore.clearOpenItems(organizationId, {
+          reconciliationRunId,
+          clearances,
+        });
+        log.info({ action: 'service.rollforward.clearOpenItems.completed', cleared });
+      }
+    } catch (clearError) {
+      log.warn({
+        action: 'service.rollforward.clearOpenItems.failed',
+        runId,
+        message: clearError instanceof Error ? clearError.message : String(clearError),
+      });
+    }
+  }
+
+  // Unreconciled Item Roll-Forward PR C.4: project this run's carry-eligible exceptions into
+  // open items once the run has genuinely finished (export/finalize succeeded above -- this is
+  // deliberately *after* that step, not before, so a projection failure can never leave a
+  // finalized run un-exported). Best-effort: an already-successful reconciliation run must not be
+  // turned into a failure by a problem in this newer, separate side path, so failures here are
+  // logged, not rethrown. Only runs when the caller wired an openItemStore in (production, via
+  // app.ts) -- most tests exercise this pipeline without one.
+  if (openItemStore) {
+    try {
+      const { candidates, skippedNoTransaction, skippedNoAccountIdentifier, skippedMissingRequiredField } =
+        buildOpenItemCandidates(exceptionOutput.exceptions, normalizedTransactions);
+      const projection = await openItemStore.projectOpenItems(organizationId, {
+        jobId: runId,
+        reconciliationRunId,
+        candidates,
+      });
+      if (reconciliationRunId) {
+        await openItemStore.markRunReconciled(organizationId, reconciliationRunId);
+      }
+      if (carryForwardDecision) {
+        await openItemStore.stampCarryForwardDecision(
+          organizationId,
+          reconciliationRunId,
+          carryForwardDecision,
+        );
+      }
+      log.info({
+        action: 'service.rollforward.projectOpenItems.completed',
+        opened: projection.opened,
+        carriedForward: projection.carriedForward,
+        skippedNoTransaction,
+        skippedNoAccountIdentifier,
+        skippedMissingRequiredField,
+      });
+    } catch (rollforwardError) {
+      log.warn({
+        action: 'service.rollforward.projectOpenItems.failed',
+        runId,
+        message: rollforwardError instanceof Error ? rollforwardError.message : String(rollforwardError),
+      });
+    }
+  }
+
   return {
     id: runId,
     correlationId,
@@ -467,6 +679,16 @@ export interface ExecuteReconciliationFromNormalizedInput {
   accountIdentifier?: string;
   reconciliationFrequency?: 'Monthly' | 'Annual';
   periodLabel?: string;
+  /** See `RunReconciliationPipelineInput.declaredAnchorDate`'s doc comment. Only the Import flow
+   * (`triggerMatchingForImportRun`) has a `reconciliation_run.period_end` to supply here today --
+   * the standalone atomic route has no declared period at all, so it always passes undefined and
+   * keeps today's derived-anchor behavior exactly as it is. */
+  declaredAnchorDate?: string;
+  /** See `RunReconciliationPipelineInput.reconciliationRunId`/`openItemStore`'s doc comments. */
+  reconciliationRunId?: string;
+  openItemStore?: PostgresOpenItemStore;
+  /** See `RunReconciliationPipelineInput.carryForwardEnvEnabled`'s doc comment. */
+  carryForwardEnvEnabled?: boolean;
   aliases?: PayeeAlias[];
   /** See `RunReconciliationPipelineInput.onStep`'s doc comment. */
   onStep?: QueueStepReporter;
@@ -493,6 +715,10 @@ export const executeReconciliationFromNormalized = async ({
   accountIdentifier,
   reconciliationFrequency,
   periodLabel,
+  declaredAnchorDate,
+  reconciliationRunId,
+  openItemStore,
+  carryForwardEnvEnabled,
   aliases = [],
   onStep,
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
@@ -528,6 +754,10 @@ export const executeReconciliationFromNormalized = async ({
     accountIdentifier,
     reconciliationFrequency,
     periodLabel,
+    declaredAnchorDate,
+    reconciliationRunId,
+    openItemStore,
+    carryForwardEnvEnabled,
     aliases,
     t0,
     log,
