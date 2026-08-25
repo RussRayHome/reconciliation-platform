@@ -73,6 +73,7 @@
     "docker:smoke": "NODE_OPTIONS=--no-deprecation tsx scripts/docker-smoke-test.ts",
     "env:check": "bash scripts/local-env-check.sh",
     "env:check:fix": "bash scripts/local-env-check.sh --fix",
+    "verify:full": "bash scripts/verify-full.sh",
     "docker:up": "sh -c 'env_file=.env.docker.dev; [ -f \"$env_file\" ] || env_file=.env.docker.dev.fallback; docker compose -f compose.yaml -f compose.dev.yaml --env-file \"$env_file\" up --build'",
     "docker:cleanup": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/cleanup.sh",
     "docker:cleanup:dev": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/cleanup.sh",
