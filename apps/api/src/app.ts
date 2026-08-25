@@ -13,7 +13,7 @@ import type {
   SeverityLevel,
   UserRole,
 } from '@recon/domain';
-import { rolePermissionsByRole } from '@recon/domain';
+import { AppError, ERROR_DEFINITIONS, rolePermissionsByRole } from '@recon/domain';
 import {
   claimApprovalRequest,
   claimImportApproval,
@@ -73,6 +73,7 @@ import {
 import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { classifyError, classifyUploadError } from './services/errorClassifier';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { CANONICAL_FIELDS } from './services/canonicalFields';
 import {
@@ -1065,19 +1066,6 @@ export const sanitizeRun = (run: ReconciliationRun): ReconciliationRunReport => 
   appliedVarianceOverrides: run.appliedVarianceOverrides,
 });
 
-const resolveUploadErrorStatus = (error: unknown): number => {
-  if (error instanceof multer.MulterError) {
-    return error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-  }
-
-  // Matches createUploadMiddleware's fileFilter rejection message for any allowedExtensions list
-  // (e.g. 'Only .xlsx files are accepted.', 'Only .xlsx/.csv files are accepted.').
-  if (error instanceof Error && /^Only .+ files are accepted\.$/.test(error.message)) {
-    return 400;
-  }
-
-  return 500;
-};
 
 const parseLimit = (value: unknown, defaultValue: number, max = 50): number => {
   const parsed = Number(value);
@@ -4507,23 +4495,49 @@ export const createApp = (
       response: express.Response,
       _next: express.NextFunction,
     ) => {
-      const message = error instanceof Error ? error.message : 'Unexpected server error.';
+      const reference = resolveCorrelationId(request.id);
       const stack = error instanceof Error ? error.stack : undefined;
-      const statusCode = resolveUploadErrorStatus(error);
 
-      request.log.error({ action: 'api.unhandled.error', statusCode, err: { message, stack } });
-      captureApiException(error, {
-        tags: {
-          scope: 'http-request',
-          statusCode: String(statusCode),
-        },
-        extra: {
-          method: request.method,
-          path: request.originalUrl,
-          correlationId: resolveCorrelationId(request.id),
+      const upload = classifyUploadError(error);
+      if (upload) {
+        request.log.error({
+          action: 'api.unhandled.error',
+          statusCode: upload.httpStatus,
+          reference,
+          err: { message: upload.message, stack },
+        });
+        captureApiException(error, {
+          tags: { scope: 'http-request', statusCode: String(upload.httpStatus) },
+          extra: { method: request.method, path: request.originalUrl, reference },
+        });
+        response.status(upload.httpStatus).json({ message: upload.message });
+        return;
+      }
+
+      const { code, httpStatus, message } = classifyError(error);
+      const definition = ERROR_DEFINITIONS[code];
+      const cause = error instanceof AppError ? error.cause : error;
+
+      request.log.error({
+        action: 'api.unhandled.error',
+        statusCode: httpStatus,
+        errorCode: code,
+        reference,
+        context: error instanceof AppError ? error.context : undefined,
+        err: {
+          message: cause instanceof Error ? cause.message : String(cause),
+          stack: cause instanceof Error ? cause.stack : undefined,
         },
       });
-      response.status(statusCode).json({ message });
+      captureApiException(error, {
+        tags: { scope: 'http-request', statusCode: String(httpStatus), errorCode: code },
+        extra: { method: request.method, path: request.originalUrl, reference },
+      });
+
+      if (definition.retryable) {
+        response.setHeader('Retry-After', '5');
+      }
+      response.status(httpStatus).json({ message, code, reference, retryable: definition.retryable });
     },
   );
 
