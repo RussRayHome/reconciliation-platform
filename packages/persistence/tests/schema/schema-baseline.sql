@@ -74,7 +74,7 @@ SELECT is(
      FROM pg_constraint con
     WHERE con.conrelid = 'public.canonical_record'::regclass AND con.contype IN ('c', 'u', 'x')),
   $chk$normalized_record_direction_check => CHECK ((direction = ANY (ARRAY['INFLOW'::text, 'OUTFLOW'::text])))
-normalized_record_source_system_check => CHECK ((source_type = ANY (ARRAY['BANK'::text, 'GL'::text])))$chk$,
+normalized_record_source_system_check => CHECK ((source_type = ANY (ARRAY['BANK'::text, 'GL'::text, 'BILLING'::text])))$chk$,
   'canonical_record check/unique/exclusion constraints'
 );
 SELECT columns_are('public', 'dashboard_secret_change_log', ARRAY['id', 'fingerprint', 'action', 'actor', 'ticket', 'note', 'created_at']::name[], 'dashboard_secret_change_log has exactly the expected columns');
@@ -2016,7 +2016,7 @@ SELECT is(
   $chk$validation_rule_version_code_version_key => UNIQUE (rule_code, version_number)
 validation_rule_version_scope_check => CHECK ((scope = ANY (ARRAY['SCHEMA'::text, 'FILE'::text, 'ROW'::text, 'CROSS_ROW'::text])))
 validation_rule_version_severity_check => CHECK ((severity = ANY (ARRAY['ERROR'::text, 'WARNING'::text])))
-validation_rule_version_source_type_check => CHECK (((source_type IS NULL) OR (source_type = ANY (ARRAY['BANK'::text, 'GL'::text]))))
+validation_rule_version_source_type_check => CHECK (((source_type IS NULL) OR (source_type = ANY (ARRAY['BANK'::text, 'GL'::text, 'BILLING'::text]))))
 validation_rule_version_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'DEPRECATED'::text])))
 validation_rule_version_version_number_check => CHECK ((version_number > 0))$chk$,
   'validation_rule_version check/unique/exclusion constraints'
