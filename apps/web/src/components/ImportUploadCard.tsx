@@ -4,7 +4,9 @@ export type RejectedUploadCode =
   | 'UPLOAD_EXTENSION_UNSUPPORTED'
   | 'UPLOAD_SIZE_EXCEEDED'
   | 'UPLOAD_BANK_FILENAME_INVALID'
-  | 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED';
+  | 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED'
+  | 'UPLOAD_AP_FILENAME_INVALID'
+  | 'UPLOAD_AP_ENTITY_LIMIT_REACHED';
 
 type ImportUploadCardProps =
   | {
@@ -52,6 +54,14 @@ const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }
   UPLOAD_BANK_ACCOUNT_LIMIT_REACHED: {
     label: 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED',
     body: 'A run supports up to 4 bank accounts. Remove a bank file before adding another.',
+  },
+  UPLOAD_AP_FILENAME_INVALID: {
+    label: 'UPLOAD_AP_FILENAME_INVALID',
+    body: 'AP/Billing file names must start with the entity id followed by "-" or "_", e.g. "E100_ap-export.csv".',
+  },
+  UPLOAD_AP_ENTITY_LIMIT_REACHED: {
+    label: 'UPLOAD_AP_ENTITY_LIMIT_REACHED',
+    body: 'A run supports up to 4 AP entity ledgers. Remove an AP file before adding another.',
   },
 };
 

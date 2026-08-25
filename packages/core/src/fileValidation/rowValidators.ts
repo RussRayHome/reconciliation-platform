@@ -2,11 +2,17 @@ import { isBlank, isIsoDate, parseAmount, todayIso } from './primitives';
 import {
   DEFAULT_VALIDATION_OPTIONS,
   type NormalizedRecord,
+  type RawApBillingRow,
   type RawBankingRow,
   type RawGeneralLedgerRow,
   type ValidationIssue,
   type ValidationOptions,
 } from './types';
+
+/** Recognized `Doc Type` values -- anything else is flagged AP_DOC_TYPE_UNRECOGNIZED (a WARNING,
+ * not blocking, since the row still normalizes and the reviewer may know the source system's own
+ * label for something this list doesn't yet cover). */
+const KNOWN_AP_DOC_TYPES = new Set(['Bill', 'Payment', 'Credit Memo']);
 
 /**
  * Step 3 of the ordered engine (transaction-csv-spec.md §4.1-§4.4): per-field, file-level, and
@@ -228,6 +234,140 @@ export const validateGeneralLedgerRows = (
       raw: row,
       issues: rowIssues,
     });
+  });
+
+  return { issues, normalized };
+};
+
+export const validateBillingRows = (
+  rows: RawApBillingRow[],
+  opts: ValidationOptions = {},
+  onIssue?: RowIssueObserver,
+): RowValidationOutcome => {
+  const options = { ...DEFAULT_VALIDATION_OPTIONS, ...opts };
+  const issues: ValidationIssue[] = [];
+  const normalized: NormalizedRecord[] = [];
+  const today = todayIso();
+  const seenDocNos = new Set<string>();
+  let firstEntityId: string | undefined;
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 1;
+    const rowIssues: ValidationIssue[] = [];
+    const err = (code: string, field: string, message: string): void => {
+      const issue: ValidationIssue = { severity: 'ERROR', code, field, rowNumber, message };
+      issues.push(issue);
+      rowIssues.push(issue);
+      onIssue?.(issue);
+    };
+    const warn = (code: string, field: string, message: string): void => {
+      const issue: ValidationIssue = { severity: 'WARNING', code, field, rowNumber, message };
+      issues.push(issue);
+      rowIssues.push(issue);
+      onIssue?.(issue);
+    };
+
+    const entityId = row['Entity Id'];
+    if (isBlank(entityId)) {
+      err('AP_ENTITY_ID_REQUIRED', 'Entity Id', 'Entity Id is required');
+    } else if (firstEntityId === undefined) {
+      firstEntityId = entityId;
+    } else if (entityId !== firstEntityId) {
+      // One AP ledger slot holds exactly one entity (the WP4 upload convention) -- a differing
+      // Entity Id mid-file means either a bad export or two entities' data pasted into one file.
+      err(
+        'AP_ENTITY_MISMATCH',
+        'Entity Id',
+        `Entity Id "${entityId}" does not match this file's entity "${firstEntityId}"`,
+      );
+    }
+
+    if (isBlank(row['Vendor Id'])) {
+      err('AP_VENDOR_ID_REQUIRED', 'Vendor Id', 'Vendor Id is required');
+    }
+
+    const docNo = row['Doc No'];
+    if (isBlank(docNo)) {
+      err('AP_DOC_NO_REQUIRED', 'Doc No', 'Doc No is required');
+    } else if (seenDocNos.has(docNo)) {
+      err('AP_DOC_NO_DUPLICATE', 'Doc No', `Duplicate Doc No "${docNo}" within this file`);
+    } else {
+      seenDocNos.add(docNo);
+    }
+
+    if (isBlank(row['Doc Date'])) {
+      err('AP_DOC_DATE_REQUIRED', 'Doc Date', 'Doc Date is required');
+    } else if (!isIsoDate(row['Doc Date'])) {
+      err('AP_DOC_DATE_FORMAT', 'Doc Date', `Doc Date must be YYYY-MM-DD, got "${row['Doc Date']}"`);
+    } else if (options.rejectFutureDates && row['Doc Date'] > today) {
+      err('AP_DOC_DATE_FUTURE', 'Doc Date', `Doc Date is in the future: ${row['Doc Date']}`);
+    }
+
+    // Missing Due Date doesn't block import -- it's flagged and the row is left unbandable for
+    // aging (see openItemStore's aging-bucket handling) rather than defaulted into a bucket.
+    if (isBlank(row['Due Date'])) {
+      warn('AP_DUE_DATE_MISSING', 'Due Date', 'Due Date is missing; this row will be unbandable for aging');
+    } else if (!isIsoDate(row['Due Date']!)) {
+      err('AP_DUE_DATE_FORMAT', 'Due Date', `Due Date must be YYYY-MM-DD, got "${row['Due Date']}"`);
+    }
+
+    const amount = isBlank(row.Amount) ? null : parseAmount(row.Amount);
+    if (isBlank(row.Amount)) {
+      err('AP_AMOUNT_FORMAT', 'Amount', 'Amount is required');
+    } else if (amount === null) {
+      err('AP_AMOUNT_FORMAT', 'Amount', `Amount must be a valid signed amount: "${row.Amount}"`);
+    } else if (amount === 0) {
+      warn('AP_AMOUNT_ZERO', 'Amount', 'Amount is zero');
+    }
+
+    const docType = row['Doc Type'];
+    if (!isBlank(docType) && !KNOWN_AP_DOC_TYPES.has(docType!)) {
+      warn(
+        'AP_DOC_TYPE_UNRECOGNIZED',
+        'Doc Type',
+        `Doc Type "${docType}" is not one of the recognized values (Bill, Payment, Credit Memo)`,
+      );
+    }
+
+    // Every row is kept regardless of ERROR/WARNING issues, matching Bank/GL -- see their own
+    // comments on why (canonical_record.txn_date is NOT NULL, so `date` still falls back to a
+    // genuinely valid ISO date, not a raw passthrough).
+    const signedAmount = amount ?? 0;
+    normalized.push({
+      sourceSystem: 'BILLING',
+      recordId: isBlank(docNo) ? `row-${rowNumber}` : docNo,
+      date: isIsoDate(row['Doc Date']) ? row['Doc Date'] : today,
+      signedAmount,
+      direction: signedAmount >= 0 ? 'INFLOW' : 'OUTFLOW',
+      magnitude: Math.abs(signedAmount),
+      description: row['Vendor Name'] || row['Vendor Id'],
+      transactionType: docType || undefined,
+      referenceNumber: row['Applied To Doc No'] || undefined,
+      payeeName: row['Vendor Name'] || undefined,
+      sourceLineNumber: rowNumber,
+      raw: row,
+      issues: rowIssues,
+    });
+  });
+
+  // Second pass: Applied To Doc No must reference a Doc No seen somewhere in this same file, when
+  // populated -- deferred until every row's Doc No is known, since a payment can reference a bill
+  // that appears later in the file (forward reference), the same reason Bank's balance-continuity
+  // check below runs as its own pass rather than inline in the per-row loop above.
+  rows.forEach((row, index) => {
+    const appliedTo = row['Applied To Doc No'];
+    if (!isBlank(appliedTo) && !seenDocNos.has(appliedTo!)) {
+      const issue: ValidationIssue = {
+        severity: 'WARNING',
+        code: 'AP_APPLIED_DOC_UNKNOWN',
+        field: 'Applied To Doc No',
+        rowNumber: index + 1,
+        message: `Applied To Doc No "${appliedTo}" does not match any Doc No in this file -- it may reference a document from a different period`,
+      };
+      issues.push(issue);
+      normalized[index]!.issues.push(issue);
+      onIssue?.(issue);
+    }
   });
 
   return { issues, normalized };

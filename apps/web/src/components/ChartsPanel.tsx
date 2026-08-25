@@ -2,6 +2,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 
 import type { SummaryMetrics } from '@recon/domain';
 import { formatCurrencyWhole } from '../lib/format';
+import { AgingChart } from './AgingChart';
 
 const compactCurrencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -154,56 +155,7 @@ export const ChartsPanel = ({ summary }: ChartsPanelProps) => {
           </div>
         </details>
       </div>
-      <div className="chart-card">
-        <h3>Outstanding Check Aging</h3>
-        <div className="chart-scroll">
-          <div style={{ width: '100%', height: 420 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={agingChart?.data ?? []}
-                margin={{ top: 8, right: 16, bottom: 12, left: 0 }}
-                barCategoryGap="24%"
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(240, 246, 252, 0.08)" />
-                <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#a8b3bf' }} interval={0} tickMargin={10} />
-                <YAxis tick={{ fill: '#a8b3bf' }} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    background: '#1c2230',
-                    border: '1px solid rgba(240, 246, 252, 0.14)',
-                    borderRadius: 8,
-                    color: '#e6edf3',
-                  }}
-                  cursor={{ fill: 'rgba(240, 246, 252, 0.06)' }}
-                />
-                <Bar dataKey="value" fill="#f2b705" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <details className="chart-data-details">
-          <summary>View chart data table</summary>
-          <div className="table-scroll">
-            <table>
-              <caption className="visually-hidden">Outstanding check aging data table</caption>
-              <thead>
-                <tr>
-                  <th>Age bucket</th>
-                  <th>Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(agingChart?.data ?? []).map((item) => (
-                  <tr key={`aging-${item.label}`}>
-                    <td>{item.label}</td>
-                    <td>{item.value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      </div>
+      <AgingChart title="Outstanding Check Aging" data={agingChart?.data ?? []} hue="bank" />
     </div>
   );
 };

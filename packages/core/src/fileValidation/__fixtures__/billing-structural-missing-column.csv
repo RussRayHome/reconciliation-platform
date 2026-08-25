@@ -1,0 +1,2 @@
+Entity Id,Vendor Id,Vendor Name,Doc Type,Doc Date,Due Date,Amount,Currency,GL Account,Applied To Doc No,Status
+E100,V001,Missing the required Doc No column entirely,Bill,2026-07-01,2026-07-31,500.00,USD,2000,,Open

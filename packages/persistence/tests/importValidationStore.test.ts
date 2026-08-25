@@ -217,10 +217,13 @@ describe('PostgresImportValidationStore', () => {
     const store = new PostgresImportValidationStore(pool);
     const ruleVersionIds = await store.loadActiveValidationRuleVersionIds(defaultOrganizationId);
 
-    expect(ruleVersionIds.size).toBe(24);
+    // 24 (0051's BANK/GL/STRUCT seed) + 14 (0071's BILLING seed, R1 WP0.1).
+    expect(ruleVersionIds.size).toBe(38);
     expect(ruleVersionIds.get('BANK_SEQUENCE_REQUIRED')).toBeTruthy();
     expect(ruleVersionIds.get('GL_AMOUNT_FORMAT')).toBeTruthy();
     expect(ruleVersionIds.get('STRUCT_HEADER_MISSING')).toBeTruthy();
+    expect(ruleVersionIds.get('AP_DUE_DATE_MISSING')).toBeTruthy();
+    expect(ruleVersionIds.get('AP_APPLIED_DOC_UNKNOWN')).toBeTruthy();
   });
 
   describe('recordFileValidationOutcome', () => {

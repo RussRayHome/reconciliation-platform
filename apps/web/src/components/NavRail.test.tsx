@@ -67,7 +67,8 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   accountBilling: 'Billing',
   accountNotification: 'Notification',
   accountPreferences: 'Preferences',
-  importFiles: 'Import Files',
+  importFilesBank: 'Bank Statements',
+  importFilesBilling: 'AP / Billing',
   mappingProfiles: 'Mapping Profiles',
   mappingCreate: 'Create Mapping',
   mappingVersions: 'Mapping Versions',
@@ -90,6 +91,7 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
 /** `routePaths` entries deliberately absent from the rail, with why -- so a future removal has to
  * edit this list (a visible decision) rather than just stop failing (a silent one). */
 const EXPECTED_ABSENT_FROM_RAIL: Record<string, string> = {
+  importFiles: 'alias for importFilesBank (same string, R1 WP2) -- not a distinct rendered link',
   login: 'pre-auth screen; the rail only renders once authenticated',
   forgotPassword: 'pre-auth screen',
   signup: 'pre-auth screen',
@@ -122,13 +124,29 @@ describe('NavRail route inventory', () => {
     },
   );
 
+  it('shows each source type\'s schema value as a caption without it polluting the link\'s accessible name', () => {
+    renderRail();
+
+    const link = screen.getByRole('link', { name: 'Bank Statements' });
+    expect(link.querySelector('.nav-rail__item-caption')).toHaveTextContent('BANK · GL');
+    expect(link.querySelector('.nav-rail__item-caption')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('does not render a rail link for routes deliberately absent from the rail', () => {
     renderRail();
 
     const renderedHrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+    const renderedPaths = new Set(
+      Object.keys(EXPECTED_RAIL_LINKS).map((key) => routePaths[key as keyof typeof routePaths]),
+    );
 
     for (const routeKey of Object.keys(EXPECTED_ABSENT_FROM_RAIL)) {
       const path = routePaths[routeKey as keyof typeof routePaths];
+      // An "absent" route can still share its string with an EXPECTED_RAIL_LINKS entry (e.g.
+      // importFiles === importFilesBank, both '/') -- that's a rendered alias, not a real gap, so
+      // skip the non-containment check for it rather than asserting something that's true by
+      // design.
+      if (renderedPaths.has(path)) continue;
       expect(renderedHrefs).not.toContain(path);
     }
   });

@@ -133,6 +133,20 @@
     color: var(--accent);
   }
 
+  /* Source-hue edge marker (Import Files' Bank Statements / AP-Billing children) -- a colored
+     left stripe distinguishing source type at a glance, same hues used elsewhere for the same
+     sources (mapping.css, rules.css, approvals.css). Border width is subtracted from padding so
+     content doesn't shift relative to hue-less items. */
+  .nav-rail__item--bank {
+    border-left: 3px solid var(--bank);
+    padding-left: calc(0.7rem - 2px);
+  }
+
+  .nav-rail__item--ap {
+    border-left: 3px solid var(--ap);
+    padding-left: calc(0.7rem - 2px);
+  }
+
   .nav-rail__item-icon {
     display: inline-flex;
     flex: 0 0 auto;

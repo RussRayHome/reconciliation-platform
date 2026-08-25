@@ -1,19 +1,23 @@
 import { type Dispatch, type DragEvent, type SetStateAction, useState } from 'react';
 
-import { parseBankAccountLast4FromFilename } from '@recon/domain';
+import { parseApEntityIdFromFilename, parseBankAccountLast4FromFilename } from '@recon/domain';
 
 import { formatFileSize } from '../lib/formatFileSize';
 import { ImportUploadCard, type RejectedUploadCode } from './ImportUploadCard';
 
-type SourceKind = 'bank' | 'gl';
+type SourceKind = 'bank' | 'gl' | 'billing';
 
 /** Issue #153: a run supports 1-4 bank accounts. */
 export const MIN_BANK_ACCOUNTS = 1;
 export const MAX_BANK_ACCOUNTS = 4;
 
+/** R1 WP4: an AP/Billing run supports 1-4 entity ledgers, mirroring the bank-account cardinality. */
+export const MIN_AP_ENTITIES = 1;
+export const MAX_AP_ENTITIES = 4;
+
 /** Screen 02's client-side upload gate: `.csv`/`.xlsx` only, 50 MB per file, both enforced before
- * any request -- a rejected file never reaches `setBankFiles`/`setGlFile` and so never becomes
- * part of an `import_file` row. */
+ * any request -- a rejected file never reaches `setBankFiles`/`setGlFile`/`setApFiles` and so
+ * never becomes part of an `import_file` row. */
 const MAX_IMPORT_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.csv', '.xlsx'];
 
@@ -44,13 +48,22 @@ const detectRejection = (file: File): RejectedUploadCode | null => {
 const detectBankAccountRejection = (file: File): RejectedUploadCode | null =>
   parseBankAccountLast4FromFilename(file.name) === null ? 'UPLOAD_BANK_FILENAME_INVALID' : null;
 
+/** R1 WP4: same filename-derived pre-check for AP/Billing, mirroring the bank account convention
+ * (see `detectBankAccountRejection`'s own doc comment). */
+const detectApEntityRejection = (file: File): RejectedUploadCode | null =>
+  parseApEntityIdFromFilename(file.name) === null ? 'UPLOAD_AP_FILENAME_INVALID' : null;
+
 /** Slots 1-2 keep their pre-#153 ids (`bank-workbook-input`, `bank-workbook-b-input`) so existing
  * Playwright fixtures (`#bank-workbook-input`/`#bank-workbook-b-input`) don't break; slots 3-4 get
  * new lettered ids following the same pattern. */
 const bankInputId = (index: number): string =>
   index === 0 ? 'bank-workbook-input' : `bank-workbook-${String.fromCharCode(97 + index)}-input`;
 
-const detectSource = (fileName: string): SourceKind | null => {
+/** Same lettered-slot id convention as `bankInputId`, new namespace for AP entity slots. */
+const apInputId = (index: number): string =>
+  index === 0 ? 'ap-workbook-input' : `ap-workbook-${String.fromCharCode(97 + index)}-input`;
+
+const detectSource = (fileName: string): 'bank' | 'gl' | null => {
   const lower = fileName.toLowerCase();
 
   if (lower.includes('bank')) {
@@ -64,6 +77,38 @@ const detectSource = (fileName: string): SourceKind | null => {
   return null;
 };
 
+type SourceDropZoneProps =
+  | {
+      mode: 'bank-gl';
+      bankFiles: (File | null)[];
+      glFile: File | null;
+      setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
+      setGlFile: Dispatch<SetStateAction<File | null>>;
+    }
+  | {
+      mode: 'billing';
+      apFiles: (File | null)[];
+      setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
+    };
+
+/** Dispatches to the Bank/GL or AP/Billing drop zone by `mode` -- kept as one exported component
+ * so callers don't need to know there are two internal implementations, while each mode's own
+ * logic/render stays independent (no shared mutable state to reason about across modes) since
+ * only one is ever mounted at a time (R1 WP3's tab strip). */
+export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
+  if (props.mode === 'billing') {
+    return <ApDropZone apFiles={props.apFiles} setApFiles={props.setApFiles} />;
+  }
+  return (
+    <BankGlDropZone
+      bankFiles={props.bankFiles}
+      glFile={props.glFile}
+      setBankFiles={props.setBankFiles}
+      setGlFile={props.setGlFile}
+    />
+  );
+}
+
 /**
  * Single drop zone that accepts every source workbook: 1-4 per-account bank workbooks (Issue
  * #153) plus one GL workbook. Files are auto-assigned by filename signature -- bank files fill
@@ -71,7 +116,7 @@ const detectSource = (fileName: string): SourceKind | null => {
  * is empty -- with per-slot inputs for manual override, an "Add another" control, and a per-slot
  * remove control (floored at 1 slot).
  */
-export function SourceDropZone({
+function BankGlDropZone({
   bankFiles,
   glFile,
   setBankFiles,
@@ -301,6 +346,188 @@ export function SourceDropZone({
   );
 }
 
+/**
+ * R1 WP4: drop zone for a combined AP/Billing subledger export -- invoices and payments
+ * interleaved, separated downstream by Doc Type (WP0.1's file-validation engine). 1-4
+ * entity-ledger slots, filling the first empty slot in drop order (mirroring
+ * `BankGlDropZone`'s `assignBankSlot`), auto-adding a slot up to the cap. One slot type only
+ * (no GL-style second slot), since every file here is the same AP_SUBLEDGER-shaped source.
+ */
+function ApDropZone({
+  apFiles,
+  setApFiles,
+}: Readonly<{
+  apFiles: (File | null)[];
+  setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
+}>) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [rejectedFiles, setRejectedFiles] = useState<RejectedUpload[]>([]);
+  const [nextRejectionId, setNextRejectionId] = useState(0);
+
+  const rejectFile = (file: File, code: RejectedUploadCode): void => {
+    setRejectedFiles((prev) => [...prev, { id: `rejected-${nextRejectionId}`, file, code }]);
+    setNextRejectionId((id) => id + 1);
+  };
+
+  const assignFiles = (files: FileList | File[]): void => {
+    const incoming = Array.from(files);
+    const nextApFiles = [...apFiles];
+
+    const assignApSlot = (file: File): boolean => {
+      const emptyIndex = nextApFiles.findIndex((slotFile) => slotFile === null);
+      if (emptyIndex !== -1) {
+        nextApFiles[emptyIndex] = file;
+        return true;
+      }
+      if (nextApFiles.length < MAX_AP_ENTITIES) {
+        nextApFiles.push(file);
+        return true;
+      }
+      return false;
+    };
+
+    for (const file of incoming) {
+      const rejection = detectRejection(file);
+      if (rejection) {
+        rejectFile(file, rejection);
+        continue;
+      }
+
+      const entityRejection = detectApEntityRejection(file);
+      if (entityRejection) {
+        rejectFile(file, entityRejection);
+        continue;
+      }
+
+      if (!assignApSlot(file)) {
+        rejectFile(file, 'UPLOAD_AP_ENTITY_LIMIT_REACHED');
+      }
+    }
+
+    setApFiles(nextApFiles);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLLabelElement>): void => {
+    event.preventDefault();
+    setIsDragging(false);
+
+    if (event.dataTransfer?.files?.length) {
+      assignFiles(event.dataTransfer.files);
+    }
+  };
+
+  const removeRejected = (id: string): void => {
+    setRejectedFiles((prev) => prev.filter((entry) => entry.id !== id));
+  };
+
+  const onApFileChange = (index: number, file: File | null): void => {
+    if (file === null) {
+      setApFiles((prev) => prev.map((slotFile, i) => (i === index ? null : slotFile)));
+      return;
+    }
+
+    const rejection = detectRejection(file);
+    if (rejection) {
+      rejectFile(file, rejection);
+      return;
+    }
+
+    const entityRejection = detectApEntityRejection(file);
+    if (entityRejection) {
+      rejectFile(file, entityRejection);
+      return;
+    }
+
+    setApFiles((prev) => prev.map((slotFile, i) => (i === index ? file : slotFile)));
+  };
+
+  const onAddApSlot = (): void => {
+    setApFiles((prev) => (prev.length < MAX_AP_ENTITIES ? [...prev, null] : prev));
+  };
+
+  const onRemoveApSlot = (index: number): void => {
+    setApFiles((prev) =>
+      prev.length > MIN_AP_ENTITIES ? prev.filter((_, i) => i !== index) : prev,
+    );
+  };
+
+  return (
+    <div className="source-dropzone">
+      <label
+        className={
+          isDragging
+            ? 'source-dropzone__drop source-dropzone__drop--active'
+            : 'source-dropzone__drop'
+        }
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+      >
+        <span className="source-dropzone__prompt">Drag your AP/Billing subledger export here, or browse</span>
+        <span className="source-dropzone__hint">.csv · .xlsx — max 50 MB per file</span>
+        <span className="source-dropzone__browse-button">Choose files</span>
+        <input
+          type="file"
+          accept=".csv,.xlsx"
+          multiple
+          aria-label="AP/Billing subledger workbooks"
+          onChange={(event) => {
+            if (event.target.files?.length) {
+              assignFiles(event.target.files);
+            }
+          }}
+        />
+      </label>
+
+      <div className="source-dropzone__slots">
+        {apFiles.map((file, index) => (
+          <SourceSlot
+            key={index}
+            kind="billing"
+            label={`AP/Billing workbook (Entity ${index + 1})`}
+            inputId={apInputId(index)}
+            file={file}
+            onChange={(nextFile) => onApFileChange(index, nextFile)}
+            onRemove={apFiles.length > MIN_AP_ENTITIES ? () => onRemoveApSlot(index) : undefined}
+          />
+        ))}
+      </div>
+
+      {apFiles.length < MAX_AP_ENTITIES ? (
+        <button type="button" className="secondary-button" onClick={onAddApSlot}>
+          Add another AP entity ledger
+        </button>
+      ) : null}
+
+      {rejectedFiles.length > 0 ? (
+        <div className="source-dropzone__rejected-list">
+          {rejectedFiles.map((entry) => (
+            <ImportUploadCard
+              key={entry.id}
+              state="rejected"
+              name={entry.file.name}
+              sizeBytes={entry.file.size}
+              code={entry.code}
+              onRemove={() => removeRejected(entry.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      <p className="source-dropzone__note">
+        AP/Billing workbooks fill the first empty slot in drop order (adding a new slot
+        automatically, up to {MAX_AP_ENTITIES} entities); use the slot pickers to override. Each
+        file name must start with its entity id followed by "-" or "_", e.g.
+        "E100_ap-export.csv". Invoices and payments are separated downstream by Doc Type. Row
+        counts, date range, and excluded rows are calculated when the reconciliation runs.
+      </p>
+    </div>
+  );
+}
+
 function SourceSlot({
   kind,
   label,
@@ -316,8 +543,8 @@ function SourceSlot({
   onChange: (file: File | null) => void;
   onRemove?: () => void;
 }>) {
-  const detected = file ? detectSource(file.name) : null;
-  const isOverride = Boolean(file) && detected !== null && detected !== kind;
+  const detected = kind === 'billing' ? null : file ? detectSource(file.name) : null;
+  const isOverride = kind !== 'billing' && Boolean(file) && detected !== null && detected !== kind;
 
   return (
     <div className="source-slot">

@@ -164,6 +164,40 @@ describe('validateFile (GL)', () => {
   });
 });
 
+describe('validateFile (BILLING)', () => {
+  it('a fully valid file passes all three gates with zero issues', async () => {
+    const outcome = await validateFile({
+      bytes: fixture('billing-valid.csv'),
+      fileFormat: 'CSV',
+      fileType: 'BILLING',
+    });
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      gatesRun: ['HEADER', 'COLUMN_ORDER', 'CELL_VALUES'],
+      issues: [],
+      totalRowCount: 2,
+    });
+    expect(outcome.normalized).toHaveLength(2);
+    expect(outcome.normalized.map((record) => record.sourceSystem)).toEqual(['BILLING', 'BILLING']);
+  });
+
+  it('stops at Step 2 when a required column is missing -- Step 3 never runs', async () => {
+    const outcome = await validateFile({
+      bytes: fixture('billing-structural-missing-column.csv'),
+      fileFormat: 'CSV',
+      fileType: 'BILLING',
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.gatesRun).toEqual(['HEADER', 'COLUMN_ORDER']);
+    expect(outcome.issues).toEqual([
+      expect.objectContaining({ code: 'STRUCT_COLUMN_MISSING', field: 'Doc No' }),
+    ]);
+    expect(outcome.normalized).toEqual([]);
+  });
+});
+
 describe('validateFile (XLSX)', () => {
   it('validates the same outcome as the equivalent CSV data, built in-memory', async () => {
     const ExcelJS = await import('exceljs');

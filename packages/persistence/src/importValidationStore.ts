@@ -20,7 +20,7 @@ export interface ValidationIssueInput {
 
 /** Structurally compatible with @recon/core's `NormalizedRecord`, same reasoning as above. */
 export interface CanonicalRecordInput {
-  sourceType: 'BANK' | 'GL';
+  sourceType: 'BANK' | 'GL' | 'BILLING';
   recordId: string;
   account: string;
   date: string;
