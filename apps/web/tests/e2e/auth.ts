@@ -63,7 +63,9 @@ export const loginToApplication = async (page: Page): Promise<void> => {
   const candidates = resolveLoginCandidates();
   const loginHeading = page.getByRole('heading', { name: 'Log in' });
   const submitButton = page.getByRole('button', { name: 'Log in' });
-  const workspaceReady = page.getByRole('link', { name: 'Import Files' });
+  // Import Files became a CollapsibleNavSection (R1 WP1) -- its own header is a button, not a
+  // link, so "workspace ready" now waits on its default child instead.
+  const workspaceReady = page.getByRole('link', { name: 'Bank Statements' });
 
   await page.goto('/');
   await expect(loginHeading).toBeVisible();
@@ -106,6 +108,6 @@ export const loginToApplication = async (page: Page): Promise<void> => {
  * reconciliation" to "Submit run". */
 export const openSetup = async (page: Page): Promise<void> => {
   await page.goto('/');
-  await page.getByRole('link', { name: 'Import Files' }).click();
+  await page.getByRole('link', { name: 'Bank Statements' }).click();
   await expect(page.getByRole('button', { name: 'Submit run' })).toBeVisible();
 };

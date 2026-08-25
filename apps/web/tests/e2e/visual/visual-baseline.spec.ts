@@ -132,8 +132,9 @@ const screenshotOptions = {
 // the review-summary capture for why a handful of screens still use this instead of a region.
 const fullPageScreenshotOptions = { ...screenshotOptions, fullPage: true } as const;
 
-// loginToApplication waits for the Import Files link, which only superuser/admin roles see;
-// this variant just submits credentials and lets each test wait for its own landmark.
+// loginToApplication waits for the Bank Statements link (Import Files' default child, R1 WP1),
+// which only superuser/admin roles see; this variant just submits credentials and lets each test
+// wait for its own landmark.
 //
 // Tries `password` first (the real seeded-Postgres credential), then falls back to `username`
 // itself as the password -- app.ts's local-login-fallback path (ALLOW_LOCAL_LOGIN_FALLBACK) uses

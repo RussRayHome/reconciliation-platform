@@ -496,7 +496,7 @@ test.describe('edge cases', () => {
       createWorkbookFromRows(missingFromGlBankFileValidationRows),
       createWorkbookFromRows(missingFromGlGlFileValidationRows),
     ]);
-    await page.getByRole('link', { name: 'Import Files' }).click();
+    await page.getByRole('link', { name: 'Bank Statements' }).click();
     await setWorkbookFiles(page, bank2, gl2);
     await page.getByLabel('Reconciliation label').fill('Second Run April');
     await page.getByRole('button', { name: 'Submit run' }).click();
@@ -509,7 +509,7 @@ test.describe('edge cases', () => {
     page,
   }) => {
     await openSetup(page);
-    await page.getByRole('link', { name: 'Import Files' }).focus();
+    await page.getByRole('link', { name: 'Bank Statements' }).focus();
     await page.getByRole('link', { name: 'File-based' }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(

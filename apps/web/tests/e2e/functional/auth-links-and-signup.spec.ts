@@ -144,7 +144,7 @@ test.describe('successful signup', () => {
     // App.tsx routes an authenticated-but-unverified session into the workspace, gated
     // separately per-feature (e.g. Create Mapping) by isFullyVerified.
     await page.getByRole('button', { name: 'Skip and enter the app' }).click();
-    await expect(page.getByRole('link', { name: 'Import Files' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Bank Statements' })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe(expectedPathname('/'));
   });
 });
