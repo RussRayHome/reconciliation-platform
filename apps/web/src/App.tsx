@@ -1488,7 +1488,10 @@ function ReconciliationApp({
               <Route
                 path={routePaths.openItemsSchedule}
                 element={
-                  <OpenItemsScheduleSection accountIdentifier={runBarAccountIdentifier || undefined} />
+                  <OpenItemsScheduleSection
+                    accountIdentifier={runBarAccountIdentifier || undefined}
+                    username={username}
+                  />
                 }
               />
 
