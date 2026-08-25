@@ -23,7 +23,23 @@
 #      pattern spun up by packages/persistence/tests -- normally reaped automatically by
 #      testcontainers-ryuk when its owning process exits, but can leak if that process was killed
 #      hard rather than exiting cleanly).
+#   4. Containers stuck in Created status -- unlike Exited (a normal resting state for a
+#      deliberately-stopped stack, see #3's comment below), Created is always transient: a
+#      container should move to Running (or be removed) within seconds. One sitting in Created
+#      indefinitely is a failed/aborted `docker compose up`, not a stack anyone is choosing to
+#      keep -- flagged and removed regardless of name/stack, since there's no legitimate reason
+#      for this state to persist.
+#   5. Docker build-cache size -- reclaimable build cache accumulates every `docker:deploy`/
+#      `docker:smoke`/image-build run and is never cleaned automatically. Large accumulated cache
+#      (many GB) can starve the Docker Desktop VM of disk/resources, which manifested on
+#      2026-08-25 as a brand new container silently stuck in Created forever (StartedAt stayed at
+#      the zero value -- Docker never even attempted to start it). Reported past a threshold;
+#      `--fix` runs `docker builder prune -f`, which only touches build cache -- never containers,
+#      images, or volumes, so it's safe regardless of what stacks (stage, observability, etc.)
+#      are currently stopped.
 set -uo pipefail
+
+BUILD_CACHE_THRESHOLD_GB=10
 
 FIX=false
 if [[ "${1:-}" == "--fix" ]]; then
@@ -88,6 +104,29 @@ else
 fi
 
 echo ""
+echo "== Checking for containers stuck in Created status (never legitimate, any name/stack) =="
+STUCK_CREATED="$(docker ps -a --filter status=created --format '{{.Names}}' 2>/dev/null || true)"
+if [[ -n "$STUCK_CREATED" ]]; then
+  echo "$STUCK_CREATED" | sed 's/^/    /'
+  DIRTY=true
+else
+  echo "  clean"
+fi
+
+echo ""
+echo "== Checking Docker build-cache size (threshold: ${BUILD_CACHE_THRESHOLD_GB}GB) =="
+CACHE_LINE="$(docker builder du 2>/dev/null | grep '^Reclaimable:' || true)"
+CACHE_GB="$(echo "$CACHE_LINE" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)"
+CACHE_OVER_THRESHOLD=false
+if [[ -n "$CACHE_GB" ]] && awk -v n="$CACHE_GB" -v t="$BUILD_CACHE_THRESHOLD_GB" 'BEGIN { exit !(n > t) }'; then
+  echo "  $CACHE_LINE (over ${BUILD_CACHE_THRESHOLD_GB}GB -- can starve the Docker Desktop VM; see 2026-08-25 incident)"
+  CACHE_OVER_THRESHOLD=true
+  DIRTY=true
+else
+  echo "  ${CACHE_LINE:-clean (docker builder du unavailable)}"
+fi
+
+echo ""
 if [[ "$DIRTY" == "false" ]]; then
   echo "Local environment is clean."
   exit 0
@@ -108,5 +147,13 @@ done
 if [[ -n "$ORPHAN_TC" ]]; then
   echo "$ORPHAN_TC" | xargs -I{} docker rm -f {} >/dev/null 2>&1
   echo "  removed orphaned testcontainers"
+fi
+if [[ -n "$STUCK_CREATED" ]]; then
+  echo "$STUCK_CREATED" | xargs -I{} docker rm -f {} >/dev/null 2>&1
+  echo "  removed containers stuck in Created status"
+fi
+if [[ "$CACHE_OVER_THRESHOLD" == "true" ]]; then
+  docker builder prune -f >/dev/null 2>&1
+  echo "  pruned Docker build cache"
 fi
 echo "Done."
