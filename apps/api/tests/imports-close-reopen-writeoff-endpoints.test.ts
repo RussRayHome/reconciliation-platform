@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
 
@@ -22,7 +24,7 @@ interface FakeOpenItem {
 }
 
 /**
- * Unreconciled Item Roll-Forward PR E. Route-layer coverage only (role gates, no-pool 501,
+ * Unreconciled Item Roll-Forward PR E. Route-layer coverage only (role gates, no-pool 503,
  * outcome-to-status-code mapping) -- PostgresOpenItemStore.closeRun/reopenRun/writeOffOpenItem's
  * own behavior (tie-out arithmetic, segregation of duty, is_stale propagation, etc.) is covered
  * thoroughly against a real Postgres in packages/persistence/tests/openItemStore.test.ts. The
@@ -226,14 +228,25 @@ describe('POST /api/imports/runs/:id/close', () => {
     expect(response.status).toBe(403);
   });
 
-  it('returns 501 when no database pool is configured', async () => {
+  it('returns 503 when no database pool is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
 
     const response = await authedApp(app, { role: 'controller' }).post(
       '/api/imports/runs/some-id/close',
     );
 
-    expect(response.status).toBe(501);
+    const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+    expect(response.status).toBe(definition.httpStatus);
+    const body = response.body as {
+      message: string;
+      code: string;
+      reference: string;
+      retryable: boolean;
+    };
+    expect(body.message).toBe(`Unable to ${OPERATIONS.IMPORT_RUN_CLOSE}. ${definition.publicMessage}`);
+    expect(body.code).toBe('RCN-DB-001');
+    expect(body.reference.length).toBeGreaterThan(0);
+    expect(body.retryable).toBe(definition.retryable);
   });
 });
 

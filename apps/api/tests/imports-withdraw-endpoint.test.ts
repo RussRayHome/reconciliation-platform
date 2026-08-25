@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
 
@@ -169,13 +171,24 @@ describe('POST /api/imports/runs/:id/withdraw (Phase 14)', () => {
     expect(response.status).toBe(403);
   });
 
-  it('returns 501 when no database pool is configured', async () => {
+  it('returns 503 when no database pool is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
 
     const response = await authedApp(app, { role: 'senior-analyst' }).post(
       '/api/imports/runs/some-id/withdraw',
     );
 
-    expect(response.status).toBe(501);
+    const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+    expect(response.status).toBe(definition.httpStatus);
+    const body = response.body as {
+      message: string;
+      code: string;
+      reference: string;
+      retryable: boolean;
+    };
+    expect(body.message).toBe(`Unable to ${OPERATIONS.IMPORT_RUN_WITHDRAW}. ${definition.publicMessage}`);
+    expect(body.code).toBe('RCN-DB-001');
+    expect(body.reference.length).toBeGreaterThan(0);
+    expect(body.retryable).toBe(definition.retryable);
   });
 });
