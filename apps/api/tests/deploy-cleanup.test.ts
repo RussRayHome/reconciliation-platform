@@ -56,20 +56,39 @@ const hasCommand = (command: string): boolean =>
 const canRunDeployChecks = hasCommand('bash') && hasCommand('docker');
 const deployTest = canRunDeployChecks ? it : it.skip;
 
-const runWithDockerEnv = (command: string, extraEnv: Record<string, string> = {}): string =>
+// Issue #194's RCA: execSync with no `timeout` blocks the event loop indefinitely if the child
+// stalls, and Vitest's own testTimeout can't fire in that window -- its setTimeout callback never
+// gets a turn while a synchronous call has the thread. That produces the exact reported symptom
+// (silent, 0% CPU, indefinite duration) instead of a normal, visible test failure. Passing
+// `timeout` here bounds every Docker call: on expiry Node sends SIGTERM to the child and execSync
+// throws, so a stalled command becomes a loud, fast failure instead of a hang.
+const runWithDockerEnv = (
+  command: string,
+  extraEnv: Record<string, string> = {},
+  timeoutMs: number,
+): string =>
   execSync(command, {
     encoding: 'utf-8',
     env: { ...dockerEnv, ...extraEnv },
     // Ignore Docker stderr progress output to keep integration logs concise.
     stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: timeoutMs,
   });
 
 const deployWithRetry = (): string => {
   try {
-    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh', { DEPLOY_SKIP_BUILD: 'true' });
+    return runWithDockerEnv(
+      'bash scripts/pre-flight/deploy.sh',
+      { DEPLOY_SKIP_BUILD: 'true' },
+      170_000,
+    );
   } catch {
-    runWithDockerEnv(cleanupCommand);
-    return runWithDockerEnv('bash scripts/pre-flight/deploy.sh', { DEPLOY_SKIP_BUILD: 'true' });
+    runWithDockerEnv(cleanupCommand, {}, 60_000);
+    return runWithDockerEnv(
+      'bash scripts/pre-flight/deploy.sh',
+      { DEPLOY_SKIP_BUILD: 'true' },
+      170_000,
+    );
   }
 };
 
@@ -78,19 +97,26 @@ describe('Deploy and Cleanup Scripts', () => {
   // images this builds persist in the shared local image store (keyed by COMPOSE_PROJECT_NAME) for
   // the deploy test below to reuse via DEPLOY_SKIP_BUILD.
   deployTest('builds the stack images successfully', { timeout: 300000 }, () => {
-    const output = runWithDockerEnv('bash scripts/pre-flight/deploy.sh', {
-      DEPLOY_BUILD_ONLY: 'true',
-    });
+    const output = runWithDockerEnv(
+      'bash scripts/pre-flight/deploy.sh',
+      { DEPLOY_BUILD_ONLY: 'true' },
+      290_000,
+    );
     expect(output).toMatch(/Build phase complete\./);
   });
 
-  deployTest('deploys the built stack successfully', { timeout: 180000 }, () => {
+  // 420s, not 180s: deployWithRetry's failure path runs deploy (up to 170s) + cleanup (up to 60s)
+  // + a second deploy attempt (up to 170s) -- bounding the individual execSync calls prevents an
+  // infinite hang, but the retry path's own worst case is still ~400s of real work. Leaving this
+  // at the old 180000 would trade an unbounded hang for a *guaranteed* Vitest-level timeout on
+  // every retry, which is a worse outcome, not a fixed one.
+  deployTest('deploys the built stack successfully', { timeout: 420000 }, () => {
     const output = deployWithRetry();
     expect(output).toMatch(/Local (production-like )?stack deployed\./);
   });
 
-  deployTest('cleans up the stack successfully', () => {
-    const output = runWithDockerEnv(cleanupCommand);
+  deployTest('cleans up the stack successfully', { timeout: 120000 }, () => {
+    const output = runWithDockerEnv(cleanupCommand, {}, 110_000);
     expect(output).toMatch(/Local (production-like )?stack cleaned up\./);
   });
 });
