@@ -262,6 +262,18 @@ for (const width of widths) {
       await page.locator('.run-bar__overflow-trigger').click();
       await page.getByRole('button', { name: 'Rules', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Matching Rules' })).toBeVisible();
+      // Issue #208: clicking "Rules" above navigates via router push (RunBar's onOpenRules ->
+      // App.tsx's `navigate(routePaths.mappingRules)`) but never closes the native <details> it
+      // lives inside -- RunBar is persistent chrome mounted above the routed content, so the
+      // overflow menu stays open on the Rules page too. Its screenshot-time position depends on
+      // popover-rise's 150ms entrance animation (run-bar.css) having settled, which raced
+      // intermittently and produced a ~17px, fully-deterministic-once-triggered height diff on
+      // every capture below. Closing it directly (no exit animation is defined, so this is
+      // instant) removes both the leftover chrome this region capture's own doc comment already
+      // says it wants excluded, and the timing race in one fix.
+      await page.locator('.run-bar__overflow').evaluate((details) => {
+        (details as HTMLDetailsElement).open = false;
+      });
       // Region-scoped to the whole Rules route panel (includes the SectionCard title/chrome
       // wrapping "Matching Rules" -- this is the outermost element the route itself renders, so
       // it excludes nav/hero the same way #source-upload-form does above).
