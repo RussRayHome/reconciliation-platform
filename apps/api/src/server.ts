@@ -142,7 +142,15 @@ export const createServerRuntime = async (): Promise<ServerRuntime> => {
       throw new Error('DATABASE_URL is required when PostgreSQL persistence is enabled.');
     }
 
-    const pool = createPostgresPool(postgresConfig);
+    const pool = createPostgresPool(postgresConfig, (error) => {
+      // error-handling-build-plan.md EH6: an idle pooled client died -- without this listener,
+      // pg.Pool's unhandled 'error' event would terminate the process (see createPostgresPool's
+      // own doc comment).
+      logger.error(
+        { action: 'persistence.postgres.pool_error', errorCode: 'RCN-DB-003', err: error },
+        'PostgreSQL pool error',
+      );
+    });
     postgresPool = pool;
     await assertRuntimeRoleIsNotPrivileged(pool);
 

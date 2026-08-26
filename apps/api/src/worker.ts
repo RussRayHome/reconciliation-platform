@@ -124,7 +124,14 @@ export const createWorkerRuntime = async (): Promise<WorkerRuntime> => {
       throw new Error('DATABASE_URL is required when PostgreSQL persistence is enabled.');
     }
 
-    const pool = createPostgresPool(postgresConfig);
+    const pool = createPostgresPool(postgresConfig, (error) => {
+      // error-handling-build-plan.md EH6: same idle-client-failure gap as server.ts -- the worker
+      // process is just as exposed to pg.Pool's unhandled 'error' event as the API process is.
+      logger.error(
+        { action: 'persistence.postgres.pool_error', errorCode: 'RCN-DB-003', err: error },
+        'PostgreSQL pool error',
+      );
+    });
     postgresPool = pool;
     await assertRuntimeRoleIsNotPrivileged(pool);
 
