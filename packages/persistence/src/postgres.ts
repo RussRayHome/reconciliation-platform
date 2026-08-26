@@ -1,4 +1,14 @@
-import { Pool, type PoolClient, type PoolConfig } from 'pg';
+import { DatabaseError, Pool, type PoolClient, type PoolConfig } from 'pg';
+
+/** Re-exported so callers (e.g. the API's global error handler, EH3 in
+ * error-handling-build-plan.md) can classify a caught error with `instanceof DatabaseError`
+ * without taking a direct dependency on `pg` -- every other Postgres-shaped type callers need
+ * already flows through `@recon/persistence` rather than straight from `pg`. `DatabaseError.code`
+ * is the query's SQLSTATE, present only when Postgres actually rejected a query -- a raw
+ * connection-level failure (ECONNREFUSED, connection dropped mid-request) is a plain `Error`,
+ * never a `DatabaseError`, which is what makes this the right discriminator between "the database
+ * responded with a rejection" and "the database was unreachable". */
+export { DatabaseError };
 
 /** Connection pool settings loaded from environment variables. */
 export type PostgresPersistenceConfig = {
