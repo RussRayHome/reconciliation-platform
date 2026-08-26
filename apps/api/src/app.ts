@@ -946,7 +946,25 @@ export const processImportValidationJob = async (input: {
         input.importJobId,
         error instanceof Error ? error.message : 'Unexpected import validation failure',
       )
-      .catch(() => undefined);
+      .catch((secondaryError: unknown) => {
+        // EH5 sweep: this write recording the primary failure can itself fail (e.g. the same
+        // outage that caused `error`) -- if it does, the job is left in whatever state it was
+        // in rather than visibly `failed`, so this can't stay silent even though the primary
+        // error below is already captured.
+        log.error({
+          action: 'import-validation.mark_job_failed_write_failed',
+          runId: input.runId,
+          importJobId: input.importJobId,
+          err: {
+            message: secondaryError instanceof Error ? secondaryError.message : String(secondaryError),
+            stack: secondaryError instanceof Error ? secondaryError.stack : undefined,
+          },
+        });
+        captureApiException(secondaryError, {
+          tags: { scope: 'import-validation-mark-failed' },
+          extra: { runId: input.runId, importJobId: input.importJobId },
+        });
+      });
 
     captureApiException(error, {
       tags: { scope: 'import-validation-queue' },
@@ -998,7 +1016,16 @@ export const handleFailedReconciliationRun = async (input: {
         errorMessage:
           input.error instanceof Error ? input.error.message : 'Unexpected reconciliation failure',
       })
-      .catch(() => undefined);
+      .catch((secondaryError: unknown) => {
+        // EH5 sweep: no request-scoped logger reaches this worker-context function (see
+        // processImportValidationJob's sibling catch above, which does have one) --
+        // captureApiException needs no threading and is enough to make this observable rather
+        // than a silently-stuck job.
+        captureApiException(secondaryError, {
+          tags: { scope: 'reconciliation-mark-failed' },
+          extra: { organizationId: input.organizationId, jobId: input.persistenceJobId },
+        });
+      });
   }
 
   const requestInput = parseReconciliationRequestInput(input.requestBody);
@@ -3191,16 +3218,23 @@ export const createApp = (
       // more line before ending the stream. The client already reads every line as a
       // `RunStatusMessage` (apps/web/src/lib/runStatusStream.ts), so this needs no new wire shape.
       const code = logStreamError('imports.events.stream_failed', error);
-      response.write(
-        `${JSON.stringify({
-          organizationId,
-          processId: runId,
-          queueType: 'import-validation',
-          statusMessage: 'stream-error',
-          details: { code, reference },
-        })}\n`,
-      );
-      response.end();
+      // A post-header failure often means the connection itself is the problem, so this recovery
+      // write can fail too -- swallow that specifically (not the original `error`, already
+      // logged above) rather than let it become an unhandled rejection in an async handler.
+      try {
+        response.write(
+          `${JSON.stringify({
+            organizationId,
+            processId: runId,
+            queueType: 'import-validation',
+            statusMessage: 'stream-error',
+            details: { code, reference },
+          })}\n`,
+        );
+        response.end();
+      } catch {
+        // Connection already gone -- nothing left to write to.
+      }
     }
   });
 
