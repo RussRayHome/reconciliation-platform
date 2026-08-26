@@ -3,6 +3,7 @@ import type { UserRole } from '@recon/domain';
 import request from 'supertest';
 import type { Express } from 'express';
 import { signAuthToken } from '../../src/services/authService';
+import { describeResponse, recordObservedResponse } from './lastResponse';
 
 /**
  * Mints a valid bearer token for tests, using the app's own `signAuthToken` rather than
@@ -36,25 +37,61 @@ export const authHeader = (
 
 /**
  * Attaches a unique x-correlation-id to a request and asserts the response echoes the same one
- * back. app.ts:1701 mints/forwards this id and app.ts:1731 sets it on every response -- if a
- * response ever carries a DIFFERENT id than the request that's asserting against it, that proves
- * the assertion read a response that didn't belong to its request (transport-layer
- * mis-attribution, e.g. ephemeral-port/socket reuse under concurrent supertest instances) rather
- * than a flaky assertion or shared-state bug. See Issue #192: two isolated, non-reproducible
- * failures in reconciliation-runs-rollforward-endpoints.test.ts both matched a temporally
- * adjacent sibling test's expected status exactly -- the signature of mis-attribution, not state
- * corruption -- but nothing previously made that provable rather than merely likely.
+ * back. app.ts:1698 mints/forwards this id and app.ts:1731 sets it on every response.
+ *
+ * What this proves, precisely -- the original comment here overstated it:
+ *
+ * - An ABSENT header means the response never reached app.ts:1731, i.e. it short-circuited in a
+ *   middleware ABOVE that line (the rate limiter -> 429; express.json rejecting a malformed body
+ *   -> 400) or was emitted by Node's HTTP parser before Express ran at all (-> 400, empty body,
+ *   zero headers). This is NOT transport mis-attribution and must not be reported as such.
+ *
+ * - A DIFFERENT header value means the response carries another request's id and genuinely does
+ *   not belong to this request.
+ *
+ * - A MATCHING header does not rule out a response from the wrong app instance: app.ts:1698's
+ *   genReqId echoes the request's own header, so any instance serving this request echoes the
+ *   right id. This check cannot detect that case; the body captured below is what distinguishes it.
+ *
+ * Issue #192 background: two isolated, non-reproducible failures in
+ * reconciliation-runs-rollforward-endpoints.test.ts, both returning exactly 400 -- one on a route
+ * where a pool-less app has no reachable path to a 400 at all. Ephemeral-port/TIME_WAIT reuse and
+ * socket pooling were both tested and refuted (supertest never pools: superagent sets
+ * `agent: false`), so the body and header count below are the remaining discriminators.
  */
-const withCorrelationIdCheck = (test: request.Test): request.Test => {
+const withCorrelationIdCheck = (method: string, test: request.Test): request.Test => {
   const correlationId = randomUUID();
   return test.set('x-correlation-id', correlationId).expect((response) => {
+    recordObservedResponse({
+      method,
+      url: test.url,
+      sentCorrelationId: correlationId,
+      response,
+    });
+
     const echoed = response.headers['x-correlation-id'];
-    if (echoed !== correlationId) {
+
+    if (echoed === correlationId) {
+      return;
+    }
+
+    if (echoed === undefined) {
       throw new Error(
-        `Response correlation-id mismatch: sent ${correlationId}, received ${echoed}. ` +
-          'This response does not belong to this request -- see Issue #192.',
+        'No x-correlation-id on the response, so it never reached the middleware at app.ts:1731. ' +
+          'This is a short-circuit ABOVE that line, not transport mis-attribution. Distinguish by ' +
+          'the body below: rate limiter (429, JSON body), express.json rejecting a malformed body ' +
+          "(400, JSON body), or Node's HTTP parser rejecting the request bytes (400, EMPTY body, " +
+          `zero headers). ${describeResponse(response)}. See Issue #192.`,
       );
     }
+
+    throw new Error(
+      `Response correlation-id mismatch: sent ${correlationId}, ` +
+        `received ${String(echoed)}. The response carries a different ` +
+        "request's id, so it does not belong to this request. If the body " +
+        'below is a validation message, it names the request this response ' +
+        `DID belong to. ${describeResponse(response)}. See Issue #192.`,
+    );
   });
 };
 
@@ -73,10 +110,11 @@ export const authedApp = (app: Express, overrides?: Parameters<typeof mintTestAu
   const header = authHeader({ role: 'superuser', ...overrides });
 
   return {
-    get: (url: string) => withCorrelationIdCheck(request(app).get(url).set(header)),
-    post: (url: string) => withCorrelationIdCheck(request(app).post(url).set(header)),
-    put: (url: string) => withCorrelationIdCheck(request(app).put(url).set(header)),
-    delete: (url: string) => withCorrelationIdCheck(request(app).delete(url).set(header)),
-    patch: (url: string) => withCorrelationIdCheck(request(app).patch(url).set(header)),
+    get: (url: string) => withCorrelationIdCheck('GET', request(app).get(url).set(header)),
+    post: (url: string) => withCorrelationIdCheck('POST', request(app).post(url).set(header)),
+    put: (url: string) => withCorrelationIdCheck('PUT', request(app).put(url).set(header)),
+    delete: (url: string) =>
+      withCorrelationIdCheck('DELETE', request(app).delete(url).set(header)),
+    patch: (url: string) => withCorrelationIdCheck('PATCH', request(app).patch(url).set(header)),
   };
 };
