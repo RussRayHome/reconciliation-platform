@@ -39,6 +39,14 @@ RUN npm prune --omit=dev
 
 FROM node:26.5.1-alpine AS runtime-base
 WORKDIR /app
+
+# The node:26.5.1-alpine tag pins a base-image layer that can lag Alpine's own package repo --
+# docker-validate's Trivy scan started failing on CVE-2026-14456 (libssl3/libcrypto3, fixed
+# upstream at 3.5.8-r0) while this tag still shipped 3.5.7-r0. `apk upgrade` re-resolves every
+# installed package against the current Alpine index at build time, independent of whatever was
+# frozen into the pulled layer, so this doesn't wait on Docker Hub to republish the tag.
+RUN apk upgrade --no-cache
+
 COPY --from=manifests / /app/
 
 # The base image ships npm, and npm vendors its own dependency tree under
