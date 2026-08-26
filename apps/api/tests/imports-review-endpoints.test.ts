@@ -211,6 +211,12 @@ const createFakeReviewPool = (options: { knownRunId?: string } = {}) => {
       return Promise.resolve({ rows: page, rowCount: page.length });
     }
 
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
     throw new Error(`createFakeReviewPool: unexpected query: ${text}`);
   };
 
