@@ -1270,7 +1270,13 @@ const createApiRateLimiter = (logger: pino.Logger): ApiRateLimiter => {
       },
       store: redisStore,
       passOnStoreError: true,
-      skip: (request) => request.path === '/api/health' || request.path === '/api/metrics',
+      skip: (request) =>
+        request.path === '/api/health' ||
+        // error-handling-build-plan.md EH8: an orchestrator readiness probe polls on its own
+        // fixed interval, same as /api/health -- rate-limiting it risks the probe itself tripping
+        // a false "unhealthy" verdict under normal polling frequency.
+        request.path === '/api/health/ready' ||
+        request.path === '/api/metrics',
       message: { message: 'Too many requests. Please try again later.' },
     }),
   };
@@ -1346,6 +1352,17 @@ export const buildOpenApiSpec = () => ({
           200: {
             description: 'API is healthy',
           },
+        },
+      },
+    },
+    '/api/health/ready': {
+      get: {
+        summary: 'Readiness check (error-handling-build-plan.md EH8)',
+        description:
+          'Reports whether required dependencies (currently: the database, when configured) are reachable. Point orchestrator/ALB readiness checks here instead of /api/health, which never touches the database.',
+        responses: {
+          200: { description: 'Ready -- either the database is reachable, or none is configured' },
+          503: { description: 'Not ready -- a configured database is unreachable' },
         },
       },
     },
@@ -1850,6 +1867,29 @@ export const createApp = (
 
   app.get('/api/health', (_request, response) => {
     response.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // error-handling-build-plan.md EH8, closing EH-J: /api/health above never touches the
+  // database and returns ok unconditionally -- correct for a process-liveness probe (is the
+  // event loop alive at all), but that's also all today's ALB health check target gets, so the
+  // API stays "healthy" with its database gone. This is the readiness probe that check should
+  // target instead: a configured-but-unreachable database (mode (b), same probe EH7 wired into
+  // requireDatabase) fails it. No pool configured at all is mode (a), a supported operating mode
+  // in this codebase (local dev has none by design) -- not itself a down dependency, so it
+  // doesn't fail readiness.
+  app.get('/api/health/ready', async (_request, response) => {
+    if (!pool) {
+      response.json({ status: 'ok', checks: { database: 'not_configured' } });
+      return;
+    }
+
+    const reachable = await checkDatabaseReachable(pool);
+    if (!reachable) {
+      response.status(503).json({ status: 'error', checks: { database: 'unreachable' } });
+      return;
+    }
+
+    response.json({ status: 'ok', checks: { database: 'ok' } });
   });
 
   app.get('/api/openapi.json', (_request, response) => {
