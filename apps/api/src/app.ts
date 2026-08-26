@@ -3078,68 +3078,130 @@ export const createApp = (
   // processId: runId, queueType: 'import-validation'. reconciliationQueueEvents exists for the
   // separate standalone /api/reconciliation/run flow (keyed by requestId, not runId), which this
   // endpoint doesn't serve.
-  app.get('/api/imports/runs/:id/events', async (request, response) => {
+  app.get('/api/imports/runs/:id/events', async (request, response, next) => {
     if (!requirePool(response)) return;
     const organizationId = request.auth!.organizationId;
     const runId = request.params.id;
+    const reference = resolveCorrelationId(request.id);
 
-    const importRunStore = new PostgresImportRunStore(pool!);
-    const summary = await importRunStore.getRunSummary(organizationId, runId).catch(() => null);
-    if (!summary) {
-      response.status(404).json({ message: 'Import run not found.' });
-      return;
-    }
-
-    response.writeHead(200, {
-      'Content-Type': 'application/x-ndjson',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-    // Node buffers response headers until the first write()/end() call -- without this, a client
-    // that connects before any checkpoint exists yet (the common case: opening the stream right
-    // after submit, before the first "Validating..." message) would never even see the response
-    // begin, since nothing would ever flush the socket until some future write() call.
-    response.flushHeaders();
-
-    const writeMessage = (message: QueueProgressMessage): void => {
-      response.write(`${JSON.stringify(message)}\n`);
+    // error-handling-build-plan.md EH5: classifies, logs, and reports a failure this route can't
+    // hand to the global error handler (either because headers are already sent, or because it's
+    // a caught-and-degraded failure like the catch-up read below) -- returns the code so the
+    // caller can decide what, if anything, to put on the wire.
+    const logStreamError = (action: string, error: unknown): string => {
+      const { code } = classifyError(error);
+      request.log.error({
+        action,
+        errorCode: code,
+        reference,
+        err: {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      });
+      captureApiException(error, {
+        tags: { scope: 'imports-events', errorCode: code },
+        extra: { organizationId, runId, reference },
+      });
+      return code;
     };
 
-    // Catch-up on connect: a client that opens this stream after an earlier checkpoint was
-    // already published (reload mid-run, dropped connection, second tab) would otherwise see
-    // nothing until the *next* live message -- QueueEvents' 'progress' event has no replay.
-    // Reads recordAuditEvent's own prior writes back as one synthetic first line. Stage-2-only
-    // (matchingJobId must exist) -- see getLatestAuditEvent's doc comment for why Stage 1 has no
-    // equivalent catch-up yet; the durable-state fetch (GET /api/imports/runs/latest) already
-    // covers the coarser "is it running at all" answer regardless.
-    if (summary.matchingJobId && lifecycleStore) {
-      const latest = await lifecycleStore
-        .getLatestAuditEvent(organizationId, summary.matchingJobId)
-        .catch(() => null);
+    try {
+      const importRunStore = new PostgresImportRunStore(pool!);
+      // EH5 closes EH-E/F1: previously `.catch(() => null)` here meant a real database failure
+      // and a genuinely absent run both collapsed into the same 404 "Import run not found." --
+      // two different facts sharing one return value. Letting this propagate to the outer catch
+      // means only a true null result (the run doesn't exist) reaches the 404 below; a database
+      // failure is now classified into its own RCN-DB-00x code instead.
+      const summary = await importRunStore.getRunSummary(organizationId, runId);
+      if (!summary) {
+        // EH5: a genuinely absent run gets its own code + reference too, same as every other
+        // classified error, rather than a bare `{message}` with nothing to distinguish it from
+        // the old collapsed 404.
+        throw new AppError('RCN-SUB-001', { operation: 'IMPORT_RUN_EVENTS' });
+      }
 
-      if (latest) {
-        writeMessage({
+      response.writeHead(200, {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      // Node buffers response headers until the first write()/end() call -- without this, a client
+      // that connects before any checkpoint exists yet (the common case: opening the stream right
+      // after submit, before the first "Validating..." message) would never even see the response
+      // begin, since nothing would ever flush the socket until some future write() call.
+      response.flushHeaders();
+
+      const writeMessage = (message: QueueProgressMessage): void => {
+        response.write(`${JSON.stringify(message)}\n`);
+      };
+
+      // Catch-up on connect: a client that opens this stream after an earlier checkpoint was
+      // already published (reload mid-run, dropped connection, second tab) would otherwise see
+      // nothing until the *next* live message -- QueueEvents' 'progress' event has no replay.
+      // Reads recordAuditEvent's own prior writes back as one synthetic first line. Stage-2-only
+      // (matchingJobId must exist) -- see getLatestAuditEvent's doc comment for why Stage 1 has no
+      // equivalent catch-up yet; the durable-state fetch (GET /api/imports/runs/latest) already
+      // covers the coarser "is it running at all" answer regardless.
+      if (summary.matchingJobId && lifecycleStore) {
+        try {
+          const latest = await lifecycleStore.getLatestAuditEvent(
+            organizationId,
+            summary.matchingJobId,
+          );
+
+          if (latest) {
+            writeMessage({
+              organizationId,
+              processId: runId,
+              queueType: 'import-validation',
+              statusMessage: latest.eventType,
+              details: latest.details,
+            });
+          }
+        } catch (error) {
+          // EH5: skipping catch-up is still a legitimate degrade -- the durable-state fetch
+          // (GET /api/imports/runs/latest) covers the coarser "is it running at all" answer
+          // regardless -- but it must be observable, not silently discarded like the old
+          // `.catch(() => null)`. The live subscription below still starts normally.
+          logStreamError('imports.events.catch_up_failed', error);
+        }
+      }
+
+      const matchesThisConnection = (message: QueueProgressMessage): boolean =>
+        message.organizationId === organizationId && message.processId === runId;
+
+      const unsubscribe = importValidationQueueEvents.onProgress((message) => {
+        if (matchesThisConnection(message)) {
+          writeMessage(message);
+        }
+      });
+
+      request.on('close', () => {
+        unsubscribe();
+      });
+    } catch (error) {
+      if (!response.headersSent) {
+        next(error);
+        return;
+      }
+
+      // The status line and headers are already sent as a 200 NDJSON stream at this point, so
+      // the global error handler can no longer set a status code -- classify inline and write one
+      // more line before ending the stream. The client already reads every line as a
+      // `RunStatusMessage` (apps/web/src/lib/runStatusStream.ts), so this needs no new wire shape.
+      const code = logStreamError('imports.events.stream_failed', error);
+      response.write(
+        `${JSON.stringify({
           organizationId,
           processId: runId,
           queueType: 'import-validation',
-          statusMessage: latest.eventType,
-          details: latest.details,
-        });
-      }
+          statusMessage: 'stream-error',
+          details: { code, reference },
+        })}\n`,
+      );
+      response.end();
     }
-
-    const matchesThisConnection = (message: QueueProgressMessage): boolean =>
-      message.organizationId === organizationId && message.processId === runId;
-
-    const unsubscribe = importValidationQueueEvents.onProgress((message) => {
-      if (matchesThisConnection(message)) {
-        writeMessage(message);
-      }
-    });
-
-    request.on('close', () => {
-      unsubscribe();
-    });
   });
 
   // Phase 8 review drilldown: validation_issue/canonical_record rows for a run, paginated and
