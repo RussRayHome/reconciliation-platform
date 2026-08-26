@@ -6,6 +6,7 @@ export type PostgresPersistenceConfig = {
   max?: number;
   idleTimeoutMillis?: number;
   statementTimeoutMillis?: number;
+  connectionTimeoutMillis?: number;
 };
 
 /**
@@ -19,7 +20,8 @@ export const isPostgresPersistenceEnabled = (): boolean =>
 /**
  * Reads PostgreSQL connection settings from environment variables and returns a config object,
  * or null if `DATABASE_URL` is not set (i.e. Postgres persistence is not configured).
- * Reads: `DATABASE_URL`, `PG_POOL_MAX`, `PG_IDLE_TIMEOUT_MS`, `PG_STATEMENT_TIMEOUT_MS`.
+ * Reads: `DATABASE_URL`, `PG_POOL_MAX`, `PG_IDLE_TIMEOUT_MS`, `PG_STATEMENT_TIMEOUT_MS`,
+ * `PG_CONNECTION_TIMEOUT_MS`.
  */
 export const loadPostgresPersistenceConfigFromEnv = (): PostgresPersistenceConfig | null => {
   const connectionString = process.env.DATABASE_URL;
@@ -33,19 +35,45 @@ export const loadPostgresPersistenceConfigFromEnv = (): PostgresPersistenceConfi
     max: Number(process.env.PG_POOL_MAX ?? '10'),
     idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS ?? '30000'),
     statementTimeoutMillis: Number(process.env.PG_STATEMENT_TIMEOUT_MS ?? '60000'),
+    // error-handling-build-plan.md EH6: `statement_timeout` already bounds a query once it's
+    // running; pg's own default here is 0 (wait forever) for the connection-acquisition step
+    // itself -- the exact gap that makes mode (b) (configured but unreachable) hang instead of
+    // failing fast.
+    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS ?? '5000'),
   };
 };
 
-/** Creates a `pg.Pool` from the given config. Call once at process start and share the instance. */
-export const createPostgresPool = (config: PostgresPersistenceConfig): Pool => {
+/**
+ * Creates a `pg.Pool` from the given config. Call once at process start and share the instance.
+ *
+ * @param onPoolError error-handling-build-plan.md EH6: `pg.Pool` emits `'error'` when an *idle*
+ * pooled client fails (the connection dies while nothing is using it) -- every other long-lived
+ * handle in this codebase (Redis, both BullMQ workers, both queue-events handles, the HTTP
+ * server) already has an `'error'` listener; `pg.Pool` didn't, so this one failure mode took the
+ * whole process down (Node terminates on an unhandled `EventEmitter` `'error'`). Takes a callback
+ * rather than importing a logger directly -- this package has no logging dependency of its own,
+ * and each real caller (server.ts, worker.ts) already has its own pino logger in scope. EH7 will
+ * add a second listener here to invalidate its liveness cache on the same event.
+ */
+export const createPostgresPool = (
+  config: PostgresPersistenceConfig,
+  onPoolError?: (error: Error) => void,
+): Pool => {
   const poolConfig: PoolConfig = {
     connectionString: config.connectionString,
     max: config.max,
     idleTimeoutMillis: config.idleTimeoutMillis,
     statement_timeout: config.statementTimeoutMillis,
+    connectionTimeoutMillis: config.connectionTimeoutMillis,
   };
 
-  return new Pool(poolConfig);
+  const pool = new Pool(poolConfig);
+
+  if (onPoolError) {
+    pool.on('error', onPoolError);
+  }
+
+  return pool;
 };
 
 /**
@@ -80,7 +108,12 @@ const runInScope = async <T>(
     await client.query('COMMIT');
     return result;
   } catch (error) {
-    await client.query('ROLLBACK');
+    // error-handling-build-plan.md EH6: when the connection is already dead, ROLLBACK itself
+    // throws -- unswallowed, that replaces `error` (the actual root cause) with a secondary
+    // "ROLLBACK failed" error at exactly the moment the real one matters most. app.ts:2230
+    // already gets this right for its own one-off transaction; this shared helper, which every
+    // RLS-scoped read and write funnels through, didn't.
+    await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     client.release();
