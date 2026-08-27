@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-27T15:25:48.625Z",
+  "generatedAt": "2026-08-27T18:22:31.547Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 525,
+  "packageCount": 523,
   "packages": [
     {
       "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.4",
@@ -1256,10 +1256,6 @@
       "license": "MIT"
     },
     {
-      "package": "ignore@7.0.6",
-      "license": "MIT"
-    },
-    {
       "package": "immediate@3.0.6",
       "license": "MIT"
     },
@@ -1493,10 +1489,6 @@
     },
     {
       "package": "minimatch@10.2.5",
-      "license": "BlueOak-1.0.0"
-    },
-    {
-      "package": "minimatch@10.2.6",
       "license": "BlueOak-1.0.0"
     },
     {
