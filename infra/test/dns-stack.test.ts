@@ -6,6 +6,18 @@ import { DnsStack } from '../lib/dns-stack.js';
 import { DOMAIN_NAME } from '../lib/config.js';
 
 describe('DnsStack', () => {
+  // Drift review finding #06 (CDK snapshots) -- see PersistentStack's own snapshot test for why
+  // this is a separate mechanism from the targeted assertions below, not a replacement for them.
+  it('matches the synthesized CloudFormation template snapshot', () => {
+    const app = new cdk.App();
+    const stack = new DnsStack(app, 'TestDnsStack', {
+      env: { account: '111111111111', region: 'us-east-1' },
+    });
+    const template = Template.fromStack(stack);
+
+    expect(template.toJSON()).toMatchSnapshot();
+  });
+
   it('creates the hosted zone with no record when no active region is given (first deploy)', () => {
     const app = new cdk.App();
     const stack = new DnsStack(app, 'TestDnsStack', {

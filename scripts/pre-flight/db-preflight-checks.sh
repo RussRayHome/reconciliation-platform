@@ -32,6 +32,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/pre-flight/lib/env-fallback-guard.sh"
 ENV_FILE_INPUT="${DOCKER_ENV_FILE:-${DOCKER_COMPOSE_ENV_FILE:-$ROOT_DIR/.env.docker.dev}}"
 if [[ "$ENV_FILE_INPUT" = /* ]]; then
   ENV_FILE="$ENV_FILE_INPUT"
@@ -79,6 +81,7 @@ if [[ -f "$ENV_FILE" ]]; then
   compose_args+=(--env-file "$ENV_FILE")
   SOURCE_FILE="$ENV_FILE"
 elif [[ -f "$FALLBACK_FILE" ]]; then
+  guard_env_fallback "$FALLBACK_FILE"
   compose_args+=(--env-file "$FALLBACK_FILE")
   SOURCE_FILE="$FALLBACK_FILE"
 else

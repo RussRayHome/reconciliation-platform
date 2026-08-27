@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/pre-flight/lib/env-fallback-guard.sh"
 ENV_FILE_INPUT="${DOCKER_ENV_FILE:-${DOCKER_COMPOSE_ENV_FILE:-$ROOT_DIR/.env.docker.dev}}"
 if [[ "$ENV_FILE_INPUT" = /* ]]; then
   ENV_FILE="$ENV_FILE_INPUT"
@@ -75,6 +77,10 @@ fi
 if [[ ! -f "$SOURCE_FILE" ]]; then
   echo "Missing Docker environment file. Expected $ENV_FILE or $FALLBACK_FILE." >&2
   exit 1
+fi
+
+if [[ "$SOURCE_FILE" == "$FALLBACK_FILE" ]]; then
+  guard_env_fallback "$FALLBACK_FILE"
 fi
 
 set -a

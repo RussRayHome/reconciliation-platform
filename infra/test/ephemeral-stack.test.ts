@@ -9,6 +9,22 @@ import { PersistentStack } from '../lib/persistent-stack.js';
 const ACCOUNT = '111111111111';
 
 describe('EphemeralStack', () => {
+  // Drift review finding #06 (CDK snapshots) -- see PersistentStack's own snapshot test for why
+  // this is a separate mechanism from the targeted assertions below, not a replacement for them.
+  it('matches the synthesized CloudFormation template snapshot', () => {
+    const app = new cdk.App();
+    const persistent = new PersistentStack(app, 'TestPersistentStack', {
+      env: { account: ACCOUNT, region: 'us-east-2' },
+    });
+    const ephemeral = new EphemeralStack(app, 'TestEphemeralStack', {
+      env: { account: ACCOUNT, region: 'us-east-2' },
+      persistent,
+    });
+    const template = Template.fromStack(ephemeral);
+
+    expect(template.toJSON()).toMatchSnapshot();
+  });
+
   it('connects the API container as app_user, not the recon_app master secret', () => {
     const app = new cdk.App();
     const persistent = new PersistentStack(app, 'TestPersistentStack', {
