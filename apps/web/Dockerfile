@@ -51,7 +51,12 @@ COPY --from=dev-cert /dev-key.pem /etc/nginx/certs/dev-key.pem
 # immediately after -- this stage must not end as root, or it defeats the whole reason this base
 # image exists.
 USER root
-RUN chown root:nginx /etc/nginx/certs/dev-cert.pem /etc/nginx/certs/dev-key.pem && \
+# Issue #205: nginxinc/nginx-unprivileged:mainline-alpine resolves to the same Alpine 3.24.1 base
+# as apps/api/Dockerfile, carrying the same CVE-2026-14456 (libssl3/libcrypto3, fixed upstream at
+# 3.5.8-r0) -- apk upgrade re-resolves installed packages against Alpine's current index at build
+# time rather than waiting on Docker Hub to republish this tag.
+RUN apk upgrade --no-cache && \
+    chown root:nginx /etc/nginx/certs/dev-cert.pem /etc/nginx/certs/dev-key.pem && \
     chmod 640 /etc/nginx/certs/dev-cert.pem /etc/nginx/certs/dev-key.pem
 USER nginx
 

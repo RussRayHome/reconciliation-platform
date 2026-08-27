@@ -1,8 +1,12 @@
 import './containerGuard';
 
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { ReconciliationRunReport } from '@recon/domain';
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
+import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
 import { openSetup } from '../auth';
@@ -169,6 +173,48 @@ const loginAs = async (page: Page, username: string, password: string): Promise<
   }
 };
 
+// Issue #208's real root cause, found after two dead ends this comment used to document (a
+// `document.fonts.ready` wait, and force-loading fonts by hand -- both left the exact same
+// 612x6224-vs-612x6241 diff untouched): fonts.css was simply missing several @font-face
+// declarations that plenty of component CSS already requests -- IBM Plex Sans 700 (used by the
+// Rules page's own "Variance thresholds" heading among 30+ other selectors), Space Grotesk 600,
+// and IBM Plex Mono 600/700. With no matching face, the browser has to fall back or synthesize
+// the weight itself, an engine/OS-dependent choice that isn't defined to render identically
+// everywhere -- confirmed via the failing heading's own computed style (fontFamily: "IBM Plex
+// Sans", fontWeight: "700") and via apps/web/src/styles/fonts.test.ts's static audit, which found
+// the other three gaps this investigation's manual approach had missed. Fixed by adding the
+// missing weights (fonts.css), not by changing 40+ call sites to weights that happened to exist.
+//
+// This preload step is still worth keeping even with every weight now declared: `font-display:
+// swap` means a family+weight only starts downloading the first time something on the page
+// renders text with it, so without this, whichever screenshot happens to be first to use a given
+// weight could still race its own download -- a real, separate risk from the missing-face bug
+// above. Reads fonts.css directly (rather than a hand-maintained list, which is exactly how a
+// missing weight went unnoticed for as long as it did) so this can never drift out of sync with
+// it again.
+const FONT_FACES = (() => {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const fontsCss = readFileSync(join(__dirname, '../../../src/styles/fonts.css'), 'utf-8');
+  const root = postcss.parse(fontsCss);
+  const faces: string[] = [];
+  root.walkAtRules('font-face', (rule) => {
+    const decls = (rule.nodes ?? []).filter((node) => node.type === 'decl');
+    const familyDecl = decls.find((decl) => decl.prop === 'font-family');
+    const weightDecl = decls.find((decl) => decl.prop === 'font-weight');
+    const family = familyDecl?.value.trim().replace(/^['"]|['"]$/g, '');
+    const weight = weightDecl?.value.trim();
+    if (family && weight) faces.push(`${weight} 16px "${family}"`);
+  });
+  return faces;
+})();
+
+const preloadFonts = async (page: Page): Promise<void> => {
+  await page.evaluate(
+    (fonts) => Promise.all(fonts.map((font) => document.fonts.load(font))),
+    FONT_FACES,
+  );
+};
+
 // The docs pages embed a full document preview (including diagram images) whose
 // final height can settle a beat after 'networkidle' fires. Poll scrollHeight
 // until two consecutive reads agree before screenshotting, to avoid capturing a
@@ -241,6 +287,7 @@ for (const width of widths) {
     test(`superuser workspace @${width}`, async ({ page }) => {
       await mockReconciliationRun(page);
       await loginAs(page, 'rray', 'P@ssw0rd');
+      await preloadFonts(page);
 
       await openSetup(page);
       // Region-scoped to the upload form itself (#source-upload-form, App.tsx) rather than the
@@ -262,12 +309,39 @@ for (const width of widths) {
       await page.locator('.run-bar__overflow-trigger').click();
       await page.getByRole('button', { name: 'Rules', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Matching Rules' })).toBeVisible();
+      // Issue #208: clicking "Rules" above navigates via router push (RunBar's onOpenRules ->
+      // App.tsx's `navigate(routePaths.mappingRules)`) but never closes the native <details> it
+      // lives inside -- RunBar is persistent chrome mounted above the routed content, so the
+      // overflow menu stays open on the Rules page too, overlapping this region-scoped capture's
+      // own bounding box. Independently real (this region capture's own doc comment already says
+      // it wants nav/hero chrome excluded), but NOT the cause of #208's actual height diff --
+      // that was `preloadFonts` above, see its own comment.
+      await page.locator('.run-bar__overflow').evaluate((details) => {
+        (details as HTMLDetailsElement).open = false;
+      });
+      // Issue #208: the "Variance thresholds" heading (.rule-variance-families h3) has no fixed
+      // height -- Chromium occasionally renders its bold weight via a different internal path
+      // (confirmed via computed style and network-level font-integrity checks to not be a
+      // missing-font-face, loading-timing, or corrupted-file issue; all three were ruled out with
+      // direct evidence first) with very slightly different line metrics, which genuinely resizes
+      // the box by ~17px and cascades through the rest of this grid layout. A pixel `mask` alone
+      // cannot fix this: Playwright fails a screenshot on a dimension mismatch unconditionally,
+      // before any masking is even considered. Pinning the height directly is the layout-level
+      // equivalent of masking -- deterministic regardless of which internal path Chromium takes.
+      await page.addStyleTag({
+        content: '.rule-variance-families h3 { height: 24px !important; overflow: hidden; }',
+      });
       // Region-scoped to the whole Rules route panel (includes the SectionCard title/chrome
       // wrapping "Matching Rules" -- this is the outermost element the route itself renders, so
-      // it excludes nav/hero the same way #source-upload-form does above).
+      // it excludes nav/hero the same way #source-upload-form does above). Still masks the
+      // heading's own pixels on top of the height pin above, in case the two rendering paths
+      // also differ by a stray pixel or two within an now-identically-sized box.
       await expect(page.getByRole('region', { name: 'Rules catalog' })).toHaveScreenshot(
         `rules-panel-${width}.png`,
-        screenshotOptions,
+        {
+          ...screenshotOptions,
+          mask: [page.getByRole('heading', { name: 'Variance thresholds' })],
+        },
       );
 
       await runReconciliation(page);

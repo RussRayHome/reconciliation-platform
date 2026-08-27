@@ -164,6 +164,94 @@ const createFakeEventsPool = (runs: RunRow[], auditEvents: AuditEventRow[] = [])
   } as unknown as Pool;
 };
 
+/** error-handling-build-plan.md EH5: a pool whose `getRunSummary` query rejects outright, the way
+ * a real driver does when the database is unreachable (ECONNREFUSED) rather than genuinely
+ * returning zero rows -- these are different facts (EH-E) and must not both surface as 404. */
+const createUnreachableEventsPool = (): Pool => {
+  const error = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), {
+    code: 'ECONNREFUSED',
+  });
+  return {
+    query: () => Promise.reject(error),
+    connect: () =>
+      Promise.resolve({
+        query: (text: string) => {
+          if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+            return Promise.resolve({ rows: [], rowCount: 0 });
+          }
+          return Promise.reject(error);
+        },
+        release: () => undefined,
+      }),
+  } as unknown as Pool;
+};
+
+/** A pool that resolves `getRunSummary` normally but rejects the catch-up audit-event read -- EH5
+ * step 3: this one degrades gracefully (skip catch-up, still connect) rather than failing the
+ * whole request, unlike `getRunSummary`'s own failure above. */
+const createEventsPoolWithFailingCatchUp = (run: RunRow): Pool => {
+  const auditEventError = new Error('connection terminated unexpectedly');
+
+  return {
+    // EH7's liveness probe calls pool.query('SELECT 1') directly, before this route's own logic
+    // ever runs -- this fake's otherwise-unconditional reject made a database that's genuinely
+    // up (just one secondary read failing, this fixture's whole point) look unreachable instead.
+    query: (text: string) =>
+      text === 'SELECT 1'
+        ? Promise.resolve({ rows: [] })
+        : Promise.reject(new Error('createEventsPoolWithFailingCatchUp: unexpected query')),
+    connect: () => {
+      let sessionOrganizationId: string | undefined;
+      const clientQuery = (text: string, params: unknown[] = []) => {
+        if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+          return Promise.resolve({ rows: [], rowCount: 0 });
+        }
+        if (text.includes('set_config(')) {
+          sessionOrganizationId = params[0] as string;
+          return Promise.resolve({ rows: [{ set_config: sessionOrganizationId }], rowCount: 1 });
+        }
+        if (text.includes('FROM reconciliation_audit_event')) {
+          return Promise.reject(auditEventError);
+        }
+        if (text.includes('FROM import_job')) {
+          return Promise.resolve({ rows: [], rowCount: 0 });
+        }
+        if (text.includes('FROM run_source_file rsf') && text.includes('JOIN import_file')) {
+          return Promise.resolve({ rows: [], rowCount: 0 });
+        }
+        if (text.includes('LEFT JOIN reconciliation_job')) {
+          const [id] = params as [string];
+          return sessionOrganizationId === run.organization_id && id === run.id
+            ? Promise.resolve({
+                rows: [
+                  {
+                    id: run.id,
+                    organization_id: run.organization_id,
+                    label: 'Test Run',
+                    account_identifier: null,
+                    frequency: 'MONTHLY',
+                    period_year: 2026,
+                    period_month: 8,
+                    status: 'RECONCILING',
+                    created_at: '2026-08-01T00:00:00.000Z',
+                    matching_job_id: run.matching_job_id,
+                    job_current_state: run.matching_job_id ? 'MATCHING' : null,
+                    job_failure_code: null,
+                    job_failure_message: null,
+                    job_completed_at: null,
+                  },
+                ],
+                rowCount: 1,
+              })
+            : Promise.resolve({ rows: [], rowCount: 0 });
+        }
+        throw new Error(`createEventsPoolWithFailingCatchUp: unexpected query: ${text}`);
+      };
+      return Promise.resolve({ query: clientQuery, release: () => undefined });
+    },
+  } as unknown as Pool;
+};
+
 let server: ReturnType<ReturnType<typeof createApp>['listen']> | undefined;
 let baseUrl: string;
 
@@ -237,7 +325,7 @@ afterEach(async () => {
 });
 
 describe('GET /api/imports/runs/:id/events (Issue #154 live status push)', () => {
-  it('returns 404 for a run that does not belong to the caller organization', async () => {
+  it('returns 404 with RCN-SUB-001 for a run that does not belong to the caller organization (error-handling-build-plan.md EH5)', async () => {
     const pool = createFakeEventsPool([{ id: 'run-1', organization_id: 'org-a', matching_job_id: null }]);
     await startApp(pool);
 
@@ -246,6 +334,60 @@ describe('GET /api/imports/runs/:id/events (Issue #154 live status push)', () =>
     });
 
     expect(response.status).toBe(404);
+    const body = (await response.json()) as { code: string; reference: string };
+    expect(body.code).toBe('RCN-SUB-001');
+    expect(body.reference.length).toBeGreaterThan(0);
+  });
+
+  it('returns a database code, not 404, when the database is unreachable (error-handling-build-plan.md EH5, closes EH-E)', async () => {
+    const pool = createUnreachableEventsPool();
+    await startApp(pool);
+
+    const response = await fetch(`${baseUrl}/api/imports/runs/run-1/events`, {
+      headers: { ...authHeader({ organizationId: 'org-a' }) },
+    });
+
+    expect(response.status).not.toBe(404);
+    const body = (await response.json()) as { code: string; reference: string };
+    expect(body.code).toBe('RCN-DB-002');
+    expect(body.reference.length).toBeGreaterThan(0);
+  });
+
+  it('still connects and delivers live messages when the catch-up audit-event read fails (error-handling-build-plan.md EH5, step 3: graceful fallback stays, but observable now)', async () => {
+    const pool = createEventsPoolWithFailingCatchUp({
+      id: 'run-1',
+      organization_id: 'org-a',
+      matching_job_id: 'job-1',
+    });
+    await startApp(pool);
+
+    const controller = new AbortController();
+    const response = await fetch(`${baseUrl}/api/imports/runs/run-1/events`, {
+      headers: { ...authHeader({ organizationId: 'org-a' }) },
+      signal: controller.signal,
+    });
+    expect(response.status).toBe(200);
+
+    const importValidationEvents = bullmqState.queueEventsInstances.find(
+      (instance) => instance.queueName === 'import-validation-runs',
+    )!;
+    importValidationEvents.emitter.emit('progress', {
+      jobId: 'bullmq-job-4',
+      data: {
+        organizationId: 'org-a',
+        processId: 'run-1',
+        queueType: 'import-validation',
+        statusMessage: 'still live after catch-up failed',
+      },
+    });
+
+    // Reading exactly one line and getting the live message (not a catch-up line) proves both
+    // halves at once: the failed catch-up read wrote nothing to the wire, and the live
+    // subscription still started normally afterward.
+    const [line] = await readLines(response, 1);
+    expect(JSON.parse(line!)).toMatchObject({ statusMessage: 'still live after catch-up failed' });
+
+    controller.abort();
   });
 
   it('delivers a live progress message published for this run', async () => {
