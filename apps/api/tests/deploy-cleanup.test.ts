@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { execSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -93,6 +93,28 @@ const deployWithRetry = (): string => {
 };
 
 describe('Deploy and Cleanup Scripts', () => {
+  // Issue #215's real root cause: this file mints a fresh, PID-suffixed COMPOSE_PROJECT_NAME
+  // every invocation (deliberately, so a concurrent run of this same test never collides). A
+  // process kill mid-test (CI cancellation, local Ctrl+C, a wrapper tool's own timeout) never
+  // reaches this file's own cleanup step, so that run's containers/networks are orphaned forever
+  // -- the next run picks a new PID and never touches them. Confirmed on 2026-08-27: ~25
+  // accumulated leftover projects exhausted Docker's network address pool ("all predefined
+  // address pools have been fully subnetted"), which is what actually broke this test, not vitest
+  // worker concurrency. Best-effort and non-fatal: a sweep failure must never block this file's
+  // own real work.
+  beforeAll(() => {
+    if (!canRunDeployChecks) return;
+    try {
+      execSync('bash scripts/pre-flight/cleanup-stale-integration-projects.sh', {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'ignore', 'ignore'],
+        timeout: 30_000,
+      });
+    } catch {
+      // Best-effort GC only.
+    }
+  });
+
   // Declared before the deploy test: vitest runs tests within a file in declaration order, and the
   // images this builds persist in the shared local image store (keyed by COMPOSE_PROJECT_NAME) for
   // the deploy test below to reuse via DEPLOY_SKIP_BUILD.
