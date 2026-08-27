@@ -5,10 +5,11 @@
   "type": "module",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "infra"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": "^26.5.1"
   },
   "overrides": {
     "esbuild": "0.28.1",
@@ -82,7 +83,7 @@
     "docker:logs": "sh -c 'env_file=.env.docker.dev; [ -f \"$env_file\" ] || env_file=.env.docker.dev.fallback; docker compose -f compose.yaml -f compose.dev.yaml --env-file \"$env_file\" logs -f'",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test:unit && npm run test:integration && npm run test:integration:isolated",
-    "test:unit": "vitest run --project unit-core --project unit-web",
+    "test:unit": "vitest run --project unit-core --project unit-web --project infra",
     "test:integration": "LOG_LEVEL=silent vitest run --project integration --reporter=dot --exclude apps/api/tests/deploy-cleanup.test.ts --exclude apps/api/tests/nginx-config.test.ts",
     "test:integration:dashboard": "LOG_LEVEL=silent vitest run --project integration --reporter=dot --exclude apps/api/tests/deploy-cleanup.test.ts --exclude apps/api/tests/nginx-config.test.ts",
     "test:integration:isolated": "LOG_LEVEL=silent vitest run --project integration --reporter=dot --maxWorkers=1 apps/api/tests/deploy-cleanup.test.ts apps/api/tests/nginx-config.test.ts",
@@ -130,7 +131,7 @@
     "aws:prod:down": "cd infra && npm run infra:down",
     "aws:prod:push": "cd infra && npm run infra:push",
     "aws:prod:diff": "cd infra && npm run infra:diff",
-    "aws:prod:install": "cd infra && npm install",
+    "aws:prod:install": "npm ci",
     "db:users:dev": "bash scripts/pre-flight/run-users.sh dev",
     "db:users:stage": "bash scripts/pre-flight/run-users.sh stage",
     "db:password:resync:dev": "bash scripts/pre-flight/resync-postgres-password.sh dev",

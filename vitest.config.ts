@@ -97,6 +97,25 @@ export default defineConfig({
           setupFiles: ['apps/api/tests/testHelpers/integrationSetup.ts'],
         },
       },
+      {
+        test: {
+          // Drift review finding #03: infra/ was a standalone npm project outside the root
+          // workspaces array, so its 18 CDK template assertions only ran via a manual
+          // `cd infra && npm test` -- no CI job, git hook, or npm script reached them. Its own
+          // vitest.config.ts is kept (used by `npm run -w @recon/infra test` directly), but this
+          // project entry is what makes `npm run test:unit` -- and therefore CI -- exercise the
+          // same tests. Pure CDK template synthesis, no AWS credentials or network access needed.
+          //
+          // testTimeout above the 5000ms default: `Template.fromStack()` synthesizes a real CDK
+          // app, heavier than a typical unit assertion, and one test timed out at the default the
+          // moment this ran alongside unit-core/unit-web's ~84 other files instead of alone --
+          // same combined-load contention pattern as #209, just newly exposed by this wiring.
+          name: 'infra',
+          environment: 'node',
+          include: ['infra/test/**/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
     ],
   },
 });
