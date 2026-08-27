@@ -513,7 +513,7 @@ exports[`PersistentStack > matches the synthesized CloudFormation template snaps
       "DeletionPolicy": "Delete",
       "Properties": {
         "LogGroupName": "/ecs/recon",
-        "RetentionInDays": 7,
+        "RetentionInDays": 90,
       },
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Delete",

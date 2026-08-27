@@ -472,7 +472,7 @@ exports[`EphemeralStack > matches the synthesized CloudFormation template snapsh
       "DeletionPolicy": "Delete",
       "Properties": {
         "AllocatedStorage": "100",
-        "BackupRetentionPeriod": 0,
+        "BackupRetentionPeriod": 1,
         "CopyTagsToSnapshot": true,
         "DBInstanceClass": "db.t3.micro",
         "DBName": "reconciliation_platform",

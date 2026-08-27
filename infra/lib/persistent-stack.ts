@@ -223,7 +223,7 @@ export class PersistentStack extends cdk.Stack {
     // than in EphemeralStack (which creates the task definitions that write to it).
     this.logGroup = new logs.LogGroup(this, 'LogGroup', {
       logGroupName: `/ecs/${APP}`,
-      retention: logs.RetentionDays.ONE_WEEK,
+      retention: logs.RetentionDays.THREE_MONTHS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
