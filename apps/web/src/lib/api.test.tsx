@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ApiError,
   apiFetch,
   downloadWorkbookRequest,
   getReconciliationRunByIdRequest,
@@ -234,6 +235,41 @@ describe('parseResponse via request wrappers', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('not json', { status: 500 }));
 
     await expect(getReconciliationRunByIdRequest('broken-run')).rejects.toThrow('Request failed.');
+  });
+
+  it('rejects with an ApiError carrying code/reference/retryable from the envelope (error-handling-build-plan.md EH4)', async () => {
+    clearAuthToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message: 'The service could not reach its database. Please try again shortly.',
+          code: 'RCN-DB-002',
+          reference: 'ref-abc-123',
+          retryable: true,
+        }),
+        { status: 503 },
+      ),
+    );
+
+    await expect(getReconciliationRunByIdRequest('missing-run')).rejects.toMatchObject({
+      name: 'ApiError',
+      httpStatus: 503,
+      code: 'RCN-DB-002',
+      reference: 'ref-abc-123',
+      retryable: true,
+    });
+  });
+
+  it('defaults retryable to false and leaves code/reference undefined when the envelope omits them', async () => {
+    clearAuthToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'Run not found.' }), { status: 404 }),
+    );
+
+    const error = await getReconciliationRunByIdRequest('missing-run').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ httpStatus: 404, code: undefined, reference: undefined, retryable: false });
   });
 
   it('returns undefined for a 204 No Content response', async () => {

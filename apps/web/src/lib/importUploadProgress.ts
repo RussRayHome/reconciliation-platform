@@ -38,15 +38,24 @@ export type ImportUploadCardTransferProps =
 
 /** Maps one file's slice of the in-flight transfer to the `ImportUploadCard` props for it -- once
  * that file's own byte range is fully sent it shows "Stored" even while its sibling file is still
- * transferring, matching the design's mixed-state screenshot. */
+ * transferring, matching the design's mixed-state screenshot.
+ *
+ * `failed` (error-handling-build-plan.md EH4) means the server rejected the submission after the
+ * upload finished -- `createImportRunRequest`'s XHR only reaches its error path via the `load`
+ * event, which fires once every byte was sent -- so each file already shows `stored` here; the
+ * rejection itself is a single banner in `SourceUploadSection`, not repeated per file. */
 export const buildTransferCardProps = (
-  transfer: Extract<ImportUploadTransferState, { kind: 'uploading' | 'network-failed' }>,
+  transfer: Extract<ImportUploadTransferState, { kind: 'uploading' | 'network-failed' | 'failed' }>,
   file: File,
   slotLabel: string,
   precedingBytes: number,
   onCancel: () => void,
   onRetry: () => void,
 ): ImportUploadCardTransferProps => {
+  if (transfer.kind === 'failed') {
+    return { state: 'stored', name: file.name, sizeBytes: file.size, slotLabel };
+  }
+
   const loadedBytes = transfer.kind === 'uploading' ? transfer.loadedBytes : transfer.stalledBytes;
   const percent = computeFileTransferPercent(loadedBytes, precedingBytes, file.size);
 

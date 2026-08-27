@@ -1632,6 +1632,72 @@ describe('App', () => {
     });
   });
 
+  it('renders the operation-specific message, reference, and code for a typed 503 (error-handling-build-plan.md EH4)', async () => {
+    installFakeImportRunXhr({
+      status: 503,
+      body: {
+        message:
+          'Unable to create an import run. This feature requires a database connection, which is not configured in this environment.',
+        code: 'RCN-DB-001',
+        reference: '7f3a9c2e-4b11-4c00-8000-000000000000',
+        retryable: false,
+      },
+    });
+
+    setAuthenticatedUser('rray');
+
+    renderApp();
+
+    fillUploadInputs();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Unable to create an import run. This feature requires a database connection, which is not configured in this environment.',
+      );
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'If you contact support, quote reference 7f3a9c2e-4b11-4c00-8000-000000000000.',
+    );
+    expect(screen.getByText('RCN-DB-001')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('offers a retry button when the typed error is retryable, and resends the same files on click', async () => {
+    const xhr = installFakeImportRunXhr({
+      status: 503,
+      body: {
+        message: 'The service could not reach its database. Please try again shortly.',
+        code: 'RCN-DB-002',
+        reference: 'ref-retry-1',
+        retryable: true,
+      },
+    });
+
+    setAuthenticatedUser('rray');
+
+    renderApp();
+
+    fillUploadInputs();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    });
+    expect(xhr.instances.length).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(xhr.instances.length).toBe(2);
+    });
+    // Still retryable (same 503 both times) -- the banner and its retry affordance persist.
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
   it('submits the selected local files and metadata as multipart form data', async () => {
     mockImportRunSubmitFlow();
 
