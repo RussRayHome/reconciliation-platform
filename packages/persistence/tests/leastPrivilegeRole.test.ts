@@ -55,12 +55,23 @@ describe('least-privilege application role (app_user)', () => {
     const inserted = await runtimePool.query<{ id: string }>(
       "SELECT id FROM reconciliation_organization WHERE name = 'Runtime Role Co'",
     );
+    expect(inserted.rows).toHaveLength(1);
     const id = inserted.rows[0]!.id;
 
     await runtimePool.query("UPDATE reconciliation_organization SET status = 'INACTIVE' WHERE id = $1", [
       id,
     ]);
+    const afterUpdate = await runtimePool.query<{ status: string }>(
+      'SELECT status FROM reconciliation_organization WHERE id = $1',
+      [id],
+    );
+    expect(afterUpdate.rows[0]?.status).toBe('INACTIVE');
+
     await runtimePool.query('DELETE FROM reconciliation_organization WHERE id = $1', [id]);
+    const afterDelete = await runtimePool.query('SELECT id FROM reconciliation_organization WHERE id = $1', [
+      id,
+    ]);
+    expect(afterDelete.rows).toHaveLength(0);
   });
 
   it('cannot create a new table (no DDL rights)', async () => {
