@@ -54,7 +54,8 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
 
   // The nav rail swaps between Summary and Exceptions. Probable matches was dropped from the
   // rail in the v3 nav restructure (commit 5f08130) -- its route stays reachable directly (see
-  // reconciliation-edge-cases.spec.ts), but it's no longer part of this rail-driven flow.
+  // reconciliation-navigation-and-session.spec.ts), but it's no longer part of this rail-driven
+  // flow.
   await page.getByRole('link', { name: 'Exceptions' }).click();
   await expect(page.getByPlaceholder('Search file, message, or tokens')).toBeVisible();
 });

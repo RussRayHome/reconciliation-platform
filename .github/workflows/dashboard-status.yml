@@ -285,6 +285,17 @@ jobs:
           name: security
           path: .ci-out/security
           if-no-files-found: warn
+      - name: Generate SBOM
+        # ISSUE-035: CycloneDX SBOM for the npm tree and the two published runtime images,
+        # retained per run as a CI artifact -- a standard data-room request this repo previously
+        # had no answer for.
+        run: npm run security:sbom --silent
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: .ci-out/sbom
+          if-no-files-found: warn
 
   secrets:
     runs-on: ubuntu-latest
@@ -349,13 +360,28 @@ jobs:
       # old combined job, the functional project has no workers cap (playwright.config.ts) --
       # nothing here shares mutable state across workers or shards, so that's fine.
       #
-      # Shard count matches the functional project's spec FILE count (4), not an arbitrary round
-      # number -- sharding is per-file, so a 5th shard would always come up empty (spin up a
-      # runner, npm ci, install Chromium, find 0 tests assigned, exit), burning CI minutes for
-      # zero benefit. Bump this back up if a new functional spec file is added. The visual project
-      # is a separate job below (e2e-visual) -- it doesn't shard, and it doesn't run on this bare
-      # runner at all, since visual-baseline.spec.ts refuses to run outside its canonical
-      # container (containerGuard.ts, see the UI-testing breakout plan's P4).
+      # ISSUE-032: this comment used to claim shard count "matches the functional project's spec
+      # FILE count (4)" and instructed bumping it whenever a file was added -- that instruction
+      # was silently not followed as the suite grew from 3 files (when originally sharded 3-way,
+      # then trimmed) to 6 and now 8, while shard count stayed at 4. Sharding is per-file (a 5th
+      # shard would always come up empty -- spin up a runner, npm ci, install Chromium, find 0
+      # tests assigned, exit -- burning CI minutes for zero benefit), so shard count is chosen for
+      # balance against actual file sizes, not held equal to raw file count: with
+      # reconciliation-edge-cases.spec.ts split into three roughly-even files (was one 41-test
+      # file dwarfing every other spec, see ISSUE-032), 4 shards over 8 files is already
+      # reasonably balanced (worst-case shard: 12 tests) -- bumping to 8 shards would double the
+      # fixed per-shard overhead (npm ci, Chromium install, docker compose + migrate + seed) for
+      # little wall-clock benefit now that no single file dominates. Revisit the shard count, not
+      # this comment's old rule, next time file sizes drift out of balance again.
+      #
+      # ISSUE-032 also separately flags an unexplained single-worker hang that motivated the
+      # original 4-shard (then briefly 3-shard) split as a workaround -- still unreproduced and
+      # undiagnosed; if e2e-functional starts hanging again as this suite grows, that's the
+      # likely-related, not-yet-understood cause to revisit, not a new bug.
+      #
+      # The visual project is a separate job below (e2e-visual) -- it doesn't shard, and it
+      # doesn't run on this bare runner at all, since visual-baseline.spec.ts refuses to run
+      # outside its canonical container (containerGuard.ts, see the UI-testing breakout plan's P4).
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
