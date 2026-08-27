@@ -52,6 +52,7 @@ describe('FILE_VALIDATION_RULES', () => {
       else if (rule.code.startsWith('GL_')) expect(rule.sourceType).toBe('GL');
       else if (rule.code.startsWith('AP_')) expect(rule.sourceType).toBe('BILLING');
       else if (rule.code.startsWith('STRUCT_')) expect(rule.sourceType).toBeNull();
+      else throw new Error(`Unrecognized rule code prefix, add a sourceType case: ${rule.code}`);
     }
   });
 });

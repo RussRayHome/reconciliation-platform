@@ -81,12 +81,9 @@ describe('mergeBankFiles', () => {
       originalFilename: '8765_bank.csv',
     };
 
-    await expect(mergeBankFiles([fileA, fileB])).rejects.toThrow(BankFilenameAccountParseError);
-    try {
-      await mergeBankFiles([fileA, fileB]);
-    } catch (error) {
-      expect((error as BankFilenameAccountParseError).originalFilename).toBe('checking-account.csv');
-    }
+    const error = await mergeBankFiles([fileA, fileB]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BankFilenameAccountParseError);
+    expect((error as BankFilenameAccountParseError).originalFilename).toBe('checking-account.csv');
   });
 
   it('throws BankFilenameAccountParseError naming the offending file when file B is misnamed', async () => {
@@ -101,12 +98,9 @@ describe('mergeBankFiles', () => {
       originalFilename: 'savings.xlsx',
     };
 
-    await expect(mergeBankFiles([fileA, fileB])).rejects.toThrow(BankFilenameAccountParseError);
-    try {
-      await mergeBankFiles([fileA, fileB]);
-    } catch (error) {
-      expect((error as BankFilenameAccountParseError).originalFilename).toBe('savings.xlsx');
-    }
+    const error = await mergeBankFiles([fileA, fileB]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BankFilenameAccountParseError);
+    expect((error as BankFilenameAccountParseError).originalFilename).toBe('savings.xlsx');
   });
 
   it('throws BankFileStructuralError naming the file when its first row has no recognizable header', async () => {
@@ -121,14 +115,11 @@ describe('mergeBankFiles', () => {
       originalFilename: '8765_bank.csv',
     };
 
-    await expect(mergeBankFiles([fileA, fileB])).rejects.toThrow(BankFileStructuralError);
-    try {
-      await mergeBankFiles([fileA, fileB]);
-    } catch (error) {
-      const structuralError = error as BankFileStructuralError;
-      expect(structuralError.originalFilename).toBe('4321_bank.csv');
-      expect(structuralError.issues.some((issue) => issue.code === 'STRUCT_HEADER_MISSING')).toBe(true);
-    }
+    const error = await mergeBankFiles([fileA, fileB]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BankFileStructuralError);
+    const structuralError = error as BankFileStructuralError;
+    expect(structuralError.originalFilename).toBe('4321_bank.csv');
+    expect(structuralError.issues.some((issue) => issue.code === 'STRUCT_HEADER_MISSING')).toBe(true);
   });
 
   it('throws BankFileStructuralError naming the file when a required column is missing', async () => {
@@ -143,18 +134,15 @@ describe('mergeBankFiles', () => {
       originalFilename: '8765_bank.csv',
     };
 
-    await expect(mergeBankFiles([fileA, fileB])).rejects.toThrow(BankFileStructuralError);
-    try {
-      await mergeBankFiles([fileA, fileB]);
-    } catch (error) {
-      const structuralError = error as BankFileStructuralError;
-      expect(structuralError.originalFilename).toBe('8765_bank.csv');
-      expect(
-        structuralError.issues.some(
-          (issue) => issue.code === 'STRUCT_COLUMN_MISSING' && issue.field === 'Description',
-        ),
-      ).toBe(true);
-    }
+    const error = await mergeBankFiles([fileA, fileB]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BankFileStructuralError);
+    const structuralError = error as BankFileStructuralError;
+    expect(structuralError.originalFilename).toBe('8765_bank.csv');
+    expect(
+      structuralError.issues.some(
+        (issue) => issue.code === 'STRUCT_COLUMN_MISSING' && issue.field === 'Description',
+      ),
+    ).toBe(true);
   });
 
   it('leaves a blank Sequence Number blank rather than prefixing it', async () => {
@@ -272,11 +260,8 @@ describe('mergeBankFiles', () => {
       bankFile('5555', '1', '50.00'),
     ];
 
-    await expect(mergeBankFiles(files)).rejects.toThrow(BankFileCountError);
-    try {
-      await mergeBankFiles(files);
-    } catch (error) {
-      expect((error as BankFileCountError).fileCount).toBe(5);
-    }
+    const error = await mergeBankFiles(files).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BankFileCountError);
+    expect((error as BankFileCountError).fileCount).toBe(5);
   });
 });
