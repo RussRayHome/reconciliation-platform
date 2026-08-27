@@ -1,10 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
 import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
 
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+import { createSharedTestServer } from './testHelpers/testServer';
+
+// See testServer.ts's own doc comment: one real listening server for this whole file instead of
+// one ephemeral supertest listen/close per test (#192/#209).
+const { server, setActiveApp } = createSharedTestServer();
+beforeAll(() => {
+  server.listen(0);
+});
+afterAll(() => {
+  server.close();
+});
 
 const expectNoPoolError = (body: unknown, operation: keyof typeof OPERATIONS): void => {
   const definition = ERROR_DEFINITIONS['RCN-DB-001'];
@@ -107,7 +118,8 @@ const createFakeMappingPool = (): Pool => {
 describe('GET /api/mapping/canonical-fields', () => {
   it('returns the canonical field list without requiring a database connection', async () => {
     const app = createApp();
-    const response = await authedApp(app).get('/api/mapping/canonical-fields').expect(200);
+    setActiveApp(app);
+    const response = await authedApp(server).get('/api/mapping/canonical-fields').expect(200);
     const fields = response.body as Array<{ id: string; required: boolean }>;
 
     expect(fields.length).toBeGreaterThan(0);
@@ -146,21 +158,24 @@ describe('GET /api/mapping/profiles', () => {
 
   it('returns distinct saved profile names', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeProfileListPool(['Chase Operating', 'WF Payroll']));
-    const response = await authedApp(app).get('/api/mapping/profiles').expect(200);
+    setActiveApp(app);
+    const response = await authedApp(server).get('/api/mapping/profiles').expect(200);
 
     expect(response.body).toEqual(['Chase Operating', 'WF Payroll']);
   });
 
   it('returns an empty array for an organization with no saved profiles', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeProfileListPool([]));
-    const response = await authedApp(app).get('/api/mapping/profiles').expect(200);
+    setActiveApp(app);
+    const response = await authedApp(server).get('/api/mapping/profiles').expect(200);
 
     expect(response.body).toEqual([]);
   });
 
   it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    const response = await authedApp(app)
+    setActiveApp(app);
+    const response = await authedApp(server)
       .get('/api/mapping/profiles')
       .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
     expectNoPoolError(response.body, 'MAPPING_PROFILE_LIST');
@@ -170,7 +185,8 @@ describe('GET /api/mapping/profiles', () => {
 describe('POST /api/mapping/profiles', () => {
   it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    const response = await authedApp(app)
+    setActiveApp(app);
+    const response = await authedApp(server)
       .post('/api/mapping/profiles')
       .send({ name: 'Test', gl: [], bank: [] })
       .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
@@ -179,7 +195,8 @@ describe('POST /api/mapping/profiles', () => {
 
   it('rejects a request with no name', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    await authedApp(app)
+    setActiveApp(app);
+    await authedApp(server)
       .post('/api/mapping/profiles')
       .send({ name: '', gl: [], bank: [] })
       .expect(400);
@@ -187,7 +204,8 @@ describe('POST /api/mapping/profiles', () => {
 
   it('rejects a pair mapped to a field outside the BusinessField vocabulary', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    await authedApp(app)
+    setActiveApp(app);
+    await authedApp(server)
       .post('/api/mapping/profiles')
       .send({
         name: 'Test',
@@ -199,7 +217,8 @@ describe('POST /api/mapping/profiles', () => {
 
   it('rejects an unknown transform with 400 instead of silently dropping it (ISSUE-010)', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    await authedApp(app)
+    setActiveApp(app);
+    await authedApp(server)
       .post('/api/mapping/profiles')
       .send({
         name: 'Test',
@@ -211,7 +230,8 @@ describe('POST /api/mapping/profiles', () => {
 
   it('creates a profile and version for both sides on a valid request', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    const response = await authedApp(app)
+    setActiveApp(app);
+    const response = await authedApp(server)
       .post('/api/mapping/profiles')
       .send({
         name: 'Monthly Bank + GL',
@@ -236,7 +256,8 @@ describe('POST /api/mapping/profiles', () => {
 
   it('ignores a client-supplied createdBy and attributes the version to the authenticated user (ISSUE-008)', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeMappingPool());
-    const response = await authedApp(app)
+    setActiveApp(app);
+    const response = await authedApp(server)
       .post('/api/mapping/profiles')
       .send({
         name: 'Monthly Bank + GL',
@@ -310,8 +331,9 @@ describe('GET /api/mapping/profiles/:name (ISSUE-050.1)', () => {
       undefined,
       createFakeDetailPool([PROFILE_ROW_GL, PROFILE_ROW_BANK]),
     );
+    setActiveApp(app);
 
-    const response = await authedApp(app)
+    const response = await authedApp(server)
       .get('/api/mapping/profiles/Monthly%20Bank%20%2B%20GL')
       .expect(200);
 
@@ -328,12 +350,14 @@ describe('GET /api/mapping/profiles/:name (ISSUE-050.1)', () => {
 
   it('returns 404 for a name that does not exist', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeDetailPool([]));
-    await authedApp(app).get('/api/mapping/profiles/Nonexistent').expect(404);
+    setActiveApp(app);
+    await authedApp(server).get('/api/mapping/profiles/Nonexistent').expect(404);
   });
 
   it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    const response = await authedApp(app)
+    setActiveApp(app);
+    const response = await authedApp(server)
       .get('/api/mapping/profiles/Anything')
       .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
     expectNoPoolError(response.body, 'MAPPING_PROFILE_GET');
@@ -399,8 +423,9 @@ describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
         },
       ]),
     );
+    setActiveApp(app);
 
-    const response = await authedApp(app)
+    const response = await authedApp(server)
       .post('/api/mapping/profiles/Monthly%20Bank%20%2B%20GL/retire')
       .expect(200);
 
@@ -411,12 +436,14 @@ describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
 
   it('returns 404 when nothing ACTIVE matched the name', async () => {
     const app = createApp(undefined, undefined, undefined, createFakeRetirePool([]));
-    await authedApp(app).post('/api/mapping/profiles/Nonexistent/retire').expect(404);
+    setActiveApp(app);
+    await authedApp(server).post('/api/mapping/profiles/Nonexistent/retire').expect(404);
   });
 
   it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    const response = await authedApp(app)
+    setActiveApp(app);
+    const response = await authedApp(server)
       .post('/api/mapping/profiles/Anything/retire')
       .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
     expectNoPoolError(response.body, 'MAPPING_PROFILE_RETIRE');

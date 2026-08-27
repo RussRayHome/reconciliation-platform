@@ -1,10 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
 import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
 
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+import { createSharedTestServer } from './testHelpers/testServer';
+
+// See testServer.ts's own doc comment: one real listening server for this whole file instead of
+// one ephemeral supertest listen/close per test (#192/#209).
+const { server, setActiveApp } = createSharedTestServer();
+beforeAll(() => {
+  server.listen(0);
+});
+afterAll(() => {
+  server.close();
+});
 
 const expectNoPoolError = (body: unknown, operation: keyof typeof OPERATIONS): void => {
   const definition = ERROR_DEFINITIONS['RCN-DB-001'];
@@ -185,8 +196,9 @@ const appWithPool = (pool: Pool) =>
 describe('GET /api/reconciliation/runs', () => {
   it('lists runs filtered by accountId, newest period first', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get('/api/reconciliation/runs?accountId=ACCT-1');
+    const response = await authedApp(server).get('/api/reconciliation/runs?accountId=ACCT-1');
 
     expect(response.status).toBe(200);
     expect(response.body.runs.map((r: { id: string }) => r.id)).toEqual(['run-feb', 'run-jan']);
@@ -194,8 +206,9 @@ describe('GET /api/reconciliation/runs', () => {
 
   it('filters further by periodYear and periodMonth', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get(
+    const response = await authedApp(server).get(
       '/api/reconciliation/runs?accountId=ACCT-1&periodYear=2026&periodMonth=1',
     );
 
@@ -205,16 +218,18 @@ describe('GET /api/reconciliation/runs', () => {
 
   it('returns 400 for a periodMonth out of range', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get('/api/reconciliation/runs?periodMonth=13');
+    const response = await authedApp(server).get('/api/reconciliation/runs?periodMonth=13');
 
     expect(response.status).toBe(400);
   });
 
   it('returns 503 when no database pool is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
+    setActiveApp(app);
 
-    const response = await authedApp(app).get('/api/reconciliation/runs');
+    const response = await authedApp(server).get('/api/reconciliation/runs');
 
     expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
     expectNoPoolError(response.body, 'RECONCILIATION_RUNS_LIST');
@@ -224,8 +239,9 @@ describe('GET /api/reconciliation/runs', () => {
 describe('GET /api/reconciliation/runs/:id/rollforward', () => {
   it('returns the snapshot/open-item shape for a known run', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get('/api/reconciliation/runs/run-jan/rollforward');
+    const response = await authedApp(server).get('/api/reconciliation/runs/run-jan/rollforward');
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ snapshots: [], openedThisRun: [], clearedThisRun: [] });
@@ -233,8 +249,9 @@ describe('GET /api/reconciliation/runs/:id/rollforward', () => {
 
   it('returns 404 for an unknown run', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get(
+    const response = await authedApp(server).get(
       '/api/reconciliation/runs/00000000-0000-0000-0000-000000000000/rollforward',
     );
 
@@ -245,8 +262,9 @@ describe('GET /api/reconciliation/runs/:id/rollforward', () => {
 describe('GET /api/reconciliation/open-items', () => {
   it('lists open items filtered by account', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get('/api/reconciliation/open-items?accountId=ACCT-1');
+    const response = await authedApp(server).get('/api/reconciliation/open-items?accountId=ACCT-1');
 
     expect(response.status).toBe(200);
     expect(response.body.items).toHaveLength(1);
@@ -262,8 +280,9 @@ describe('GET /api/reconciliation/open-items', () => {
 
   it('filters by status', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get(
+    const response = await authedApp(server).get(
       '/api/reconciliation/open-items?accountId=ACCT-1&status=CLEARED',
     );
 
@@ -273,16 +292,18 @@ describe('GET /api/reconciliation/open-items', () => {
 
   it('returns 400 for an unknown status value', async () => {
     const app = appWithPool(createFakePool());
+    setActiveApp(app);
 
-    const response = await authedApp(app).get('/api/reconciliation/open-items?status=BOGUS');
+    const response = await authedApp(server).get('/api/reconciliation/open-items?status=BOGUS');
 
     expect(response.status).toBe(400);
   });
 
   it('returns 503 when no database pool is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
+    setActiveApp(app);
 
-    const response = await authedApp(app).get('/api/reconciliation/open-items');
+    const response = await authedApp(server).get('/api/reconciliation/open-items');
 
     expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
     expectNoPoolError(response.body, 'RECONCILIATION_OPEN_ITEMS_LIST');
