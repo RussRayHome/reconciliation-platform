@@ -58,7 +58,11 @@ export class DnsStack extends cdk.Stack {
         aliasTarget: {
           dnsName: props.activeRegionAlbDnsName,
           hostedZoneId: albHostedZoneId,
-          evaluateTargetHealth: false,
+          // Gates the apex record on the ALB's own target-group health checks (api's
+          // /api/health, web's /) -- Route53 stops resolving to this region if its ALB has no
+          // healthy targets, instead of blindly sending traffic at a torn-down or unhealthy
+          // deployment. Requires the record be an alias to the ALB's zone (it is).
+          evaluateTargetHealth: true,
         },
       });
     }
