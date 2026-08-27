@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { UserRole } from '@recon/domain';
 import request from 'supertest';
-import type { Express } from 'express';
 import { signAuthToken } from '../../src/services/authService';
 import { describeResponse, recordObservedResponse } from './lastResponse';
+
+/** Accepts a bare Express app (supertest's default ephemeral-per-call server) or a real listening
+ * `Server` from `startTestServer` (./testServer.ts) -- see that file for why the latter exists. */
+type RequestTarget = Parameters<typeof request>[0];
 
 /**
  * Mints a valid bearer token for tests, using the app's own `signAuthToken` rather than
@@ -106,7 +109,10 @@ const withCorrelationIdCheck = (method: string, test: request.Test): request.Tes
  * Every call also carries the correlation-id echo check above -- ambient, no per-test changes
  * needed, since every test in the suite already goes through one of these five verbs.
  */
-export const authedApp = (app: Express, overrides?: Parameters<typeof mintTestAuthToken>[0]) => {
+export const authedApp = (
+  app: RequestTarget,
+  overrides?: Parameters<typeof mintTestAuthToken>[0],
+) => {
   const header = authHeader({ role: 'superuser', ...overrides });
 
   return {
