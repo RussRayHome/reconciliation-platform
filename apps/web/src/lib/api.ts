@@ -5,6 +5,7 @@ import type {
   CanonicalField,
   EntityVerificationStatus,
   ErrorCategory,
+  ErrorCode,
   IdentityVerificationStatus,
   MappingProfileSavePayload,
   MappingProfileSaveResult,
@@ -100,12 +101,52 @@ export interface RunReconciliationPayload {
   varianceOverrides?: Record<string, number>;
 }
 
+/** Error-handling-build-plan.md EH4: thrown for a non-2xx API response instead of a plain `Error`,
+ * so callers can branch on `code`/`retryable` rather than parsing `message` text. `code` and
+ * `reference` are only present once the API's global error handler starts sending them (EH1/EH3)
+ * -- older/uncovered responses still parse fine, just without those fields. */
+export class ApiError extends Error {
+  /** Registry key from the response body, when the server classified the failure. */
+  readonly code?: ErrorCode;
+  /** Correlation id for this occurrence, for a support/log lookup. */
+  readonly reference?: string;
+  /** The HTTP status the server responded with. */
+  readonly httpStatus: number;
+  /** Whether retrying the same request could plausibly succeed. */
+  readonly retryable: boolean;
+
+  /**
+   * @param message Authored, user-facing text from the response body.
+   * @param httpStatus The HTTP status the server responded with.
+   * @param options Optional `code`/`reference`/`retryable` from the response envelope.
+   */
+  constructor(
+    message: string,
+    httpStatus: number,
+    options: { code?: ErrorCode; reference?: string; retryable?: boolean } = {},
+  ) {
+    super(message);
+    this.name = 'ApiError';
+    this.httpStatus = httpStatus;
+    this.code = options.code;
+    this.reference = options.reference;
+    this.retryable = options.retryable ?? false;
+  }
+}
+
 const parseResponse = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({ message: 'Request failed.' }))) as {
       message?: string;
+      code?: ErrorCode;
+      reference?: string;
+      retryable?: boolean;
     };
-    throw new Error(payload.message ?? 'Request failed.');
+    throw new ApiError(payload.message ?? 'Request failed.', response.status, {
+      code: payload.code,
+      reference: payload.reference,
+      retryable: payload.retryable,
+    });
   }
 
   // 204 No Content (identity confirm/resend) has no body -- .json() would throw on the empty
@@ -495,15 +536,26 @@ export const createImportRunRequest = ({
       }
 
       let message = `Import run creation failed with status ${xhr.status}.`;
+      let code: ErrorCode | undefined;
+      let reference: string | undefined;
+      let retryable: boolean | undefined;
       try {
-        const body = JSON.parse(xhr.responseText) as { message?: string };
+        const body = JSON.parse(xhr.responseText) as {
+          message?: string;
+          code?: ErrorCode;
+          reference?: string;
+          retryable?: boolean;
+        };
         if (body.message) {
           message = body.message;
         }
+        code = body.code;
+        reference = body.reference;
+        retryable = body.retryable;
       } catch {
         // Body wasn't JSON -- keep the status-based fallback message.
       }
-      reject(new Error(message));
+      reject(new ApiError(message, xhr.status, { code, reference, retryable }));
     });
 
     xhr.addEventListener('error', () => {

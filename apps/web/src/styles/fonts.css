@@ -43,6 +43,21 @@
     U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* Issue #208 follow-up: found by apps/web/src/styles/fonts.test.ts's static font-face-coverage
+   audit, written after this issue's actual root cause turned out to be a missing IBM Plex Sans
+   700 face -- approvals.css requests Space Grotesk at this weight (.approvals__title and two
+   sibling selectors) with no matching face here, same defect class, just not yet hit by a
+   screenshot. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/space-grotesk-600.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @font-face {
   font-family: 'IBM Plex Sans';
   font-style: normal;
@@ -76,6 +91,27 @@
     U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* Issue #208: no 700-weight face existed here at all, even though plenty of component CSS
+   (e.g. h3 headings, rules.css, hero.css, login.css, nav-rail.css) requests IBM Plex Sans at
+   font-weight: 700. With no matching @font-face, the browser has to fall back or synthesize
+   bold from another registered weight -- an ambiguous, engine/OS-dependent choice that isn't
+   defined to be consistent across environments. That's what actually produced e2e-visual's
+   "intermittent" ~17px Rules-panel height diff: confirmed via computed style (fontFamily: "IBM
+   Plex Sans", fontWeight: "700") on the failing heading, not a popover z-index issue or a
+   font-loading timing race (both tested and ruled out first). Fixed by adding the weight this
+   CSS was already asking for, rather than changing 30+ call sites to a weight that happens to
+   have a file. */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url('../assets/fonts/ibm-plex-sans-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @font-face {
   font-family: 'IBM Plex Mono';
   font-style: normal;
@@ -92,6 +128,29 @@
   font-weight: 500;
   font-display: swap;
   src: url('../assets/fonts/ibm-plex-mono-500.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Issue #208 follow-up, same defect class as the two comments above -- found by
+   fonts.test.ts's audit, not yet hit by a screenshot. import-failure.css requests weight 600
+   (8 selectors) and rules.css's .rule-version-badge requests weight 700; neither had a face. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/ibm-plex-mono-600.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/ibm-plex-mono-700.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
     U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }

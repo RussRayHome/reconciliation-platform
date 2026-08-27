@@ -199,6 +199,32 @@
     font-weight: 600;
   }
 
+  .import-screen__status-message {
+    margin: 0;
+  }
+
+  .import-screen__status-reference {
+    margin: 0.35rem 0 0;
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+  }
+
+  .import-screen__status-code {
+    margin: 0.35rem 0 0;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+  }
+
+  .import-screen__status-code summary {
+    cursor: pointer;
+  }
+
+  .error-banner .import-upload-card__retry-button {
+    margin-top: 0.6rem;
+  }
+
   .status-banner {
     grid-column: 1 / -1;
     padding: 0.85rem 1rem;

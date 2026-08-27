@@ -1941,6 +1941,34 @@ function SourceUploadSection({
               }}
               partialAccept={partialAccept}
             />
+          ) : uploadTransfer.transfer.kind === 'failed' ? (
+            // error-handling-build-plan.md EH4: the typed failure -- e.g. a 503 because no
+            // database is configured (issue #187) -- carries an authored message plus whatever
+            // code/reference/retryable the server attached, instead of just `reconciliation.error`
+            // (already reset by `useImportUploadTransfer`'s onError, see that hook's doc comment).
+            <div className="error-banner import-screen__status" role="alert">
+              <p className="import-screen__status-message">{uploadTransfer.transfer.message}</p>
+              {uploadTransfer.transfer.reference ? (
+                <p className="import-screen__status-reference">
+                  If you contact support, quote reference {uploadTransfer.transfer.reference}.
+                </p>
+              ) : null}
+              {uploadTransfer.transfer.code ? (
+                <details className="import-screen__status-code">
+                  <summary>Error details</summary>
+                  <code>{uploadTransfer.transfer.code}</code>
+                </details>
+              ) : null}
+              {uploadTransfer.transfer.retryable ? (
+                <button
+                  type="button"
+                  className="import-upload-card__retry-button"
+                  onClick={uploadTransfer.retry}
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
           ) : reconciliation.error ? (
             <p className="error-banner import-screen__status" role="alert">
               {reconciliation.error.message}

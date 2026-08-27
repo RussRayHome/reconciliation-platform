@@ -1,19 +1,24 @@
 import { useCallback, useRef, useState } from 'react';
 import type { UseMutationResult } from '@tanstack/react-query';
 
-import type { ReconciliationRunResponse } from '../lib/api';
-import type { ImportRunSubmitPayload } from './useImportRunSubmit';
+import type { ErrorCode } from '@recon/domain';
+
+import { ApiError, type ReconciliationRunResponse } from '../lib/api';
+import { ImportValidationFailedError, type ImportRunSubmitPayload } from './useImportRunSubmit';
 
 export type ImportUploadTransferPayload = Omit<ImportRunSubmitPayload, 'onProgress' | 'signal'>;
 
 /** Client-side transfer status for Screen 02's upload cards. There's no chunked/resumable upload
  * backend here (see `ImportUploadCard`'s doc comment) -- "uploading" tracks the one combined
  * request's bytes sent so far (both bank workbooks plus the GL workbook), and a network failure
- * can only be retried by resending every file from the start, not resumed. */
+ * can only be retried by resending every file from the start, not resumed. `failed` is
+ * error-handling-build-plan.md EH4's typed terminal state for anything that isn't a cancel or a
+ * network interruption -- e.g. a 503 because no database is configured (issue #187). */
 export type ImportUploadTransferState =
   | { kind: 'idle' }
   | { kind: 'uploading'; loadedBytes: number }
-  | { kind: 'network-failed'; stalledBytes: number };
+  | { kind: 'network-failed'; stalledBytes: number }
+  | { kind: 'failed'; message: string; code?: ErrorCode; reference?: string; retryable: boolean };
 
 const NETWORK_ERROR_MESSAGE = 'Network error while uploading source files.';
 
@@ -66,7 +71,25 @@ export const useImportUploadTransfer = (
               return;
             }
 
-            setTransfer({ kind: 'idle' });
+            if (error instanceof ImportValidationFailedError) {
+              // Rendered by SourceUploadSection's own ImportValidationFailedError branch, which
+              // reads `reconciliation.error` directly -- must not be cleared here.
+              setTransfer({ kind: 'idle' });
+              return;
+            }
+
+            // error-handling-build-plan.md EH4: any other error (e.g. a 503 because no database
+            // is configured, issue #187) used to reset back to `idle`, discarding the signal and
+            // returning the UI to a state that looks like nothing happened. Land it in `failed`
+            // instead, carrying whatever typed detail `ApiError` parsed off the response.
+            setTransfer({
+              kind: 'failed',
+              message: error.message,
+              code: error instanceof ApiError ? error.code : undefined,
+              reference: error instanceof ApiError ? error.reference : undefined,
+              retryable: error instanceof ApiError ? error.retryable : false,
+            });
+            reconciliation.reset();
           },
         },
       );

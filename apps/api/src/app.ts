@@ -13,8 +13,10 @@ import type {
   SeverityLevel,
   UserRole,
 } from '@recon/domain';
-import { rolePermissionsByRole } from '@recon/domain';
+import { AppError, ERROR_DEFINITIONS, OPERATIONS, rolePermissionsByRole } from '@recon/domain';
+import type { OperationCode } from '@recon/domain';
 import {
+  checkDatabaseReachable,
   claimApprovalRequest,
   claimImportApproval,
   computeSha256Hex,
@@ -73,6 +75,7 @@ import {
 import type { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { classifyError, classifyUploadError } from './services/errorClassifier';
 import { recordReconciliationRun } from './services/runtimeDiagnostics';
 import { CANONICAL_FIELDS } from './services/canonicalFields';
 import {
@@ -945,7 +948,25 @@ export const processImportValidationJob = async (input: {
         input.importJobId,
         error instanceof Error ? error.message : 'Unexpected import validation failure',
       )
-      .catch(() => undefined);
+      .catch((secondaryError: unknown) => {
+        // EH5 sweep: this write recording the primary failure can itself fail (e.g. the same
+        // outage that caused `error`) -- if it does, the job is left in whatever state it was
+        // in rather than visibly `failed`, so this can't stay silent even though the primary
+        // error below is already captured.
+        log.error({
+          action: 'import-validation.mark_job_failed_write_failed',
+          runId: input.runId,
+          importJobId: input.importJobId,
+          err: {
+            message: secondaryError instanceof Error ? secondaryError.message : String(secondaryError),
+            stack: secondaryError instanceof Error ? secondaryError.stack : undefined,
+          },
+        });
+        captureApiException(secondaryError, {
+          tags: { scope: 'import-validation-mark-failed' },
+          extra: { runId: input.runId, importJobId: input.importJobId },
+        });
+      });
 
     captureApiException(error, {
       tags: { scope: 'import-validation-queue' },
@@ -997,7 +1018,16 @@ export const handleFailedReconciliationRun = async (input: {
         errorMessage:
           input.error instanceof Error ? input.error.message : 'Unexpected reconciliation failure',
       })
-      .catch(() => undefined);
+      .catch((secondaryError: unknown) => {
+        // EH5 sweep: no request-scoped logger reaches this worker-context function (see
+        // processImportValidationJob's sibling catch above, which does have one) --
+        // captureApiException needs no threading and is enough to make this observable rather
+        // than a silently-stuck job.
+        captureApiException(secondaryError, {
+          tags: { scope: 'reconciliation-mark-failed' },
+          extra: { organizationId: input.organizationId, jobId: input.persistenceJobId },
+        });
+      });
   }
 
   const requestInput = parseReconciliationRequestInput(input.requestBody);
@@ -1065,19 +1095,6 @@ export const sanitizeRun = (run: ReconciliationRun): ReconciliationRunReport => 
   appliedVarianceOverrides: run.appliedVarianceOverrides,
 });
 
-const resolveUploadErrorStatus = (error: unknown): number => {
-  if (error instanceof multer.MulterError) {
-    return error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-  }
-
-  // Matches createUploadMiddleware's fileFilter rejection message for any allowedExtensions list
-  // (e.g. 'Only .xlsx files are accepted.', 'Only .xlsx/.csv files are accepted.').
-  if (error instanceof Error && /^Only .+ files are accepted\.$/.test(error.message)) {
-    return 400;
-  }
-
-  return 500;
-};
 
 const parseLimit = (value: unknown, defaultValue: number, max = 50): number => {
   const parsed = Number(value);
@@ -1280,7 +1297,13 @@ const createApiRateLimiter = (logger: pino.Logger): ApiRateLimiter => {
       },
       store: redisStore,
       passOnStoreError: true,
-      skip: (request) => request.path === '/api/health' || request.path === '/api/metrics',
+      skip: (request) =>
+        request.path === '/api/health' ||
+        // error-handling-build-plan.md EH8: an orchestrator readiness probe polls on its own
+        // fixed interval, same as /api/health -- rate-limiting it risks the probe itself tripping
+        // a false "unhealthy" verdict under normal polling frequency.
+        request.path === '/api/health/ready' ||
+        request.path === '/api/metrics',
       message: { message: 'Too many requests. Please try again later.' },
     }),
   };
@@ -1356,6 +1379,17 @@ export const buildOpenApiSpec = () => ({
           200: {
             description: 'API is healthy',
           },
+        },
+      },
+    },
+    '/api/health/ready': {
+      get: {
+        summary: 'Readiness check (error-handling-build-plan.md EH8)',
+        description:
+          'Reports whether required dependencies (currently: the database, when configured) are reachable. Point orchestrator/ALB readiness checks here instead of /api/health, which never touches the database.',
+        responses: {
+          200: { description: 'Ready -- either the database is reachable, or none is configured' },
+          503: { description: 'Not ready -- a configured database is unreachable' },
         },
       },
     },
@@ -1860,6 +1894,29 @@ export const createApp = (
 
   app.get('/api/health', (_request, response) => {
     response.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // error-handling-build-plan.md EH8, closing EH-J: /api/health above never touches the
+  // database and returns ok unconditionally -- correct for a process-liveness probe (is the
+  // event loop alive at all), but that's also all today's ALB health check target gets, so the
+  // API stays "healthy" with its database gone. This is the readiness probe that check should
+  // target instead: a configured-but-unreachable database (mode (b), same probe EH7 wired into
+  // requireDatabase) fails it. No pool configured at all is mode (a), a supported operating mode
+  // in this codebase (local dev has none by design) -- not itself a down dependency, so it
+  // doesn't fail readiness.
+  app.get('/api/health/ready', async (_request, response) => {
+    if (!pool) {
+      response.json({ status: 'ok', checks: { database: 'not_configured' } });
+      return;
+    }
+
+    const reachable = await checkDatabaseReachable(pool);
+    if (!reachable) {
+      response.status(503).json({ status: 'error', checks: { database: 'unreachable' } });
+      return;
+    }
+
+    response.json({ status: 'ok', checks: { database: 'ok' } });
   });
 
   app.get('/api/openapi.json', (_request, response) => {
@@ -2635,7 +2692,7 @@ export const createApp = (
   // Registered before /api/reconciliation/:id (below), which would otherwise swallow this
   // literal "runs" segment as its own :id parameter -- Express matches in registration order.
   app.get('/api/reconciliation/runs', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'RECONCILIATION_RUNS_LIST'))) return;
     try {
       const query = listReconciliationRunsQuerySchema.safeParse(request.query);
       if (!query.success) {
@@ -2659,7 +2716,7 @@ export const createApp = (
   // Unreconciled Item Roll-Forward PR F.2. Same registration-order note as /api/reconciliation/
   // runs above -- must precede /api/reconciliation/:id/summary's less-specific sibling shape.
   app.get('/api/reconciliation/runs/:id/rollforward', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'RECONCILIATION_RUN_ROLLFORWARD'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const openItemStore = new PostgresOpenItemStore(pool!);
@@ -2680,7 +2737,7 @@ export const createApp = (
   // spreadsheet support schedule packages/domain/src/messages.ts tells reviewers to keep by hand.
   // Same registration-order note as the two routes above.
   app.get('/api/reconciliation/open-items', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'RECONCILIATION_OPEN_ITEMS_LIST'))) return;
     try {
       const query = listOpenItemsScheduleQuerySchema.safeParse(request.query);
       if (!query.success) {
@@ -2891,11 +2948,53 @@ export const createApp = (
     },
   );
 
-  const requirePool = (response: express.Response): boolean => {
+  // error-handling-build-plan.md EH2, closing issue #187 case (a). Replaces the old requirePool,
+  // which answered every one of these 33 routes with one hardcoded message naming a single
+  // unrelated feature (aliases) at the wrong status (501 Not Implemented -- the server does
+  // support the method; 503 Service Unavailable is the correct semantic for an unavailable
+  // dependency, and is what lets the client distinguish retryable from permanent).
+  //
+  // The x-correlation-id response header is already set for every request by the middleware
+  // mounted earlier in this function (before auth) -- reading it back here means this can stay a
+  // (response, operation) call like requirePool was, with no signature change needed at any of
+  // the 33 call sites beyond adding the operation argument (EH2) and awaiting it (EH7).
+  //
+  // EH7 addresses mode (b): !pool is mode (a) (never configured, unchanged from EH2) but a
+  // *configured* pool whose database is unreachable used to sail straight through this check --
+  // truthy is truthy, pg.Pool connects lazily -- and fail much later as a raw, unclassified
+  // driver error. Consulting checkDatabaseReachable's cached probe here narrows that common case
+  // to an accurate RCN-DB-002 with a Retry-After header. This is a narrowing, not a guarantee:
+  // the database can still die between this check and the query that follows it, which is
+  // exactly why EH3's classifier still runs on every response regardless -- see
+  // checkDatabaseReachable's own doc comment.
+  const requireDatabase = async (
+    response: express.Response,
+    operation: OperationCode,
+  ): Promise<boolean> => {
     if (!pool) {
-      response.status(501).json({ message: 'Alias management requires a database connection.' });
+      const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+      response.status(definition.httpStatus).json({
+        message: `Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`,
+        code: 'RCN-DB-001',
+        reference: response.getHeader('x-correlation-id'),
+        retryable: definition.retryable,
+      });
       return false;
     }
+
+    const reachable = await checkDatabaseReachable(pool);
+    if (!reachable) {
+      const definition = ERROR_DEFINITIONS['RCN-DB-002'];
+      response.setHeader('Retry-After', '5');
+      response.status(definition.httpStatus).json({
+        message: `Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`,
+        code: 'RCN-DB-002',
+        reference: response.getHeader('x-correlation-id'),
+        retryable: definition.retryable,
+      });
+      return false;
+    }
+
     return true;
   };
 
@@ -2922,7 +3021,7 @@ export const createApp = (
       { name: 'glFile', maxCount: 1 },
     ]),
     async (request, response, next) => {
-      if (!requirePool(response)) return;
+      if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
       // requireApplicationAccess (mounted ahead of this route) guarantees request.auth here.
       // "File reconciliation should stay with the senior Financial analyst" -- an explicit
       // product decision, expressed as its own capability (canSubmitImportRuns) rather than an
@@ -3033,7 +3132,7 @@ export const createApp = (
   // Express matches 'latest' as an :id -- same ordering constraint as /api/reconciliation/latest
   // above /api/reconciliation/:id.
   app.get('/api/imports/runs/latest', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_LATEST'))) return;
     try {
       const importRunStore = new PostgresImportRunStore(pool!);
       const summary = await importRunStore.getLatestRunSummary(request.auth!.organizationId);
@@ -3055,7 +3154,7 @@ export const createApp = (
   });
 
   app.get('/api/imports/runs/:id', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_GET'))) return;
     try {
       const importRunStore = new PostgresImportRunStore(pool!);
       const summary = await importRunStore.getRunSummary(
@@ -3090,68 +3189,137 @@ export const createApp = (
   // processId: runId, queueType: 'import-validation'. reconciliationQueueEvents exists for the
   // separate standalone /api/reconciliation/run flow (keyed by requestId, not runId), which this
   // endpoint doesn't serve.
-  app.get('/api/imports/runs/:id/events', async (request, response) => {
-    if (!requirePool(response)) return;
+  app.get('/api/imports/runs/:id/events', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'IMPORT_RUN_EVENTS'))) return;
     const organizationId = request.auth!.organizationId;
     const runId = request.params.id;
+    const reference = resolveCorrelationId(request.id);
 
-    const importRunStore = new PostgresImportRunStore(pool!);
-    const summary = await importRunStore.getRunSummary(organizationId, runId).catch(() => null);
-    if (!summary) {
-      response.status(404).json({ message: 'Import run not found.' });
-      return;
-    }
-
-    response.writeHead(200, {
-      'Content-Type': 'application/x-ndjson',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-    // Node buffers response headers until the first write()/end() call -- without this, a client
-    // that connects before any checkpoint exists yet (the common case: opening the stream right
-    // after submit, before the first "Validating..." message) would never even see the response
-    // begin, since nothing would ever flush the socket until some future write() call.
-    response.flushHeaders();
-
-    const writeMessage = (message: QueueProgressMessage): void => {
-      response.write(`${JSON.stringify(message)}\n`);
+    // error-handling-build-plan.md EH5: classifies, logs, and reports a failure this route can't
+    // hand to the global error handler (either because headers are already sent, or because it's
+    // a caught-and-degraded failure like the catch-up read below) -- returns the code so the
+    // caller can decide what, if anything, to put on the wire.
+    const logStreamError = (action: string, error: unknown): string => {
+      const { code } = classifyError(error);
+      request.log.error({
+        action,
+        errorCode: code,
+        reference,
+        err: {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      });
+      captureApiException(error, {
+        tags: { scope: 'imports-events', errorCode: code },
+        extra: { organizationId, runId, reference },
+      });
+      return code;
     };
 
-    // Catch-up on connect: a client that opens this stream after an earlier checkpoint was
-    // already published (reload mid-run, dropped connection, second tab) would otherwise see
-    // nothing until the *next* live message -- QueueEvents' 'progress' event has no replay.
-    // Reads recordAuditEvent's own prior writes back as one synthetic first line. Stage-2-only
-    // (matchingJobId must exist) -- see getLatestAuditEvent's doc comment for why Stage 1 has no
-    // equivalent catch-up yet; the durable-state fetch (GET /api/imports/runs/latest) already
-    // covers the coarser "is it running at all" answer regardless.
-    if (summary.matchingJobId && lifecycleStore) {
-      const latest = await lifecycleStore
-        .getLatestAuditEvent(organizationId, summary.matchingJobId)
-        .catch(() => null);
+    try {
+      const importRunStore = new PostgresImportRunStore(pool!);
+      // EH5 closes EH-E/F1: previously `.catch(() => null)` here meant a real database failure
+      // and a genuinely absent run both collapsed into the same 404 "Import run not found." --
+      // two different facts sharing one return value. Letting this propagate to the outer catch
+      // means only a true null result (the run doesn't exist) reaches the 404 below; a database
+      // failure is now classified into its own RCN-DB-00x code instead.
+      const summary = await importRunStore.getRunSummary(organizationId, runId);
+      if (!summary) {
+        // EH5: a genuinely absent run gets its own code + reference too, same as every other
+        // classified error, rather than a bare `{message}` with nothing to distinguish it from
+        // the old collapsed 404.
+        throw new AppError('RCN-SUB-001', { operation: 'IMPORT_RUN_EVENTS' });
+      }
 
-      if (latest) {
-        writeMessage({
-          organizationId,
-          processId: runId,
-          queueType: 'import-validation',
-          statusMessage: latest.eventType,
-          details: latest.details,
-        });
+      response.writeHead(200, {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      // Node buffers response headers until the first write()/end() call -- without this, a client
+      // that connects before any checkpoint exists yet (the common case: opening the stream right
+      // after submit, before the first "Validating..." message) would never even see the response
+      // begin, since nothing would ever flush the socket until some future write() call.
+      response.flushHeaders();
+
+      const writeMessage = (message: QueueProgressMessage): void => {
+        response.write(`${JSON.stringify(message)}\n`);
+      };
+
+      // Catch-up on connect: a client that opens this stream after an earlier checkpoint was
+      // already published (reload mid-run, dropped connection, second tab) would otherwise see
+      // nothing until the *next* live message -- QueueEvents' 'progress' event has no replay.
+      // Reads recordAuditEvent's own prior writes back as one synthetic first line. Stage-2-only
+      // (matchingJobId must exist) -- see getLatestAuditEvent's doc comment for why Stage 1 has no
+      // equivalent catch-up yet; the durable-state fetch (GET /api/imports/runs/latest) already
+      // covers the coarser "is it running at all" answer regardless.
+      if (summary.matchingJobId && lifecycleStore) {
+        try {
+          const latest = await lifecycleStore.getLatestAuditEvent(
+            organizationId,
+            summary.matchingJobId,
+          );
+
+          if (latest) {
+            writeMessage({
+              organizationId,
+              processId: runId,
+              queueType: 'import-validation',
+              statusMessage: latest.eventType,
+              details: latest.details,
+            });
+          }
+        } catch (error) {
+          // EH5: skipping catch-up is still a legitimate degrade -- the durable-state fetch
+          // (GET /api/imports/runs/latest) covers the coarser "is it running at all" answer
+          // regardless -- but it must be observable, not silently discarded like the old
+          // `.catch(() => null)`. The live subscription below still starts normally.
+          logStreamError('imports.events.catch_up_failed', error);
+        }
+      }
+
+      const matchesThisConnection = (message: QueueProgressMessage): boolean =>
+        message.organizationId === organizationId && message.processId === runId;
+
+      const unsubscribe = importValidationQueueEvents.onProgress((message) => {
+        if (matchesThisConnection(message)) {
+          writeMessage(message);
+        }
+      });
+
+      request.on('close', () => {
+        unsubscribe();
+      });
+    } catch (error) {
+      if (!response.headersSent) {
+        next(error);
+        return;
+      }
+
+      // The status line and headers are already sent as a 200 NDJSON stream at this point, so
+      // the global error handler can no longer set a status code -- classify inline and write one
+      // more line before ending the stream. The client already reads every line as a
+      // `RunStatusMessage` (apps/web/src/lib/runStatusStream.ts), so this needs no new wire shape.
+      const code = logStreamError('imports.events.stream_failed', error);
+      // A post-header failure often means the connection itself is the problem, so this recovery
+      // write can fail too -- swallow that specifically (not the original `error`, already
+      // logged above) rather than let it become an unhandled rejection in an async handler.
+      try {
+        response.write(
+          `${JSON.stringify({
+            organizationId,
+            processId: runId,
+            queueType: 'import-validation',
+            statusMessage: 'stream-error',
+            details: { code, reference },
+          })}\n`,
+        );
+        response.end();
+      } catch {
+        // Connection already gone -- nothing left to write to.
       }
     }
-
-    const matchesThisConnection = (message: QueueProgressMessage): boolean =>
-      message.organizationId === organizationId && message.processId === runId;
-
-    const unsubscribe = importValidationQueueEvents.onProgress((message) => {
-      if (matchesThisConnection(message)) {
-        writeMessage(message);
-      }
-    });
-
-    request.on('close', () => {
-      unsubscribe();
-    });
   });
 
   // Phase 8 review drilldown: validation_issue/canonical_record rows for a run, paginated and
@@ -3160,7 +3328,7 @@ export const createApp = (
   // Comptroller reviewing a PENDING_APPROVAL run would need to see. Mirrors the existing
   // GET /api/reconciliation/:id/exceptions pagination shape (limit/offset/hasMore).
   app.get('/api/imports/runs/:id/issues', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_ISSUES'))) return;
     try {
       const queryResult = runIssuesQuerySchema.safeParse(request.query);
       if (!queryResult.success) {
@@ -3193,7 +3361,7 @@ export const createApp = (
   });
 
   app.get('/api/imports/runs/:id/records', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_RECORDS'))) return;
     try {
       const queryResult = runRecordsQuerySchema.safeParse(request.query);
       if (!queryResult.success) {
@@ -3230,7 +3398,7 @@ export const createApp = (
   // /issues + /records, since the header comparison needs a server-side re-parse of the stored
   // original (see importFailureDetailService.ts's doc comment).
   app.get('/api/imports/runs/:id/files/:fileId/failure-detail', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_FILE_FAILURE_DETAIL'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const runId = request.params.id;
@@ -3283,7 +3451,7 @@ export const createApp = (
   // why this re-parses rather than reading validation_issue alone (raw cell values were never
   // persisted there).
   app.get('/api/imports/runs/:id/files/:fileId/rows', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_FILE_ROWS'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const runId = request.params.id;
@@ -3320,7 +3488,7 @@ export const createApp = (
   // README §7.8: file,line,column,code,severity,message,raw_value -- one row per finding, ordered
   // by file then line then column (buildErrorReportCsv does the ordering).
   app.get('/api/imports/runs/:id/error-report.csv', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_ERROR_REPORT'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const runId = request.params.id;
@@ -3366,7 +3534,7 @@ export const createApp = (
   });
 
   app.post('/api/imports/runs/:id/submit', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_SUBMIT'))) return;
     // Same gate as create -- submitting is part of the same senior-analyst-owned action, not a
     // separate capability.
     if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
@@ -3438,7 +3606,7 @@ export const createApp = (
   // not a general approver action, so this lives under /api/imports/runs/:id rather than the
   // polymorphic /api/approvals/:type/:id/* surface Phase 7 built for approver decisions.
   app.post('/api/imports/runs/:id/withdraw', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_WITHDRAW'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
       response.status(403).json({ message: 'Only a senior analyst may withdraw an import run.' });
       return;
@@ -3485,7 +3653,7 @@ export const createApp = (
   // period is a comptroller-level action, not a self-service one, matching the segregation-of-duty
   // CHECK on closed_by/submitted_by this same call is subject to.
   app.post('/api/imports/runs/:id/close', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_CLOSE'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only an approver may close a reconciliation period.' });
       return;
@@ -3524,7 +3692,7 @@ export const createApp = (
 
   // Unreconciled Item Roll-Forward PR E.3.
   app.post('/api/imports/runs/:id/reopen', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_REOPEN'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only an approver may reopen a reconciliation period.' });
       return;
@@ -3558,7 +3726,7 @@ export const createApp = (
   // PostgresOpenItemStore.writeOffOpenItem's own doc comments for why there is no automatic
   // amount/age approval gate here yet.
   app.post('/api/imports/open-items/:id/write-off', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_OPEN_ITEM_WRITE_OFF'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only an approver may write off an open item.' });
       return;
@@ -3606,7 +3774,7 @@ export const createApp = (
   // comment). "Skipping" invalid rows here means accepting the run despite them, not removing
   // them from reconciliation -- the response/UI say so.
   app.post('/api/imports/runs/:id/import', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_IMPORT'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
       response
         .status(403)
@@ -3723,7 +3891,7 @@ export const createApp = (
   });
 
   app.get('/api/aliases', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'ALIAS_LIST'))) return;
     try {
       const { accountIdentifier } = aliasesQuerySchema.parse(request.query);
       const aliases = await loadPayeeAliases(
@@ -3738,7 +3906,7 @@ export const createApp = (
   });
 
   app.post('/api/aliases', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'ALIAS_CREATE'))) return;
     try {
       const bodyResult = createAliasBodySchema.safeParse(request.body ?? {});
       if (!bodyResult.success) {
@@ -3760,7 +3928,7 @@ export const createApp = (
   });
 
   app.put('/api/aliases/:id', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'ALIAS_UPDATE'))) return;
     try {
       const bodyResult = updateAliasBodySchema.safeParse(request.body ?? {});
       if (!bodyResult.success) {
@@ -3787,7 +3955,7 @@ export const createApp = (
   });
 
   app.delete('/api/aliases/:id', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'ALIAS_DELETE'))) return;
     try {
       const deactivated = await deactivatePayeeAlias(
         pool!,
@@ -3809,7 +3977,7 @@ export const createApp = (
   });
 
   app.get('/api/mapping/profiles', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'MAPPING_PROFILE_LIST'))) return;
     try {
       const names = await listMappingProfiles(pool!, request.auth!.organizationId);
       response.json(names);
@@ -3823,7 +3991,7 @@ export const createApp = (
   // above only ever returned bare names for the rule grid's ASSIGNED TO chips, not a profile's
   // actual detail or version history).
   app.get('/api/mapping/profiles/:name', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'MAPPING_PROFILE_GET'))) return;
     try {
       const detail = await getMappingProfileDetail(
         pool!,
@@ -3862,7 +4030,7 @@ export const createApp = (
     '/api/mapping/profiles/:name/retire',
     requireFullyVerified,
     async (request, response, next) => {
-      if (!requirePool(response)) return;
+      if (!(await requireDatabase(response, 'MAPPING_PROFILE_RETIRE'))) return;
       try {
         // Combining a route param with a preceding middleware (requireFullyVerified) widens
         // Express's inferred param type away from the path-literal-derived `string` -- the
@@ -3905,7 +4073,7 @@ export const createApp = (
   });
 
   app.get('/api/rules/versions', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'RULE_VERSIONS_LIST'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const versions = await listMatchingConfigVersions(pool!, organizationId);
@@ -3922,7 +4090,7 @@ export const createApp = (
   });
 
   app.post('/api/rules/versions/draft', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'RULE_VERSION_DRAFT'))) return;
     // Mirrors the client-side gate on canAdjustSliderDefaults (App.tsx) server-side -- this is a
     // new mutating, org-wide-visible endpoint, so it needs its own enforcement rather than
     // trusting the UI to have hidden the control.
@@ -3973,7 +4141,7 @@ export const createApp = (
   });
 
   app.post('/api/rules/versions/:id/publish', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'RULE_VERSION_PUBLISH'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canAdjustSliderDefaults) {
       response.status(403).json({ message: 'Only admins can publish a matching-config version.' });
       return;
@@ -4099,7 +4267,7 @@ export const createApp = (
   };
 
   app.get('/api/approvals', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'APPROVALS_LIST'))) return;
     try {
       const queryResult = approvalsQuerySchema.safeParse(request.query);
       if (!queryResult.success) {
@@ -4170,7 +4338,7 @@ export const createApp = (
   });
 
   app.get('/api/approvals/counts', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'APPROVALS_COUNTS'))) return;
     try {
       const { organizationId, username, role } = request.auth!;
       const canApprove = rolePermissionsByRole[role].canApprove;
@@ -4222,7 +4390,7 @@ export const createApp = (
   });
 
   app.post('/api/approvals/:type/:id/decision', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'APPROVAL_DECISION'))) return;
     // Only approvers may decide -- mirrors the canAdjustSliderDefaults gate above, on the new
     // canApprove permission (RailMenuMods: Controller/VP Finance/CFO/Admin/Superuser).
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
@@ -4347,7 +4515,7 @@ export const createApp = (
   });
 
   app.post('/api/approvals/:type/:id/claim', async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'APPROVAL_CLAIM'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only approvers can claim an approval.' });
       return;
@@ -4395,7 +4563,7 @@ export const createApp = (
   });
 
   app.post('/api/mapping/profiles', requireFullyVerified, async (request, response, next) => {
-    if (!requirePool(response)) return;
+    if (!(await requireDatabase(response, 'MAPPING_PROFILE_CREATE'))) return;
     try {
       const bodyResult = saveMappingProfileBodySchema.safeParse(request.body ?? {});
       if (!bodyResult.success) {
@@ -4507,23 +4675,49 @@ export const createApp = (
       response: express.Response,
       _next: express.NextFunction,
     ) => {
-      const message = error instanceof Error ? error.message : 'Unexpected server error.';
+      const reference = resolveCorrelationId(request.id);
       const stack = error instanceof Error ? error.stack : undefined;
-      const statusCode = resolveUploadErrorStatus(error);
 
-      request.log.error({ action: 'api.unhandled.error', statusCode, err: { message, stack } });
-      captureApiException(error, {
-        tags: {
-          scope: 'http-request',
-          statusCode: String(statusCode),
-        },
-        extra: {
-          method: request.method,
-          path: request.originalUrl,
-          correlationId: resolveCorrelationId(request.id),
+      const upload = classifyUploadError(error);
+      if (upload) {
+        request.log.error({
+          action: 'api.unhandled.error',
+          statusCode: upload.httpStatus,
+          reference,
+          err: { message: upload.message, stack },
+        });
+        captureApiException(error, {
+          tags: { scope: 'http-request', statusCode: String(upload.httpStatus) },
+          extra: { method: request.method, path: request.originalUrl, reference },
+        });
+        response.status(upload.httpStatus).json({ message: upload.message });
+        return;
+      }
+
+      const { code, httpStatus, message } = classifyError(error);
+      const definition = ERROR_DEFINITIONS[code];
+      const cause = error instanceof AppError ? error.cause : error;
+
+      request.log.error({
+        action: 'api.unhandled.error',
+        statusCode: httpStatus,
+        errorCode: code,
+        reference,
+        context: error instanceof AppError ? error.context : undefined,
+        err: {
+          message: cause instanceof Error ? cause.message : String(cause),
+          stack: cause instanceof Error ? cause.stack : undefined,
         },
       });
-      response.status(statusCode).json({ message });
+      captureApiException(error, {
+        tags: { scope: 'http-request', statusCode: String(httpStatus), errorCode: code },
+        extra: { method: request.method, path: request.originalUrl, reference },
+      });
+
+      if (definition.retryable) {
+        response.setHeader('Retry-After', '5');
+      }
+      response.status(httpStatus).json({ message, code, reference, retryable: definition.retryable });
     },
   );
 

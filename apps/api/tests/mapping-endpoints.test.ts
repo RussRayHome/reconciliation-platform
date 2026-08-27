@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+
+const expectNoPoolError = (body: unknown, operation: keyof typeof OPERATIONS): void => {
+  const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+  const parsed = body as { message: string; code: string; reference: string; retryable: boolean };
+  expect(parsed.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+  expect(parsed.code).toBe('RCN-DB-001');
+  expect(parsed.reference.length).toBeGreaterThan(0);
+  expect(parsed.retryable).toBe(definition.retryable);
+};
 
 /**
  * The save route runs its GL-side and Bank-side persistence concurrently
@@ -65,6 +76,11 @@ const createFakeMappingPool = (): Pool => {
         ],
       });
     }
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [] });
+    }
     throw new Error(`createFakeMappingPool: unexpected query: ${text}`);
   };
 
@@ -115,6 +131,15 @@ describe('GET /api/mapping/profiles', () => {
     };
 
     return {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool), called directly on the pool (not a checked-out
+      // client) -- this fake needs a top-level query it didn't need before.
+      query: (text: string) => {
+        if (text === 'SELECT 1') {
+          return Promise.resolve({ rows: [] });
+        }
+        throw new Error(`createFakeProfileListPool: unexpected pool.query: ${text}`);
+      },
       connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
     } as unknown as Pool;
   };
@@ -133,19 +158,23 @@ describe('GET /api/mapping/profiles', () => {
     expect(response.body).toEqual([]);
   });
 
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    await authedApp(app).get('/api/mapping/profiles').expect(501);
+    const response = await authedApp(app)
+      .get('/api/mapping/profiles')
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'MAPPING_PROFILE_LIST');
   });
 });
 
 describe('POST /api/mapping/profiles', () => {
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    await authedApp(app)
+    const response = await authedApp(app)
       .post('/api/mapping/profiles')
       .send({ name: 'Test', gl: [], bank: [] })
-      .expect(501);
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'MAPPING_PROFILE_CREATE');
   });
 
   it('rejects a request with no name', async () => {
@@ -261,6 +290,15 @@ describe('GET /api/mapping/profiles/:name (ISSUE-050.1)', () => {
     };
 
     return {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool), called directly on the pool (not a checked-out
+      // client) -- this fake needs a top-level query it didn't need before.
+      query: (text: string) => {
+        if (text === 'SELECT 1') {
+          return Promise.resolve({ rows: [] });
+        }
+        throw new Error(`createFakeDetailPool: unexpected pool.query: ${text}`);
+      },
       connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
     } as unknown as Pool;
   };
@@ -293,9 +331,12 @@ describe('GET /api/mapping/profiles/:name (ISSUE-050.1)', () => {
     await authedApp(app).get('/api/mapping/profiles/Nonexistent').expect(404);
   });
 
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    await authedApp(app).get('/api/mapping/profiles/Anything').expect(501);
+    const response = await authedApp(app)
+      .get('/api/mapping/profiles/Anything')
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'MAPPING_PROFILE_GET');
   });
 });
 
@@ -306,6 +347,11 @@ describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
         return Promise.resolve({
           rows: [{ identity_verification_status: 'verified', entity_verification_status: 'verified' }],
         });
+      }
+      if (text === 'SELECT 1') {
+        // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+        // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+        return Promise.resolve({ rows: [] });
       }
       throw new Error(`createFakeRetirePool: unexpected pool.query: ${text}`);
     };
@@ -368,8 +414,11 @@ describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
     await authedApp(app).post('/api/mapping/profiles/Nonexistent/retire').expect(404);
   });
 
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = createApp();
-    await authedApp(app).post('/api/mapping/profiles/Anything/retire').expect(501);
+    const response = await authedApp(app)
+      .post('/api/mapping/profiles/Anything/retire')
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'MAPPING_PROFILE_RETIRE');
   });
 });

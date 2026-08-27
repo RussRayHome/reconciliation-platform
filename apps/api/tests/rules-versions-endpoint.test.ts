@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+
+const expectNoPoolError = (body: unknown, operation: keyof typeof OPERATIONS): void => {
+  const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+  const parsed = body as { message: string; code: string; reference: string; retryable: boolean };
+  expect(parsed.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+  expect(parsed.code).toBe('RCN-DB-001');
+  expect(parsed.reference.length).toBeGreaterThan(0);
+  expect(parsed.retryable).toBe(definition.retryable);
+};
 
 const DRAFT_ROW = {
   id: 'mcv-1',
@@ -89,6 +100,11 @@ const createFakePool = (
     if (text.includes('SELECT') && text.includes('FROM reconciliation_approval_request')) {
       return Promise.resolve({ rows: overrides.approvalRequestRows ?? [] });
     }
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [] });
+    }
     throw new Error(`createFakePool: unexpected query: ${text}`);
   };
 
@@ -120,9 +136,12 @@ describe('GET /api/rules/versions', () => {
     expect(response.body.history).toEqual([]);
   });
 
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
-    await authedApp(app).get('/api/rules/versions').expect(501);
+    const response = await authedApp(app)
+      .get('/api/rules/versions')
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'RULE_VERSIONS_LIST');
   });
 });
 
@@ -168,9 +187,13 @@ describe('POST /api/rules/versions/draft', () => {
       .expect(409);
   });
 
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
-    await authedApp(app).post('/api/rules/versions/draft').send({ varianceOverrides: {} }).expect(501);
+    const response = await authedApp(app)
+      .post('/api/rules/versions/draft')
+      .send({ varianceOverrides: {} })
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'RULE_VERSION_DRAFT');
   });
 });
 
@@ -210,8 +233,12 @@ describe('POST /api/rules/versions/:id/publish', () => {
       .expect(400);
   });
 
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
-    await authedApp(app).post('/api/rules/versions/mcv-1/publish').send({}).expect(501);
+    const response = await authedApp(app)
+      .post('/api/rules/versions/mcv-1/publish')
+      .send({})
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'RULE_VERSION_PUBLISH');
   });
 });

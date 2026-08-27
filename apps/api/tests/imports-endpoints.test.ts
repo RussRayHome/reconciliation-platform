@@ -2,8 +2,19 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+
+const expectNoPoolError = (body: unknown, operation: keyof typeof OPERATIONS): void => {
+  const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+  const parsed = body as { message: string; code: string; reference: string; retryable: boolean };
+  expect(parsed.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+  expect(parsed.code).toBe('RCN-DB-001');
+  expect(parsed.reference.length).toBeGreaterThan(0);
+  expect(parsed.retryable).toBe(definition.retryable);
+};
 
 interface ImportFileRow {
   id: string;
@@ -192,6 +203,12 @@ const createFakeImportsPool = () => {
         };
       });
       return Promise.resolve({ rows, rowCount: rows.length });
+    }
+
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
     throw new Error(`createFakeImportsPool: unexpected query: ${text}`);
@@ -508,7 +525,7 @@ describe('imports endpoints', () => {
       expect(response.body).toMatchObject({ message: expect.any(String) });
     });
 
-    it('returns 501 when no database pool is configured', async () => {
+    it('returns 503 when no database pool is configured', async () => {
       const response = await attachImportFiles(
         authedApp(appWithPool(undefined), { role: 'senior-analyst' })
           .post('/api/imports/runs')
@@ -517,7 +534,8 @@ describe('imports endpoints', () => {
           .field('periodYear', '2026'),
       );
 
-      expect(response.status).toBe(501);
+      expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+      expectNoPoolError(response.body, 'IMPORT_RUN_CREATE');
     });
   });
 
@@ -547,10 +565,11 @@ describe('imports endpoints', () => {
       expect(response.status).toBe(404);
     });
 
-    it('returns 501 when no database pool is configured', async () => {
+    it('returns 503 when no database pool is configured', async () => {
       const response = await authedApp(appWithPool(undefined)).get('/api/imports/runs/some-id');
 
-      expect(response.status).toBe(501);
+      expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+      expectNoPoolError(response.body, 'IMPORT_RUN_GET');
     });
   });
 
@@ -599,10 +618,11 @@ describe('imports endpoints', () => {
       expect(response.status).toBe(401);
     });
 
-    it('returns 501 when no database pool is configured', async () => {
+    it('returns 503 when no database pool is configured', async () => {
       const response = await authedApp(appWithPool(undefined)).get('/api/imports/runs/latest');
 
-      expect(response.status).toBe(501);
+      expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+      expectNoPoolError(response.body, 'IMPORT_RUN_LATEST');
     });
   });
 });

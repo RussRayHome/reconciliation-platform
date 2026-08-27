@@ -36,6 +36,8 @@ declare global {
  * added after this list must be reachable without auth or it 401s -- a forgotten route becomes a
  * visible failure instead of a silent hole. Keep this list short and justify every entry:
  *   /api/health         - infra/orchestration health probes, run before any session exists
+ *   /api/health/ready   - same as /api/health (error-handling-build-plan.md EH8): the ALB/
+ *                         orchestrator readiness check that targets this can't carry a token
  *   /api/metrics        - operational scrape endpoint (Prometheus-style), not customer data
  *   /api/openapi.json   - API shape description, not data
  *   /api/auth/login                    - cannot require a token to obtain a token
@@ -46,6 +48,7 @@ declare global {
  */
 const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
   '/api/health',
+  '/api/health/ready',
   '/api/metrics',
   '/api/openapi.json',
   '/api/auth/login',

@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+
+const expectNoPoolError = (body: unknown, operation: keyof typeof OPERATIONS): void => {
+  const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+  const parsed = body as { message: string; code: string; reference: string; retryable: boolean };
+  expect(parsed.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+  expect(parsed.code).toBe('RCN-DB-001');
+  expect(parsed.reference.length).toBeGreaterThan(0);
+  expect(parsed.retryable).toBe(definition.retryable);
+};
 
 interface IssueRow {
   id: string;
@@ -200,6 +211,12 @@ const createFakeReviewPool = (options: { knownRunId?: string } = {}) => {
       return Promise.resolve({ rows: page, rowCount: page.length });
     }
 
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
     throw new Error(`createFakeReviewPool: unexpected query: ${text}`);
   };
 
@@ -222,9 +239,12 @@ const createFakeReviewPool = (options: { knownRunId?: string } = {}) => {
 const appWithPool = (pool?: Pool) => createApp(undefined, undefined, undefined, pool);
 
 describe('GET /api/imports/runs/:id/issues', () => {
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = appWithPool(undefined);
-    await authedApp(app).get(`/api/imports/runs/${RUN_ID}/issues`).expect(501);
+    const response = await authedApp(app)
+      .get(`/api/imports/runs/${RUN_ID}/issues`)
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'IMPORT_RUN_ISSUES');
   });
 
   it('returns 404 when the run does not exist', async () => {
@@ -296,9 +316,12 @@ describe('GET /api/imports/runs/:id/issues', () => {
 });
 
 describe('GET /api/imports/runs/:id/records', () => {
-  it('returns 501 when no database is configured', async () => {
+  it('returns 503 when no database is configured', async () => {
     const app = appWithPool(undefined);
-    await authedApp(app).get(`/api/imports/runs/${RUN_ID}/records`).expect(501);
+    const response = await authedApp(app)
+      .get(`/api/imports/runs/${RUN_ID}/records`)
+      .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'IMPORT_RUN_RECORDS');
   });
 
   it('returns 404 when the run does not exist', async () => {
