@@ -12,11 +12,14 @@
 /api/approvals/counts
 /api/auth/me
 /api/health
+/api/health/ready
 /api/imports/runs/latest
 /api/mapping/canonical-fields
 /api/mapping/profiles
 /api/metrics
 /api/openapi.json
 /api/reconciliation/latest
+/api/reconciliation/open-items
+/api/reconciliation/runs
 /api/rules/catalog
 /api/rules/versions

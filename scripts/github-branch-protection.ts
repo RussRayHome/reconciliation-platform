@@ -1,7 +1,8 @@
 /**
  * Applies required GitHub branch-protection rules (status checks, review requirements,
- * linear history) to the configured repository's main branch via the GitHub CLI (`gh`).
- * Invoked via `npm run github:protect-main`.
+ * linear history) to the configured repository's branch via the GitHub CLI (`gh`) -- defaults to
+ * `dev`, this repo's actual protected integration branch (`main` has never been protected here).
+ * Invoked via `npm run github:protect-main`; pass `--branch main` explicitly for that branch.
  */
 import { execFileSync } from 'node:child_process';
 
@@ -30,18 +31,33 @@ type CommandResult = {
   stderr: string;
 };
 
+// Drift review finding: this array and the --branch default below had drifted from reality --
+// `main` has never actually been protected (confirmed via `gh api repos/.../branches/main/
+// protection` returning 404), and the branch that IS protected (`dev`) was configured through
+// some other means, with a required-checks list this script didn't match either in content (6
+// checks missing: the 4 e2e-functional shards, visual-path-check, e2e-visual) or in format (bare
+// job/matrix names like "test", not "Docker Validate / test" -- confirmed via `gh api repos/.../
+// branches/dev/protection`). Synced to match live reality plus the new `postgres` job (drift
+// review finding #02).
 const requiredChecks = [
-  'Docker Validate / test',
-  'Docker Validate / security-scan',
-  'Docker Validate / docker-validate',
+  'test',
+  'postgres',
+  'security-scan',
+  'docker-validate',
+  'e2e-functional (1)',
+  'e2e-functional (2)',
+  'e2e-functional (3)',
+  'e2e-functional (4)',
+  'visual-path-check',
+  'e2e-visual',
 ];
 
 const usage = [
-  'Usage: tsx scripts/github-branch-protection.ts [--repo owner/repo] [--branch main] [--dry-run]',
+  'Usage: tsx scripts/github-branch-protection.ts [--repo owner/repo] [--branch dev] [--dry-run]',
   '',
   'Examples:',
   '  tsx scripts/github-branch-protection.ts',
-  '  tsx scripts/github-branch-protection.ts --repo octo-org/reconciliation-platform --branch main',
+  '  tsx scripts/github-branch-protection.ts --repo octo-org/reconciliation-platform --branch dev',
   '  tsx scripts/github-branch-protection.ts --dry-run',
 ].join('\n');
 
@@ -173,7 +189,9 @@ const parseFlagValue = (
 
 const parseArgs = (argv: string[]): CliOptions => {
   const options: CliOptions = {
-    branch: 'main',
+    // dev is this repo's actual protected integration branch -- main has never been protected
+    // (see the requiredChecks comment above). Pass --branch main explicitly if that ever changes.
+    branch: 'dev',
     dryRun: false,
   };
 

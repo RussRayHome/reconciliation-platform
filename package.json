@@ -155,7 +155,7 @@
     "docs:openapi:check": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-openapi-docs.ts --check",
     "licenses:generate": "NODE_OPTIONS=--no-deprecation node scripts/check-licenses.mjs",
     "licenses:check": "NODE_OPTIONS=--no-deprecation node scripts/check-licenses.mjs --check",
-    "verify:push": "npm run typecheck && npm run lint && npm run docs:api:check && npm run docs:openapi:check && npm run security:scan && npm run licenses:check && npm run test"
+    "verify:push": "npm run typecheck && npm run lint && npm run docs:api:check && npm run docs:openapi:check && npm run security:scan && npm run security:zap:targets:check && npm run licenses:check && npm run test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
