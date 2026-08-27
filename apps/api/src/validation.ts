@@ -491,23 +491,28 @@ export const writeOffOpenItemBodySchema = z.object({
     .optional(),
 });
 
+// ISSUE-048.2: this is a partial-update (PUT) body -- an omitted field means "leave unchanged,"
+// so every field here is legitimately `.optional()`. It previously also `.catch(undefined)`ed a
+// *present-but-invalid* value into the same "leave unchanged" outcome, which is the ISSUE-010/011
+// class of bug in a different shape: the caller gets a 200 believing their update applied (e.g.
+// correcting a bad matchConfidence on a row the fuzzy-matching pass reads) when nothing changed.
+// Dropping `.catch()` makes a present-but-invalid value 400 naming the field, same as
+// createAliasBodySchema already does for matchConfidence (ISSUE-011).
 export const updateAliasBodySchema = z.object({
   bankPattern: z
     .string()
     .transform((value) => value.trim())
-    .optional()
-    .catch(undefined),
+    .optional(),
   canonicalPayeeName: z
     .string()
     .transform((value) => value.trim())
-    .optional()
-    .catch(undefined),
+    .optional(),
   normalizedTokens: z
     .array(z.unknown())
     .optional()
     .transform((tokens) =>
       tokens ? tokens.filter((token): token is string => typeof token === 'string') : undefined,
     ),
-  sourceDirection: z.enum(['bidirectional', 'bank_to_gl']).optional().catch(undefined),
-  matchConfidence: z.number().min(0).max(1).optional().catch(undefined),
+  sourceDirection: z.enum(['bidirectional', 'bank_to_gl']).optional(),
+  matchConfidence: z.number().min(0).max(1).optional(),
 });
