@@ -278,6 +278,29 @@ npm run docker:db:preflight
 - failures are recorded with transition-safe failure metadata and audit events
 - read-model queries can recover finalized outputs from DB state
 
+### Privilege model: app roles vs. DB roles
+
+These are two independent layers — settle any confusion between them by asking which layer a
+question is about, not by trying to unify them:
+
+- **App-level authorization**: every human user is a row in `reconciliation_user`, with a `role`
+  (`financial-analyst` … `superuser`, see `packages/domain/src/enums.ts`) that drives permission
+  checks in the API and UI (`rolePermissionsByRole`). This is where "who can do what" lives.
+- **DB-level identity**: every one of those users, regardless of app role, reaches Postgres through
+  the *same* shared connection — `app_user` (changeset `0031`). `app_user` is deliberately
+  low-privilege (`NOSUPERUSER`, `NOBYPASSRLS`, explicit per-table grants) and subject to every RLS
+  policy, so tenant isolation is enforced at the DB layer no matter what the connecting app user's
+  role is. `apps/api/src/server.ts`'s `assertRuntimeRoleIsNotPrivileged` refuses to serve traffic if
+  the API is ever connected as anything other than a role like this.
+- **`rray` / `prod_rray` / `prod_rray_admin`** are a third, unrelated thing: manual, DBA-only
+  bootstrap/superuser roles (dev+stage / production respectively) for schema migrations and
+  break-glass operations. No service ever connects as these — see below and
+  [ISSUE-006](../issue_tracker/ISSUE-006.md) for the compose-side guard that keeps it that way.
+  **Naming caveat**: the seeded app-level demo login also named `rray` (a `reconciliation_user` row
+  with app-role `superuser`, used in local logins/tests/E2E fixtures) is a coincidence of naming,
+  not the same identity as the `rray` DB role — an app user named `rray` still authenticates to
+  Postgres as `app_user` like everyone else.
+
 ### Database user management
 
 The `rray` database user (dev/stage) is created automatically by `docker:deploy` immediately after the migration service completes. Manual invocation:
