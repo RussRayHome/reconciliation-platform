@@ -1,9 +1,11 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect } from 'vitest';
 
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { dockerGate, hasCommand } from './testHelpers/dockerGate';
 
 const defaultDockerDatabaseUrl =
   'postgresql://recon_app:change-local-password@localhost:5432/reconciliation_platform';
@@ -49,12 +51,9 @@ const dockerEnv = {
 
 const cleanupCommand = 'bash scripts/pre-flight/cleanup.sh --prune-volumes';
 
-const hasCommand = (command: string): boolean =>
-  spawnSync('sh', ['-c', `command -v ${command} >/dev/null 2>&1`], { stdio: 'ignore' }).status ===
-  0;
-
 const canRunDeployChecks = hasCommand('bash') && hasCommand('docker');
-const deployTest = canRunDeployChecks ? it : it.skip;
+const gate = dockerGate(canRunDeployChecks, 'bash and Docker');
+const deployTest = gate.test;
 
 // Issue #194's RCA: execSync with no `timeout` blocks the event loop indefinitely if the child
 // stalls, and Vitest's own testTimeout can't fire in that window -- its setTimeout callback never
@@ -93,6 +92,8 @@ const deployWithRetry = (): string => {
 };
 
 describe('Deploy and Cleanup Scripts', () => {
+  beforeAll(gate.assertAvailable);
+
   // Issue #215's real root cause: this file mints a fresh, PID-suffixed COMPOSE_PROJECT_NAME
   // every invocation (deliberately, so a concurrent run of this same test never collides). A
   // process kill mid-test (CI cancellation, local Ctrl+C, a wrapper tool's own timeout) never

@@ -51,8 +51,51 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # nginx-config.test.ts's "is valid" test needs this image locally -- without a pre-pull, it
+      # was silently skipping on every CI run (drift review finding #01: hasLocalDockerImage()
+      # ? it : it.skip, and this image was never pulled here). Inverting that skip (dockerGate)
+      # made the missing image a loud failure instead of a silent pass; this step is what actually
+      # makes the test able to run for real in CI, not just fail loudly instead of skip quietly.
+      - name: Pull nginx test image
+        run: docker pull nginxinc/nginx-unprivileged:mainline-alpine
+
       - name: Run unit and integration tests
         run: npm run test
+
+  # Drift review finding #02: `npm run test` above selects unit-core/unit-web/integration, never
+  # unit-data (packages/persistence/tests/**) -- the project the schema baseline (1,621 exact-set
+  # pgTap assertions) and the RLS isolation tests actually live in. Before this job, the only
+  # place those ran was dashboard-status.yml's own `postgres` job, which is nightly-plus-push-to-
+  # dev, not a PR gate -- a schema-breaking change could merge and only be caught after the fact.
+  # Mirrors that job's own steps (self-contained via testcontainers in globalSetup.ts; no separate
+  # `docker compose up postgres` needed here, unlike e2e-functional below).
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Postgres-backed persistence tests
+        run: npm run test:postgres
 
   e2e-functional:
     runs-on: ubuntu-latest
