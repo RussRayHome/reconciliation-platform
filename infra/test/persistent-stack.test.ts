@@ -14,6 +14,16 @@ const synth = (props?: ConstructorParameters<typeof PersistentStack>[2]): Templa
 };
 
 describe('PersistentStack', () => {
+  // Drift review finding #06 (CDK snapshots): the targeted assertions below check the properties
+  // this stack is deliberately known for; they say nothing about a resource an aws-cdk-lib bump
+  // silently adds, removes, or reshapes elsewhere in the template. This snapshot catches that --
+  // a failure here means the synthesized template changed and needs a deliberate, reviewed
+  // `vitest -u` to accept it, not that something is necessarily wrong.
+  it('matches the synthesized CloudFormation template snapshot', () => {
+    const template = synth();
+    expect(template.toJSON()).toMatchSnapshot();
+  });
+
   it('retains both ECR repositories', () => {
     const template = synth();
     template.hasResource('AWS::ECR::Repository', {

@@ -27,7 +27,9 @@ declare module 'vitest' {
   }
 }
 
-const POSTGRES_IMAGE = 'postgres:16.13';
+// Matches Dockerfile.postgres's POSTGRES_BASE_IMAGE -- this suite is meant to prove the schema
+// baseline against the same major.minor Postgres actually shipped, not a nearby-but-different one.
+const POSTGRES_IMAGE = 'postgres:16.14';
 const CREDENTIALS = { user: 'recon', password: 'recon' } as const;
 const MAINTENANCE_DATABASE = 'postgres';
 const TEMPLATE_DATABASE = 'recon_template';

@@ -20,6 +20,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/pre-flight/lib/env-fallback-guard.sh"
 ENVIRONMENT="${1:-dev}"
 
 case "$ENVIRONMENT" in
@@ -42,6 +44,7 @@ esac
 if [[ -f "$ENV_FILE" ]]; then
   SOURCE_FILE="$ENV_FILE"
 elif [[ -f "$FALLBACK_FILE" ]]; then
+  guard_env_fallback "$FALLBACK_FILE"
   SOURCE_FILE="$FALLBACK_FILE"
 else
   printf 'Missing environment file: %s or %s\n' "$ENV_FILE" "$FALLBACK_FILE" >&2

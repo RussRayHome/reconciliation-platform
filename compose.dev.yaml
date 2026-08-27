@@ -70,7 +70,7 @@ services:
       start_period: 10s
 
   pgweb:
-    image: sosedoff/pgweb
+    image: sosedoff/pgweb:0.17.0
     environment:
       PGWEB_DATABASE_URL: postgres://${POSTGRES_USER:-recon_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-reconciliation_platform}?sslmode=disable
     ports:
@@ -89,7 +89,7 @@ services:
     stop_grace_period: 30s
 
   nginx-ui:
-    image: uozi/nginx-ui:latest
+    image: uozi/nginx-ui:2.5.10
     environment:
       TZ: ${TZ:-UTC}
     ports:
