@@ -80,20 +80,11 @@ done
 
 printf 'Running dev/stage user creation against %s environment...\n' "$ENVIRONMENT"
 
-docker compose "${compose_args[@]}" exec -T postgres \
-  psql \
-    -v ON_ERROR_STOP=1 \
-    -U "$APP_DB_USER" \
-    -d postgres \
-    -v app_role="$APP_DB_USER" \
-    -v app_password="$APP_DB_PASSWORD" \
-    <<'SQL'
-SELECT format(
-  'ALTER ROLE %I WITH LOGIN PASSWORD %L',
-  :'app_role',
-  :'app_password'
-) \gexec
-SQL
+# Resyncs $APP_DB_USER's actual Postgres password to match this env file before anything else --
+# see resync-postgres-password.sh's own doc comment for why this drift happens and why it's safe
+# even when the OLD password is unknown. Self-heals the most common reason this script would
+# otherwise fail outright (password authentication failed) before it ever gets to seeding users.
+bash "$ROOT_DIR/scripts/pre-flight/resync-postgres-password.sh" "$ENVIRONMENT"
 
 docker compose "${compose_args[@]}" exec -T postgres \
   psql \
