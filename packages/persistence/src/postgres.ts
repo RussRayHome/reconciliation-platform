@@ -62,8 +62,10 @@ export const loadPostgresPersistenceConfigFromEnv = (): PostgresPersistenceConfi
  * server) already has an `'error'` listener; `pg.Pool` didn't, so this one failure mode took the
  * whole process down (Node terminates on an unhandled `EventEmitter` `'error'`). Takes a callback
  * rather than importing a logger directly -- this package has no logging dependency of its own,
- * and each real caller (server.ts, worker.ts) already has its own pino logger in scope. EH7 will
- * add a second listener here to invalidate its liveness cache on the same event.
+ * and each real caller (server.ts, worker.ts) already has its own pino logger in scope. A second,
+ * always-present internal listener (EH7) invalidates `checkDatabaseReachable`'s cache on the same
+ * event, regardless of whether `onPoolError` is given -- that invalidation is this module's own
+ * concern, not something every caller should have to remember to wire up.
  */
 export const createPostgresPool = (
   config: PostgresPersistenceConfig,
@@ -79,11 +81,67 @@ export const createPostgresPool = (
 
   const pool = new Pool(poolConfig);
 
-  if (onPoolError) {
-    pool.on('error', onPoolError);
-  }
+  pool.on('error', (error: Error) => {
+    invalidateDatabaseReachableCache(pool);
+    onPoolError?.(error);
+  });
 
   return pool;
+};
+
+const LIVENESS_PROBE_TIMEOUT_MS = 2000;
+const LIVENESS_CACHE_TTL_MS = 3000;
+
+const livenessCache = new WeakMap<Pool, { reachable: boolean; checkedAt: number }>();
+
+/**
+ * error-handling-build-plan.md EH7: a cheap `SELECT 1` liveness probe, cached per pool for
+ * `LIVENESS_CACHE_TTL_MS` so a burst of requests costs one round trip per cache window, not one
+ * per request. Invalidated early by `createPostgresPool`'s `'error'` listener (EH6.2) so a pool
+ * failure is reflected before the cache would naturally expire, not just after.
+ *
+ * This narrows the common case's message (mode (b): configured but unreachable) -- it does not
+ * replace EH3's classifier. The database can still die in the gap between this probe returning
+ * `true` and the real query that follows it; that query's own failure is still classified and
+ * handled on its own terms. Anyone reading this later should not mistake a passing probe for a
+ * guarantee the next query will succeed.
+ */
+export const checkDatabaseReachable = async (pool: Pool): Promise<boolean> => {
+  const cached = livenessCache.get(pool);
+  const now = Date.now();
+  if (cached && now - cached.checkedAt < LIVENESS_CACHE_TTL_MS) {
+    return cached.reachable;
+  }
+
+  const reachable = await probeOnce(pool);
+  livenessCache.set(pool, { reachable, checkedAt: now });
+  return reachable;
+};
+
+const probeOnce = async (pool: Pool): Promise<boolean> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Liveness probe timed out')),
+          LIVENESS_PROBE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/** Exported for `createPostgresPool`'s own `'error'` listener (EH6.2) and for tests -- not
+ * expected to be called from application code directly. */
+export const invalidateDatabaseReachableCache = (pool: Pool): void => {
+  livenessCache.delete(pool);
 };
 
 /**

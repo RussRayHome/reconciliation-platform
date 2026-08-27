@@ -98,6 +98,13 @@ const createFakeAliasPool = (seed: AliasRow[] = []) => {
       return Promise.resolve({ rows: [target], rowCount: 1 });
     }
 
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too, or every
+      // route below would incorrectly look unreachable.
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
     throw new Error(`Unexpected alias query: ${text}`);
   };
 
@@ -408,6 +415,39 @@ describe('alias endpoints', () => {
       expect(body.code).toBe('RCN-DB-001');
       expect(body.reference.length).toBeGreaterThan(0);
       expect(body.retryable).toBe(definition.retryable);
+    });
+  });
+
+  describe('with a pool configured but the database unreachable (error-handling-build-plan.md EH7)', () => {
+    // A fresh pool object per test -- checkDatabaseReachable's liveness cache is keyed by pool
+    // identity, so reusing one across cases would leak a cached result between them.
+    const createUnreachablePool = (): Pool =>
+      ({ query: () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:5432')) }) as unknown as Pool;
+
+    it.each([
+      ['get', '/api/aliases', 'ALIAS_LIST'],
+      ['post', '/api/aliases', 'ALIAS_CREATE'],
+      ['put', '/api/aliases/alias-1', 'ALIAS_UPDATE'],
+      ['delete', '/api/aliases/alias-1', 'ALIAS_DELETE'],
+    ] as const)('%s %s returns 503 with RCN-DB-002 (not RCN-DB-001, not a raw driver string)', async (method, route, operation) => {
+      const app = appWithPool(createUnreachablePool());
+
+      const response = await authedApp(app)[method](route).send({});
+
+      const definition = ERROR_DEFINITIONS['RCN-DB-002'];
+      expect(response.status).toBe(definition.httpStatus);
+      const body = response.body as {
+        message: string;
+        code: string;
+        reference: string;
+        retryable: boolean;
+      };
+      expect(body.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+      expect(body.message).not.toContain('ECONNREFUSED');
+      expect(body.code).toBe('RCN-DB-002');
+      expect(body.reference.length).toBeGreaterThan(0);
+      expect(body.retryable).toBe(definition.retryable);
+      expect(response.headers['retry-after']).toBe('5');
     });
   });
 });

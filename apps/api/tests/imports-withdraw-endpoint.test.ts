@@ -96,6 +96,12 @@ const createFakeWithdrawPool = () => {
       return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
+
     throw new Error(`createFakeWithdrawPool: unexpected query: ${text}`);
   };
 

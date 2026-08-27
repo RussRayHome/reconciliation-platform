@@ -76,6 +76,11 @@ const createFakeMappingPool = (): Pool => {
         ],
       });
     }
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [] });
+    }
     throw new Error(`createFakeMappingPool: unexpected query: ${text}`);
   };
 
@@ -126,6 +131,15 @@ describe('GET /api/mapping/profiles', () => {
     };
 
     return {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool), called directly on the pool (not a checked-out
+      // client) -- this fake needs a top-level query it didn't need before.
+      query: (text: string) => {
+        if (text === 'SELECT 1') {
+          return Promise.resolve({ rows: [] });
+        }
+        throw new Error(`createFakeProfileListPool: unexpected pool.query: ${text}`);
+      },
       connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
     } as unknown as Pool;
   };
@@ -276,6 +290,15 @@ describe('GET /api/mapping/profiles/:name (ISSUE-050.1)', () => {
     };
 
     return {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool), called directly on the pool (not a checked-out
+      // client) -- this fake needs a top-level query it didn't need before.
+      query: (text: string) => {
+        if (text === 'SELECT 1') {
+          return Promise.resolve({ rows: [] });
+        }
+        throw new Error(`createFakeDetailPool: unexpected pool.query: ${text}`);
+      },
       connect: () => Promise.resolve({ query: clientQuery, release: () => undefined }),
     } as unknown as Pool;
   };
@@ -324,6 +347,11 @@ describe('POST /api/mapping/profiles/:name/retire (ISSUE-050.1)', () => {
         return Promise.resolve({
           rows: [{ identity_verification_status: 'verified', entity_verification_status: 'verified' }],
         });
+      }
+      if (text === 'SELECT 1') {
+        // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+        // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+        return Promise.resolve({ rows: [] });
       }
       throw new Error(`createFakeRetirePool: unexpected pool.query: ${text}`);
     };

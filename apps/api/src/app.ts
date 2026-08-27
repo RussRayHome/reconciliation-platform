@@ -16,6 +16,7 @@ import type {
 import { AppError, ERROR_DEFINITIONS, OPERATIONS, rolePermissionsByRole } from '@recon/domain';
 import type { OperationCode } from '@recon/domain';
 import {
+  checkDatabaseReachable,
   claimApprovalRequest,
   claimImportApproval,
   computeSha256Hex,
@@ -2651,7 +2652,7 @@ export const createApp = (
   // Registered before /api/reconciliation/:id (below), which would otherwise swallow this
   // literal "runs" segment as its own :id parameter -- Express matches in registration order.
   app.get('/api/reconciliation/runs', async (request, response, next) => {
-    if (!requireDatabase(response, 'RECONCILIATION_RUNS_LIST')) return;
+    if (!(await requireDatabase(response, 'RECONCILIATION_RUNS_LIST'))) return;
     try {
       const query = listReconciliationRunsQuerySchema.safeParse(request.query);
       if (!query.success) {
@@ -2675,7 +2676,7 @@ export const createApp = (
   // Unreconciled Item Roll-Forward PR F.2. Same registration-order note as /api/reconciliation/
   // runs above -- must precede /api/reconciliation/:id/summary's less-specific sibling shape.
   app.get('/api/reconciliation/runs/:id/rollforward', async (request, response, next) => {
-    if (!requireDatabase(response, 'RECONCILIATION_RUN_ROLLFORWARD')) return;
+    if (!(await requireDatabase(response, 'RECONCILIATION_RUN_ROLLFORWARD'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const openItemStore = new PostgresOpenItemStore(pool!);
@@ -2696,7 +2697,7 @@ export const createApp = (
   // spreadsheet support schedule packages/domain/src/messages.ts tells reviewers to keep by hand.
   // Same registration-order note as the two routes above.
   app.get('/api/reconciliation/open-items', async (request, response, next) => {
-    if (!requireDatabase(response, 'RECONCILIATION_OPEN_ITEMS_LIST')) return;
+    if (!(await requireDatabase(response, 'RECONCILIATION_OPEN_ITEMS_LIST'))) return;
     try {
       const query = listOpenItemsScheduleQuerySchema.safeParse(request.query);
       if (!query.success) {
@@ -2916,8 +2917,20 @@ export const createApp = (
   // The x-correlation-id response header is already set for every request by the middleware
   // mounted earlier in this function (before auth) -- reading it back here means this can stay a
   // (response, operation) call like requirePool was, with no signature change needed at any of
-  // the 33 call sites beyond adding the operation argument.
-  const requireDatabase = (response: express.Response, operation: OperationCode): boolean => {
+  // the 33 call sites beyond adding the operation argument (EH2) and awaiting it (EH7).
+  //
+  // EH7 addresses mode (b): !pool is mode (a) (never configured, unchanged from EH2) but a
+  // *configured* pool whose database is unreachable used to sail straight through this check --
+  // truthy is truthy, pg.Pool connects lazily -- and fail much later as a raw, unclassified
+  // driver error. Consulting checkDatabaseReachable's cached probe here narrows that common case
+  // to an accurate RCN-DB-002 with a Retry-After header. This is a narrowing, not a guarantee:
+  // the database can still die between this check and the query that follows it, which is
+  // exactly why EH3's classifier still runs on every response regardless -- see
+  // checkDatabaseReachable's own doc comment.
+  const requireDatabase = async (
+    response: express.Response,
+    operation: OperationCode,
+  ): Promise<boolean> => {
     if (!pool) {
       const definition = ERROR_DEFINITIONS['RCN-DB-001'];
       response.status(definition.httpStatus).json({
@@ -2928,6 +2941,20 @@ export const createApp = (
       });
       return false;
     }
+
+    const reachable = await checkDatabaseReachable(pool);
+    if (!reachable) {
+      const definition = ERROR_DEFINITIONS['RCN-DB-002'];
+      response.setHeader('Retry-After', '5');
+      response.status(definition.httpStatus).json({
+        message: `Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`,
+        code: 'RCN-DB-002',
+        reference: response.getHeader('x-correlation-id'),
+        retryable: definition.retryable,
+      });
+      return false;
+    }
+
     return true;
   };
 
@@ -2954,7 +2981,7 @@ export const createApp = (
       { name: 'glFile', maxCount: 1 },
     ]),
     async (request, response, next) => {
-      if (!requireDatabase(response, 'IMPORT_RUN_CREATE')) return;
+      if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
       // requireApplicationAccess (mounted ahead of this route) guarantees request.auth here.
       // "File reconciliation should stay with the senior Financial analyst" -- an explicit
       // product decision, expressed as its own capability (canSubmitImportRuns) rather than an
@@ -3065,7 +3092,7 @@ export const createApp = (
   // Express matches 'latest' as an :id -- same ordering constraint as /api/reconciliation/latest
   // above /api/reconciliation/:id.
   app.get('/api/imports/runs/latest', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_LATEST')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_LATEST'))) return;
     try {
       const importRunStore = new PostgresImportRunStore(pool!);
       const summary = await importRunStore.getLatestRunSummary(request.auth!.organizationId);
@@ -3087,7 +3114,7 @@ export const createApp = (
   });
 
   app.get('/api/imports/runs/:id', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_GET')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_GET'))) return;
     try {
       const importRunStore = new PostgresImportRunStore(pool!);
       const summary = await importRunStore.getRunSummary(
@@ -3123,7 +3150,7 @@ export const createApp = (
   // separate standalone /api/reconciliation/run flow (keyed by requestId, not runId), which this
   // endpoint doesn't serve.
   app.get('/api/imports/runs/:id/events', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_EVENTS')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_EVENTS'))) return;
     const organizationId = request.auth!.organizationId;
     const runId = request.params.id;
     const reference = resolveCorrelationId(request.id);
@@ -3261,7 +3288,7 @@ export const createApp = (
   // Comptroller reviewing a PENDING_APPROVAL run would need to see. Mirrors the existing
   // GET /api/reconciliation/:id/exceptions pagination shape (limit/offset/hasMore).
   app.get('/api/imports/runs/:id/issues', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_ISSUES')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_ISSUES'))) return;
     try {
       const queryResult = runIssuesQuerySchema.safeParse(request.query);
       if (!queryResult.success) {
@@ -3294,7 +3321,7 @@ export const createApp = (
   });
 
   app.get('/api/imports/runs/:id/records', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_RECORDS')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_RECORDS'))) return;
     try {
       const queryResult = runRecordsQuerySchema.safeParse(request.query);
       if (!queryResult.success) {
@@ -3331,7 +3358,7 @@ export const createApp = (
   // /issues + /records, since the header comparison needs a server-side re-parse of the stored
   // original (see importFailureDetailService.ts's doc comment).
   app.get('/api/imports/runs/:id/files/:fileId/failure-detail', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_FILE_FAILURE_DETAIL')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_FILE_FAILURE_DETAIL'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const runId = request.params.id;
@@ -3384,7 +3411,7 @@ export const createApp = (
   // why this re-parses rather than reading validation_issue alone (raw cell values were never
   // persisted there).
   app.get('/api/imports/runs/:id/files/:fileId/rows', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_FILE_ROWS')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_FILE_ROWS'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const runId = request.params.id;
@@ -3421,7 +3448,7 @@ export const createApp = (
   // README §7.8: file,line,column,code,severity,message,raw_value -- one row per finding, ordered
   // by file then line then column (buildErrorReportCsv does the ordering).
   app.get('/api/imports/runs/:id/error-report.csv', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_ERROR_REPORT')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_ERROR_REPORT'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const runId = request.params.id;
@@ -3467,7 +3494,7 @@ export const createApp = (
   });
 
   app.post('/api/imports/runs/:id/submit', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_SUBMIT')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_SUBMIT'))) return;
     // Same gate as create -- submitting is part of the same senior-analyst-owned action, not a
     // separate capability.
     if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
@@ -3539,7 +3566,7 @@ export const createApp = (
   // not a general approver action, so this lives under /api/imports/runs/:id rather than the
   // polymorphic /api/approvals/:type/:id/* surface Phase 7 built for approver decisions.
   app.post('/api/imports/runs/:id/withdraw', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_WITHDRAW')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_WITHDRAW'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
       response.status(403).json({ message: 'Only a senior analyst may withdraw an import run.' });
       return;
@@ -3586,7 +3613,7 @@ export const createApp = (
   // period is a comptroller-level action, not a self-service one, matching the segregation-of-duty
   // CHECK on closed_by/submitted_by this same call is subject to.
   app.post('/api/imports/runs/:id/close', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_CLOSE')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_CLOSE'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only an approver may close a reconciliation period.' });
       return;
@@ -3625,7 +3652,7 @@ export const createApp = (
 
   // Unreconciled Item Roll-Forward PR E.3.
   app.post('/api/imports/runs/:id/reopen', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_REOPEN')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_REOPEN'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only an approver may reopen a reconciliation period.' });
       return;
@@ -3659,7 +3686,7 @@ export const createApp = (
   // PostgresOpenItemStore.writeOffOpenItem's own doc comments for why there is no automatic
   // amount/age approval gate here yet.
   app.post('/api/imports/open-items/:id/write-off', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_OPEN_ITEM_WRITE_OFF')) return;
+    if (!(await requireDatabase(response, 'IMPORT_OPEN_ITEM_WRITE_OFF'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only an approver may write off an open item.' });
       return;
@@ -3707,7 +3734,7 @@ export const createApp = (
   // comment). "Skipping" invalid rows here means accepting the run despite them, not removing
   // them from reconciliation -- the response/UI say so.
   app.post('/api/imports/runs/:id/import', async (request, response, next) => {
-    if (!requireDatabase(response, 'IMPORT_RUN_IMPORT')) return;
+    if (!(await requireDatabase(response, 'IMPORT_RUN_IMPORT'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canSubmitImportRuns) {
       response
         .status(403)
@@ -3824,7 +3851,7 @@ export const createApp = (
   });
 
   app.get('/api/aliases', async (request, response, next) => {
-    if (!requireDatabase(response, 'ALIAS_LIST')) return;
+    if (!(await requireDatabase(response, 'ALIAS_LIST'))) return;
     try {
       const { accountIdentifier } = aliasesQuerySchema.parse(request.query);
       const aliases = await loadPayeeAliases(
@@ -3839,7 +3866,7 @@ export const createApp = (
   });
 
   app.post('/api/aliases', async (request, response, next) => {
-    if (!requireDatabase(response, 'ALIAS_CREATE')) return;
+    if (!(await requireDatabase(response, 'ALIAS_CREATE'))) return;
     try {
       const bodyResult = createAliasBodySchema.safeParse(request.body ?? {});
       if (!bodyResult.success) {
@@ -3861,7 +3888,7 @@ export const createApp = (
   });
 
   app.put('/api/aliases/:id', async (request, response, next) => {
-    if (!requireDatabase(response, 'ALIAS_UPDATE')) return;
+    if (!(await requireDatabase(response, 'ALIAS_UPDATE'))) return;
     try {
       const bodyResult = updateAliasBodySchema.safeParse(request.body ?? {});
       if (!bodyResult.success) {
@@ -3888,7 +3915,7 @@ export const createApp = (
   });
 
   app.delete('/api/aliases/:id', async (request, response, next) => {
-    if (!requireDatabase(response, 'ALIAS_DELETE')) return;
+    if (!(await requireDatabase(response, 'ALIAS_DELETE'))) return;
     try {
       const deactivated = await deactivatePayeeAlias(
         pool!,
@@ -3910,7 +3937,7 @@ export const createApp = (
   });
 
   app.get('/api/mapping/profiles', async (request, response, next) => {
-    if (!requireDatabase(response, 'MAPPING_PROFILE_LIST')) return;
+    if (!(await requireDatabase(response, 'MAPPING_PROFILE_LIST'))) return;
     try {
       const names = await listMappingProfiles(pool!, request.auth!.organizationId);
       response.json(names);
@@ -3924,7 +3951,7 @@ export const createApp = (
   // above only ever returned bare names for the rule grid's ASSIGNED TO chips, not a profile's
   // actual detail or version history).
   app.get('/api/mapping/profiles/:name', async (request, response, next) => {
-    if (!requireDatabase(response, 'MAPPING_PROFILE_GET')) return;
+    if (!(await requireDatabase(response, 'MAPPING_PROFILE_GET'))) return;
     try {
       const detail = await getMappingProfileDetail(
         pool!,
@@ -3963,7 +3990,7 @@ export const createApp = (
     '/api/mapping/profiles/:name/retire',
     requireFullyVerified,
     async (request, response, next) => {
-      if (!requireDatabase(response, 'MAPPING_PROFILE_RETIRE')) return;
+      if (!(await requireDatabase(response, 'MAPPING_PROFILE_RETIRE'))) return;
       try {
         // Combining a route param with a preceding middleware (requireFullyVerified) widens
         // Express's inferred param type away from the path-literal-derived `string` -- the
@@ -4006,7 +4033,7 @@ export const createApp = (
   });
 
   app.get('/api/rules/versions', async (request, response, next) => {
-    if (!requireDatabase(response, 'RULE_VERSIONS_LIST')) return;
+    if (!(await requireDatabase(response, 'RULE_VERSIONS_LIST'))) return;
     try {
       const organizationId = request.auth!.organizationId;
       const versions = await listMatchingConfigVersions(pool!, organizationId);
@@ -4023,7 +4050,7 @@ export const createApp = (
   });
 
   app.post('/api/rules/versions/draft', async (request, response, next) => {
-    if (!requireDatabase(response, 'RULE_VERSION_DRAFT')) return;
+    if (!(await requireDatabase(response, 'RULE_VERSION_DRAFT'))) return;
     // Mirrors the client-side gate on canAdjustSliderDefaults (App.tsx) server-side -- this is a
     // new mutating, org-wide-visible endpoint, so it needs its own enforcement rather than
     // trusting the UI to have hidden the control.
@@ -4074,7 +4101,7 @@ export const createApp = (
   });
 
   app.post('/api/rules/versions/:id/publish', async (request, response, next) => {
-    if (!requireDatabase(response, 'RULE_VERSION_PUBLISH')) return;
+    if (!(await requireDatabase(response, 'RULE_VERSION_PUBLISH'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canAdjustSliderDefaults) {
       response.status(403).json({ message: 'Only admins can publish a matching-config version.' });
       return;
@@ -4200,7 +4227,7 @@ export const createApp = (
   };
 
   app.get('/api/approvals', async (request, response, next) => {
-    if (!requireDatabase(response, 'APPROVALS_LIST')) return;
+    if (!(await requireDatabase(response, 'APPROVALS_LIST'))) return;
     try {
       const queryResult = approvalsQuerySchema.safeParse(request.query);
       if (!queryResult.success) {
@@ -4271,7 +4298,7 @@ export const createApp = (
   });
 
   app.get('/api/approvals/counts', async (request, response, next) => {
-    if (!requireDatabase(response, 'APPROVALS_COUNTS')) return;
+    if (!(await requireDatabase(response, 'APPROVALS_COUNTS'))) return;
     try {
       const { organizationId, username, role } = request.auth!;
       const canApprove = rolePermissionsByRole[role].canApprove;
@@ -4323,7 +4350,7 @@ export const createApp = (
   });
 
   app.post('/api/approvals/:type/:id/decision', async (request, response, next) => {
-    if (!requireDatabase(response, 'APPROVAL_DECISION')) return;
+    if (!(await requireDatabase(response, 'APPROVAL_DECISION'))) return;
     // Only approvers may decide -- mirrors the canAdjustSliderDefaults gate above, on the new
     // canApprove permission (RailMenuMods: Controller/VP Finance/CFO/Admin/Superuser).
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
@@ -4448,7 +4475,7 @@ export const createApp = (
   });
 
   app.post('/api/approvals/:type/:id/claim', async (request, response, next) => {
-    if (!requireDatabase(response, 'APPROVAL_CLAIM')) return;
+    if (!(await requireDatabase(response, 'APPROVAL_CLAIM'))) return;
     if (!rolePermissionsByRole[request.auth!.role].canApprove) {
       response.status(403).json({ message: 'Only approvers can claim an approval.' });
       return;
@@ -4496,7 +4523,7 @@ export const createApp = (
   });
 
   app.post('/api/mapping/profiles', requireFullyVerified, async (request, response, next) => {
-    if (!requireDatabase(response, 'MAPPING_PROFILE_CREATE')) return;
+    if (!(await requireDatabase(response, 'MAPPING_PROFILE_CREATE'))) return;
     try {
       const bodyResult = saveMappingProfileBodySchema.safeParse(request.body ?? {});
       if (!bodyResult.success) {

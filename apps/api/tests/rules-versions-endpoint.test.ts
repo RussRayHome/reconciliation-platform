@@ -100,6 +100,11 @@ const createFakePool = (
     if (text.includes('SELECT') && text.includes('FROM reconciliation_approval_request')) {
       return Promise.resolve({ rows: overrides.approvalRequestRows ?? [] });
     }
+    if (text === 'SELECT 1') {
+      // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
+      // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
+      return Promise.resolve({ rows: [] });
+    }
     throw new Error(`createFakePool: unexpected query: ${text}`);
   };
 
