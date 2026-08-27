@@ -96,6 +96,7 @@
     "test:e2e:visual:update-snapshots": "NODE_OPTIONS=--no-deprecation playwright test --project=visual --update-snapshots",
     "test:e2e:visual:container": "docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e",
     "test:e2e:visual:container:update-snapshots": "docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e npm run test:e2e:visual:update-snapshots",
+    "test:e2e:nginx": "NODE_OPTIONS=--no-deprecation playwright test --config=playwright.nginx.config.ts",
     "lint": "eslint .",
     "analyze:static": "npm run lint && npm run analyze:test-quality && npm run analyze:deps && npm run analyze:unused-exports && npm run analyze:complexity",
     "analyze:deps": "depcruise --config .dependency-cruiser.cjs --output-type err-long apps packages scripts",

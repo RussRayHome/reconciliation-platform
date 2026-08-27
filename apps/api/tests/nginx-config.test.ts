@@ -61,6 +61,14 @@ describe('NGINX Configuration', () => {
     const certPath = join(certsDir, 'dev-cert.pem');
     const keyPath = join(certsDir, 'dev-key.pem');
     const configPath = join(scratchDir, 'default.conf');
+    // Same single-file-into-missing-directory limitation as certsDir above -- /etc/nginx/snippets/
+    // isn't part of the base image either, so this also has to be a whole-directory copy.
+    const snippetsDir = join(scratchDir, 'snippets');
+    fs.mkdirSync(snippetsDir);
+    fs.copyFileSync(
+      'apps/web/nginx-security-headers.conf',
+      join(snippetsDir, 'security-headers.conf'),
+    );
     execSync(
       `openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes ` +
         `-keyout ${keyPath} -out ${certPath} -subj "/CN=localhost"`,
@@ -80,6 +88,14 @@ describe('NGINX Configuration', () => {
         { stdio: 'ignore' },
       );
       execSync(`docker cp ${configPath} ${containerName}:/etc/nginx/conf.d/default.conf`);
+      // Deliberately NOT /etc/nginx/conf.d/ -- the base image's own nginx.conf globs `include
+      // /etc/nginx/conf.d/*.conf;` at http{} scope, which would apply this file's add_header
+      // directives globally instead of only where nginx.conf's `/` and `/assets/` locations
+      // explicitly `include` it by absolute path. Confirmed live against the real running dev
+      // stack: putting it in conf.d/ passed `nginx -t` (syntactically valid either way) but every
+      // proxied /api/ response still carried a second, conflicting copy of these headers
+      // alongside the API's own -- see nginx-security-headers.conf's own header comment.
+      execSync(`docker cp ${snippetsDir} ${containerName}:/etc/nginx/snippets`);
       execSync(`docker cp ${certsDir} ${containerName}:/etc/nginx/certs`);
       const output = execSync(`docker start --attach ${containerName}`, {
         encoding: 'utf-8',

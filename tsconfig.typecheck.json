@@ -13,6 +13,7 @@
     "packages/**/*.tsx",
     "scripts/**/*.ts",
     "playwright.config.ts",
+    "playwright.nginx.config.ts",
     "vitest.postgres.config.ts"
   ],
   "exclude": ["infra/**"]

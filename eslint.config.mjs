@@ -21,6 +21,7 @@ export default defineConfig([
       'playwright-browsers/**',
       '**/.vite/**',
       'playwright.config.ts',
+      'playwright.nginx.config.ts',
       'vitest.config.ts',
       'apps/web/vite.config.ts',
       'scripts/**/*.ts',
