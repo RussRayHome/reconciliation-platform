@@ -117,6 +117,7 @@
     "security:scan:component:web-server": "node scripts/security-scan-web-server.mjs",
     "security:scan:components": "node scripts/security-component-scan.mjs",
     "security:scan:secrets": "node scripts/security-scan-secrets.mjs",
+    "security:sbom": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-sbom.ts",
     "security:scan:zap:web:stage": "DOCKER_ENV_FILE=.env.docker.stage DOCKER_ENV_FALLBACK_FILE=.env.docker.stage.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.stage.yaml bash scripts/pre-flight/zap-web-scan.sh",
     "security:scan:zap:api:stage": "DOCKER_ENV_FILE=.env.docker.stage DOCKER_ENV_FALLBACK_FILE=.env.docker.stage.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.stage.yaml bash scripts/pre-flight/zap-api-scan.sh",
     "security:scan:zap:web:stage:strict": "ZAP_FAIL_ON_WARN=true npm run security:scan:zap:web:stage",
