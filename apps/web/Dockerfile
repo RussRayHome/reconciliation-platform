@@ -41,6 +41,14 @@ RUN apk add --no-cache openssl && \
 FROM nginxinc/nginx-unprivileged:mainline-alpine AS runtime
 
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+# NOT /etc/nginx/conf.d/ -- the base image's own nginx.conf globs `include
+# /etc/nginx/conf.d/*.conf;` at http{} scope, which would apply this file's add_header directives
+# globally (inherited by every location, including the proxy ones) and silently defeat the whole
+# point of keeping it out of server{} scope. Confirmed live: this was tried first, and every
+# proxied /api/ response carried a second, conflicting copy of these headers alongside the API's
+# own. /etc/nginx/snippets/ is not glob-included by anything, so it's only ever applied where
+# nginx.conf's own `include` statements say so.
+COPY apps/web/nginx-security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 COPY --from=dev-cert /dev-cert.pem /etc/nginx/certs/dev-cert.pem
 COPY --from=dev-cert /dev-key.pem /etc/nginx/certs/dev-key.pem

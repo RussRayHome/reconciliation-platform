@@ -14,7 +14,7 @@ const dockerTest = gate.test;
 describe('Docker Compose', () => {
   beforeAll(gate.assertAvailable);
 
-  dockerTest('renders a valid configuration', () => {
+  dockerTest('renders a valid configuration', { timeout: 20000 }, () => {
     const output = execSync('docker compose --env-file .env.docker.dev.fallback config', {
       encoding: 'utf-8',
     });
