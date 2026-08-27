@@ -4,7 +4,9 @@ import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import sonarjs from 'eslint-plugin-sonarjs';
+import testingLibrary from 'eslint-plugin-testing-library';
 import tseslint from 'typescript-eslint';
+import vitest from '@vitest/eslint-plugin';
 
 const sonarjsRecommendedRulesDisabled = Object.fromEntries(
   Object.keys(sonarjs.configs.recommended.rules).map((ruleName) => [ruleName, 'off']),
@@ -160,5 +162,28 @@ export default defineConfig([
         ...globals.browser,
       },
     },
+    plugins: {
+      vitest,
+    },
+    // 'warn', not 'error': installed 2026-08-27 against an existing suite with real violations
+    // already in it (192 across both new plugins). Downgraded deliberately so this doesn't break
+    // `npm run lint` (part of verify:push and CI's required `test` job) the moment it's wired in
+    // -- upgrade specific rules back to 'error' once the existing violations are triaged.
+    rules: Object.fromEntries(
+      Object.keys(vitest.configs.recommended.rules).map((rule) => [rule, 'warn']),
+    ),
+  },
+  {
+    // React Testing Library is only used under apps/web/src (matches vitest.config.ts's
+    // unit-web project glob) -- apps/api/tests uses plain supertest, and apps/web/tests/e2e is
+    // Playwright, neither of which this plugin's rules apply to.
+    files: ['apps/web/src/**/*.test.{ts,tsx}'],
+    plugins: {
+      'testing-library': testingLibrary,
+    },
+    // 'warn', see the vitest block above for why.
+    rules: Object.fromEntries(
+      Object.keys(testingLibrary.configs['flat/react'].rules).map((rule) => [rule, 'warn']),
+    ),
   },
 ]);
