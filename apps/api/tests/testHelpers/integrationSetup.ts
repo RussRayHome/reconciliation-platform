@@ -15,4 +15,30 @@
  * and an explicit RATE_LIMIT_USE_REDIS='true' to test the 429 path) -- those overrides run after
  * this setup file and take precedence for their own test bodies.
  */
+import { beforeEach, onTestFailed } from 'vitest';
+import { clearObservedResponse, describeResponse, takeObservedResponse } from './lastResponse';
+
 process.env.RATE_LIMIT_USE_REDIS = 'false';
+
+/**
+ * Issue #192: print the last HTTP response the test observed whenever a test fails, so a
+ * non-reproducible status mismatch carries its own diagnosis instead of costing an investigation.
+ * console.error survives LOG_LEVEL=silent, which only configures the app's pino logger.
+ */
+beforeEach(() => {
+  clearObservedResponse();
+
+  onTestFailed(() => {
+    const observed = takeObservedResponse();
+    if (!observed) {
+      return;
+    }
+
+    const echoed = observed.response.headers['x-correlation-id'] ?? '(absent)';
+    console.error(
+      `[#192] last response in this test: ${observed.method} ${observed.url} ` +
+        `sent=${observed.sentCorrelationId} echoed=${echoed} ` +
+        describeResponse(observed.response),
+    );
+  });
+});
