@@ -119,7 +119,7 @@ describe('ApprovalsPage', () => {
     mockedApi.rows = [PENDING_UNASSIGNED, PENDING_ASSIGNED];
     renderPage({ canApprove: true });
 
-    await waitFor(() => expect(screen.getByText('bank_statement.xlsx')).toBeTruthy());
+    await screen.findByText('bank_statement.xlsx');
     expect(screen.getByText('company_gl.xlsx')).toBeTruthy();
     expect(screen.getByText('412 rows')).toBeTruthy();
     expect(screen.getByText('3h')).toBeTruthy();
@@ -135,15 +135,13 @@ describe('ApprovalsPage', () => {
   it('shows the live-empty message when a live group has no rows', async () => {
     mockedApi.rows = [];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('Imported files -- nothing pending')).toBeTruthy());
+    expect(await screen.findByText('Imported files -- nothing pending')).toBeInTheDocument();
   });
 
   it('shows the coming-soon message for a non-live group instead of an empty queue', async () => {
     mockedApi.rows = [];
     renderPage({ canApprove: true }, routePaths.approvalsMappingProfiles);
-    await waitFor(() =>
-      expect(screen.getByText("Mapping Profiles approvals aren't available yet")).toBeTruthy(),
-    );
+    await screen.findByText("Mapping Profiles approvals aren't available yet");
     expect(screen.getByText('Coming soon')).toBeTruthy();
   });
 
@@ -186,7 +184,7 @@ describe('ApprovalsPage', () => {
   it('claims an unassigned row and refreshes the table', async () => {
     mockedApi.rows = [PENDING_UNASSIGNED];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('bank_statement.xlsx')).toBeTruthy());
+    await screen.findByText('bank_statement.xlsx');
 
     mockedApi.getApprovalsRequest.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Claim to review' }));
@@ -200,7 +198,7 @@ describe('ApprovalsPage', () => {
   it('withdraws a pending reconciliationRun submission for a non-approver viewer', async () => {
     mockedApi.rows = [PENDING_ASSIGNED_RUN];
     renderPage({ canApprove: false });
-    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+    await screen.findByText('August Recon');
 
     mockedApi.getApprovalsRequest.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
@@ -215,7 +213,7 @@ describe('ApprovalsPage', () => {
     const decidedRun: ApprovalRow = { ...PENDING_ASSIGNED_RUN, id: 'run-2', state: 'APPROVED' };
     mockedApi.rows = [PENDING_ASSIGNED, decidedRun];
     renderPage({ canApprove: false });
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
 
     expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
   });
@@ -223,7 +221,7 @@ describe('ApprovalsPage', () => {
   it('never shows Withdraw for an approver viewer, even on a pending reconciliationRun row', async () => {
     mockedApi.rows = [PENDING_ASSIGNED_RUN];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+    await screen.findByText('August Recon');
 
     expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
   });
@@ -232,7 +230,7 @@ describe('ApprovalsPage', () => {
     mockedApi.rows = [PENDING_ASSIGNED_RUN];
     mockedApi.withdrawImportRunRequest.mockRejectedValue(new Error('Only the analyst who submitted this run may withdraw it.'));
     renderPage({ canApprove: false });
-    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+    await screen.findByText('August Recon');
 
     fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
 
@@ -256,7 +254,7 @@ describe('ApprovalsPage', () => {
     };
     mockedApi.rows = [matchingRuleRow];
     renderPage({ canApprove: true }, routePaths.approvalsMatchingRules);
-    await waitFor(() => expect(screen.getByText('Matching config v9')).toBeTruthy());
+    await screen.findByText('Matching config v9');
 
     const approveButton = screen.getByRole('button', { name: 'Promote v9' });
     fireEvent.click(approveButton);
@@ -283,7 +281,7 @@ describe('ApprovalsPage', () => {
     mockedApi.rows = [PENDING_ASSIGNED];
     mockedApi.decideApprovalRequest.mockRejectedValue(new Error('decision rejected by server'));
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
 
@@ -295,7 +293,7 @@ describe('ApprovalsPage', () => {
   it('selects rows via checkbox and bulk-approves the selection', async () => {
     mockedApi.rows = [PENDING_UNASSIGNED, PENDING_ASSIGNED];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('bank_statement.xlsx')).toBeTruthy());
+    await screen.findByText('bank_statement.xlsx');
 
     const checkbox = screen.getByRole('checkbox', { name: 'Select company_gl.xlsx' });
     fireEvent.click(checkbox);
@@ -311,7 +309,7 @@ describe('ApprovalsPage', () => {
   it('clears the selection via the Clear button without submitting a decision', async () => {
     mockedApi.rows = [PENDING_ASSIGNED];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select company_gl.xlsx' }));
     expect(screen.getByText('1 selected')).toBeTruthy();
@@ -324,7 +322,7 @@ describe('ApprovalsPage', () => {
   it('disables the header Bulk approve button until something is selected, and hides checkboxes on non-pending tabs', async () => {
     mockedApi.rows = [PENDING_ASSIGNED];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
 
     const bulkButton = screen.getByRole('button', { name: 'Bulk approve' }) as HTMLButtonElement;
     expect(bulkButton.disabled).toBe(true);
@@ -336,7 +334,7 @@ describe('ApprovalsPage', () => {
   it('hides row checkboxes for a non-approver viewer', async () => {
     mockedApi.rows = [PENDING_ASSIGNED];
     renderPage({ canApprove: false });
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Bulk approve' })).toBeNull();
   });
@@ -345,7 +343,7 @@ describe('ApprovalsPage', () => {
     mockedApi.rows = [PENDING_UNASSIGNED];
     mockedApi.claimApprovalRequest.mockRejectedValue(new Error('claim rejected by server'));
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('bank_statement.xlsx')).toBeTruthy());
+    await screen.findByText('bank_statement.xlsx');
 
     fireEvent.click(screen.getByRole('button', { name: 'Claim to review' }));
 
@@ -356,7 +354,7 @@ describe('ApprovalsPage', () => {
   it('unchecking a selected row removes it from the selection', async () => {
     mockedApi.rows = [PENDING_ASSIGNED];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
 
     const checkbox = screen.getByRole('checkbox', { name: 'Select company_gl.xlsx' });
     fireEvent.click(checkbox);
@@ -370,7 +368,7 @@ describe('ApprovalsPage', () => {
     mockedApi.rows = [PENDING_ASSIGNED];
     mockedApi.decideApprovalRequest.mockRejectedValue(new Error('bulk approve rejected by server'));
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select company_gl.xlsx' }));
     fireEvent.click(screen.getByRole('button', { name: 'Approve 1 selected' }));
@@ -383,7 +381,7 @@ describe('ApprovalsPage', () => {
     mockedApi.rows = [PENDING_ASSIGNED, PENDING_ASSIGNED_RUN];
     renderPage({ canApprove: true });
 
-    await waitFor(() => expect(screen.getByText('company_gl.xlsx')).toBeTruthy());
+    await screen.findByText('company_gl.xlsx');
     expect(screen.getByText('August Recon')).toBeTruthy();
     expect(screen.getByText('Monthly recon · 8/2026')).toBeTruthy();
     expect(mockedApi.getApprovalsRequest).toHaveBeenCalledWith('import', 'pending');
@@ -393,7 +391,7 @@ describe('ApprovalsPage', () => {
   it('bulk-approves a mixed selection using each row\'s own type, not the group\'s first type', async () => {
     mockedApi.rows = [PENDING_ASSIGNED, PENDING_ASSIGNED_RUN];
     renderPage({ canApprove: true });
-    await waitFor(() => expect(screen.getByText('August Recon')).toBeTruthy());
+    await screen.findByText('August Recon');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select company_gl.xlsx' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select August Recon' }));

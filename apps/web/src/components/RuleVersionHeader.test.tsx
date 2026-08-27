@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach } from 'vitest';
 
 import { RuleVersionHeader } from './AppWorkspacePanels';
@@ -84,7 +84,7 @@ describe('RuleVersionHeader', () => {
     render(<RuleVersionHeader {...getFixture('superseded')} onBackToActive={onBackToActive} />);
 
     expect(screen.getByText('v6 · SUPERSEDED')).toBeTruthy();
-    screen.getByRole('button', { name: 'Back to active' }).click();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to active' }));
     expect(onBackToActive).toHaveBeenCalledOnce();
   });
 });

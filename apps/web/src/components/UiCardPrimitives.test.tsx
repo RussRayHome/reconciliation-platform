@@ -67,9 +67,8 @@ describe('UI card primitives', () => {
     expect(screen.getByText('$125.00')).toBeInTheDocument();
     expect(screen.getByText('Needs reviewer follow-up')).toBeInTheDocument();
     expect(container.querySelector('.stat-card--warning')).not.toBeNull();
-
-    const iconShell = container.querySelector('.stat-card__icon-shell');
-    expect(iconShell).not.toBeNull();
-    expect(iconShell?.getAttribute('title')).toBe('Warning status');
+    // getByTitle finds this even though the icon shell is aria-hidden -- unlike getByRole,
+    // Testing Library's title-based query doesn't filter by the accessibility tree.
+    expect(screen.getByTitle('Warning status')).toBeInTheDocument();
   });
 });

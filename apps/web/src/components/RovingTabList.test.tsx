@@ -158,6 +158,9 @@ describe('RovingTabList', () => {
       />,
     );
 
+    // .roving-tab__icon-shell is aria-hidden="true" (RovingTabList.tsx:108) -- no accessible
+    // query can find it.
+    // eslint-disable-next-line testing-library/no-container
     expect(container.querySelectorAll('.roving-tab__icon-shell')).toHaveLength(1);
   });
 

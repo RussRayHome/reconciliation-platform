@@ -66,6 +66,10 @@ describe('ExceptionFacets', () => {
 
   it('exposes a sticky Clear filters control only when filters are active', async () => {
     const user = userEvent.setup();
+    // renderFacets (line 37) never captures render()'s own return value; it returns the props
+    // bag (including the vi.fn() mocks) used to render, so `props` is the accurate name here,
+    // not a RenderResult.
+    // eslint-disable-next-line testing-library/render-result-naming-convention
     const props = renderFacets({ hasActiveFilters: true });
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
