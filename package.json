@@ -133,6 +133,8 @@
     "aws:prod:install": "cd infra && npm install",
     "db:users:dev": "bash scripts/pre-flight/run-users.sh dev",
     "db:users:stage": "bash scripts/pre-flight/run-users.sh stage",
+    "db:password:resync:dev": "bash scripts/pre-flight/resync-postgres-password.sh dev",
+    "db:password:resync:stage": "bash scripts/pre-flight/resync-postgres-password.sh stage",
     "db:users:prod-rray": "bash scripts/pre-flight/run-prod-users.sh prod-rray",
     "db:users:prod-rray-admin": "bash scripts/pre-flight/run-prod-users.sh prod-rray-admin",
     "db:backup": "DOCKER_ENV_FILE=.env.docker.dev DOCKER_ENV_FALLBACK_FILE=.env.docker.dev.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.dev.yaml bash scripts/pre-flight/backup.sh dev",
