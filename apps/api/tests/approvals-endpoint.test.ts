@@ -1,8 +1,25 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+
+interface NoPoolErrorBody {
+  message: string;
+  code: string;
+  reference: string;
+  retryable: boolean;
+}
+
+const expectNoPoolError = (body: NoPoolErrorBody, operation: keyof typeof OPERATIONS): void => {
+  const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+  expect(body.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+  expect(body.code).toBe('RCN-DB-001');
+  expect(body.reference.length).toBeGreaterThan(0);
+  expect(body.retryable).toBe(definition.retryable);
+};
 
 interface ImportApprovalRow {
   id: string;
@@ -439,20 +456,22 @@ describe('GET /api/approvals', () => {
     expect(response.status).toBe(200);
   });
 
-  it('returns 501 when no pool is configured', async () => {
+  it('returns 503 when no pool is configured', async () => {
     const response = await authedApp(appWithPool(undefined as unknown as Pool)).get(
       '/api/approvals?type=import&tab=pending',
     );
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body as NoPoolErrorBody, 'APPROVALS_LIST');
   });
 });
 
 describe('GET /api/approvals/counts', () => {
-  it('returns 501 when no pool is configured', async () => {
+  it('returns 503 when no pool is configured', async () => {
     const response = await authedApp(appWithPool(undefined as unknown as Pool)).get(
       '/api/approvals/counts',
     );
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body as NoPoolErrorBody, 'APPROVALS_COUNTS');
   });
 
   it('returns counts across all five groups', async () => {
@@ -495,11 +514,12 @@ describe('GET /api/approvals/counts', () => {
 });
 
 describe('POST /api/approvals/:type/:id/decision', () => {
-  it('returns 501 when no pool is configured', async () => {
+  it('returns 503 when no pool is configured', async () => {
     const response = await authedApp(appWithPool(undefined as unknown as Pool))
       .post('/api/approvals/import/ia-1/decision')
       .send({ status: 'APPROVED' });
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body as NoPoolErrorBody, 'APPROVAL_DECISION');
   });
 
   it('returns 403 for a non-approver', async () => {
@@ -641,11 +661,12 @@ describe('POST /api/approvals/:type/:id/decision', () => {
 });
 
 describe('POST /api/approvals/:type/:id/claim', () => {
-  it('returns 501 when no pool is configured', async () => {
+  it('returns 503 when no pool is configured', async () => {
     const response = await authedApp(appWithPool(undefined as unknown as Pool)).post(
       '/api/approvals/import/ia-1/claim',
     );
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body as NoPoolErrorBody, 'APPROVAL_CLAIM');
   });
 
   it('returns 403 for a non-approver', async () => {

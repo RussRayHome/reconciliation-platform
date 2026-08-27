@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
 
@@ -381,20 +383,31 @@ describe('alias endpoints', () => {
   });
 
   describe('without a database pool', () => {
+    // error-handling-build-plan.md EH2: requirePool's one hardcoded message naming "Alias
+    // management" regardless of which of the 33 guarded routes was actually called is exactly
+    // the defect this closes -- each operation now composes its own accurate message.
     it.each([
-      ['get', '/api/aliases'],
-      ['post', '/api/aliases'],
-      ['put', '/api/aliases/alias-1'],
-      ['delete', '/api/aliases/alias-1'],
-    ] as const)('%s %s returns 501', async (method, route) => {
+      ['get', '/api/aliases', 'ALIAS_LIST'],
+      ['post', '/api/aliases', 'ALIAS_CREATE'],
+      ['put', '/api/aliases/alias-1', 'ALIAS_UPDATE'],
+      ['delete', '/api/aliases/alias-1', 'ALIAS_DELETE'],
+    ] as const)('%s %s returns 503 with RCN-DB-001 and an accurate message', async (method, route, operation) => {
       const app = createApp();
 
       const response = await authedApp(app)[method](route).send({});
 
-      expect(response.status).toBe(501);
-      expect((response.body as { message: string }).message).toBe(
-        'Alias management requires a database connection.',
-      );
+      const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+      expect(response.status).toBe(definition.httpStatus);
+      const body = response.body as {
+        message: string;
+        code: string;
+        reference: string;
+        retryable: boolean;
+      };
+      expect(body.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+      expect(body.code).toBe('RCN-DB-001');
+      expect(body.reference.length).toBeGreaterThan(0);
+      expect(body.retryable).toBe(definition.retryable);
     });
   });
 });

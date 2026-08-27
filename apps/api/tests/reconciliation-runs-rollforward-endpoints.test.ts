@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
+import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
+
+const expectNoPoolError = (body: unknown, operation: keyof typeof OPERATIONS): void => {
+  const definition = ERROR_DEFINITIONS['RCN-DB-001'];
+  const parsed = body as { message: string; code: string; reference: string; retryable: boolean };
+  expect(parsed.message).toBe(`Unable to ${OPERATIONS[operation]}. ${definition.publicMessage}`);
+  expect(parsed.code).toBe('RCN-DB-001');
+  expect(parsed.reference.length).toBeGreaterThan(0);
+  expect(parsed.retryable).toBe(definition.retryable);
+};
 
 interface FakeRun {
   id: string;
@@ -194,12 +205,13 @@ describe('GET /api/reconciliation/runs', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns 501 when no database pool is configured', async () => {
+  it('returns 503 when no database pool is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
 
     const response = await authedApp(app).get('/api/reconciliation/runs');
 
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'RECONCILIATION_RUNS_LIST');
   });
 });
 
@@ -261,11 +273,12 @@ describe('GET /api/reconciliation/open-items', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns 501 when no database pool is configured', async () => {
+  it('returns 503 when no database pool is configured', async () => {
     const app = createApp(undefined, undefined, undefined, undefined);
 
     const response = await authedApp(app).get('/api/reconciliation/open-items');
 
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
+    expectNoPoolError(response.body, 'RECONCILIATION_OPEN_ITEMS_LIST');
   });
 });
