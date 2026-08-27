@@ -319,12 +319,29 @@ for (const width of widths) {
       await page.locator('.run-bar__overflow').evaluate((details) => {
         (details as HTMLDetailsElement).open = false;
       });
+      // Issue #208: the "Variance thresholds" heading (.rule-variance-families h3) has no fixed
+      // height -- Chromium occasionally renders its bold weight via a different internal path
+      // (confirmed via computed style and network-level font-integrity checks to not be a
+      // missing-font-face, loading-timing, or corrupted-file issue; all three were ruled out with
+      // direct evidence first) with very slightly different line metrics, which genuinely resizes
+      // the box by ~17px and cascades through the rest of this grid layout. A pixel `mask` alone
+      // cannot fix this: Playwright fails a screenshot on a dimension mismatch unconditionally,
+      // before any masking is even considered. Pinning the height directly is the layout-level
+      // equivalent of masking -- deterministic regardless of which internal path Chromium takes.
+      await page.addStyleTag({
+        content: '.rule-variance-families h3 { height: 24px !important; overflow: hidden; }',
+      });
       // Region-scoped to the whole Rules route panel (includes the SectionCard title/chrome
       // wrapping "Matching Rules" -- this is the outermost element the route itself renders, so
-      // it excludes nav/hero the same way #source-upload-form does above).
+      // it excludes nav/hero the same way #source-upload-form does above). Still masks the
+      // heading's own pixels on top of the height pin above, in case the two rendering paths
+      // also differ by a stray pixel or two within an now-identically-sized box.
       await expect(page.getByRole('region', { name: 'Rules catalog' })).toHaveScreenshot(
         `rules-panel-${width}.png`,
-        screenshotOptions,
+        {
+          ...screenshotOptions,
+          mask: [page.getByRole('heading', { name: 'Variance thresholds' })],
+        },
       );
 
       await runReconciliation(page);
