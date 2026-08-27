@@ -22,6 +22,20 @@
         }
       }
     },
+    "/api/health/ready": {
+      "get": {
+        "summary": "Readiness check (error-handling-build-plan.md EH8)",
+        "description": "Reports whether required dependencies (currently: the database, when configured) are reachable. Point orchestrator/ALB readiness checks here instead of /api/health, which never touches the database.",
+        "responses": {
+          "200": {
+            "description": "Ready -- either the database is reachable, or none is configured"
+          },
+          "503": {
+            "description": "Not ready -- a configured database is unreachable"
+          }
+        }
+      }
+    },
     "/api/metrics": {
       "get": {
         "summary": "Prometheus API metrics",
