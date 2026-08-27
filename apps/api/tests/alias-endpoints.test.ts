@@ -353,6 +353,25 @@ describe('alias endpoints', () => {
         expect.objectContaining({ id: 'alias-1', bankPattern: 'SQ *COFFEE SHOP' }),
       ]);
     });
+
+    // ISSUE-048.2 (sweep of the ISSUE-010/011 class): a present-but-invalid matchConfidence used
+    // to `.catch(undefined)` into "field omitted," so this PUT silently kept the old value and
+    // still returned 200 -- a caller correcting a bad confidence score had no way to tell their
+    // update never applied. It now 400s instead.
+    it('rejects an out-of-range matchConfidence with 400 instead of silently leaving it unchanged', async () => {
+      const app = appWithPool(pool);
+
+      const response = await authedApp(app)
+        .put('/api/aliases/alias-1')
+        .send({ matchConfidence: 42 });
+
+      expect(response.status).toBe(400);
+
+      const afterResponse = await authedApp(app).get('/api/aliases');
+      expect(afterResponse.body).toEqual([
+        expect.objectContaining({ id: 'alias-1', matchConfidence: 1 }),
+      ]);
+    });
   });
 
   describe('DELETE /api/aliases/:id', () => {

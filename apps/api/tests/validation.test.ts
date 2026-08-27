@@ -239,6 +239,43 @@ describe('updateAliasBodySchema', () => {
     const result = updateAliasBodySchema.parse({ normalizedTokens: ['a', 42, 'b', null] });
     expect(result.normalizedTokens).toEqual(['a', 'b']);
   });
+
+  // ISSUE-048.2 (sweep of the ISSUE-010/011 class): this is a partial-update body, so every field
+  // is legitimately optional -- but bankPattern/canonicalPayeeName/sourceDirection/matchConfidence
+  // previously also `.catch(undefined)`ed a *present-but-invalid* value into that same "leave
+  // unchanged" outcome, so a caller correcting a bad value got a 200 with nothing actually
+  // changed. All four now reject a present-but-invalid value instead of silently no-op'ing it.
+  it('rejects a present-but-invalid matchConfidence instead of silently leaving it unchanged', () => {
+    expect(() => updateAliasBodySchema.parse({ matchConfidence: 42 })).toThrow();
+  });
+
+  it('rejects a present-but-invalid sourceDirection instead of silently leaving it unchanged', () => {
+    expect(() => updateAliasBodySchema.parse({ sourceDirection: 'sideways' })).toThrow();
+  });
+
+  it('rejects a non-string bankPattern instead of silently leaving it unchanged', () => {
+    expect(() => updateAliasBodySchema.parse({ bankPattern: 42 })).toThrow();
+  });
+
+  it('rejects a non-string canonicalPayeeName instead of silently leaving it unchanged', () => {
+    expect(() => updateAliasBodySchema.parse({ canonicalPayeeName: 42 })).toThrow();
+  });
+
+  it('still accepts a present, valid value for every optional field', () => {
+    const result = updateAliasBodySchema.parse({
+      bankPattern: '  SQ *COFFEE SHOP  ',
+      canonicalPayeeName: '  Coffee Shop  ',
+      sourceDirection: 'bank_to_gl',
+      matchConfidence: 0.75,
+    });
+
+    expect(result).toMatchObject({
+      bankPattern: 'SQ *COFFEE SHOP',
+      canonicalPayeeName: 'Coffee Shop',
+      sourceDirection: 'bank_to_gl',
+      matchConfidence: 0.75,
+    });
+  });
 });
 
 describe('reviewerDecisionDeleteQuerySchema', () => {

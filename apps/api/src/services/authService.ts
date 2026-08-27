@@ -125,7 +125,24 @@ export const verifyAuthToken = (token: string, logger?: pino.Logger): AuthTokenP
       firstName: record.firstName,
       lastName: record.lastName,
     };
-  } catch {
+  } catch (error) {
+    // ISSUE-004: this used to be a bare `catch { return null }`, which also swallowed
+    // resolveJwtSecret's production "JWT_SECRET must be set" throw -- the API booted green and
+    // every request 401'd with zero log lines explaining why. Only genuine token-shape failures
+    // (expiry, bad signature, malformed token, not-yet-valid, algorithm-confusion attempts -- all
+    // subclasses of JsonWebTokenError) are expected here and return the uniform "not
+    // authenticated" outcome; anything else rethrows.
+    if (error instanceof jwt.TokenExpiredError) {
+      logger?.debug({ action: 'auth.token.expired' }, 'JWT verification failed: token expired.');
+    } else if (error instanceof jwt.JsonWebTokenError) {
+      logger?.warn(
+        { action: 'auth.token.invalid', err: error },
+        'JWT verification failed: invalid token.',
+      );
+    } else {
+      throw error;
+    }
+
     return null;
   }
 };

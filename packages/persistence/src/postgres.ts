@@ -163,6 +163,7 @@ const runInScope = async <T>(
   callback: (client: PoolClient) => Promise<T>,
 ): Promise<T> => {
   const client = await pool.connect();
+  let releaseError: Error | undefined;
 
   try {
     await client.query('BEGIN');
@@ -176,15 +177,26 @@ const runInScope = async <T>(
     await client.query('COMMIT');
     return result;
   } catch (error) {
-    // error-handling-build-plan.md EH6: when the connection is already dead, ROLLBACK itself
-    // throws -- unswallowed, that replaces `error` (the actual root cause) with a secondary
-    // "ROLLBACK failed" error at exactly the moment the real one matters most. app.ts:2230
-    // already gets this right for its own one-off transaction; this shared helper, which every
-    // RLS-scoped read and write funnels through, didn't.
-    await client.query('ROLLBACK').catch(() => {});
+    try {
+      // error-handling-build-plan.md EH6: when the connection is already dead, ROLLBACK itself
+      // throws -- unswallowed, that replaces `error` (the actual root cause) with a secondary
+      // "ROLLBACK failed" error at exactly the moment the real one matters most.
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      // ISSUE-003: a failed ROLLBACK can leave the transaction -- and app.current_organization_id
+      // -- still live on this connection. Releasing it as healthy would let pg hand it to the
+      // next, unrelated request, which is ADR-0001's tenant-bleed scenario exactly. Attached via
+      // `cause` (this module has no logger of its own -- see createPostgresPool's onPoolError
+      // doc) so whichever caller logs `error` can still see it, and used below to force pg to
+      // destroy the connection instead of pooling it.
+      if (error instanceof Error) {
+        error.cause = rollbackError;
+      }
+      releaseError = rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
+    }
     throw error;
   } finally {
-    client.release();
+    client.release(releaseError);
   }
 };
 

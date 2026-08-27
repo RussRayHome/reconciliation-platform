@@ -1038,6 +1038,144 @@ describe('reconciliation API', () => {
     expect(ownerResponse.headers['content-disposition']).toContain(fileName);
   });
 
+  // ISSUE-002: loadFromReadModelOrRepository fell back to the tenant-unaware in-memory repository
+  // whenever the read model returned undefined -- and under RLS, "belongs to another tenant" and
+  // "does not exist" are the exact same signal. A tenant with zero runs of its own could get back
+  // whatever run happened to be sitting in the shared in-memory repository (org A's, in this
+  // test), instead of a 404. Fixed by treating a configured read model as authoritative: its
+  // result is used even when undefined, and the repository fallback only fires when there's no
+  // read model configured at all (the no-Postgres dev path).
+  it('returns 404 for a tenant with no runs of its own, never falling back to another tenant\'s in-memory run', async () => {
+    const runId = 'org-a-only-run';
+    const ownerOrgId = 'org-a';
+
+    const query = (text: string, params?: unknown[]): Promise<{ rows: unknown[] }> => {
+      if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.includes('set_config(')) {
+        return Promise.resolve({ rows: [{ set_config: params?.[1] }] });
+      }
+
+      // Mirrors what RLS does at the database layer -- see the identical comment on the workbook
+      // export test above.
+      const ownedByCurrentTenant = query.currentOrgId === ownerOrgId;
+
+      const isLatestQuery =
+        text.includes('FROM reconciliation_job') && text.includes('completed_at IS NOT NULL');
+      const isByIdQuery = text.includes('FROM reconciliation_job') && text.includes('WHERE id = $1');
+
+      if (isByIdQuery) {
+        const [requestedId] = params as [string];
+        if (requestedId !== runId || !ownedByCurrentTenant) {
+          return Promise.resolve({ rows: [] });
+        }
+      } else if (!isLatestQuery || !ownedByCurrentTenant) {
+        return Promise.resolve({ rows: [] });
+      }
+
+      if (isLatestQuery || isByIdQuery) {
+        return Promise.resolve({
+          rows: [
+            {
+              id: runId,
+              correlation_id: 'corr-1',
+              account_identifier: null,
+              period_label: null,
+              reconciliation_frequency: null,
+              current_state: 'Completed',
+              started_at: '2026-08-01T00:00:00.000Z',
+              completed_at: '2026-08-01T00:00:01.000Z',
+            },
+          ],
+        });
+      }
+
+      return Promise.resolve({ rows: [] });
+    };
+    query.currentOrgId = undefined as string | undefined;
+    const trackedQuery = (text: string, params?: unknown[]): Promise<{ rows: unknown[] }> => {
+      if (text.includes('set_config(')) {
+        query.currentOrgId = params?.[0] as string;
+      }
+      return query(text, params);
+    };
+
+    const pool = {
+      connect: () => Promise.resolve({ query: trackedQuery, release: () => undefined }),
+    } as unknown as ConstructorParameters<typeof PostgresReconciliationReadModelStore>[0];
+    const readModelStore = new PostgresReconciliationReadModelStore(pool);
+
+    // Seeded so a pre-fix run would have something tenant-agnostic to leak: the in-memory
+    // repository has no organizationId of its own, so repository.findLatest()/findById() would
+    // happily return org A's run to anyone who asks, read model or not.
+    const repository = new InMemoryRunRepository();
+    repository.save({
+      id: runId,
+      correlationId: 'corr-1',
+      status: 'Completed',
+      startedAt: '2026-08-01T00:00:00.000Z',
+      completedAt: '2026-08-01T00:00:01.000Z',
+      sourceFiles: [],
+      rawRows: [],
+      normalizedTransactions: [],
+      matchResults: [],
+      groupedMatchResults: [],
+      probableMatches: [],
+      exceptions: [],
+      summary: {
+        totalRecordsReviewed: 0,
+        bankRecords: 0,
+        glRecords: 0,
+        exactMatches: 0,
+        probableMatches: 0,
+        unmatchedItems: 0,
+        duplicates: 0,
+        bankDuplicates: 0,
+        glDuplicates: 0,
+        dateVariances: 0,
+        timingDifferences: 0,
+        dataQualityIssues: 0,
+        amountMismatches: 0,
+        missingFromBank: 0,
+        missingFromGL: 0,
+        unmatchedBankNetAmount: 0,
+        unmatchedGlNetAmount: 0,
+        cleanMatchedAmount: 0,
+        unresolvedExposure: 0,
+        countsByCategory: {},
+        amountByCategory: {},
+        charts: [],
+        rollForward: {
+          openingCount: 0,
+          openingAmount: 0,
+          newCount: 0,
+          newAmount: 0,
+          clearedCount: 0,
+          clearedAmount: 0,
+          writtenOffCount: 0,
+          writtenOffAmount: 0,
+          closingCount: 0,
+          closingAmount: 0,
+        },
+      },
+      reviewerObservations: [],
+      reviewerDecisions: [],
+      auditEvents: [],
+    });
+
+    const app = createApp(repository, undefined, readModelStore);
+
+    const otherTenant = authedApp(app, { organizationId: 'org-b' });
+    await otherTenant.get('/api/reconciliation/latest').expect(404);
+    await otherTenant.get(`/api/reconciliation/${runId}`).expect(404);
+
+    // Positive control: the owning tenant still gets its run back through the same code path.
+    const owningTenant = authedApp(app, { organizationId: ownerOrgId });
+    const latestResponse = await owningTenant.get('/api/reconciliation/latest').expect(200);
+    expect((latestResponse.body as { id: string }).id).toBe(runId);
+  });
+
   it('returns 404 when posting a reviewer decision to an unknown run id', async () => {
     const app = createApp();
 
@@ -1236,8 +1374,22 @@ describe('reconciliation API', () => {
   it('refuses to start with the local login fallback enabled in production', () => {
     vi.stubEnv('ALLOW_LOCAL_LOGIN_FALLBACK', 'true');
     vi.stubEnv('NODE_ENV', 'production');
+    // Isolates this test to the ALLOW_LOCAL_LOGIN_FALLBACK guard specifically -- without a real
+    // JWT_SECRET, ISSUE-004's resolveJwtSecret startup guard would throw first instead.
+    vi.stubEnv('JWT_SECRET', 'test-secret-for-login-fallback-guard-test');
 
     expect(() => createApp()).toThrow(/ALLOW_LOCAL_LOGIN_FALLBACK/);
+  });
+
+  // ISSUE-004: resolveJwtSecret's production "no JWT_SECRET" throw used to only ever fire inside
+  // verifyAuthToken, on the first authenticated request -- the API booted green and 401'd every
+  // user with zero log lines explaining why. Calling it eagerly here, alongside the other
+  // auth-config startup guards, fails the boot itself instead.
+  it('refuses to start in production with no JWT_SECRET configured', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('JWT_SECRET', '');
+
+    expect(() => createApp()).toThrow(/JWT_SECRET must be set in production/);
   });
 
   it('rejects local fallback login with the wrong password for a known fallback username', async () => {

@@ -89,6 +89,7 @@ import {
   denylistToken,
   hashPassword,
   isProductionRuntime,
+  resolveJwtSecret,
   signAuthToken,
   verifyPassword,
   type DenylistRedisClient,
@@ -1613,6 +1614,13 @@ export const createApp = (
       level: resolveLogLevelAtLeastInfo(process.env.LOG_LEVEL),
       redact: logRedactOptions,
     });
+  // ISSUE-004: resolveJwtSecret's production "JWT_SECRET must be set" guard used to only ever
+  // fire on the first request (inside verifyAuthToken, and only there once its bare catch is
+  // fixed to stop swallowing it) -- a bad deploy booted green and 401'd every user with no signal
+  // why. Calling it here, alongside the other auth-config startup guards below, fails the boot
+  // itself instead.
+  resolveJwtSecret(httpLogger);
+
   const apiMetricsFlag = parseBooleanFlag(process.env.ENABLE_API_METRICS);
   const apiMetrics = apiMetricsFlag === true || apiMetricsFlag === null ? createApiMetrics() : null;
   const apiRateLimiter = createApiRateLimiter(httpLogger);
@@ -1788,10 +1796,13 @@ export const createApp = (
     loadFromReadModel: (() => Promise<T | undefined>) | undefined,
     loadFromRepository: () => T | undefined,
   ): Promise<T | undefined> => {
-    const persistedResult = loadFromReadModel ? await loadFromReadModel() : undefined;
-
-    if (persistedResult !== undefined) {
-      return persistedResult;
+    // ISSUE-002: once a read model is configured it is authoritative. Under RLS, "belongs to
+    // another tenant" and "does not exist" are the same signal (undefined) -- falling back to the
+    // tenant-unaware in-memory repository here would let tenant B's request for a run it doesn't
+    // own return tenant A's most recently processed one instead. Only the no-Postgres dev path
+    // (no read model at all) uses the repository, mirroring loadRunExceptionPage/loadReviewerDecisions.
+    if (loadFromReadModel) {
+      return loadFromReadModel();
     }
 
     return loadFromRepository();
@@ -4633,13 +4644,13 @@ export const createApp = (
   app.get('/api/reconciliation/:id/export/workbook', async (request, response, next) => {
     try {
       // ISSUE-001: this used to call repository.findById() directly, with no tenant check at
-      // all. When a read model is configured it is authoritative for ownership, and that check
-      // must be a hard gate here -- NOT loadRunReport's usual read-model-then-repository
-      // fallback, which would fall through to the untenanted repository (and hand back another
-      // tenant's workbook) the moment the read model reports "not found" for this tenant. That
-      // fallback is real and intentional for the read-only report routes (ISSUE-002 tracks
-      // tightening it generally); this route deals bytes out the door, so it doesn't get to
-      // inherit the same leniency.
+      // all. loadRunReport (fixed by ISSUE-002) no longer falls back to the untenanted repository
+      // once a read model is configured, so it would gate this correctly too -- but the actual
+      // workbook *binary* only ever lives in the in-memory repository (the read model stores
+      // export metadata only, see fetchOutputWorkbook), so this route has to call
+      // repository.findById() directly regardless to get the bytes. That means it still needs its
+      // own explicit ownership check via the read model first, run as a hard gate before ever
+      // touching the untenanted repository.
       if (readModelStore) {
         const owned = await readModelHasRun(request.auth!.organizationId, request.params.id);
         if (!owned) {
