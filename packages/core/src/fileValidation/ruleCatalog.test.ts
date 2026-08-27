@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { FILE_VALIDATION_RULES } from './ruleCatalog';
+import type { FileValidationRuleDefinition } from './ruleCatalog';
 
 /**
  * Guards the promise `ruleCatalog.ts`'s own header comment makes: the DB catalog
@@ -47,12 +48,16 @@ describe('FILE_VALIDATION_RULES', () => {
   });
 
   it('every BANK_*/GL_*/AP_* entry declares the matching sourceType, STRUCT_* declares null', () => {
+    const expectedSourceType = (code: string): FileValidationRuleDefinition['sourceType'] => {
+      if (code.startsWith('BANK_')) return 'BANK';
+      if (code.startsWith('GL_')) return 'GL';
+      if (code.startsWith('AP_')) return 'BILLING';
+      if (code.startsWith('STRUCT_')) return null;
+      throw new Error(`Unrecognized rule code prefix, add a sourceType case: ${code}`);
+    };
+
     for (const rule of FILE_VALIDATION_RULES) {
-      if (rule.code.startsWith('BANK_')) expect(rule.sourceType).toBe('BANK');
-      else if (rule.code.startsWith('GL_')) expect(rule.sourceType).toBe('GL');
-      else if (rule.code.startsWith('AP_')) expect(rule.sourceType).toBe('BILLING');
-      else if (rule.code.startsWith('STRUCT_')) expect(rule.sourceType).toBeNull();
-      else throw new Error(`Unrecognized rule code prefix, add a sourceType case: ${rule.code}`);
+      expect(rule.sourceType).toBe(expectedSourceType(rule.code));
     }
   });
 });

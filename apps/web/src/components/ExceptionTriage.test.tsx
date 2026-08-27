@@ -148,14 +148,13 @@ describe('ExceptionTriage', () => {
   it('supports keyboard navigation and records a decision with the keyboard', () => {
     const { onDecide } = renderTriage();
 
-    const selectedRow = document.querySelector('.exception-row--selected') as HTMLElement | null;
-    expect(selectedRow).not.toBeNull();
-    selectedRow?.focus();
+    const selectedRow = screen.getByRole('option', { selected: true });
+    selectedRow.focus();
 
-    fireEvent.keyDown(selectedRow as HTMLElement, { key: 'j' });
+    fireEvent.keyDown(selectedRow, { key: 'j' });
 
-    const nextRow = document.querySelector('.exception-row--selected') as HTMLElement | null;
-    fireEvent.keyDown(nextRow as HTMLElement, { key: 'a' });
+    const nextRow = screen.getByRole('option', { selected: true });
+    fireEvent.keyDown(nextRow, { key: 'a' });
 
     expect(onDecide).toHaveBeenCalledWith('exception-2', 'accept');
   });
@@ -178,10 +177,10 @@ describe('ExceptionTriage', () => {
 
     expect(screen.getByText(/Unsaved note/i)).toBeInTheDocument();
 
-    const firstRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    const firstRow = screen.getByRole('option', { selected: true });
     firstRow.focus();
     fireEvent.keyDown(firstRow, { key: 'j' });
-    const secondRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    const secondRow = screen.getByRole('option', { selected: true });
     fireEvent.keyDown(secondRow, { key: 'k' });
 
     expect(screen.getByLabelText('Reviewer note')).toHaveValue('Investigate wire ref');
@@ -226,7 +225,7 @@ describe('ExceptionTriage', () => {
       decisionByTargetId: { 'exception-1': decision },
     });
 
-    const selectedRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    const selectedRow = screen.getByRole('option', { selected: true });
     selectedRow.focus();
     fireEvent.keyDown(selectedRow, { key: 'a' });
 
@@ -237,7 +236,7 @@ describe('ExceptionTriage', () => {
   it('invokes undo when the U key is pressed', () => {
     const { onUndoLastDecision } = renderTriage();
 
-    const selectedRow = document.querySelector('.exception-row--selected') as HTMLElement;
+    const selectedRow = screen.getByRole('option', { selected: true });
     selectedRow.focus();
     fireEvent.keyDown(selectedRow, { key: 'u' });
 

@@ -48,6 +48,8 @@ describe('AgingChart', () => {
       <AgingChart title="Outstanding Check Aging" data={[{ label: '0-5 days', value: 1 }]} hue="bank" />,
     );
 
+    // No accessible-query equivalent for "assert this tag is absent anywhere in the tree".
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     expect(container.querySelector('details')).toBeNull();
     expect(screen.getByRole('table')).toBeInTheDocument();
   });

@@ -129,6 +129,9 @@ describe('ReviewSection probable matches performance rendering', () => {
     expect(
       screen.getByText('Virtualized view enabled for large probable-match result sets.'),
     ).toBeInTheDocument();
+    // Asserting which rendering strategy (virtualized vs. standard table) is active is an
+    // implementation detail with no accessible-role distinction to query for.
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     expect(container.querySelector('.probable-match-virtual-list')).not.toBeNull();
   });
 
@@ -160,6 +163,9 @@ describe('ReviewSection probable matches performance rendering', () => {
     expect(
       screen.queryByText('Virtualized view enabled for large probable-match result sets.'),
     ).toBeNull();
+    // Same reasoning as the virtualized-list assertion above: which rendering strategy is active
+    // has no accessible-role distinction to query for.
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     expect(container.querySelector('.probable-match-table-shell__table table')).not.toBeNull();
   });
 });

@@ -1103,7 +1103,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
 
     await waitFor(() => {
-      expect(screen.queryByText('No review output yet')).not.toBeNull();
+      expect(screen.getByText('No review output yet')).toBeInTheDocument();
     });
 
     expect(globalThis.localStorage.getItem('reconciliation-platform:latest-report-run')).toBeNull();
@@ -1375,7 +1375,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
-    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+    await screen.findByText('v7 · ACTIVE');
 
     // Tunable, non-elevated: plain metric count. Two fixture rules (reference-amount-match,
     // LikelyMiscoding) each have exactly one metric, so this name isn't unique.
@@ -1401,7 +1401,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
-    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+    await screen.findByText('v7 · ACTIVE');
 
     const wireFeeMetricRow = document.getElementById('variance-metric-wireFeeTolerance');
     expect(wireFeeMetricRow).not.toBeNull();
@@ -1425,7 +1425,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
-    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+    await screen.findByText('v7 · ACTIVE');
 
     // The rule whose metric was actually overridden shows the publish date -- formatted via the
     // same helper the component uses, so this assertion doesn't hardcode a timezone-dependent
@@ -1441,7 +1441,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
-    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+    await screen.findByText('v7 · ACTIVE');
 
     expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
     expect(screen.getByText('Missing from Bank')).toBeInTheDocument();
@@ -1459,7 +1459,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
-    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+    await screen.findByText('v7 · ACTIVE');
 
     fireEvent.click(screen.getByRole('button', { name: 'Classifier' }));
     expect(screen.getByText('Likely Miscoding')).toBeInTheDocument();
@@ -1479,7 +1479,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/mapping/rules?family=matching');
     renderApp();
-    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+    await screen.findByText('v7 · ACTIVE');
 
     expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
     expect(screen.getByText('Wire Correspondent Fee Deduction')).toBeInTheDocument();
@@ -1499,7 +1499,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
-    await waitFor(() => screen.getByText('v7 · ACTIVE'));
+    await screen.findByText('v7 · ACTIVE');
 
     fireEvent.change(screen.getByPlaceholderText(/Search \d+ rules/), {
       target: { value: 'no rule matches this text' },
@@ -2658,9 +2658,7 @@ describe('App', () => {
     // Editing is gated on the async-loaded version state (ADMIN·EDITABLE requires an ACTIVE
     // version with overridesAppliedToEngine true, not just the role) -- wait for GET
     // /api/rules/versions to resolve before the slider exists at all.
-    const slider = await waitFor(() =>
-      screen.getByRole('slider', { name: /Amount Tolerance/i }),
-    );
+    const slider = await screen.findByRole('slider', { name: /Amount Tolerance/i });
 
     expect(slider).not.toBeDisabled();
     expect(screen.getByText(/Admin control mode is enabled\./i)).toBeInTheDocument();
@@ -2680,9 +2678,7 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
-    const slider = await waitFor(() =>
-      screen.getByRole('slider', { name: /Timing Difference Days/i }),
-    );
+    const slider = await screen.findByRole('slider', { name: /Timing Difference Days/i });
     expect(slider).not.toBeDisabled();
   });
 
