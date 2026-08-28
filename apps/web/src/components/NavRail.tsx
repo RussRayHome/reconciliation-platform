@@ -56,7 +56,7 @@ const approvalBadgeCount = (
 };
 
 /**
- * Sticky left navigation rail, grouped into four pipeline-order categories -- WORK, CONFIGURE,
+ * Sticky left navigation rail, grouped into four pipeline-order categories -- CLOSE, CONFIGURE,
  * REVIEW, ANALYZE -- plus a permission-gated System section and a footer identity/account menu.
  * Approvals is a collapsible section here, with one rail item per approvable type; clicking one
  * opens that type's own Pending/Approved/Rejected/My submissions table.
@@ -147,7 +147,11 @@ export function NavRail({
           <span className="nav-rail__item-label">Collapse</span>
         </button>
 
-        <NavRailCategory title="Work" first>
+        {/* N4: "Close" holds the whole close journey in order -- Import Files, Reconcile,
+            Exceptions, Reports. Renamed from "Work" (a label change) with Reports moved in from
+            Analyze (also a label/position change); every sectionId below is untouched, since
+            useNavSectionCollapse bakes the id into each user's collapse-state storage key. */}
+        <NavRailCategory title="Close" first>
           <CollapsibleNavSection
             sectionId="importFiles"
             label="Import Files"
@@ -177,7 +181,7 @@ export function NavRail({
 
           <CollapsibleNavSection
             sectionId="reconciliation"
-            label="Reconciliation"
+            label="Reconcile"
             icon="reports"
             username={username}
             bordered={false}
@@ -205,6 +209,14 @@ export function NavRail({
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
             badge={unreviewedExceptionCount}
+          />
+
+          <NavItemLink
+            to={routePaths.export}
+            label="Reports"
+            icon="operations"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
           />
         </NavRailCategory>
 
@@ -314,13 +326,6 @@ export function NavRail({
         </NavRailCategory>
 
         <NavRailCategory title="Analyze">
-          <NavItemLink
-            to={routePaths.export}
-            label="Reports"
-            icon="operations"
-            isCollapsed={isCollapsed}
-            onNavigate={onMobileClose}
-          />
           <NavItemLink
             to={routePaths.openItemsSchedule}
             label="Open Items Schedule"
