@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-08-28T23:39:09.629Z",
+  "generatedAt": "2026-08-28T23:45:56.192Z",
   "repositoryPath": "/home/runner/work/reconciliation-platform/reconciliation-platform",
-  "overallStatus": "attention-needed",
-  "failedChecks": 1,
-  "passedChecks": 10,
+  "overallStatus": "healthy",
+  "failedChecks": 0,
+  "passedChecks": 11,
   "totalChecks": 11,
-  "totalDurationMs": 1937317,
+  "totalDurationMs": 1910433,
   "checks": [
     {
       "name": "Unit tests",
@@ -55739,15 +55739,15 @@
     {
       "name": "E2E tests",
       "command": "npm run test:e2e:functional / test:e2e:visual:container (merged x5)",
-      "ok": false,
-      "exitCode": 1,
-      "durationMs": 1231320,
-      "summary": "Passed: 62, Failed: 1",
-      "details": "Check failed -- see job log for full output.",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 1204436,
+      "summary": "Passed: 63, Failed: 0",
+      "details": "See job log for full output.",
       "areaLabel": "E2E",
       "testType": "e2e",
-      "passedCount": 62,
-      "failedCount": 1,
+      "passedCount": 63,
+      "failedCount": 0,
       "totalCount": 63,
       "e2eSpecs": [
         {
@@ -55957,57 +55957,56 @@
         {
           "name": "functional/reconciliation-run-validation.spec.ts › form validation › submit button is disabled before any files are uploaded",
           "status": "passed",
-          "durationMs": 5617,
+          "durationMs": 7607,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › form validation › submit button remains disabled with only the Account A bank file uploaded",
           "status": "passed",
-          "durationMs": 5671,
+          "durationMs": 7137,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › form validation › submit button is enabled once both files are present and label is populated",
           "status": "passed",
-          "durationMs": 5595,
+          "durationMs": 5860,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › form validation › submit button is disabled again when the reconciliation label is cleared",
           "status": "passed",
-          "durationMs": 5581,
+          "durationMs": 5588,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › form validation › uploading a file with unrecognized content shows a structural validation error",
           "status": "passed",
-          "durationMs": 6676,
+          "durationMs": 6225,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › annual reconciliation frequency › switching to Annual hides the month picker and shows the year picker",
           "status": "passed",
-          "durationMs": 8615,
+          "durationMs": 5720,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › annual reconciliation frequency › annual reconciliation run completes and shows results",
           "status": "passed",
-          "durationMs": 7741,
+          "durationMs": 7505,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › combined all-exceptions workbook › exception triage is populated after running all-exceptions fixture",
           "status": "passed",
-          "durationMs": 7627,
+          "durationMs": 7415,
           "retries": 0
         },
         {
           "name": "functional/reconciliation-run-validation.spec.ts › combined all-exceptions workbook › multiple distinct exception categories appear in the summary breakdown",
-          "status": "failed",
-          "durationMs": 37109,
-          "retries": 0,
-          "artifactPath": "/app/test-results/e2e/reconciliation-run-validat-b9da5-ar-in-the-summary-breakdown-functional/trace.zip"
+          "status": "passed",
+          "durationMs": 7655,
+          "retries": 0
         },
         {
           "name": "functional/reconciliation.spec.ts › requires login and lands on the application after successful authentication",
@@ -56134,20 +56133,16 @@
   ],
   "history": [
     {
-      "generatedAt": "2026-08-28T23:39:09.629Z",
-      "overallStatus": "attention-needed",
-      "failedChecks": 1,
+      "generatedAt": "2026-08-28T23:45:56.192Z",
+      "overallStatus": "healthy",
+      "failedChecks": 0,
       "totalChecks": 11,
-      "totalDurationMs": 1937317,
-      "failingCheckNames": [
-        "E2E tests"
-      ],
-      "failingAreas": [
-        "E2E"
-      ],
+      "totalDurationMs": 1910433,
+      "failingCheckNames": [],
+      "failingAreas": [],
       "testTotals": {
-        "passed": 2133,
-        "failed": 1,
+        "passed": 2134,
+        "failed": 0,
         "total": 2134,
         "byType": []
       },
@@ -56214,20 +56209,20 @@
         },
         {
           "name": "E2E tests",
-          "ok": false,
-          "durationMs": 1231320,
-          "summary": "Passed: 62, Failed: 1"
+          "ok": true,
+          "durationMs": 1204436,
+          "summary": "Passed: 63, Failed: 0"
         }
       ]
     }
   ],
   "repoHealth": {
-    "overallStatus": "attention-needed",
-    "failedChecks": 1,
+    "overallStatus": "healthy",
+    "failedChecks": 0,
     "lastCiRun": {
-      "status": "attention-needed",
-      "durationMs": 1937317,
-      "at": "2026-08-28T23:39:09.629Z"
+      "status": "healthy",
+      "durationMs": 1910433,
+      "at": "2026-08-28T23:45:56.192Z"
     },
     "commitsThisWeek": 158,
     "branchFreshness": {
@@ -56239,7 +56234,7 @@
   },
   "environment": "dev",
   "promotionReadiness": {
-    "checkedAt": "2026-08-28T23:39:09.798Z",
+    "checkedAt": "2026-08-28T23:45:56.347Z",
     "baseline": {
       "tagName": "stable-baseline-2026-05-14",
       "exists": true,
@@ -56410,11 +56405,11 @@
     }
   ],
   "repoStatus": {
-    "verdict": "blocked",
+    "verdict": "attention",
     "repo": {
       "slug": "RussRayHome/reconciliation-platform",
       "defaultBranch": "dev",
-      "refreshedAt": "2026-08-28T23:39:10.557Z"
+      "refreshedAt": "2026-08-28T23:45:57.148Z"
     },
     "environments": [
       {
@@ -56427,8 +56422,8 @@
         "driftLabel": "In sync",
         "driftNote": "Integration target",
         "ci": {
-          "status": "fail",
-          "durationMs": 1937317
+          "status": "pass",
+          "durationMs": 1910433
         }
       },
       {
