@@ -35,7 +35,6 @@ const defaultProps = {
   onApplySavedView: noop,
   docsHref: '/docs',
   canAccessDocumentation: true,
-  canAccessRunBook: true,
   canApprove: false,
   approvalCounts: null,
   username: 'test.user',
@@ -69,12 +68,9 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   accountPreferences: 'Preferences',
   importFilesBank: 'Bank Statements',
   importFilesBilling: 'AP / Billing',
-  mappingProfiles: 'Mapping Profiles',
   mappingCreate: 'Create Mapping',
-  mappingVersions: 'Mapping Versions',
   mappingRules: 'Matching Rules',
   mappingRulesVersions: 'Rule Versions',
-  mappingHistory: 'Mapping History',
   approvalsImports: 'Imported files',
   approvalsMappingProfiles: 'Mapping Profiles approvals',
   approvalsMatchingRules: 'Matching Rule & Variances',
@@ -85,7 +81,6 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   exceptions: 'Exceptions',
   export: 'Reports',
   openItemsSchedule: 'Open Items Schedule',
-  documentationRunBook: 'Run Book',
 };
 
 /** `routePaths` entries deliberately absent from the rail, with why -- so a future removal has to
@@ -97,6 +92,11 @@ const EXPECTED_ABSENT_FROM_RAIL: Record<string, string> = {
   signup: 'pre-auth screen',
   support: 'pre-auth screen',
   approvalsPolicy: 'Reached via the Approvals page header\'s "Approval policy" button, not the rail',
+  // N2: these four routes all render ComingSoonPage -- the rail entry is removed, the route stays.
+  mappingProfiles: 'N2: renders ComingSoonPage; rail entry removed, route stays',
+  mappingVersions: 'N2: renders ComingSoonPage; rail entry removed, route stays',
+  mappingHistory: 'N2: renders ComingSoonPage; rail entry removed, route stays',
+  documentationRunBook: 'N2: renders ComingSoonPage; rail entry removed, route stays',
 };
 
 describe('NavRail route inventory', () => {
@@ -152,25 +152,15 @@ describe('NavRail route inventory', () => {
   });
 });
 
-describe('NavRail template downloads', () => {
-  it('offers both CSV and XLSX for the Bank and GL templates, each pill a distinct download link', () => {
+// N3: the rail's template-download menu duplicated the Import Files screen's own menu verbatim
+// (same hrefs, same labels) -- removed here, not rebuilt; Import Files still offers every format.
+describe('NavRail template downloads (N3: removed, not duplicated)', () => {
+  it('renders no download links', () => {
     renderRail();
 
-    expect(screen.getByRole('link', { name: 'Bank template CSV' })).toHaveAttribute(
-      'href',
-      '/templates/bank-template.csv',
-    );
-    expect(screen.getByRole('link', { name: 'Bank template XLSX' })).toHaveAttribute(
-      'href',
-      '/templates/bank-template.xlsx',
-    );
-    expect(screen.getByRole('link', { name: 'GL template CSV' })).toHaveAttribute(
-      'href',
-      '/templates/gl-template.csv',
-    );
-    expect(screen.getByRole('link', { name: 'GL template XLSX' })).toHaveAttribute(
-      'href',
-      '/templates/gl-template.xlsx',
-    );
+    const downloadLinks = screen
+      .getAllByRole('link')
+      .filter((link) => link.hasAttribute('download'));
+    expect(downloadLinks).toEqual([]);
   });
 });

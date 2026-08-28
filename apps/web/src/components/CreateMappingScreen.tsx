@@ -15,7 +15,6 @@ import {
   TRANSFORM_LABELS,
   validateSampleValue,
 } from '../lib/mappingTransforms';
-import { routePaths } from '../routes/routePaths';
 import { CreateMappingCanvas } from './CreateMappingCanvas';
 
 type UploadSide = 'gl' | 'bank';
@@ -203,6 +202,10 @@ export function CreateMappingScreen() {
   const [profileName, setProfileName] = useState('');
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+  // N2: captured at the moment of a successful save, separately from `profileName` (which the
+  // user could keep editing afterward) -- the confirmation must keep naming the profile that was
+  // actually saved, not whatever the input currently holds.
+  const [savedProfileName, setSavedProfileName] = useState<string | null>(null);
 
   const glPairsWithTransform = useMemo(
     () =>
@@ -260,19 +263,23 @@ export function CreateMappingScreen() {
     setSaveError(null);
 
     try {
+      const trimmedName = profileName.trim();
       await saveMappingProfileRequest({
-        name: profileName.trim(),
+        name: trimmedName,
         gl: glPairsWithTransform,
         bank: bankPairsWithTransform,
         createdBy: username,
       });
+      // N2: the redirect trap -- this used to navigate to routePaths.mappingProfiles, a Coming
+      // Soon page, so a successful save looked like it destroyed the user's work. Confirm in
+      // place instead; there is nowhere working to send them to yet.
       setSaveState('saved');
-      void navigate(routePaths.mappingProfiles);
+      setSavedProfileName(trimmedName);
     } catch (error) {
       setSaveState('error');
       setSaveError(error instanceof Error ? error.message : 'Could not save the mapping profile.');
     }
-  }, [profileName, glPairsWithTransform, bankPairsWithTransform, navigate]);
+  }, [profileName, glPairsWithTransform, bankPairsWithTransform]);
 
   const canSave = readyToSave && profileName.trim().length > 0 && saveState !== 'saving';
 
@@ -321,6 +328,11 @@ export function CreateMappingScreen() {
         ) : null}
         {saveState === 'error' && saveError ? (
           <span className="mapping-upload__error">{saveError}</span>
+        ) : null}
+        {saveState === 'saved' && savedProfileName ? (
+          <span className="mapping-upload__confirmation" role="status">
+            Saved &ldquo;{savedProfileName}&rdquo;.
+          </span>
         ) : null}
       </div>
 

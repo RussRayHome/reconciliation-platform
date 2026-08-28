@@ -180,6 +180,12 @@
     color: var(--negative);
   }
 
+  /* N2: the save confirmation shown in place of the redirect-to-Coming-Soon-page trap. */
+  .mapping-upload__confirmation {
+    font-size: 11px;
+    color: var(--accent);
+  }
+
   .mapping-coverage {
     display: flex;
     align-items: center;
