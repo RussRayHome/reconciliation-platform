@@ -12,6 +12,34 @@ const apiURL = process.env.PLAYWRIGHT_API_URL ?? 'http://127.0.0.1:4000';
 // same contention problem and shouldn't inherit this cap without its own evidence.
 const isStageTargeted = process.env.PLAYWRIGHT_ENVIRONMENT_PATH_SEGMENT === 'stage';
 
+// R2 V4: new evidence, not a guess -- confirmed via a real PR #249 CI failure (3/4
+// e2e-functional shards, `.click('Submit run')` timing out at 60s waiting for the button to
+// become enabled). Submit run now blocks whenever the org's durable "latest run" is queued or
+// running (the double-submit fix); CI's default uncapped parallelism (up to ~half the runner's
+// CPU count, per the visual project's own comment) runs many spec files as concurrent workers
+// against ONE shared org (all functional tests share one `dev-api-test` server/database, and
+// every seeded test login belongs to the same "Default Organization" -- confirmed in
+// scripts/db/dev-stage/create-users.psql). One worker's in-flight submission durably blocks a
+// completely unrelated sibling worker's unrelated submission. Unlike the rate-limit contention
+// `workers: 2` fixes above, this mechanism has no safe number greater than 1 -- two concurrent
+// submissions against one shared org race exactly the same way, just half as often. Scoped to
+// CI specifically (evidence is CI-specific); a solo local dev's own default run isn't known to
+// hit this and shouldn't inherit the slowdown without its own evidence, per this file's existing
+// philosophy for isStageTargeted above.
+const isCi = Boolean(process.env.CI);
+
+const resolveFunctionalWorkers = (): number | undefined => {
+  if (isStageTargeted) {
+    return 2;
+  }
+  if (isCi) {
+    return 1;
+  }
+  return undefined;
+};
+
+const functionalWorkers = resolveFunctionalWorkers();
+
 export default defineConfig({
   testDir: './apps/web/tests/e2e',
   timeout: 60_000,
@@ -31,7 +59,10 @@ export default defineConfig({
       // when run single-worker. Capped to 2, matching the visual project's own precedent for
       // tuning worker count down from a real, confirmed-not-flaky contention failure rather than
       // guessing at a number.
-      ...(isStageTargeted ? { workers: 2 } : {}),
+      //
+      // CI gets workers: 1, not 2 -- see isCi's own comment above for why 2 isn't safe against
+      // this particular contention mechanism the way it is against Stage's rate limiter.
+      ...(functionalWorkers === undefined ? {} : { workers: functionalWorkers }),
     },
     {
       name: 'visual',
