@@ -103,11 +103,23 @@ export const loginToApplication = async (page: Page): Promise<void> => {
   throw new Error('Unable to authenticate in e2e tests with configured or fallback credentials.');
 };
 
+/** R2 V4: this button's accessible name now changes with the run's phase -- "Submit run" only
+ * while nothing has been submitted yet; once ANY run for this organization (shared across every
+ * e2e test -- confirmed: every seeded login belongs to the same "Default Organization") reaches a
+ * terminal phase, it reads "Retry run" or "Start new run" instead, since `durableRunPhase` is
+ * fetched fresh from the server on every page load, not local/per-test state. A literal-name
+ * locator broke every helper/spec that used one the moment any single e2e run anywhere in the
+ * suite completed. What never changes is the `form` attribute (App.tsx sets it once, referencing
+ * `source-upload-form`) -- locate by that instead of by name in every e2e helper/spec that needs
+ * "the run submission button," regardless of which phase word happens to be showing. */
+export const submitRunButton = (page: Page) => page.locator('button[form="source-upload-form"]');
+
 /** Navigates to the workspace and opens Import Files so the upload form is interactable. Screen
  * 01's redesign (File Imports & Validation Phase 9) renamed the submit button from "Run
- * reconciliation" to "Submit run". */
+ * reconciliation" to "Submit run"; R2 V4 (see submitRunButton above) made that name phase-
+ * dependent, so this only checks the button exists, not what it's currently labelled. */
 export const openSetup = async (page: Page): Promise<void> => {
   await page.goto('/');
   await page.getByRole('link', { name: 'Bank Statements' }).click();
-  await expect(page.getByRole('button', { name: 'Submit run' })).toBeVisible();
+  await expect(submitRunButton(page)).toBeVisible();
 };

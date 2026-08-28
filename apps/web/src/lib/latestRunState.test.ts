@@ -93,9 +93,22 @@ describe('resolveLatestRunPhase', () => {
     expect(resolveLatestRunPhase(run)).toEqual({ kind: 'succeeded', run, matchingJobId: 'job-1' });
   });
 
-  it('returns running for a DRAFT run', () => {
-    const run = baseRun({ status: 'DRAFT' });
+  it('returns running for a recent DRAFT run', () => {
+    const run = baseRun({ status: 'DRAFT', createdAt: new Date().toISOString() });
     expect(resolveLatestRunPhase(run)).toEqual({ kind: 'running', run });
+  });
+
+  // Issue #251: a DRAFT run has no backend job attached to it at all -- the observed real-world
+  // case was an upload's XHR `load` event never firing, so the mutation's own next step (calling
+  // `/submit`) never ran, leaving the run in DRAFT forever. Since this lookup is org-wide,
+  // treating every DRAFT as permanently "running" would let one abandoned run lock the whole
+  // organization out of starting a new one.
+  it('returns idle for a stale DRAFT run (abandoned client-side submission)', () => {
+    const run = baseRun({
+      status: 'DRAFT',
+      createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    expect(resolveLatestRunPhase(run)).toEqual({ kind: 'idle' });
   });
 
   it('returns running for a VALIDATING run', () => {

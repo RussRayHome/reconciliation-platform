@@ -102,6 +102,23 @@
     gap: 0.6rem;
   }
 
+  /* R2 V4.3: a disabled Submit run always states its reason on screen, right beneath the
+     button -- ground rule 8, never a bare greyed control. */
+  .import-screen__submit-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.3rem;
+  }
+
+  .import-screen__submit-reason {
+    margin: 0;
+    max-width: 32ch;
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+    text-align: right;
+  }
+
   .import-screen__templates-menu {
     position: relative;
   }
@@ -233,6 +250,61 @@
     color: var(--accent);
     font-weight: 600;
     border: 1px solid var(--accent-soft-border);
+  }
+
+  /* R2 V5: one outcome panel, switched on phase -- replaces the old scattered one-line banners.
+     No new colour values: queued reuses --severity-medium, failure reuses --negative, matching
+     the design baseline's own assignment for these phases. */
+  .outcome-panel {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.9rem 1.05rem;
+    border-radius: var(--radius-panel);
+  }
+
+  .outcome-panel--queued {
+    background: var(--severity-medium-soft);
+    border: 1px solid var(--severity-medium-soft-border);
+    color: var(--text-primary);
+  }
+
+  .outcome-panel--failed {
+    background: var(--negative-soft);
+    border: 1px solid var(--negative-soft-border);
+    color: var(--text-primary);
+  }
+
+  .outcome-panel__title {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .outcome-panel--queued .outcome-panel__title {
+    color: var(--severity-medium);
+  }
+
+  .outcome-panel--failed .outcome-panel__title {
+    color: var(--negative);
+  }
+
+  .outcome-panel__body {
+    margin: 0;
+    font-weight: 400;
+    color: var(--text-secondary);
+  }
+
+  .outcome-panel__reference {
+    margin: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+
+  .outcome-panel__actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.15rem;
   }
 
   .source-dropzone__rejected-list,

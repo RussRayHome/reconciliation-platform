@@ -1,7 +1,7 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import { loginToApplication, openSetup } from '../auth';
+import { loginToApplication, openSetup, submitRunButton } from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createAllExceptionsBankFileValidationWorkbook,
@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
 test.describe('form validation', () => {
   test('submit button is disabled before any files are uploaded', async ({ page }) => {
     await openSetup(page);
-    await expect(page.getByRole('button', { name: 'Submit run' })).toBeDisabled();
+    await expect(submitRunButton(page)).toBeDisabled();
   });
 
   test('submit button remains disabled with only the Account A bank file uploaded', async ({
@@ -31,7 +31,7 @@ test.describe('form validation', () => {
       mimeType: XLSX_MIME,
       buffer: bankBuffer,
     });
-    await expect(page.getByRole('button', { name: 'Submit run' })).toBeDisabled();
+    await expect(submitRunButton(page)).toBeDisabled();
   });
 
   test('submit button is enabled once both files are present and label is populated', async ({
@@ -43,7 +43,7 @@ test.describe('form validation', () => {
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await expect(page.getByRole('button', { name: 'Submit run' })).toBeEnabled();
+    await expect(submitRunButton(page)).toBeEnabled();
   });
 
   test('submit button is disabled again when the reconciliation label is cleared', async ({
@@ -56,7 +56,7 @@ test.describe('form validation', () => {
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
     await page.getByLabel('Reconciliation label').fill('');
-    await expect(page.getByRole('button', { name: 'Submit run' })).toBeDisabled();
+    await expect(submitRunButton(page)).toBeDisabled();
   });
 
   // Since Phase 10, .csv is a valid extension -- this junk content now passes client-side
@@ -86,7 +86,7 @@ test.describe('form validation', () => {
       mimeType: 'text/csv',
       buffer: fakeBuffer,
     });
-    await page.getByRole('button', { name: 'Submit run' }).click();
+    await submitRunButton(page).click();
     await expect(page.getByText('STRUCT_HEADER_MISSING')).toBeVisible({ timeout: 30_000 });
   });
 });

@@ -29,7 +29,6 @@
     .empty-state-card:hover,
     .rules-overview-card:hover,
     .stat-card:hover,
-    .overall-progress-card:hover,
     .step-progress-item:hover,
     .docs-nav-card:hover {
       transform: none;

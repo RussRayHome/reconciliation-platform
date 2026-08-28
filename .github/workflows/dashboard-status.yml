@@ -374,10 +374,15 @@ jobs:
       # little wall-clock benefit now that no single file dominates. Revisit the shard count, not
       # this comment's old rule, next time file sizes drift out of balance again.
       #
-      # ISSUE-032 also separately flags an unexplained single-worker hang that motivated the
-      # original 4-shard (then briefly 3-shard) split as a workaround -- still unreproduced and
-      # undiagnosed; if e2e-functional starts hanging again as this suite grows, that's the
-      # likely-related, not-yet-understood cause to revisit, not a new bug.
+      # ISSUE-032 also separately flagged an unexplained single-worker hang that motivated the
+      # original 4-shard (then briefly 3-shard) split as a workaround. Root-caused and fixed as
+      # Issue #251 (2026-08-28): apps/web/src/lib/api.ts's createImportRunRequest could, in a rare
+      # network condition, never fire its XHR `load` event even though the server responded 200 --
+      # the mutation's own next step (calling /submit) then never ran, leaving the run in `DRAFT`
+      # forever, which apps/web/src/lib/latestRunState.ts's resolveLatestRunPhase read as
+      # permanently "running" org-wide, locking every later test's Submit button. Fixed via a
+      # stall watchdog on the upload XHR plus a staleness gate on the DRAFT phase -- the sharding
+      # here remains useful for wall-clock parallelism, but is no longer covering for this bug.
       #
       # The visual project is a separate job below (e2e-visual) -- it doesn't shard, and it
       # doesn't run on this bare runner at all, since visual-baseline.spec.ts refuses to run

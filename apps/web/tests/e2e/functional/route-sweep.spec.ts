@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { expect, expectedPathname, test } from '../fixtures';
-import { loginToApplication } from '../auth';
+import { loginToApplication, submitRunButton } from '../auth';
 import { routePaths } from '../../../src/routes/routePaths';
 
 type RouteAssertion = {
@@ -68,11 +68,12 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
 
 // importFilesBank ('/') and importFilesBilling ('/imports/billing', R1 WP2/WP3) both render
 // SourceUploadSection (the tab strip just swaps which panel is active inside it) -- neither route
-// has a heading element at all, so every other e2e spec already targets the "Submit run" button
-// instead (see auth.ts's openSetup, and R1 WP3: Run Configuration -- and its Submit button -- is
-// a sibling of the tab panels, always rendered regardless of which tab is active).
-const IMPORT_FILES_LANDMARK_ROLE = 'button';
-const IMPORT_FILES_LANDMARK_NAME = 'Submit run';
+// has a heading element at all, so every other e2e spec already targets the run-submission button
+// instead (see auth.ts's submitRunButton/openSetup, and R1 WP3: Run Configuration -- and its
+// Submit button -- is a sibling of the tab panels, always rendered regardless of which tab is
+// active). R2 V4: that button's accessible name is now phase-dependent ("Submit run" / "Retry
+// run" / "Start new run"), so this landmark uses submitRunButton(page) (a stable `form`-attribute
+// locator), not a role+name pair.
 
 const accountedForKeys = [
   // importFiles is a plain alias for importFilesBank (same string, '/', R1 WP2) -- not a
@@ -157,8 +158,7 @@ test.describe('route sweep', () => {
         // auto-wait) rather than assume one is already settled. Explicit 60s timeout on each
         // wait (was the implicit ~30s default) -- see the cold-CI-render comment above.
         const result = await Promise.race([
-          page
-            .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
+          submitRunButton(page)
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'importFilesBank' as const),
           page
@@ -176,9 +176,7 @@ test.describe('route sweep', () => {
         // that guard is gated on pathname === importFiles ('/') specifically (App.tsx), so
         // landing here always renders SourceUploadSection with the AP/Billing tab active. A
         // plain wait suffices; still soft so one route's failure doesn't abort the sweep.
-        await expect
-          .soft(page.getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME }))
-          .toBeVisible({ timeout: 60_000 });
+        await expect.soft(submitRunButton(page)).toBeVisible({ timeout: 60_000 });
         expect.soft(new URL(page.url()).pathname).toBe(
           expectedPathname(routePaths.importFilesBilling),
         );
@@ -211,8 +209,7 @@ test.describe('route sweep', () => {
             .getByRole('heading', { name: RUN_BOOK_HEADING })
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'runBook' as const),
-          page
-            .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
+          submitRunButton(page)
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'redirectedToImportFiles' as const),
         ]).catch(() => null);
@@ -234,8 +231,7 @@ test.describe('route sweep', () => {
             .getByRole('heading', { name: APPROVAL_POLICY_HEADING })
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'approvalPolicy' as const),
-          page
-            .getByRole(IMPORT_FILES_LANDMARK_ROLE, { name: IMPORT_FILES_LANDMARK_NAME })
+          submitRunButton(page)
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'redirectedToImportFiles' as const),
         ]).catch(() => null);

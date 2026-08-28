@@ -2,7 +2,7 @@ import { createWorkbookFromRows } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
 
 import { expect } from './fixtures';
-import { openSetup } from './auth';
+import { openSetup, submitRunButton } from './auth';
 import { bankHeaderOnlyFileValidationRows } from './fileValidationWorkbooks';
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -60,7 +60,7 @@ export async function runReconciliation(
     await page.getByLabel('Reconciliation label').fill(label);
   }
 
-  await page.getByRole('button', { name: 'Submit run' }).click();
+  await submitRunButton(page).click();
   // A completed run lands on the Review stage, Summary view.
   await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
 }

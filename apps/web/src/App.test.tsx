@@ -1553,17 +1553,21 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows overall process progress and updates it after file selection', () => {
+  // R2 V3 (necessary rewrite, not one of V1's two named ones): this test asserted the
+  // `Overall process progress` <progress> element's numeric value directly -- exactly the
+  // percentage-implies-precision mechanic V3 deletes (`overallProgressPercent`, and the element
+  // itself, no longer exist). Rewritten to assert the run step's own status instead: `ready` once
+  // everything is staged (before Submit run is ever clicked), still `pending` beforehand.
+  it('shows the run step as ready once files are staged, pending before', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    const overallMeter = screen.getByLabelText('Overall process progress');
     expect(screen.getByText('Process Progress')).toBeInTheDocument();
-    expect((overallMeter as HTMLProgressElement).value).toBe(0);
+    expect(runStepChip().getByText('Pending')).toBeInTheDocument();
 
     fillUploadInputs();
 
-    expect((overallMeter as HTMLProgressElement).value).toBe(50);
+    expect(runStepChip().getByText('Ready')).toBeInTheDocument();
   });
 
   it('shows an annual year picker with the previous seven years when annual is selected', () => {
@@ -1841,7 +1845,13 @@ describe('App', () => {
       },
     });
 
-    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
+    // R2 V4.3: `aria-disabled`, not the native `disabled` attribute, so a screen reader can still
+    // reach the reason via `aria-describedby` on a disabled button -- `toBeDisabled()` checks the
+    // native attribute, which this button no longer has at all.
+    expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
     expect(screen.getAllByText('1111_bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gl.xlsx').length).toBeGreaterThan(0);
@@ -1861,7 +1871,13 @@ describe('App', () => {
       },
     });
 
-    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
+    // R2 V4.3: `aria-disabled`, not the native `disabled` attribute, so a screen reader can still
+    // reach the reason via `aria-describedby` on a disabled button -- `toBeDisabled()` checks the
+    // native attribute, which this button no longer has at all.
+    expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
     expect(screen.getAllByText('1111_bank.csv').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.csv').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gl.csv').length).toBeGreaterThan(0);
@@ -2094,6 +2110,282 @@ describe('App', () => {
       expect(runStepChip().getByText('Failed')).toBeInTheDocument();
     });
     expect(screen.queryByText('In progress')).not.toBeInTheDocument();
+  });
+
+  // R2 V3: the four-segment meter and the deleted percentage.
+  it('renders one segment per step', () => {
+    setAuthenticatedUser('rray');
+    const { container } = renderApp();
+
+    expect(container.querySelectorAll('.run-bar__segment')).toHaveLength(4);
+  });
+
+  it('renders no percentage in the collapsed run bar', () => {
+    setAuthenticatedUser('rray');
+    const { container } = renderApp();
+
+    expect(container.querySelector('.run-bar__meter-percent')).toBeNull();
+    expect(screen.queryByLabelText('Run progress')).toBeNull();
+  });
+
+  it('renders no percentage in the expanded panel', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    // The card this lived in ("Overall Process Meter") is deleted outright, not just its number
+    // -- fixing only the collapsed summary would have left this one click away.
+    expect(screen.queryByText('Overall Process Meter')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Overall process progress')).toBeNull();
+  });
+
+  it('marks the failing segment and leaves later segments empty', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+    const { container } = renderApp();
+
+    await waitFor(() => {
+      expect(runStepChip().getByText('Failed')).toBeInTheDocument();
+    });
+
+    const segments = container.querySelectorAll('.run-bar__segment');
+    expect(segments[2]).toHaveClass('run-bar__segment--failed');
+    expect(segments[3]).toHaveClass('run-bar__segment--empty');
+  });
+
+  it('keeps the detail panel open on a failed run', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+    const { container } = renderApp();
+
+    await waitFor(() => {
+      expect(runStepChip().getByText('Failed')).toBeInTheDocument();
+    });
+
+    const detailPanel = container.querySelector('details.run-bar__progress');
+    expect(detailPanel).toHaveAttribute('open');
+  });
+
+  it('states the step counter for each phase', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    // Nothing staged yet -- 0 complete steps.
+    expect(screen.getByText('step 0 of 4')).toBeInTheDocument();
+
+    fillUploadInputs();
+
+    // Upload + configure complete, run step reads Ready (not yet current) -- step 2 of 4.
+    expect(screen.getByText('step 2 of 4')).toBeInTheDocument();
+  });
+
+  it('states "stopped at" for a terminal failure', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('stopped at step 3 of 4')).toBeInTheDocument();
+    });
+  });
+
+  // R2 V4: Submit run gating. The double-submit guard is the whole point of this package -- write
+  // it first, per the plan's own test list.
+  it('disables Submit run while the run is queued', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      validationJob: {
+        id: 'validation-job-1',
+        status: 'QUEUED',
+        errorSummary: null,
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: null,
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Run in progress' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+    });
+  });
+
+  it('disables Submit run while the run is validating or matching', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({ status: 'VALIDATING' });
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Run in progress' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+    });
+  });
+
+  it('re-enables as Retry run after a validation failure', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry run' })).toHaveAttribute(
+        'aria-disabled',
+        'false',
+      );
+    });
+  });
+
+  it('re-enables as Start new run after success', async () => {
+    mockImportRunSubmitFlow();
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Start new run' })).toHaveAttribute(
+        'aria-disabled',
+        'false',
+      );
+    });
+  });
+
+  it('names the reason for every disabled state', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    // A required slot is empty (nothing staged yet).
+    expect(
+      screen.getByText('Add every bank workbook and the GL workbook.'),
+    ).toBeInTheDocument();
+
+    fillUploadInputs();
+    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+      target: { value: '   ' },
+    });
+
+    // Run label empty.
+    expect(
+      screen.getByText('Give the run a label — it names every export.'),
+    ).toBeInTheDocument();
+
+    cleanup();
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      validationJob: {
+        id: 'validation-job-1',
+        status: 'QUEUED',
+        errorSummary: null,
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: null,
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs();
+
+    // Run already underway.
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'This run is already underway — submitting again would start a second attempt on the same files.',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('submitting twice in a row fires one request', async () => {
+    mockImportRunSubmitFlow();
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs();
+
+    // The same element reference, clicked twice back to back -- whatever label it happens to
+    // show at the moment of the second click (the async create-run XHR may not have resolved
+    // enough for React to have re-rendered "Run in progress" yet), `handleSubmit`'s own guard is
+    // what has to stop the second attempt, not this test picking a button by a label that's
+    // already changed.
+    const submitButton = screen.getByRole('button', { name: 'Submit run' });
+    fireEvent.click(submitButton);
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Start new run' })).toBeInTheDocument();
+    });
+    expect(FakeImportRunXhr.instances).toHaveLength(1);
+  });
+
+  // R2 V5: the outcome panel. Naming the failing file/gate and rendering later gates as Not run
+  // are already covered by the existing Screen 05/06/07 tests below (ImportValidationFailureView
+  // itself is unchanged by V5 -- it already satisfied V5.2's requirements).
+  it('renders the queued panel as a status, not an alert', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      label: 'Queued Panel Run',
+      validationJob: {
+        id: 'validation-job-1',
+        status: 'QUEUED',
+        errorSummary: null,
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: null,
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('Queued for validation')).toBeInTheDocument();
+    });
+    expect(screen.getAllByText(/Queued Panel Run/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open Imported files' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh status' })).toBeInTheDocument();
+  });
+
+  it('renders a matching failure with its job reference', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      label: 'Matching Failure Run',
+      status: 'PENDING_APPROVAL',
+      matchingJob: {
+        id: 'matching-job-77',
+        currentState: 'FAILED',
+        failureCode: 'MATCH_ENGINE_ERROR',
+        failureMessage: 'Matching engine crashed while grouping split payments.',
+        completedAt: '2026-08-21T00:05:00.000Z',
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Reconciliation failed for “Matching Failure Run”'),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText(/File validation passed/)).toBeInTheDocument();
+    expect(screen.getByText('Job reference: matching-job-77')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy job reference' })).toBeInTheDocument();
+  });
+
+  it('renders no outcome panel before a run is submitted', () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    expect(screen.queryByText('Queued for validation')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Reconciliation failed for/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Validating files, then matching.', { exact: false })).not.toBeInTheDocument();
   });
 
   it('surfaces a plain message when the failed run reports no invalid files (defensive fallback)', async () => {
@@ -2592,7 +2884,13 @@ describe('App', () => {
 
     fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
 
-    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
+    // R2 V4.3: `aria-disabled`, not the native `disabled` attribute, so a screen reader can still
+    // reach the reason via `aria-describedby` on a disabled button -- `toBeDisabled()` checks the
+    // native attribute, which this button no longer has at all.
+    expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
@@ -2616,7 +2914,13 @@ describe('App', () => {
       ],
     });
 
-    expect(screen.getByRole('button', { name: 'Submit run' })).not.toBeDisabled();
+    // R2 V4.3: `aria-disabled`, not the native `disabled` attribute, so a screen reader can still
+    // reach the reason via `aria-describedby` on a disabled button -- `toBeDisabled()` checks the
+    // native attribute, which this button no longer has at all.
+    expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
@@ -2795,7 +3099,10 @@ describe('App', () => {
       target: { value: '   ' },
     });
 
-    expect(screen.getByRole('button', { name: 'Submit run' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(
       screen.getByText('Reconciliation label is required before running.'),
     ).toBeInTheDocument();

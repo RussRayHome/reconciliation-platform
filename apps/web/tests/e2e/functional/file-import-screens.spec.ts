@@ -2,7 +2,7 @@ import { createWorkbookFromRows } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
-import { loginToApplication, openSetup } from '../auth';
+import { loginToApplication, openSetup, submitRunButton } from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleGlFileValidationWorkbook,
@@ -71,7 +71,7 @@ test.describe('upload transfer', () => {
 
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByRole('button', { name: 'Submit run' }).click();
+    await submitRunButton(page).click();
 
     // Bank and GL upload as a single combined request (ImportUploadCard's own doc comment), so
     // aborting it fails both cards at once.
@@ -103,7 +103,7 @@ test.describe('partial import', () => {
 
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByRole('button', { name: 'Submit run' }).click();
+    await submitRunButton(page).click();
 
     await expect(page.getByRole('heading', { name: 'Cell validation results' })).toBeVisible({
       timeout: 30_000,

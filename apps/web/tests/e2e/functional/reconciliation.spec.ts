@@ -1,7 +1,7 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import { loginToApplication, openSetup } from '../auth';
+import { loginToApplication, openSetup, submitRunButton } from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -46,7 +46,7 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');
   await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
-  await page.getByRole('button', { name: 'Submit run' }).click();
+  await submitRunButton(page).click();
 
   // Completing a run lands on the Review stage, Summary view.
   await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible({ timeout: 30_000 });

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
   apiFetch,
+  createImportRunRequest,
   downloadWorkbookRequest,
   getReconciliationRunByIdRequest,
   identityConfirmRequest,
@@ -309,5 +310,117 @@ describe('logoutRequest', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
 
     await expect(logoutRequest()).resolves.toBeUndefined();
+  });
+});
+
+/** Minimal fake for `createImportRunRequest`'s `XMLHttpRequest` -- just enough to drive
+ * load/error/abort and upload-progress, mirroring `App.test.tsx`'s `FakeImportRunXhr` at a
+ * smaller scope (this file only needs the stall-watchdog behaviour, not App.tsx's whole
+ * create->submit->report flow). */
+class FakeXhr {
+  static instances: FakeXhr[] = [];
+  readonly upload = new EventTarget();
+  private readonly target = new EventTarget();
+  status = 0;
+  responseText = '';
+
+  open(): void {}
+  setRequestHeader(): void {}
+  addEventListener(type: string, handler: EventListener): void {
+    this.target.addEventListener(type, handler);
+  }
+  send(): void {
+    FakeXhr.instances.push(this);
+  }
+  abort(): void {
+    this.target.dispatchEvent(new Event('abort'));
+  }
+  emitProgress(loaded: number, total: number): void {
+    this.upload.dispatchEvent(
+      Object.assign(new Event('progress'), { lengthComputable: true, loaded, total }),
+    );
+  }
+  respond(status: number, body: unknown): void {
+    this.status = status;
+    this.responseText = JSON.stringify(body);
+    this.target.dispatchEvent(new Event('load'));
+  }
+}
+
+const latestFakeXhr = (): FakeXhr => {
+  const xhr = FakeXhr.instances.at(-1);
+  if (!xhr) {
+    throw new Error('Expected createImportRunRequest to have constructed an XMLHttpRequest.');
+  }
+  return xhr;
+};
+
+const createImportRunPayload = () => ({
+  bankFiles: [new File(['bank-bytes'], 'bank.xlsx')],
+  glFile: new File(['gl-bytes'], 'gl.xlsx'),
+  label: 'Stall watchdog test',
+  frequency: 'MONTHLY' as const,
+  periodYear: 2026,
+  periodMonth: 8,
+});
+
+describe('createImportRunRequest stall watchdog (Issue #251)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeXhr.instances = [];
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('resolves normally when the response arrives before the stall window elapses', async () => {
+    const promise = createImportRunRequest(createImportRunPayload());
+    const xhr = latestFakeXhr();
+    await vi.advanceTimersByTimeAsync(1000);
+    xhr.respond(201, { id: 'run-1' });
+
+    await expect(promise).resolves.toEqual({ id: 'run-1' });
+  });
+
+  it('rejects with a network-error message if nothing happens for the full stall window -- the observed real-world hang (server logs a 200, but the XHR load event never fires)', async () => {
+    const promise = createImportRunRequest(createImportRunPayload());
+    const rejection = promise.catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const error = await rejection;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Network error while uploading source files.');
+  });
+
+  it('resets the stall window on every upload-progress tick, so a slow-but-live large transfer is not punished', async () => {
+    const promise = createImportRunRequest(createImportRunPayload());
+    const xhr = latestFakeXhr();
+
+    // Three ticks spaced under the 30s window, spanning 60s total -- would have fired a flat
+    // overall timeout, but each progress event resets the watchdog.
+    await vi.advanceTimersByTimeAsync(20_000);
+    xhr.emitProgress(1_000, 3_000);
+    await vi.advanceTimersByTimeAsync(20_000);
+    xhr.emitProgress(2_000, 3_000);
+    await vi.advanceTimersByTimeAsync(20_000);
+    xhr.respond(201, { id: 'run-1' });
+
+    await expect(promise).resolves.toEqual({ id: 'run-1' });
+  });
+
+  it('still rejects with AbortError (not the network-error message) for a genuine caller-initiated abort', async () => {
+    const controller = new AbortController();
+    const promise = createImportRunRequest({ ...createImportRunPayload(), signal: controller.signal });
+    const rejection = promise.catch((error: unknown) => error);
+
+    controller.abort();
+
+    const error = await rejection;
+    expect(error).toBeInstanceOf(DOMException);
+    expect((error as DOMException).name).toBe('AbortError');
   });
 });

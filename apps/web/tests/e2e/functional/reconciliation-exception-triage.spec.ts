@@ -1,7 +1,7 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import { loginToApplication, openSetup } from '../auth';
+import { loginToApplication, openSetup, submitRunButton } from '../auth';
 import {
   amountMismatchBankFileValidationRows,
   amountMismatchGlFileValidationRows,
@@ -77,7 +77,7 @@ test.describe('exception category detection', () => {
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByRole('button', { name: 'Submit run' }).click();
+    await submitRunButton(page).click();
     await expect(page.getByText('BANK_DATE_REQUIRED').first()).toBeVisible({ timeout: 30_000 });
   });
 });
