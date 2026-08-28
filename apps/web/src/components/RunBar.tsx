@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ProcessProgressSection, type ProgressStep } from './AppWorkspacePanels';
 import type { Density } from '../hooks/useDensity';
 
-type RunStatusTone = 'idle' | 'running' | 'complete' | 'error';
+type RunStatusTone = 'idle' | 'queued' | 'running' | 'complete' | 'error';
 
 const resolveRunBarAnnouncement = (
   isComplete: boolean,
@@ -12,6 +12,10 @@ const resolveRunBarAnnouncement = (
 ): string => {
   if (isComplete) {
     return `Reconciliation finished with ${exceptionCount ?? 0} exceptions.`;
+  }
+
+  if (statusTone === 'queued') {
+    return 'Import run submitted and queued for validation.';
   }
 
   if (statusTone === 'running') {

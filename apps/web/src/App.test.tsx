@@ -5,7 +5,7 @@ import type * as ApiModule from './lib/api';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import App from './App';
 import userEvent from '@testing-library/user-event';
@@ -1908,7 +1908,12 @@ describe('App', () => {
     );
   });
 
-  it('surfaces a message instead of hanging when the import run is queued for async validation', async () => {
+  // R2 V1 (named rewrite): this test used to assert `role="alert"` text matching
+  // `/queued for validation/i` -- passing today for the wrong reason (its own name says "instead
+  // of hanging": it only proved *a* message appeared, not that the message was honest). A queued
+  // submission is a real, working outcome, not an error -- it must render as a status, never an
+  // alert, and the run-in-flight tone must read "Queued", never fall through to "Idle" (D6).
+  it('renders a queued submission as a status, never an alert, and never reads Idle', async () => {
     installFakeImportRunXhr();
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = requestUrl(input);
@@ -1929,9 +1934,166 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
+    // "Queued" now renders in two places -- the RunBar status pill (V1) and the run step's own
+    // chip (V2) -- so this asserts presence, not uniqueness.
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(/queued for validation/i);
+      expect(screen.getAllByText('Queued').length).toBeGreaterThan(0);
     });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+  });
+
+  // R2 V1: the durable phase (not just the live mutation) must leave `queued` on its own once the
+  // backend resolves, since a queued submission's real outcome is often known within a second and
+  // nothing previously re-checked without a manual reload. `getLatestImportRunRequest` is mocked
+  // at the module level (see `mockedApiState`), not via raw `fetch` -- mutating
+  // `latestImportRunResponse` between the initial submit and the timer advance simulates the
+  // backend finishing between poll ticks.
+  it('polls until a queued run leaves the queued phase, without a reload', async () => {
+    // Fake timers have to be installed *before* the polling effect's own `setInterval` call runs
+    // (i.e. before render/submit) -- installing them later doesn't retroactively convert an
+    // already-created real interval into a fake one, so advancing fake time afterward would do
+    // nothing and the test would hang waiting on a real interval that never gets a chance to fire
+    // within the test's timeout.
+    vi.useFakeTimers();
+    try {
+      installFakeImportRunXhr();
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = requestUrl(input);
+        if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ importJobId: 'import-job-1', status: 'queued' }), {
+              status: 202,
+            }),
+          );
+        }
+        throw new Error(`unexpected fetch call to ${url}`);
+      });
+
+      setAuthenticatedUser('rray');
+      renderApp();
+
+      fillUploadInputs();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+      // Set only after submitting, not before rendering -- setting it earlier would make the
+      // mount-time hydration fetch (unrelated to this submission) see an already-queued run and
+      // start this test in a different state than a fresh session actually would.
+      mockedApiState.latestImportRunResponse = createImportRunSummary({
+        validationJob: {
+          id: 'validation-job-1',
+          status: 'QUEUED',
+          errorSummary: null,
+          queuedAt: '2026-08-21T00:00:00.000Z',
+          finishedAt: null,
+        },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // "Queued" renders in both the RunBar pill (V1) and the run step's own chip (V2).
+      expect(screen.getAllByText('Queued').length).toBeGreaterThan(0);
+
+      // The backend has since finished -- the next poll tick should pick this up without a reload.
+      mockedApiState.latestImportRunResponse = createImportRunSummary({ status: 'VALIDATION_FAILED' });
+
+      // The interval callback itself calls an async `getLatestImportRunRequest`, not a bare
+      // synchronous timer body -- `advanceTimersByTimeAsync` (not the sync `advanceTimersByTime`)
+      // is what actually waits for that promise chain to settle before returning.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+
+      expect(screen.getAllByText('Validation failed').length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // R2 V2: the run step can now terminate -- these five cover the acceptance criteria directly.
+  // All mount the durable phase straight from `mockedApiState.latestImportRunResponse` (no live
+  // submission needed) since the step-chip status is derived from the same phase either way.
+  const runStepChip = () => within(screen.getByText('Run reconciliation').closest('li')!);
+  const reviewExportStepChip = () =>
+    within(screen.getByText('Review and export outputs').closest('li')!);
+
+  it('marks the run step failed when validation fails', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(runStepChip().getByText('Failed')).toBeInTheDocument();
+    });
+  });
+
+  it('marks the run step failed when matching fails', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'PENDING_APPROVAL',
+      validationJob: {
+        id: 'validation-job-failed',
+        status: 'FAILED',
+        errorSummary: 'Matching engine crashed mid-run.',
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: '2026-08-21T00:04:00.000Z',
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(runStepChip().getByText('Failed')).toBeInTheDocument();
+    });
+  });
+
+  it('renders later steps as Not run after a failure', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(reviewExportStepChip().getByText('Not run')).toBeInTheDocument();
+    });
+  });
+
+  it('marks the run step queued for a queued phase', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      validationJob: {
+        id: 'validation-job-1',
+        status: 'QUEUED',
+        errorSummary: null,
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: null,
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(runStepChip().getByText('Queued')).toBeInTheDocument();
+    });
+    // A queued run still expects to proceed -- unlike a failure, the step after it stays Pending,
+    // never Not run (confirmed against the reference design's own per-scenario step arrays).
+    expect(reviewExportStepChip().getByText('Pending')).toBeInTheDocument();
+  });
+
+  it('no step is current in a terminal phase', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'VALIDATION_FAILED',
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(runStepChip().getByText('Failed')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('In progress')).not.toBeInTheDocument();
   });
 
   it('surfaces a plain message when the failed run reports no invalid files (defensive fallback)', async () => {

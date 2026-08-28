@@ -8,6 +8,7 @@ import type { ImportRunSummary } from './api';
  */
 export type LatestRunPhase =
   | { kind: 'idle' }
+  | { kind: 'queued'; run: ImportRunSummary }
   | { kind: 'running'; run: ImportRunSummary }
   | { kind: 'validation-failed'; run: ImportRunSummary }
   | { kind: 'matching-failed'; run: ImportRunSummary; message: string }
@@ -28,8 +29,11 @@ export type LatestRunPhase =
  * 4. Stage 2 failed via `import_job.status` (the path that actually fires on a live submission
  *    today) -> matching-failed.
  * 5. A matching job is linked and neither failure above applied -> succeeded.
- * 6. Still genuinely in flight (Stage 1 queued/validating, or Stage 2 queued/running) -> running.
- * 7. Anything else (e.g. `PENDING_APPROVAL` with no job linkage and no failure) -> idle; there is
+ * 6. Stage 1 (file validation) is queued but hasn't started -> queued, distinct from `running` so
+ *    a reload mid-queue shows the same phase the live path already committed to (R2 D1) -- a
+ *    genuinely separate wait state from a run that's actively doing work.
+ * 7. Still genuinely in flight (Stage 1 running, or Stage 2 queued/running) -> running.
+ * 8. Anything else (e.g. `PENDING_APPROVAL` with no job linkage and no failure) -> idle; there is
  *    nothing concrete to report yet, so this deliberately doesn't guess at success.
  *
  * @param run The organization's latest import run, or `null` if it has never submitted one.
@@ -63,10 +67,13 @@ export const resolveLatestRunPhase = (run: ImportRunSummary | null): LatestRunPh
     return { kind: 'succeeded', run, matchingJobId: run.matchingJobId };
   }
 
+  if (run.validationJob?.status === 'QUEUED') {
+    return { kind: 'queued', run };
+  }
+
   if (
     run.status === 'DRAFT' ||
     run.status === 'VALIDATING' ||
-    run.validationJob?.status === 'QUEUED' ||
     run.validationJob?.status === 'RUNNING'
   ) {
     return { kind: 'running', run };

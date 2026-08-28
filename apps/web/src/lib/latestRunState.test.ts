@@ -103,7 +103,11 @@ describe('resolveLatestRunPhase', () => {
     expect(resolveLatestRunPhase(run)).toEqual({ kind: 'running', run });
   });
 
-  it('returns running when validationJob is QUEUED', () => {
+  // R2 D1 (rewrite): a QUEUED validationJob used to collapse into `running`. Split into its own
+  // `queued` phase so a reload mid-queue reads the same phase the live submit path already
+  // committed to -- if this test still expected `running`, V1's whole "one vocabulary" premise
+  // would fail at the one moment (a reload) it actually matters.
+  it('returns queued when validationJob is QUEUED', () => {
     const run = baseRun({
       status: 'PENDING_APPROVAL',
       validationJob: {
@@ -114,7 +118,7 @@ describe('resolveLatestRunPhase', () => {
         finishedAt: null,
       },
     });
-    expect(resolveLatestRunPhase(run)).toEqual({ kind: 'running', run });
+    expect(resolveLatestRunPhase(run)).toEqual({ kind: 'queued', run });
   });
 
   it('returns running when validationJob is RUNNING', () => {
