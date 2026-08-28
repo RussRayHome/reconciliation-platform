@@ -1,7 +1,9 @@
 import { type Dispatch, type DragEvent, type SetStateAction, useState } from 'react';
 
 import { parseApEntityIdFromFilename, parseBankAccountLast4FromFilename } from '@recon/domain';
+import type { CanonicalField } from '@recon/domain';
 
+import { useHeaderPreviewWarning } from '../hooks/useHeaderPreviewWarning';
 import { formatFileSize } from '../lib/formatFileSize';
 import { ImportUploadCard, type RejectedUploadCode } from './ImportUploadCard';
 
@@ -77,7 +79,7 @@ const detectSource = (fileName: string): 'bank' | 'gl' | null => {
   return null;
 };
 
-type SourceDropZoneProps =
+type SourceDropZoneProps = (
   | {
       mode: 'bank-gl';
       bankFiles: (File | null)[];
@@ -89,7 +91,13 @@ type SourceDropZoneProps =
       mode: 'billing';
       apFiles: (File | null)[];
       setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
-    };
+    }
+) & {
+  /** R2 V6 (warn-only, Issue #250): the canonical schema, for the per-slot fuzzy header preview.
+   * Empty while `getCanonicalFieldsRequest` is still loading -- `SourceSlot` treats that the same
+   * as "nothing to check yet" and shows no warning. */
+  canonicalFields: CanonicalField[];
+};
 
 /** Dispatches to the Bank/GL or AP/Billing drop zone by `mode` -- kept as one exported component
  * so callers don't need to know there are two internal implementations, while each mode's own
@@ -97,7 +105,13 @@ type SourceDropZoneProps =
  * only one is ever mounted at a time (R1 WP3's tab strip). */
 export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
   if (props.mode === 'billing') {
-    return <ApDropZone apFiles={props.apFiles} setApFiles={props.setApFiles} />;
+    return (
+      <ApDropZone
+        apFiles={props.apFiles}
+        setApFiles={props.setApFiles}
+        canonicalFields={props.canonicalFields}
+      />
+    );
   }
   return (
     <BankGlDropZone
@@ -105,6 +119,7 @@ export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
       glFile={props.glFile}
       setBankFiles={props.setBankFiles}
       setGlFile={props.setGlFile}
+      canonicalFields={props.canonicalFields}
     />
   );
 }
@@ -121,11 +136,13 @@ function BankGlDropZone({
   glFile,
   setBankFiles,
   setGlFile,
+  canonicalFields,
 }: Readonly<{
   bankFiles: (File | null)[];
   glFile: File | null;
   setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
   setGlFile: Dispatch<SetStateAction<File | null>>;
+  canonicalFields: CanonicalField[];
 }>) {
   const [isDragging, setIsDragging] = useState(false);
   const [rejectedFiles, setRejectedFiles] = useState<RejectedUpload[]>([]);
@@ -303,6 +320,7 @@ function BankGlDropZone({
             file={file}
             onChange={(nextFile) => onBankFileChange(index, nextFile)}
             onRemove={bankFiles.length > MIN_BANK_ACCOUNTS ? () => onRemoveBankSlot(index) : undefined}
+            canonicalFields={canonicalFields}
           />
         ))}
         <SourceSlot
@@ -311,6 +329,7 @@ function BankGlDropZone({
           inputId="gl-workbook-input"
           file={glFile}
           onChange={glSlotChange}
+          canonicalFields={canonicalFields}
         />
       </div>
 
@@ -356,9 +375,11 @@ function BankGlDropZone({
 function ApDropZone({
   apFiles,
   setApFiles,
+  canonicalFields,
 }: Readonly<{
   apFiles: (File | null)[];
   setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
+  canonicalFields: CanonicalField[];
 }>) {
   const [isDragging, setIsDragging] = useState(false);
   const [rejectedFiles, setRejectedFiles] = useState<RejectedUpload[]>([]);
@@ -492,6 +513,7 @@ function ApDropZone({
             file={file}
             onChange={(nextFile) => onApFileChange(index, nextFile)}
             onRemove={apFiles.length > MIN_AP_ENTITIES ? () => onRemoveApSlot(index) : undefined}
+            canonicalFields={canonicalFields}
           />
         ))}
       </div>
@@ -535,6 +557,7 @@ function SourceSlot({
   file,
   onChange,
   onRemove,
+  canonicalFields,
 }: Readonly<{
   kind: SourceKind;
   label: string;
@@ -542,9 +565,11 @@ function SourceSlot({
   file: File | null;
   onChange: (file: File | null) => void;
   onRemove?: () => void;
+  canonicalFields: CanonicalField[];
 }>) {
   const detected = kind === 'billing' ? null : file ? detectSource(file.name) : null;
   const isOverride = kind !== 'billing' && Boolean(file) && detected !== null && detected !== kind;
+  const headerWarning = useHeaderPreviewWarning(file, canonicalFields);
 
   return (
     <div className="source-slot">
@@ -576,6 +601,19 @@ function SourceSlot({
       ) : (
         <p className="source-slot__empty">No file selected</p>
       )}
+      {headerWarning && headerWarning.unmatchedRequiredFields.length > 0 ? (
+        <p className="source-slot__header-warning">
+          We couldn&apos;t confidently match a column to{' '}
+          {headerWarning.unmatchedRequiredFields.map((field, index) => (
+            <span key={field.id}>
+              {index > 0 ? ', ' : ''}
+              <strong>{field.id}</strong>
+            </span>
+          ))}{' '}
+          in this file&apos;s header. This is just a heads-up -- you can still submit, and the real
+          check happens then.
+        </p>
+      ) : null}
     </div>
   );
 }
