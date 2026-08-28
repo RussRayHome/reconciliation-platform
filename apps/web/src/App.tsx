@@ -49,6 +49,7 @@ import { RovingTabList } from './components/RovingTabList';
 import {
   CloseExportSection,
   type ProgressStep,
+  type ProgressStepStatus,
   ReviewSection,
   type RuleVarianceDefaultOverrides,
   RulesCatalogSection,
@@ -70,6 +71,7 @@ import {
   meRequest,
   publishRuleVersionRequest,
   type ImportRunSummary,
+  type ReconciliationRunResponse,
 } from './lib/api';
 import { resolveLatestRunPhase, type LatestRunPhase } from './lib/latestRunState';
 import { subscribeToRunStatus } from './lib/runStatusStream';
@@ -101,7 +103,12 @@ type ReconciliationFrequency = 'Monthly' | 'Annual';
 type ReconciliationModel = ReturnType<typeof useImportRunSubmit>;
 type UploadTransferModel = ReturnType<typeof useImportUploadTransfer>;
 type PartialAcceptModel = ReturnType<typeof useImportPartialAccept>;
-type RunData = NonNullable<ReconciliationModel['data']>;
+// R2 V1: this used to derive from `ReconciliationModel['data']` directly, which kept it in sync
+// for free as long as the mutation always resolved to a full report. Now that a queued submission
+// resolves to a non-report variant too, deriving it that way would make `RunData` (a materialized
+// report, used for persistence and every "the run is done" render path) silently include the
+// queued shape. Pin it to the report type explicitly instead.
+type RunData = ReconciliationRunResponse;
 
 type SelectOption = {
   value: string;
@@ -344,23 +351,6 @@ const buildDefaultPeriodLabel = (
 ): string =>
   frequency === 'Annual' ? `Annual Recon for ${year}` : `Monthly Recon for ${month} ${currentYear}`;
 
-const resolveMeterValue = (
-  isComplete: boolean,
-  isCurrent: boolean,
-  activeValue: number,
-  inactiveValue = 0,
-): number => {
-  if (isComplete) {
-    return 100;
-  }
-
-  if (isCurrent) {
-    return activeValue;
-  }
-
-  return inactiveValue;
-};
-
 const formatElapsedLabel = (elapsedMs: number): string => {
   const totalSeconds = Math.floor(elapsedMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -369,22 +359,35 @@ const formatElapsedLabel = (elapsedMs: number): string => {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
-type RunStatusTone = 'idle' | 'running' | 'complete' | 'error';
+type RunStatusTone = 'idle' | 'queued' | 'running' | 'complete' | 'error';
 
 const runStatusLabelsByTone: Record<RunStatusTone, string> = {
   idle: 'Idle',
+  queued: 'Queued',
   running: 'Running',
   complete: 'Complete',
   error: 'Failed',
 };
 
-/** Issue #154: the three live-mutation checks (pending/error/hasRun) come first, unchanged, so
- * nothing currently in flight regresses -- only once none of those apply does the durable
- * `latestRunState` phase (which survives a reload; the live checks don't) get a say. */
+/** Issue #154: the live-mutation checks (pending/error/hasRun) come first, unchanged, so nothing
+ * currently in flight regresses -- only once none of those apply does the durable `latestRunState`
+ * phase (which survives a reload; the live checks don't) get a say.
+ *
+ * R2 V1 (D6): `isQueued` (from the live mutation's own `{kind:'queued'}` result) fills the gap
+ * before the durable phase catches up -- a follow-up fetch confirms the backend's real state, a
+ * real network round trip with a real gap, and without this the tone would flash `idle` for that
+ * gap (worse than the red-pill-on-queued bug this whole package exists to fix). Deliberately
+ * checked *after* the durable phase's terminal branches, not before: `reconciliation.data` never
+ * resets itself once a mutation resolves, so `isQueued` stays true for the rest of the session
+ * unless the user submits again -- if it were checked first, a run that genuinely finished
+ * (validation-failed, matching-failed, succeeded) would read `queued` forever once the durable
+ * phase caught up. Checking the durable terminal branches first means they always win the moment
+ * they're known, and `isQueued` only ever fills the narrow gap before that. */
 const resolveRunStatusTone = (
   isPending: boolean,
   hasError: boolean,
   hasRun: boolean,
+  isQueued: boolean,
   durablePhaseKind: LatestRunPhase['kind'],
 ): RunStatusTone => {
   if (isPending) {
@@ -403,12 +406,20 @@ const resolveRunStatusTone = (
     return 'error';
   }
 
-  if (durablePhaseKind === 'running') {
-    return 'running';
-  }
-
   if (durablePhaseKind === 'succeeded') {
     return 'complete';
+  }
+
+  if (isQueued) {
+    return 'queued';
+  }
+
+  if (durablePhaseKind === 'queued') {
+    return 'queued';
+  }
+
+  if (durablePhaseKind === 'running') {
+    return 'running';
   }
 
   return 'idle';
@@ -710,7 +721,18 @@ function ReconciliationApp({
   const reconciliation = useImportRunSubmit();
   const uploadTransfer = useImportUploadTransfer(reconciliation);
   const partialAccept = useImportPartialAccept();
-  const run = partialAccept.data ?? reconciliation.data;
+  // R2 V1: `reconciliation.data` is now `{kind:'queued', run} | {kind:'succeeded', report}` --
+  // unwrap to the exact `ReconciliationRunResponse | undefined` every existing consumer of `run`/
+  // `reportRun` below already expects, so this is the only place that needs to know about the new
+  // shape. The queued case has no report yet; see `submittedQueuedRun` for what a queued
+  // submission does carry. Narrowed via plain `&&`, not `?.`, so TypeScript discriminates the
+  // union reliably rather than leaking the `queued` member into `run`'s inferred type.
+  const submittedResult = reconciliation.data;
+  const submittedReport =
+    submittedResult && submittedResult.kind === 'succeeded' ? submittedResult.report : undefined;
+  const submittedQueuedRun =
+    submittedResult && submittedResult.kind === 'queued' ? submittedResult.run : undefined;
+  const run = partialAccept.data ?? submittedReport;
   const reportRun = run ?? persistedRun;
   // Unreconciled Item Roll-Forward PR F.3: same reportRun-then-latestImportRun precedence the
   // RunBar itself already uses (runBarAccountIdentifier, below) -- they represent the same
@@ -735,6 +757,41 @@ function ReconciliationApp({
   // races with `reportRun`, so a failed run's phase is knowable even while `reportRun` is still
   // whatever localStorage happened to have cached.
   const durableRunPhase = useMemo(() => resolveLatestRunPhase(latestImportRun), [latestImportRun]);
+  // R2 V1: `submittedQueuedRun` is the DRAFT-time run object from `createImportRunRequest` --
+  // taken before `submitImportRunRequest` ran, it has no `validationJob` yet, so pushing it into
+  // `latestImportRun` directly would make `resolveLatestRunPhase` read it as `running` (via the
+  // DRAFT branch), not `queued`. Re-fetch for real instead, once the live mutation confirms the
+  // run actually is queued -- by then the backend's own import_job row exists with a real
+  // `validationJob.status: 'QUEUED'`, so this reflects genuine state, not a client-side guess.
+  useEffect(() => {
+    if (!submittedQueuedRun) {
+      return;
+    }
+
+    void getLatestImportRunRequest().then((latest) => {
+      setLatestImportRun(latest);
+    });
+  }, [submittedQueuedRun]);
+  // R2 V1: leaves the queued/running state on its own once the backend actually finishes, instead
+  // of requiring a manual reload (the original complaint -- a queued run's real outcome is often
+  // known within a second, but nothing previously re-checked). Stops itself the moment the phase
+  // becomes anything else; `durableRunPhase.kind` (a primitive) rather than the object itself is
+  // the dependency, so a poll tick that reports the *same* kind doesn't restart its own interval.
+  useEffect(() => {
+    if (durableRunPhase.kind !== 'queued' && durableRunPhase.kind !== 'running') {
+      return undefined;
+    }
+
+    const intervalId = globalThis.setInterval(() => {
+      void getLatestImportRunRequest().then((latest) => {
+        setLatestImportRun(latest);
+      });
+    }, 3000);
+
+    return () => {
+      globalThis.clearInterval(intervalId);
+    };
+  }, [durableRunPhase.kind]);
   // Issue #154 (live status push, Pub/Sub not polling): the last statusMessage received over the
   // run's live NDJSON stream, replacing the generic progress-step label with real step-by-step
   // text while a run is actually in flight. Reset (not just left stale) whenever the phase leaves
@@ -1113,83 +1170,91 @@ function ReconciliationApp({
   );
   const isConfigurationStepComplete = isUploadStepComplete && !isLabelMissing;
   const isRunStepComplete = Boolean(run);
-  const isRunStepCurrent = isConfigurationStepComplete && !isRunStepComplete;
   const isExportStepComplete = hasDownloadedWorkbook || hasExportedJson;
   const isExportStepCurrent = isRunStepComplete && !isExportStepComplete;
-  const isRunPendingStep = isRunStepCurrent || reconciliation.isPending;
   const canSubmit = Boolean(
     isUploadStepComplete && !reconciliation.isPending && !isLabelMissing,
   );
 
-  const progressSteps = useMemo<ProgressStep[]>(() => {
-    const uploadMeterValue = resolveMeterValue(isUploadStepComplete, hasStartedUploadStep, 20);
-    const configurationMeterValue = resolveMeterValue(
-      isConfigurationStepComplete,
-      isUploadStepComplete && !isConfigurationStepComplete,
-      50,
-    );
-    const runMeterValue = resolveMeterValue(
-      isRunStepComplete,
-      isRunPendingStep,
-      reconciliation.isPending ? 70 : 35,
-    );
-    const exportMeterValue = resolveMeterValue(isExportStepComplete, isExportStepCurrent, 60);
+  // R2 V2: the run step's status, in the same precedence order `resolveRunStatusTone` already
+  // uses for the RunBar pill (live-in-flight signals before durable ones, durable *terminal*
+  // phases before the durable `queued` one) -- two places deriving "what state is this run in"
+  // from the same inputs in a different order is how they'd quietly disagree.
+  const runStepStatus: ProgressStepStatus = isRunStepComplete
+    ? 'complete'
+    : reconciliation.isPending
+      ? 'current'
+      : reconciliation.error
+        ? 'failed'
+        : durableRunPhase.kind === 'validation-failed' || durableRunPhase.kind === 'matching-failed'
+          ? 'failed'
+          : submittedQueuedRun || durableRunPhase.kind === 'queued'
+            ? 'queued'
+            : isConfigurationStepComplete
+              ? 'ready'
+              : 'pending';
 
-    return [
+  const progressSteps = useMemo<ProgressStep[]>(
+    () => [
       {
         id: 'upload',
         label: 'Upload source files',
         description: 'Select both bank account workbooks and the GL workbook.',
-        isComplete: isUploadStepComplete,
-        isCurrent: hasStartedUploadStep && !isUploadStepComplete,
-        meterValue: uploadMeterValue,
+        status: isUploadStepComplete ? 'complete' : hasStartedUploadStep ? 'current' : 'pending',
       },
       {
         id: 'configure',
         label: 'Confirm run settings',
         description: 'Choose frequency/period and provide a reconciliation label.',
-        isComplete: isConfigurationStepComplete,
-        isCurrent: isUploadStepComplete && !isConfigurationStepComplete,
-        meterValue: configurationMeterValue,
+        status: isConfigurationStepComplete
+          ? 'complete'
+          : isUploadStepComplete
+            ? 'current'
+            : 'pending',
       },
       {
         id: 'run',
         label: 'Run reconciliation',
         description: 'Processing includes parsing, matching, and exception generation.',
-        isComplete: isRunStepComplete,
-        isCurrent: isRunPendingStep,
-        meterValue: runMeterValue,
+        status: runStepStatus,
         detail: run ? `${run.summary.totalRecordsReviewed} records reviewed` : undefined,
       },
       {
         id: 'review-export',
         label: 'Review and export outputs',
         description: 'Review results and export workbook/JSON artifacts.',
-        isComplete: isExportStepComplete,
-        isCurrent: isExportStepCurrent,
-        meterValue: exportMeterValue,
+        // R2 V2.3: `not-run` only after a *failure* -- a queued run's later step still expects to
+        // proceed, so it stays `pending`, never `not-run` (confirmed against the reference design's
+        // own per-scenario step arrays: the queued scenario keeps this step `pending`).
+        status: isExportStepComplete
+          ? 'complete'
+          : runStepStatus === 'failed'
+            ? 'not-run'
+            : isExportStepCurrent
+              ? 'current'
+              : 'pending',
       },
-    ];
-  }, [
-    hasStartedUploadStep,
-    isConfigurationStepComplete,
-    isExportStepComplete,
-    isExportStepCurrent,
-    isRunPendingStep,
-    isRunStepComplete,
-    isUploadStepComplete,
-    reconciliation.isPending,
-    run,
-  ]);
+    ],
+    [
+      hasStartedUploadStep,
+      isConfigurationStepComplete,
+      isExportStepComplete,
+      isExportStepCurrent,
+      isUploadStepComplete,
+      run,
+      runStepStatus,
+    ],
+  );
 
-  const completedStepCount = progressSteps.filter((step) => step.isComplete).length;
+  const completedStepCount = progressSteps.filter((step) => step.status === 'complete').length;
   const overallProgressPercent = Math.round((completedStepCount / progressSteps.length) * 100);
 
-  const currentProgressStep = progressSteps.find((step) => step.isCurrent);
+  const currentProgressStep = progressSteps.find((step) => step.status === 'current');
   const runStatusTone = resolveRunStatusTone(
     reconciliation.isPending,
     Boolean(reconciliation.error),
     Boolean(reportRun),
+    Boolean(submittedQueuedRun),
     durableRunPhase.kind,
   );
   const runStatusLabel = resolveRunStatusLabel(runStatusTone, durableRunPhase.kind);

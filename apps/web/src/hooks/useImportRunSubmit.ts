@@ -12,6 +12,14 @@ import {
 
 export type ImportRunSubmitPayload = CreateImportRunPayload & CreateImportRunOptions;
 
+/** R2 V1: a queued submission is a real outcome, not a failure -- carries the just-created
+ * `ImportRunSummary` so the caller can sync it into the durable phase (`lib/latestRunState.ts`)
+ * immediately, without waiting for the next poll tick. `succeeded` keeps the exact report shape
+ * every existing consumer of this mutation's `.data` already expects. */
+export type ImportRunSubmitResult =
+  | { kind: 'queued'; run: ImportRunSummary }
+  | { kind: 'succeeded'; report: ReconciliationRunResponse };
+
 /** Thrown instead of a plain `Error` when the run was created and submitted but failed
  * validation -- carries the run summary (already returned inline by `submitImportRunRequest`) so
  * the UI can show Screen 05/07's failure detail for the invalid file(s) rather than just a
@@ -31,28 +39,25 @@ export class ImportValidationFailedError extends Error {
 
 /**
  * Creates a DRAFT import run, submits it, and -- once validation passes synchronously and
- * triggers matching -- fetches the resulting reconciliation report by its `matchingJobId`. Returns
- * the same `ReconciliationRunResponse` shape `useReconciliationRun` did, so every existing
- * consumer of that mutation's `{data, isPending, error}` (progress stepper, run bar, review tabs,
- * exports) keeps working unchanged.
+ * triggers matching -- fetches the resulting reconciliation report by its `matchingJobId`.
  *
- * A queued (async) submission has no live-progress screen yet (Screens 02/04/06/08, not built
- * until later phases) and surfaces as a thrown `Error` through the mutation's existing `.error`
- * rendering. A validation failure throws `ImportValidationFailedError` instead, carrying the run
- * summary so `SourceUploadSection` can render the Phase 11 failure screens.
+ * R2 V1: a queued (async) submission is a resolved `{ kind: 'queued' }` result now, not a thrown
+ * `Error` -- the mutation's error channel means "something went wrong" again, full stop. Live
+ * progress for a queued run still isn't rendered from this hook directly (Screens 02/04/06/08);
+ * the caller is expected to sync the returned `run` into the durable phase
+ * (`lib/latestRunState.ts`) and let that drive the UI, same vocabulary as a reload would produce.
+ * A validation failure still throws `ImportValidationFailedError`, carrying the run summary so
+ * `SourceUploadSection` can render the Phase 11 failure screens -- a validation failure genuinely
+ * is a failure.
  */
 export const useImportRunSubmit = () =>
-  useMutation<ReconciliationRunResponse, Error, ImportRunSubmitPayload>({
+  useMutation<ImportRunSubmitResult, Error, ImportRunSubmitPayload>({
     mutationFn: async (payload) => {
       const run = await createImportRunRequest(payload);
       const result = await submitImportRunRequest(run.id);
 
       if (result.status === 'queued') {
-        throw new Error(
-          'Import run submitted and queued for validation. Live progress for queued runs ' +
-            "isn't available in this view yet -- check Approvals › Imported files once " +
-            'validation completes.',
-        );
+        return { kind: 'queued', run };
       }
 
       if (result.status === 'failed') {
@@ -63,6 +68,7 @@ export const useImportRunSubmit = () =>
         throw new ImportValidationFailedError(result.run);
       }
 
-      return getReconciliationRunByIdRequest(result.matchingJobId);
+      const report = await getReconciliationRunByIdRequest(result.matchingJobId);
+      return { kind: 'succeeded', report };
     },
   });

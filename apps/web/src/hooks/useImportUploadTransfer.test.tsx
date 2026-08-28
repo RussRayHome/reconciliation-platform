@@ -5,8 +5,12 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
-import { ApiError, type ImportRunSummary, type ReconciliationRunResponse } from '../lib/api';
-import { ImportValidationFailedError, type ImportRunSubmitPayload } from './useImportRunSubmit';
+import { ApiError, type ImportRunSummary } from '../lib/api';
+import {
+  ImportValidationFailedError,
+  type ImportRunSubmitPayload,
+  type ImportRunSubmitResult,
+} from './useImportRunSubmit';
 import { useImportUploadTransfer, type ImportUploadTransferPayload } from './useImportUploadTransfer';
 
 afterEach(() => {
@@ -25,14 +29,14 @@ const PAYLOAD: ImportUploadTransferPayload = {
 /** Wraps `useImportRunSubmit`'s real mutation shape around a fake `mutationFn` so
  * `useImportUploadTransfer`'s `onError` branches can be exercised directly, without going through
  * the full app/XHR harness `App.test.tsx` uses for the end-to-end path. */
-const renderTransfer = (mutationFn: (payload: ImportRunSubmitPayload) => Promise<ReconciliationRunResponse>) => {
+const renderTransfer = (mutationFn: (payload: ImportRunSubmitPayload) => Promise<ImportRunSubmitResult>) => {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
   );
 
   return renderHook(
     () => {
-      const reconciliation = useMutation<ReconciliationRunResponse, Error, ImportRunSubmitPayload>({
+      const reconciliation = useMutation<ImportRunSubmitResult, Error, ImportRunSubmitPayload>({
         mutationFn,
       });
       return useImportUploadTransfer(reconciliation);
@@ -125,9 +129,9 @@ describe('useImportUploadTransfer', () => {
 
   it('retries by resending the last payload', async () => {
     const mutationFn = vi
-      .fn<(payload: ImportRunSubmitPayload) => Promise<ReconciliationRunResponse>>()
+      .fn<(payload: ImportRunSubmitPayload) => Promise<ImportRunSubmitResult>>()
       .mockRejectedValueOnce(new ApiError('Not reachable.', 503, { code: 'RCN-DB-002', retryable: true }))
-      .mockResolvedValueOnce({} as ReconciliationRunResponse);
+      .mockResolvedValueOnce({ kind: 'succeeded', report: {} } as ImportRunSubmitResult);
 
     const { result } = renderTransfer(mutationFn);
 

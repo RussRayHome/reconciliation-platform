@@ -229,6 +229,16 @@
     border-color: var(--severity-high-soft-border);
   }
 
+  /* R2 V1: not in V1's own file list, but required by its own acceptance criterion ("no red
+     surface" for a queued submission) -- `RunBar` already renders `run-bar__status--${statusTone}`
+     generically, so a new `queued` tone with no matching class here would fall back to an
+     unstyled/default pill instead of the amber the design baseline assigns queued elsewhere. */
+  .run-bar__status--queued {
+    color: var(--severity-medium);
+    background: var(--severity-medium-soft);
+    border-color: var(--severity-medium-soft-border);
+  }
+
   .run-bar__status--complete {
     color: var(--accent);
     background: var(--accent-soft);

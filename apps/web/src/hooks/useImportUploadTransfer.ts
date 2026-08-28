@@ -3,8 +3,12 @@ import type { UseMutationResult } from '@tanstack/react-query';
 
 import type { ErrorCode } from '@recon/domain';
 
-import { ApiError, type ReconciliationRunResponse } from '../lib/api';
-import { ImportValidationFailedError, type ImportRunSubmitPayload } from './useImportRunSubmit';
+import { ApiError } from '../lib/api';
+import {
+  ImportValidationFailedError,
+  type ImportRunSubmitPayload,
+  type ImportRunSubmitResult,
+} from './useImportRunSubmit';
 
 export type ImportUploadTransferPayload = Omit<ImportRunSubmitPayload, 'onProgress' | 'signal'>;
 
@@ -29,7 +33,7 @@ const NETWORK_ERROR_MESSAGE = 'Network error while uploading source files.';
  * `reconciliation.reset()` so they don't also surface through the mutation's generic error
  * banner -- this hook's own state is the single source of truth for both. */
 export const useImportUploadTransfer = (
-  reconciliation: UseMutationResult<ReconciliationRunResponse, Error, ImportRunSubmitPayload>,
+  reconciliation: UseMutationResult<ImportRunSubmitResult, Error, ImportRunSubmitPayload>,
 ) => {
   const [transfer, setTransfer] = useState<ImportUploadTransferState>({ kind: 'idle' });
   const controllerRef = useRef<AbortController | null>(null);

@@ -41,14 +41,28 @@ import {
 import { ExceptionTriage } from './ExceptionTriage';
 import { SemanticIcon } from './SemanticIcon';
 
-/** A single step in the process progress stepper displayed during reconciliation submission. */
+/** R2 V2: one `status` field instead of two booleans -- `isComplete`/`isCurrent` couldn't express
+ * a terminal failure (a failed run would sit at `isCurrent: true` forever) or a queued run.
+ * `ready` is distinct from `current`: the run step reads `ready` once everything is staged but
+ * nothing has been submitted yet, and only becomes `current` once a submission is actually in
+ * flight -- collapsing the two would mean "Run reconciliation" reads "In progress" before the user
+ * has even clicked Submit. `not-run` is for a step positioned after a *failure* specifically
+ * (never after a queued phase, which still expects to proceed) -- reuses the ordered-gate honesty
+ * `ImportFailureGateSequenceEntry`'s `NOT_RUN` vocabulary already established for file validation. */
+export type ProgressStepStatus =
+  | 'complete'
+  | 'current'
+  | 'queued'
+  | 'failed'
+  | 'ready'
+  | 'pending'
+  | 'not-run';
+
 export type ProgressStep = {
   id: string;
   label: string;
   description: string;
-  isComplete: boolean;
-  isCurrent: boolean;
-  meterValue: number;
+  status: ProgressStepStatus;
   detail?: string;
 };
 
@@ -70,20 +84,20 @@ type CategorySummaryRow = {
 
 export type RuleVarianceDefaultOverrides = Record<string, number>;
 
-const resolveStepState = (
-  isComplete: boolean,
-  isCurrent: boolean,
-): { className: string; label: string } => {
-  if (isComplete) {
-    return { className: 'step-progress-state--complete', label: 'Complete' };
-  }
-
-  if (isCurrent) {
-    return { className: 'step-progress-state--current', label: 'In progress' };
-  }
-
-  return { className: 'step-progress-state--pending', label: 'Pending' };
+/** A lookup, not a branch per state -- adding an eighth status later is a map entry, the reason
+ * V2 replaced the old two-boolean shape in the first place. */
+const STEP_STATE_BY_STATUS: Record<ProgressStepStatus, { className: string; label: string }> = {
+  complete: { className: 'step-progress-state--complete', label: 'Complete' },
+  current: { className: 'step-progress-state--current', label: 'In progress' },
+  queued: { className: 'step-progress-state--queued', label: 'Queued' },
+  failed: { className: 'step-progress-state--failed', label: 'Failed' },
+  ready: { className: 'step-progress-state--ready', label: 'Ready' },
+  pending: { className: 'step-progress-state--pending', label: 'Pending' },
+  'not-run': { className: 'step-progress-state--not-run', label: 'Not run' },
 };
+
+const resolveStepState = (status: ProgressStepStatus): { className: string; label: string } =>
+  STEP_STATE_BY_STATUS[status];
 
 const buildCategorySummaryRows = (run: RunData): CategorySummaryRow[] => {
   const knownRows = errorCategories
@@ -1581,9 +1595,12 @@ export function ProcessProgressSection({
           {elapsedLabel ? <p className="overall-progress-elapsed">Elapsed {elapsedLabel}</p> : null}
         </article>
 
+        {/* R2 V2.5: no per-step <progress> meter -- a step has no partial completion the backend
+            can report, so a meter value here implied a precision that never existed. The chip
+            (via `resolveStepState`) carries the state on its own now. */}
         <ul className="step-progress-list" aria-label="Reconciliation step progress">
           {progressSteps.map((step) => {
-            const stepState = resolveStepState(step.isComplete, step.isCurrent);
+            const stepState = resolveStepState(step.status);
 
             return (
               <li className="step-progress-item" key={step.id}>
@@ -1593,12 +1610,6 @@ export function ProcessProgressSection({
                     {stepState.label}
                   </span>
                 </div>
-                <progress
-                  className="progress-meter"
-                  aria-label={`${step.label} progress`}
-                  max={100}
-                  value={step.meterValue}
-                />
                 <p>{step.description}</p>
                 {step.detail ? <p className="step-progress-detail">{step.detail}</p> : null}
               </li>

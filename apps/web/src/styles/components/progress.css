@@ -109,15 +109,53 @@
     margin-left: 0.2rem;
   }
 
+  /* R2 V2.4: was `--severity-high` (orange) -- the design baseline assigns `current` the
+     status-neutral `--bank` hue, matching the run bar's own in-progress segment colour so the
+     stepper and the bar agree on what "working" looks like. */
   .step-progress-state--current {
-    background: var(--severity-high-soft);
-    border: 1px solid var(--severity-high-soft-border);
-    color: var(--severity-high);
+    background: var(--bank-soft);
+    border: 1px solid var(--bank-soft-border);
+    color: var(--bank);
     box-shadow: none;
     animation: pulse 2s ease-in-out infinite;
   }
 
+  /* R2 V2: the run step's queued phase -- amber, distinct from both `current` (actively working)
+     and `failed`, and never animated (nothing is happening client-side to indicate progress on). */
+  .step-progress-state--queued {
+    background: var(--severity-medium-soft);
+    border: 1px solid var(--severity-medium-soft-border);
+    color: var(--severity-medium);
+    box-shadow: none;
+  }
+
+  /* R2 V2: a step can now terminate. This is what lets "Run reconciliation" stop reading
+     "In progress" forever once a run actually fails. */
+  .step-progress-state--failed {
+    background: var(--negative-soft);
+    border: 1px solid var(--negative-soft-border);
+    color: var(--negative);
+    box-shadow: none;
+  }
+
   .step-progress-state--pending {
+    background: var(--bg-raised);
+    color: var(--text-tertiary);
+  }
+
+  /* R2 V2: the run step's own turn-not-yet-taken state -- everything upstream is staged, nothing
+     has been submitted yet. Same neutral treatment as `pending`; kept as its own class (not an
+     alias) so the design's distinct "Ready" label has somewhere to live without overloading what
+     `pending` means for the other three wizard steps. */
+  .step-progress-state--ready {
+    background: var(--bg-raised);
+    color: var(--text-tertiary);
+  }
+
+  /* R2 V2.3: a step positioned after a *failure* (never after a queued phase, which still expects
+     to proceed) -- same ordered-gate honesty as the file validator's own `NOT_RUN` gate state.
+     Same neutral treatment as `pending`, kept distinct for the same reason `ready` is. */
+  .step-progress-state--not-run {
     background: var(--bg-raised);
     color: var(--text-tertiary);
   }
