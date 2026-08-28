@@ -83,7 +83,10 @@ import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
 import { ImportValidationFailedError, useImportRunSubmit } from './hooks/useImportRunSubmit';
-import { useImportUploadTransfer } from './hooks/useImportUploadTransfer';
+import {
+  useImportUploadTransfer,
+  type ImportUploadTransferState,
+} from './hooks/useImportUploadTransfer';
 import { useImportPartialAccept } from './hooks/useImportPartialAccept';
 import { buildTransferCardProps } from './lib/importUploadProgress';
 import { ImportUploadCard } from './components/ImportUploadCard';
@@ -437,6 +440,74 @@ const resolveRunStatusLabel = (tone: RunStatusTone, phaseKind: LatestRunPhase['k
   }
 
   return runStatusLabelsByTone[tone];
+};
+
+/** R2 V4: the whole point of this package is one new condition -- a run already underway
+ * (queued, validating, or matching) blocks Submit run, checked from the durable phase as well as
+ * the live mutation. `isPending` alone doesn't cover this: a queued submission resolves without
+ * throwing (R2 V1), so `isPending` drops back to `false` while the run is still working, and the
+ * old `canSubmit` re-enabled the button mid-flight -- letting one set of files start a second
+ * reconciliation attempt. Every other row in the truth table below is either pre-existing
+ * behaviour (the first two) or a new label/reason on an already-disabled state (upload in flight),
+ * not a new condition. */
+type SubmitButtonState = {
+  disabled: boolean;
+  label: string;
+  reason: string | null;
+};
+
+const resolveSubmitButtonState = (
+  isUploadStepComplete: boolean,
+  isLabelMissing: boolean,
+  uploadTransferKind: ImportUploadTransferState['kind'],
+  uploadPercent: number | null,
+  isPending: boolean,
+  isQueued: boolean,
+  durablePhaseKind: LatestRunPhase['kind'],
+  hasSucceeded: boolean,
+): SubmitButtonState => {
+  if (!isUploadStepComplete) {
+    return {
+      disabled: true,
+      label: 'Submit run',
+      reason: 'Add every bank workbook and the GL workbook.',
+    };
+  }
+
+  if (isLabelMissing) {
+    return {
+      disabled: true,
+      label: 'Submit run',
+      reason: 'Give the run a label — it names every export.',
+    };
+  }
+
+  if (uploadTransferKind === 'uploading') {
+    return {
+      disabled: true,
+      label: 'Uploading…',
+      reason: uploadPercent === null ? 'Uploading files.' : `Transferring… ${uploadPercent}%.`,
+    };
+  }
+
+  if (isPending || isQueued || durablePhaseKind === 'queued' || durablePhaseKind === 'running') {
+    return {
+      disabled: true,
+      label: 'Run in progress',
+      reason:
+        'This run is already underway — submitting again would start a second attempt on the same files.',
+    };
+  }
+
+  if (hasSucceeded || durablePhaseKind === 'succeeded') {
+    return { disabled: false, label: 'Start new run', reason: null };
+  }
+
+  if (durablePhaseKind === 'validation-failed' || durablePhaseKind === 'matching-failed') {
+    return { disabled: false, label: 'Retry run', reason: null };
+  }
+
+  return { disabled: false, label: 'Submit run', reason: null };
 };
 
 const resolveRunElapsedMs = (
@@ -1172,8 +1243,24 @@ function ReconciliationApp({
   const isRunStepComplete = Boolean(run);
   const isExportStepComplete = hasDownloadedWorkbook || hasExportedJson;
   const isExportStepCurrent = isRunStepComplete && !isExportStepComplete;
-  const canSubmit = Boolean(
-    isUploadStepComplete && !reconciliation.isPending && !isLabelMissing,
+  // R2 V4: total bytes come from the files actually staged right now -- the upload can't be in
+  // flight (uploadTransfer.transfer.kind === 'uploading') without them being exactly what was
+  // submitted, since the form is disabled for the whole transfer.
+  const totalUploadBytes =
+    bankFiles.reduce((sum, file) => sum + (file?.size ?? 0), 0) + (glFile?.size ?? 0);
+  const uploadPercent =
+    uploadTransfer.transfer.kind === 'uploading' && totalUploadBytes > 0
+      ? Math.round((uploadTransfer.transfer.loadedBytes / totalUploadBytes) * 100)
+      : null;
+  const submitState = resolveSubmitButtonState(
+    isUploadStepComplete,
+    isLabelMissing,
+    uploadTransfer.transfer.kind,
+    uploadPercent,
+    reconciliation.isPending,
+    Boolean(submittedQueuedRun),
+    durableRunPhase.kind,
+    Boolean(run),
   );
 
   // R2 V2: the run step's status, in the same precedence order `resolveRunStatusTone` already
@@ -1245,9 +1332,6 @@ function ReconciliationApp({
       runStepStatus,
     ],
   );
-
-  const completedStepCount = progressSteps.filter((step) => step.status === 'complete').length;
-  const overallProgressPercent = Math.round((completedStepCount / progressSteps.length) * 100);
 
   const currentProgressStep = progressSteps.find((step) => step.status === 'current');
   const runStatusTone = resolveRunStatusTone(
@@ -1343,6 +1427,14 @@ function ReconciliationApp({
   const handleSubmit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();
 
+    // R2 V4: `aria-disabled` (not the native `disabled` attribute) is what keeps the button
+    // focusable so a screen reader can actually reach its reason -- but aria-disabled doesn't
+    // block a real click/submit on its own, so this guard is load-bearing, not defensive
+    // decoration. Covers every disabled row in the truth table, including the one this package
+    // adds (a run already underway), not just the pre-existing incomplete-upload case.
+    if (submitState.disabled) {
+      return;
+    }
     if (bankFiles.length === 0 || bankFiles.some((file) => !file) || !glFile) {
       return;
     }
@@ -1415,7 +1507,6 @@ function ReconciliationApp({
           frequency={runBarFrequency}
           statusLabel={runStatusLabel}
           statusTone={runStatusTone}
-          overallProgressPercent={overallProgressPercent}
           currentStepLabel={currentStepLabel}
           exceptionCount={reportRun ? reportRun.exceptions.length : null}
           runId={reportRun?.id ?? latestImportRun?.id ?? null}
@@ -1444,7 +1535,7 @@ function ReconciliationApp({
                     bankFiles={bankFiles}
                     glFile={glFile}
                     apFiles={apFiles}
-                    canSubmit={canSubmit}
+                    submitState={submitState}
                     currentYear={currentYear}
                     handleSubmit={handleSubmit}
                     isCustomPeriodLabel={isCustomPeriodLabel}
@@ -1468,7 +1559,13 @@ function ReconciliationApp({
                     uploadTransfer={uploadTransfer}
                     partialAccept={partialAccept}
                     durableRunPhase={durableRunPhase}
+                    submittedQueuedRun={submittedQueuedRun}
                     onDismissDurableRun={() => setLatestImportRun(null)}
+                    onRefreshDurableRun={() => {
+                      void getLatestImportRunRequest().then((latest) => {
+                        setLatestImportRun(latest);
+                      });
+                    }}
                   />
                 }
               />
@@ -1482,7 +1579,7 @@ function ReconciliationApp({
                     bankFiles={bankFiles}
                     glFile={glFile}
                     apFiles={apFiles}
-                    canSubmit={canSubmit}
+                    submitState={submitState}
                     currentYear={currentYear}
                     handleSubmit={handleSubmit}
                     isCustomPeriodLabel={isCustomPeriodLabel}
@@ -1506,7 +1603,13 @@ function ReconciliationApp({
                     uploadTransfer={uploadTransfer}
                     partialAccept={partialAccept}
                     durableRunPhase={durableRunPhase}
+                    submittedQueuedRun={submittedQueuedRun}
                     onDismissDurableRun={() => setLatestImportRun(null)}
+                    onRefreshDurableRun={() => {
+                      void getLatestImportRunRequest().then((latest) => {
+                        setLatestImportRun(latest);
+                      });
+                    }}
                   />
                 }
               />
@@ -1720,6 +1823,92 @@ function ReconciliationApp({
   );
 }
 
+/** R2 V5.4: queued is a real, working outcome, not a failure -- this panel says so plainly, links
+ * to where the run's real status lives today (Approvals › Imported files; the plan's "Pending
+ * approvals" unified inbox is N1, a later, separate package -- this route survives that change
+ * unmodified, since N1 keeps every legacy `/approvals/*` route alive as a redirect), and admits
+ * that live per-record progress for a queued run is a missing view, not something broken. `run` is
+ * optional: the live path's `submittedQueuedRun` (the DRAFT-time object) always has one, but the
+ * durable path's `queued` phase always does too -- both callers pass a real run in practice, the
+ * type just doesn't need to promise it. */
+function QueuedRunPanel({
+  run,
+  onRefresh,
+}: Readonly<{ run: ImportRunSummary | undefined; onRefresh: () => void }>) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="outcome-panel outcome-panel--queued" role="status" aria-live="polite">
+      <p className="outcome-panel__title">Queued for validation</p>
+      <p className="outcome-panel__body">
+        {run ? `“${run.label}” is` : 'This run is'} in the async validation queue. Live
+        step-by-step progress for a queued run isn&rsquo;t available in this view yet -- that&rsquo;s
+        a missing view, not a failure. The result appears here automatically once it&rsquo;s ready.
+      </p>
+      <div className="outcome-panel__actions">
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => navigate(routePaths.approvalsImports)}
+        >
+          Open Imported files
+        </button>
+        <button type="button" className="secondary-button" onClick={onRefresh}>
+          Refresh status
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** R2 V5.3: a matching failure states up front that validation passed -- the files are fine, this
+ * is a Stage 2 (matching engine) problem the user didn't cause -- and gives a job reference for
+ * support, since there's no separate "retry matching" endpoint today (confirmed: none exists).
+ * Retrying is the same Submit run button, already relabelled "Retry run" for this phase by V4. */
+function MatchingFailurePanel({
+  run,
+  message,
+}: Readonly<{ run: ImportRunSummary; message: string }>) {
+  const [copied, setCopied] = useState(false);
+  const jobReference = run.matchingJob?.id ?? run.validationJob?.id ?? run.id;
+
+  const handleCopyReference = (): void => {
+    const markCopied = (): void => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+
+    const clipboard = globalThis.navigator?.clipboard;
+    if (clipboard?.writeText) {
+      void clipboard
+        .writeText(jobReference)
+        .then(markCopied)
+        .catch(() => {
+          // Ignore clipboard failures; the reference stays visible for manual copy.
+        });
+      return;
+    }
+
+    markCopied();
+  };
+
+  return (
+    <div className="outcome-panel outcome-panel--failed" role="alert">
+      <p className="outcome-panel__title">Reconciliation failed for &ldquo;{run.label}&rdquo;</p>
+      <p className="outcome-panel__body">
+        File validation passed, so the files themselves are fine -- this failed after that, during
+        matching. {message}
+      </p>
+      <p className="outcome-panel__reference">Job reference: {jobReference}</p>
+      <div className="outcome-panel__actions">
+        <button type="button" className="secondary-button" onClick={handleCopyReference}>
+          {copied ? 'Copied' : 'Copy job reference'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SourceUploadSection({
   activeSourceType,
   accountIdentifier,
@@ -1727,7 +1916,7 @@ function SourceUploadSection({
   bankFiles,
   glFile,
   apFiles,
-  canSubmit,
+  submitState,
   currentYear,
   handleSubmit,
   isCustomPeriodLabel,
@@ -1750,7 +1939,9 @@ function SourceUploadSection({
   uploadTransfer,
   partialAccept,
   durableRunPhase,
+  submittedQueuedRun,
   onDismissDurableRun,
+  onRefreshDurableRun,
 }: Readonly<{
   /** Which Import Files tab is active, driven by the matched route (R1 WP2/WP3) -- not local
    * component state, mirroring how the Reconciliation section's File-based/Rules-based split
@@ -1761,7 +1952,7 @@ function SourceUploadSection({
   bankFiles: (File | null)[];
   glFile: File | null;
   apFiles: (File | null)[];
-  canSubmit: boolean;
+  submitState: SubmitButtonState;
   currentYear: number;
   handleSubmit: (event: { preventDefault: () => void }) => void;
   isCustomPeriodLabel: boolean;
@@ -1784,11 +1975,14 @@ function SourceUploadSection({
   uploadTransfer: UploadTransferModel;
   partialAccept: PartialAcceptModel;
   durableRunPhase: LatestRunPhase;
+  submittedQueuedRun: ImportRunSummary | undefined;
   onDismissDurableRun: () => void;
+  onRefreshDurableRun: () => void;
 }>) {
   const navigate = useNavigate();
   const reconciliationLabelErrorId = 'reconciliation-label-error';
   const reconciliationLabelHintId = 'reconciliation-label-hint';
+  const submitButtonReasonId = 'submit-run-reason';
 
   return (
     <div className="import-screen">
@@ -1815,14 +2009,26 @@ function SourceUploadSection({
                 </a>
               </div>
             </details>
-            <button
-              type="submit"
-              form="source-upload-form"
-              className="accent-button"
-              disabled={!canSubmit}
-            >
-              {reconciliation.isPending ? 'Submitting…' : 'Submit run'}
-            </button>
+            <div className="import-screen__submit-group">
+              {/* R2 V4.3: `aria-disabled`, not the native `disabled` attribute -- a genuinely
+                  disabled button drops out of the tab order, so a screen reader user could never
+                  reach `aria-describedby`'s reason at all. `handleSubmit` enforces the same gate
+                  for real (see its own comment); this only controls presentation and focusability. */}
+              <button
+                type="submit"
+                form="source-upload-form"
+                className="accent-button"
+                aria-disabled={submitState.disabled}
+                aria-describedby={submitState.reason ? submitButtonReasonId : undefined}
+              >
+                {submitState.label}
+              </button>
+              {submitState.reason ? (
+                <p id={submitButtonReasonId} className="import-screen__submit-reason">
+                  {submitState.reason}
+                </p>
+              ) : null}
+            </div>
           </div>
         }
       >
@@ -1981,12 +2187,6 @@ function SourceUploadSection({
             </p>
           </aside>
 
-          {reconciliation.isPending ? (
-            <p className="status-banner import-screen__status" role="status" aria-live="polite">
-              Import run submitted. Validation and matching are in progress.
-            </p>
-          ) : null}
-
           {isLabelMissing ? (
             <p
               id={reconciliationLabelErrorId}
@@ -1996,6 +2196,13 @@ function SourceUploadSection({
               Reconciliation label is required before running.
             </p>
           ) : null}
+          {/* R2 V5: one outcome panel, switched on phase, replacing the old scattered one-line
+              banners. `validating` (informational) and `queued` (a real, working outcome, not a
+              failure -- checked before `isPending` has any chance to mask it, since a queued
+              submission resolves without staying pending) are new; `validation-failed` is
+              unchanged (ImportValidationFailureView already covers V5.2's requirements --
+              gate/code naming and the raw-files-preserved reassurance -- so nothing there needed
+              touching); `matching-failed` is upgraded from a one-line alert to a real panel. */}
           {reconciliation.error instanceof ImportValidationFailedError ? (
             <ImportValidationFailureView
               run={reconciliation.error.run}
@@ -2052,8 +2259,18 @@ function SourceUploadSection({
               partialAccept={partialAccept}
             />
           ) : durableRunPhase.kind === 'matching-failed' ? (
-            <p className="error-banner import-screen__status" role="alert">
-              Reconciliation failed for &ldquo;{durableRunPhase.run.label}&rdquo;. {durableRunPhase.message}
+            <MatchingFailurePanel run={durableRunPhase.run} message={durableRunPhase.message} />
+          ) : submittedQueuedRun || durableRunPhase.kind === 'queued' ? (
+            <QueuedRunPanel
+              run={
+                submittedQueuedRun ??
+                (durableRunPhase.kind === 'queued' ? durableRunPhase.run : undefined)
+              }
+              onRefresh={onRefreshDurableRun}
+            />
+          ) : reconciliation.isPending ? (
+            <p className="status-banner import-screen__status" role="status" aria-live="polite">
+              Validating files, then matching. This can take a few seconds.
             </p>
           ) : null}
         </form>

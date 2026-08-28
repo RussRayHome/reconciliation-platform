@@ -1,9 +1,45 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { ProcessProgressSection, type ProgressStep } from './AppWorkspacePanels';
+import {
+  ProcessProgressSection,
+  type ProgressStep,
+  type ProgressStepStatus,
+} from './AppWorkspacePanels';
 import type { Density } from '../hooks/useDensity';
 
 type RunStatusTone = 'idle' | 'queued' | 'running' | 'complete' | 'error';
+
+/** R2 V3.1: complete/failed are solid (nothing left to animate); current/queued are striped
+ * (`prefers-reduced-motion` stops the stripe animating in CSS, not here -- the state stays
+ * legible from colour and label alone either way). ready/pending/not-run all render as an empty
+ * segment -- nothing has happened there yet, and (for `not-run`) nothing will without a retry. */
+const SEGMENT_CLASS_BY_STATUS: Record<ProgressStepStatus, string> = {
+  complete: 'run-bar__segment--complete',
+  current: 'run-bar__segment--current',
+  queued: 'run-bar__segment--queued',
+  failed: 'run-bar__segment--failed',
+  ready: 'run-bar__segment--empty',
+  pending: 'run-bar__segment--empty',
+  'not-run': 'run-bar__segment--empty',
+};
+
+/** R2 V3.3: the phase word (`currentStepLabel`) plus this counter replaces the deleted
+ * percentage. `position` is the 1-based index of whichever step is actively current/queued/failed
+ * -- or, if none is (nothing has been submitted yet, or every step is complete), however many
+ * steps are already complete. A run that has failed states "stopped at", per the design's own
+ * "stopped at step 3 of 4" wording for a terminal failure. */
+const resolveStepCounterLabel = (steps: ProgressStep[]): string => {
+  const activeIndex = steps.findIndex(
+    (step) => step.status === 'current' || step.status === 'queued' || step.status === 'failed',
+  );
+  const completeCount = steps.filter((step) => step.status === 'complete').length;
+  const position = activeIndex >= 0 ? activeIndex + 1 : completeCount;
+  const hasFailed = steps.some((step) => step.status === 'failed');
+
+  return hasFailed
+    ? `stopped at step ${position} of ${steps.length}`
+    : `step ${position} of ${steps.length}`;
+};
 
 const resolveRunBarAnnouncement = (
   isComplete: boolean,
@@ -37,7 +73,6 @@ export function RunBar({
   frequency,
   statusLabel,
   statusTone,
-  overallProgressPercent,
   currentStepLabel,
   exceptionCount,
   runId,
@@ -60,7 +95,6 @@ export function RunBar({
   frequency: string;
   statusLabel: string;
   statusTone: RunStatusTone;
-  overallProgressPercent: number;
   currentStepLabel: string;
   exceptionCount: number | null;
   runId: string | null;
@@ -155,22 +189,37 @@ export function RunBar({
       </div>
 
       <div className="run-bar__status-row">
-        <details className="run-bar__progress" open={statusTone === 'running'}>
+        {/* R2 V3.4: `open` used to key only on `running`, so the detail panel slammed shut the
+            instant a run queued or failed -- exactly when there's something to read. A queued
+            submission flips the tone to `error` today only via the throw this package's V1
+            already removed; `error` covers both `validation-failed` and `matching-failed`
+            (`resolveRunStatusTone` maps both to it), so this one check covers both failure
+            phases. The `max-height`/`overflow-y` bound on `.run-bar__progress[open]` stays --
+            its own comment records a real Playwright timeout where the sticky run-bar intercepted
+            clicks on Submit run; forcing this open more often makes that bound load-bearing, not
+            optional. */}
+        <details
+          className="run-bar__progress"
+          open={statusTone === 'running' || statusTone === 'queued' || statusTone === 'error'}
+        >
           <summary className="run-bar__meter" aria-label="Run progress details">
-            <progress
-              className="run-bar__meter-bar"
-              aria-label="Run progress"
-              max={100}
-              value={overallProgressPercent}
-            />
-            <span className="run-bar__meter-percent">{overallProgressPercent}%</span>
+            {/* R2 V3.2 (D6): replaces `run-bar__meter-bar` (a single <progress>) and
+                `run-bar__meter-percent` -- `completedSteps / 4` was never real progress, and this
+                literal number is what read "50%" forever. `aria-hidden`: the phase word and step
+                counter beside it already say the same thing in words. */}
+            <span className="run-bar__segments" aria-hidden="true">
+              {progressSteps.map((step) => (
+                <span
+                  key={step.id}
+                  className={`run-bar__segment ${SEGMENT_CLASS_BY_STATUS[step.status]}`}
+                />
+              ))}
+            </span>
             <span className="run-bar__step">{currentStepLabel}</span>
+            <span className="run-bar__step-counter">{resolveStepCounterLabel(progressSteps)}</span>
+            {elapsedLabel ? <span className="run-bar__elapsed">Elapsed {elapsedLabel}</span> : null}
           </summary>
-          <ProcessProgressSection
-            overallProgressPercent={overallProgressPercent}
-            progressSteps={progressSteps}
-            elapsedLabel={elapsedLabel}
-          />
+          <ProcessProgressSection progressSteps={progressSteps} />
         </details>
 
         {isComplete ? (

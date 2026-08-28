@@ -287,15 +287,58 @@
     display: none;
   }
 
-  .run-bar__meter-bar {
+  /* R2 V3.1/V3.2 (D6): four equal segments, one per step, replacing the single fill bar and its
+     percentage -- `completedSteps / 4` was never real progress, and the literal number was the
+     thing that read "50%" forever. */
+  .run-bar__segments {
+    display: flex;
     flex: 1 1 auto;
+    gap: 3px;
     height: 8px;
   }
 
-  .run-bar__meter-percent {
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-    font-size: 0.85rem;
+  .run-bar__segment {
+    flex: 1 1 0;
+    height: 100%;
+    border-radius: var(--radius-pill);
+    background: var(--bg-sunken);
+  }
+
+  .run-bar__segment--complete {
+    background: var(--accent);
+  }
+
+  .run-bar__segment--failed {
+    background: var(--negative);
+  }
+
+  .run-bar__segment--current,
+  .run-bar__segment--queued {
+    background-image: repeating-linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.28) 0 6px,
+      transparent 6px 12px
+    );
+    background-color: var(--bank-soft);
+    animation: runBarSegmentStripe 1s linear infinite;
+  }
+
+  .run-bar__segment--queued {
+    background-color: var(--severity-medium-soft);
+    animation-duration: 2.4s;
+  }
+
+  @keyframes runBarSegmentStripe {
+    to {
+      background-position: 24px 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .run-bar__segment--current,
+    .run-bar__segment--queued {
+      animation: none;
+    }
   }
 
   .run-bar__step {
@@ -304,6 +347,22 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* R2 V3.3: the phase word (.run-bar__step) plus this counter is what replaces the deleted
+     percentage. */
+  .run-bar__step-counter {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+
+  .run-bar__elapsed {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
   }
 
   .run-bar__result {

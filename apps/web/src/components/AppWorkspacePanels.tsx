@@ -1567,13 +1567,9 @@ export function RulesCatalogSection({
 
 /** Panel that shows the step-by-step progress stepper while a reconciliation run is in flight. */
 export function ProcessProgressSection({
-  overallProgressPercent,
   progressSteps,
-  elapsedLabel,
 }: Readonly<{
-  overallProgressPercent: number;
   progressSteps: ProgressStep[];
-  elapsedLabel?: string | null;
 }>) {
   return (
     <SectionCard
@@ -1581,20 +1577,11 @@ export function ProcessProgressSection({
       description="Track overall reconciliation progress and each individual step until completion."
     >
       <div className="process-progress-grid">
-        <article className="overall-progress-card" aria-live="polite">
-          <div className="overall-progress-head">
-            <span>Overall Process Meter</span>
-            <strong>{overallProgressPercent}%</strong>
-          </div>
-          <progress
-            className="progress-meter"
-            aria-label="Overall process progress"
-            max={100}
-            value={overallProgressPercent}
-          />
-          {elapsedLabel ? <p className="overall-progress-elapsed">Elapsed {elapsedLabel}</p> : null}
-        </article>
-
+        {/* R2 V3.2 (D6): the "Overall Process Meter" card and its percentage lived here --
+            deleted, not just its number, per the acceptance criterion "no percentage anywhere,
+            collapsed or expanded." Fixing only RunBar's own copy would have left this one exactly
+            one click away. The run-bar summary (RunBar.tsx) now carries the phase word, elapsed
+            time, and the step-n-of-4 counter that replaces it. */}
         {/* R2 V2.5: no per-step <progress> meter -- a step has no partial completion the backend
             can report, so a meter value here implied a precision that never existed. The chip
             (via `resolveStepState`) carries the state on its own now. */}

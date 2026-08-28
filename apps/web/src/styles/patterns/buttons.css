@@ -28,6 +28,20 @@
     transform: scale(0.97);
   }
 
+  /* R2 V4.3: this button uses `aria-disabled`, not the native `disabled` attribute, so it stays
+     focusable and a screen reader can reach its `aria-describedby` reason -- `button:disabled`
+     below never applies to it, so the visual needs its own rule with the same treatment. */
+  .accent-button[aria-disabled='true'] {
+    cursor: not-allowed;
+    opacity: 0.6;
+    box-shadow: none;
+  }
+
+  .accent-button[aria-disabled='true']:hover {
+    background: var(--accent);
+    transform: none;
+  }
+
   .hero-primary-cta {
     display: inline-flex;
     align-items: center;
