@@ -85,6 +85,14 @@ export default defineConfig({
       url: `${apiURL}/api/health`,
       reuseExistingServer: true,
       cwd: './',
+      // Issue #251 diagnostics (temporary): Playwright's default (`'ignore'`) silently discards
+      // this process's entire stdout/stderr -- which is why CI's e2e-functional job has never
+      // captured a single API log line, including the diag251.* stage-timing logs added to
+      // pinpoint the stuck-run hang (ISSUE-032's long-standing "unexplained single-worker hang").
+      // `'pipe'` forwards it into the test runner's own stdout, which the job step's log capture
+      // does pick up. Revert alongside the diag251.* log lines once #251 is root-caused.
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
     {
       command: 'npm run dev:web:test',
@@ -94,6 +102,9 @@ export default defineConfig({
       // Same self-signed-cert reasoning as `use.ignoreHTTPSErrors` above, but this is a separate
       // setting: Playwright's own readiness probe against `url` doesn't inherit `use`.
       ignoreHTTPSErrors: true,
+      // Issue #251 diagnostics (temporary): see the api entry's comment above.
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
   ],
 });
