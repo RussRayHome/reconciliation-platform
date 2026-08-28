@@ -2,8 +2,10 @@
 
 import { type Dispatch, type SetStateAction, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+import type { CanonicalField } from '@recon/domain';
 
 import { MAX_AP_ENTITIES, MAX_BANK_ACCOUNTS, SourceDropZone } from './SourceDropZone';
 
@@ -20,7 +22,13 @@ afterEach(cleanup);
 /** Wraps SourceDropZone with real React state so slot-filling behavior (which depends on the
  * setter actually taking effect between renders) can be exercised end to end, not just asserted
  * against a single mocked setState call. */
-function BankGlHarness({ initialBankFiles = [null, null] }: { initialBankFiles?: (File | null)[] }) {
+function BankGlHarness({
+  initialBankFiles = [null, null],
+  canonicalFields = [],
+}: {
+  initialBankFiles?: (File | null)[];
+  canonicalFields?: CanonicalField[];
+}) {
   const [bankFiles, setBankFiles] = useState<(File | null)[]>(initialBankFiles);
   const [glFile, setGlFile] = useState<File | null>(null);
   return (
@@ -30,17 +38,25 @@ function BankGlHarness({ initialBankFiles = [null, null] }: { initialBankFiles?:
       glFile={glFile}
       setBankFiles={setBankFiles as Dispatch<SetStateAction<(File | null)[]>>}
       setGlFile={setGlFile}
+      canonicalFields={canonicalFields}
     />
   );
 }
 
-function ApHarness({ initialApFiles = [null] }: { initialApFiles?: (File | null)[] }) {
+function ApHarness({
+  initialApFiles = [null],
+  canonicalFields = [],
+}: {
+  initialApFiles?: (File | null)[];
+  canonicalFields?: CanonicalField[];
+}) {
   const [apFiles, setApFiles] = useState<(File | null)[]>(initialApFiles);
   return (
     <SourceDropZone
       mode="billing"
       apFiles={apFiles}
       setApFiles={setApFiles as Dispatch<SetStateAction<(File | null)[]>>}
+      canonicalFields={canonicalFields}
     />
   );
 }
@@ -110,6 +126,72 @@ describe('SourceDropZone (mode="bank-gl")', () => {
 
     const slotTwo = screen.getByLabelText('Bank workbook (Account 2)').closest('.source-slot');
     expect(slotTwo).toHaveTextContent('2222_override.csv');
+  });
+});
+
+// R2 V6 (warn-only design, Issue #250): the fuzzy header preview, wired through SourceSlot via
+// useHeaderPreviewWarning. Never blocks -- these tests assert the heads-up copy appears/doesn't,
+// not anything about Submit being disabled (that's App.test.tsx's V4 gating concern, untouched by
+// this package).
+describe('SourceDropZone header preview (Issue #250)', () => {
+  const REQUIRED_FIELDS: CanonicalField[] = [
+    { id: 'transactionDate', type: 'date', required: true, note: '' },
+    { id: 'amount', type: 'numeric', required: true, note: '' },
+  ];
+
+  it('shows a heads-up when a required column has no plausible match in a CSV header', async () => {
+    const user = userEvent.setup();
+    render(<BankGlHarness canonicalFields={REQUIRED_FIELDS} />);
+
+    await user.upload(
+      screen.getByLabelText('Bank workbook (Account 1)'),
+      makeFile('1111_bank.csv', 'Description\nrow one'),
+    );
+
+    const slot = screen.getByLabelText('Bank workbook (Account 1)').closest('.source-slot');
+    await waitFor(() => expect(slot).toHaveTextContent('amount'));
+  });
+
+  it('shows no heads-up once every required column is present', async () => {
+    const user = userEvent.setup();
+    render(<BankGlHarness canonicalFields={REQUIRED_FIELDS} />);
+
+    await user.upload(
+      screen.getByLabelText('Bank workbook (Account 1)'),
+      makeFile('1111_bank.csv', 'Transaction Date,Amount\n2026-01-01,100'),
+    );
+
+    const slot = screen.getByLabelText('Bank workbook (Account 1)').closest('.source-slot');
+    await waitFor(() => expect(slot).toHaveTextContent('1111_bank.csv'));
+    expect(slot?.querySelector('.source-slot__header-warning')).not.toBeInTheDocument();
+  });
+
+  it('shows no heads-up for an XLSX file -- no client-side header reader for it in v1', async () => {
+    const user = userEvent.setup();
+    render(<BankGlHarness canonicalFields={REQUIRED_FIELDS} />);
+
+    await user.upload(
+      screen.getByLabelText('Bank workbook (Account 1)'),
+      makeFile('1111_bank.xlsx', 'not real xlsx bytes'),
+    );
+
+    const slot = screen.getByLabelText('Bank workbook (Account 1)').closest('.source-slot');
+    await waitFor(() => expect(slot).toHaveTextContent('1111_bank.xlsx'));
+    expect(slot?.querySelector('.source-slot__header-warning')).not.toBeInTheDocument();
+  });
+
+  it('shows no heads-up when canonicalFields has not loaded yet', async () => {
+    const user = userEvent.setup();
+    render(<BankGlHarness canonicalFields={[]} />);
+
+    await user.upload(
+      screen.getByLabelText('Bank workbook (Account 1)'),
+      makeFile('1111_bank.csv', 'Description\nrow one'),
+    );
+
+    const slot = screen.getByLabelText('Bank workbook (Account 1)').closest('.source-slot');
+    await waitFor(() => expect(slot).toHaveTextContent('1111_bank.csv'));
+    expect(slot?.querySelector('.source-slot__header-warning')).not.toBeInTheDocument();
   });
 });
 

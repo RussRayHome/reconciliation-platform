@@ -25,6 +25,7 @@ import {
   rolePermissionsByRole,
   userRoles,
   type ApprovalCountsByGroup,
+  type CanonicalField,
   type EntityVerificationStatus,
   type IdentityVerificationStatus,
   type ReviewerDecision,
@@ -61,6 +62,7 @@ import kinneyHighlander from './assets/kinney-highlander.png';
 import {
   createRuleVersionDraftRequest,
   getApprovalCountsRequest,
+  getCanonicalFieldsRequest,
   getLatestImportRunRequest,
   getMappingProfilesRequest,
   getReconciliationRunByIdRequest,
@@ -1984,6 +1986,25 @@ function SourceUploadSection({
   const reconciliationLabelHintId = 'reconciliation-label-hint';
   const submitButtonReasonId = 'submit-run-reason';
 
+  // R2 V6 (warn-only, Issue #250): fetched once for the per-slot fuzzy header preview
+  // (useHeaderPreviewWarning, via SourceDropZone). Mirrors CreateMappingScreen's own fetch of the
+  // same endpoint exactly -- an empty array while loading is treated as "nothing to check yet".
+  const [canonicalFields, setCanonicalFields] = useState<CanonicalField[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getCanonicalFieldsRequest()
+      .then((fields) => {
+        if (!cancelled) setCanonicalFields(fields);
+      })
+      .catch(() => {
+        // Best-effort heads-up only -- if the canonical schema can't be loaded, the preview
+        // simply stays off; the real, authoritative check still happens server-side on submit.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="import-screen">
       <p className="import-screen__eyebrow">Reconciliations / New run</p>
@@ -2069,6 +2090,7 @@ function SourceUploadSection({
                   glFile={glFile}
                   setBankFiles={setBankFiles}
                   setGlFile={setGlFile}
+                  canonicalFields={canonicalFields}
                 />
               ) : (
                 (() => {
@@ -2129,7 +2151,12 @@ function SourceUploadSection({
                   submission is an open product decision, not guessed at here. This tab is
                   file-selection/validation only for now; it's never shown mid-transfer since
                   nothing here drives uploadTransfer's state. */}
-              <SourceDropZone mode="billing" apFiles={apFiles} setApFiles={setApFiles} />
+              <SourceDropZone
+                mode="billing"
+                apFiles={apFiles}
+                setApFiles={setApFiles}
+                canonicalFields={canonicalFields}
+              />
             </div>
           )}
 

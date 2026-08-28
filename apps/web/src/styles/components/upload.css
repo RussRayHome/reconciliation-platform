@@ -74,6 +74,19 @@
     color: var(--muted);
   }
 
+  /* R2 V6 (warn-only, Issue #250): a fuzzy header-match heads-up, not a rejection -- amber like
+     the existing severity-medium tone, distinct from source-slot__override's error-adjacent red,
+     since this never blocks Submit. */
+  .source-slot__header-warning {
+    margin: 0;
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    color: var(--severity-medium);
+    background: var(--severity-medium-soft);
+    border: 1px solid var(--severity-medium-soft-border);
+  }
+
   .source-dropzone__note {
     margin: 0;
     font-size: 0.8rem;
