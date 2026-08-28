@@ -31,11 +31,12 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   mappingHistory: { heading: 'Mapping History' },
   mappingVersions: { heading: 'Mapping Profile Versions' },
   mappingRulesVersions: { heading: 'Matching Rule Versions' },
-  approvalsImports: { heading: 'Imported files' },
-  approvalsMappingProfiles: { heading: 'Mapping Profiles' },
-  approvalsMatchingRules: { heading: 'Matching Rule & Variances' },
-  approvalsExceptionResolutions: { heading: 'Exception Resolutions' },
-  approvalsReportDistribution: { heading: 'Report Distribution' },
+  // N1: the five approvalsXxx keys below are NOT here -- each one now redirects rather than
+  // rendering its own heading, so the generic "stays put" assumption this loop makes (line ~196)
+  // no longer holds for them. Handled explicitly, right after this loop, same reasoning as
+  // documentationRunBook/approvalsPolicy being outside this map for their own conditional-render
+  // reasons.
+  approvals: { heading: 'Pending approvals' },
   accountProfile: { heading: 'Profile' },
   accountSecurity: { heading: 'Security' },
   accountBilling: { heading: 'Billing' },
@@ -84,6 +85,13 @@ const accountedForKeys = [
   'importFilesBilling',
   'documentationRunBook',
   'approvalsPolicy',
+  // N1: one-release redirects to the object each used to shadow -- verified in their own
+  // test.step blocks below, not the generic AUTHENTICATED_ROUTES loop (see the comment there).
+  'approvalsImports',
+  'approvalsMappingProfiles',
+  'approvalsMatchingRules',
+  'approvalsExceptionResolutions',
+  'approvalsReportDistribution',
   ...Object.keys(PUBLIC_ROUTES),
   ...Object.keys(AUTHENTICATED_ROUTES),
 ].sort();
@@ -196,6 +204,51 @@ test.describe('route sweep', () => {
           expect.soft(new URL(page.url()).pathname).toBe(expectedPathname(path));
         });
       }
+
+      // N1: "every old approval URL lands on the object it shadowed" -- each of these five is now
+      // an unconditional <Navigate>, so (unlike importFilesBank/documentationRunBook above) there's
+      // exactly one correct outcome per route, not a role/state-dependent branch to race.
+      await test.step(`approvalsImports (${routePaths.approvalsImports})`, async () => {
+        await page.goto(routePaths.approvalsImports);
+        // Redirects to importFilesBank ('/'), which has no heading of its own -- same
+        // race-two-real-waits pattern as that route's own step above, since landing on '/' can
+        // itself further redirect to reconSummary depending on existing run state.
+        const result = await Promise.race([
+          submitRunButton(page)
+            .waitFor({ state: 'visible', timeout: 60_000 })
+            .then(() => 'importFilesBank' as const),
+          page
+            .getByRole('heading', { name: 'Review' })
+            .waitFor({ state: 'visible', timeout: 60_000 })
+            .then(() => 'reconSummary' as const),
+        ]).catch(() => null);
+        expect.soft(result).not.toBeNull();
+      });
+
+      await test.step(`approvalsMappingProfiles (${routePaths.approvalsMappingProfiles})`, async () => {
+        await page.goto(routePaths.approvalsMappingProfiles);
+        // No real object screen exists for this non-live type -- redirects to the inbox itself.
+        await expectHeadingSoft(page, 'Pending approvals');
+        expect.soft(new URL(page.url()).pathname).toBe(expectedPathname(routePaths.approvals));
+      });
+
+      await test.step(`approvalsMatchingRules (${routePaths.approvalsMatchingRules})`, async () => {
+        await page.goto(routePaths.approvalsMatchingRules);
+        await expectHeadingSoft(page, 'Matching Rules');
+        expect.soft(new URL(page.url()).pathname).toBe(expectedPathname(routePaths.mappingRules));
+      });
+
+      await test.step(`approvalsExceptionResolutions (${routePaths.approvalsExceptionResolutions})`, async () => {
+        await page.goto(routePaths.approvalsExceptionResolutions);
+        await expectHeadingSoft(page, 'Review');
+        expect.soft(new URL(page.url()).pathname).toBe(expectedPathname(routePaths.exceptions));
+      });
+
+      await test.step(`approvalsReportDistribution (${routePaths.approvalsReportDistribution})`, async () => {
+        await page.goto(routePaths.approvalsReportDistribution);
+        await expectHeadingSoft(page, 'Export');
+        expect.soft(new URL(page.url()).pathname).toBe(expectedPathname(routePaths.export));
+      });
 
       await test.step(`documentationRunBook (${routePaths.documentationRunBook})`, async () => {
         await page.goto(routePaths.documentationRunBook);
