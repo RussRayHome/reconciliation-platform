@@ -1475,7 +1475,10 @@ describe('App', () => {
     expect(globalThis.location.search).toContain('tunable=false');
   });
 
-  it('reflects a family filter from the URL on load, and NavRail sub-item links carry real counts', async () => {
+  // N3: the rail's own per-family sub-items (with counts/active-state) duplicated the Matching
+  // Rules screen's own filter chips and are removed -- the URL deep-link itself must still work,
+  // which is what this test now covers exclusively.
+  it('reflects a family filter from the URL on load', async () => {
     setAuthenticatedUser('rray');
     globalThis.history.pushState({}, '', '/mapping/rules?family=matching');
     renderApp();
@@ -1484,15 +1487,6 @@ describe('App', () => {
     expect(screen.getByText('Reference + Amount Match')).toBeInTheDocument();
     expect(screen.getByText('Wire Correspondent Fee Deduction')).toBeInTheDocument();
     expect(screen.queryByText('Missing from Bank')).toBeNull();
-
-    const nav = screen.getByRole('navigation', { name: 'Primary' });
-    const matchingSubItem = within(nav)
-      .getAllByRole('link')
-      .find((link) => link.getAttribute('href') === '/mapping/rules?family=matching');
-    expect(matchingSubItem).toBeDefined();
-    expect(matchingSubItem?.textContent).toContain('Matching');
-    expect(matchingSubItem?.textContent).toContain('2');
-    expect(matchingSubItem?.className).toContain('nav-rail__item--active');
   });
 
   it('shows an explicit empty state naming the active filters, with a working clear-all', async () => {
@@ -3165,28 +3159,9 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Log in' })).toBeInTheDocument();
   });
 
-  it('exposes Bank and GL template downloads under Mapping', () => {
-    setAuthenticatedUser('rray');
-    renderApp();
-
-    const nav = within(screen.getByRole('navigation'));
-    expect(nav.getByRole('link', { name: 'Bank template CSV' })).toHaveAttribute(
-      'href',
-      '/templates/bank-template.csv',
-    );
-    expect(nav.getByRole('link', { name: 'Bank template XLSX' })).toHaveAttribute(
-      'href',
-      '/templates/bank-template.xlsx',
-    );
-    expect(nav.getByRole('link', { name: 'GL template CSV' })).toHaveAttribute(
-      'href',
-      '/templates/gl-template.csv',
-    );
-    expect(nav.getByRole('link', { name: 'GL template XLSX' })).toHaveAttribute(
-      'href',
-      '/templates/gl-template.xlsx',
-    );
-  });
+  // N3: this rail menu duplicated the Import source files header's own template menu verbatim --
+  // removed here; NavRail.test.tsx covers "renders no download links", and the surviving menu is
+  // covered by "exposes Bank and GL template downloads from the Import source files header" above.
 
   it('opens and closes the footer account menu', () => {
     setAuthenticatedUser('rray');
@@ -3280,19 +3255,10 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Imported files' })).toBeInTheDocument();
   });
 
-  it('shows the Run Book link for admin and superuser roles', () => {
+  // N2: Run Book renders ComingSoonPage, so its rail entry is removed for every role -- the route
+  // itself stays declared (per N2's own scope), this only covers the rail's own inventory.
+  it('never shows a Run Book link in the rail, for any role', () => {
     setAuthenticatedUser('rray3');
-    renderApp();
-
-    expect(screen.getByRole('link', { name: 'Run Book' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('link', { name: 'Run Book' }));
-
-    expect(screen.getByRole('heading', { name: 'Run Book' })).toBeInTheDocument();
-  });
-
-  it('hides the Run Book link for roles without run book access', () => {
-    setAuthenticatedUser('bray');
     renderApp();
 
     expect(screen.queryByRole('link', { name: 'Run Book' })).toBeNull();

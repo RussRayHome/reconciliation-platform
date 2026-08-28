@@ -30,7 +30,6 @@ import {
   type ReviewerDecision,
   type RolePermissions,
   type RuleCatalogResponse,
-  type RuleFamily,
   type RuleVersionsResponse,
   type UserRole,
 } from '@recon/domain';
@@ -77,7 +76,6 @@ import { resolveLatestRunPhase, type LatestRunPhase } from './lib/latestRunState
 import { subscribeToRunStatus } from './lib/runStatusStream';
 import { clearAuthToken, getAuthToken } from './lib/authToken';
 import type { AuthenticatedUserSession } from './lib/authSession';
-import { countFixedRules, countRulesByFamily } from './lib/ruleFilters';
 import type { AppTab } from './lib/appCatalog';
 import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
@@ -1377,18 +1375,6 @@ function ReconciliationApp({
   const runBarFrequency = reportRun?.reconciliationFrequency ?? reconciliationFrequency;
   const appliedVarianceOverrides = reportRun?.appliedVarianceOverrides;
   const rulesUsedCount = reportRun ? Object.keys(appliedVarianceOverrides ?? {}).length : null;
-  const matchingRuleFamilyCounts = useMemo(
-    () =>
-      rulesCatalogData
-        ? (Object.entries(countRulesByFamily(rulesCatalogData.rules)) as Array<[RuleFamily, number]>).map(
-            ([family, count]) => ({ family, count }),
-          )
-        : undefined,
-    [rulesCatalogData],
-  );
-  const matchingRuleFixedCount = rulesCatalogData
-    ? countFixedRules(rulesCatalogData.rules)
-    : undefined;
   const reviewProgressLabel = reportRun
     ? `${reviewerDecisions.resolvedCount} of ${reportRun.exceptions.length} resolved · ${reviewerDecisions.researchCount} in research`
     : null;
@@ -1486,7 +1472,6 @@ function ReconciliationApp({
         onApplySavedView={handleApplySavedView}
         docsHref={docsHref}
         canAccessDocumentation={rolePermissions.canAccessDocumentation}
-        canAccessRunBook={rolePermissions.canAccessRunBook}
         canApprove={rolePermissions.canApprove}
         approvalCounts={approvalCounts}
         username={username}
@@ -1496,8 +1481,6 @@ function ReconciliationApp({
         isMobileOpen={isMobileNavOpen}
         onMobileClose={() => setIsMobileNavOpen(false)}
         matchingRuleTotalCount={rulesCatalogData?.rules.length}
-        matchingRuleFamilyCounts={matchingRuleFamilyCounts}
-        matchingRuleFixedCount={matchingRuleFixedCount}
       />
       <main className="app-layout app-layout--rail">
         <RunBar

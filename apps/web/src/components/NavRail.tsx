@@ -1,27 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { NavLink, useLocation } from 'react-router';
+import { NavLink } from 'react-router';
 
-import type {
-  ApprovalCountsByGroup,
-  ApprovalGroupKey,
-  ExceptionItem,
-  RuleFamily,
-} from '@recon/domain';
+import type { ApprovalCountsByGroup, ApprovalGroupKey, ExceptionItem } from '@recon/domain';
 
 import navRailLogo from '../assets/nav-rail-logo.png';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 import { RemoveAccountDialog } from './RemoveAccountDialog';
 import { NavRailAccountMenu } from './NavRailAccountMenu';
 import { routePaths } from '../routes/routePaths';
-import {
-  BANK_TEMPLATE_URL,
-  BANK_TEMPLATE_XLSX_URL,
-  GL_TEMPLATE_URL,
-  GL_TEMPLATE_XLSX_URL,
-} from '../lib/templates';
 import { useNavSectionCollapse } from '../hooks/useNavSectionCollapse';
-import { parseRuleFamilyParam, parseTunableParam, ruleFamilyToSlug } from '../lib/ruleFilters';
 import {
   loadSavedViews,
   matchesFacets,
@@ -79,7 +67,6 @@ export function NavRail({
   onApplySavedView,
   docsHref,
   canAccessDocumentation,
-  canAccessRunBook,
   canApprove,
   approvalCounts,
   username,
@@ -89,15 +76,12 @@ export function NavRail({
   isMobileOpen,
   onMobileClose,
   matchingRuleTotalCount,
-  matchingRuleFamilyCounts,
-  matchingRuleFixedCount,
 }: Readonly<{
   unreviewedExceptionCount: number | null;
   exceptions: ExceptionItem[];
   onApplySavedView: (view: SavedTriageView) => void;
   docsHref: string;
   canAccessDocumentation: boolean;
-  canAccessRunBook: boolean;
   /** Whether this user can act as an approver -- drives each Approvals submenu badge's tone. */
   canApprove: boolean;
   /** Per-submenu Approvals badge counts. Null until loaded. */
@@ -110,10 +94,6 @@ export function NavRail({
   onMobileClose: () => void;
   /** Total rule count for the Matching Rules item's pill/aria-label; omitted (no pill) until the catalog loads. */
   matchingRuleTotalCount?: number;
-  /** Per-family rule counts for the Matching Rules rail sub-items; omitted (no sub-items) until the catalog loads. */
-  matchingRuleFamilyCounts?: Array<{ family: RuleFamily; count: number }>;
-  /** Count of rules with no adjustable metric, for the "No adjustable metric" sub-item. */
-  matchingRuleFixedCount?: number;
 }>) {
   const [isCollapsed, setIsCollapsed] = useState(() => loadRailCollapsed(username));
   const [isRemoveAccountOpen, setIsRemoveAccountOpen] = useState(false);
@@ -229,94 +209,18 @@ export function NavRail({
         </NavRailCategory>
 
         <NavRailCategory title="Configure">
-          <CollapsibleNavSection
-            sectionId="mapping"
-            label="Mapping"
-            icon="architecture"
-            username={username}
-            bordered={false}
-          >
-            <NavItemLink
-              to={routePaths.mappingProfiles}
-              label="Mapping Profiles"
-              icon="architecture"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-            <NavItemLink
-              to={routePaths.mappingCreate}
-              label="Create Mapping"
-              icon="setup"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-            <NavItemLink
-              to={routePaths.mappingVersions}
-              label="Mapping Versions"
-              icon="clock"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-            {!isCollapsed ? (
-              <p className="nav-rail__subgroup-label">
-                <span className="nav-rail__item-icon" aria-hidden="true">
-                  <SemanticIcon name="records" />
-                </span>
-                Download templates
-              </p>
-            ) : null}
-            <div className="nav-rail__indent">
-              <div className="nav-rail__item nav-rail__item--template" title={isCollapsed ? 'Bank template' : undefined}>
-                <span className="nav-rail__item-label">Bank template</span>
-                <span className="nav-rail__template-formats">
-                  <a
-                    className="nav-rail__pill nav-rail__pill--link"
-                    href={BANK_TEMPLATE_URL}
-                    download
-                    aria-label="Bank template CSV"
-                  >
-                    CSV
-                  </a>
-                  <a
-                    className="nav-rail__pill nav-rail__pill--link"
-                    href={BANK_TEMPLATE_XLSX_URL}
-                    download
-                    aria-label="Bank template XLSX"
-                  >
-                    XLSX
-                  </a>
-                </span>
-              </div>
-              <div className="nav-rail__item nav-rail__item--template" title={isCollapsed ? 'GL template' : undefined}>
-                <span className="nav-rail__item-label">GL template</span>
-                <span className="nav-rail__template-formats">
-                  <a
-                    className="nav-rail__pill nav-rail__pill--link"
-                    href={GL_TEMPLATE_URL}
-                    download
-                    aria-label="GL template CSV"
-                  >
-                    CSV
-                  </a>
-                  <a
-                    className="nav-rail__pill nav-rail__pill--link"
-                    href={GL_TEMPLATE_XLSX_URL}
-                    download
-                    aria-label="GL template XLSX"
-                  >
-                    XLSX
-                  </a>
-                </span>
-              </div>
-            </div>
-            <NavItemLink
-              to={routePaths.mappingHistory}
-              label="Mapping History"
-              icon="clock"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-          </CollapsibleNavSection>
+          {/* N2: Mapping Profiles/Versions/History all render ComingSoonPage (see
+              EXPECTED_ABSENT_FROM_RAIL in NavRail.test.tsx) -- the "Mapping" section wrapper is
+              removed along with them, but Create Mapping is a working, verification-gated screen
+              and is promoted to a plain top-level item here rather than losing its only rail entry
+              point. */}
+          <NavItemLink
+            to={routePaths.mappingCreate}
+            label="Create Mapping"
+            icon="setup"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
 
           <CollapsibleNavSection
             sectionId="rules"
@@ -338,40 +242,10 @@ export function NavRail({
                   : `Matching Rules, ${matchingRuleTotalCount} rules`
               }
             />
-            {matchingRuleFamilyCounts ? (
-              <div className="nav-rail__indent">
-                {matchingRuleFamilyCounts.map(({ family, count }) => (
-                  <MatchingRuleFilterLink
-                    key={family}
-                    label={family}
-                    count={count}
-                    search={`?family=${ruleFamilyToSlug(family)}`}
-                    isActiveFor={(searchParams) => parseRuleFamilyParam(searchParams.get('family')) === family}
-                    isCollapsed={isCollapsed}
-                    onNavigate={onMobileClose}
-                  />
-                ))}
-                {matchingRuleFixedCount !== undefined ? (
-                  <MatchingRuleFilterLink
-                    label="No adjustable metric"
-                    count={matchingRuleFixedCount}
-                    search="?tunable=false"
-                    isActiveFor={(searchParams) => parseTunableParam(searchParams.get('tunable')) === false}
-                    isCollapsed={isCollapsed}
-                    onNavigate={onMobileClose}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-            {/* Variance thresholds are edited inline on the Matching Rules screen (no separate
-                route exists yet) -- this link intentionally points at the same page. */}
-            <NavItemLink
-              to={routePaths.mappingRules}
-              label="Variance thresholds"
-              icon="exposure"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
+            {/* N3: the per-family/tunability facets and the Variance thresholds link both
+                duplicated capability the Matching Rules screen itself already has (its own family
+                and tunable/fixed filter chips, and a labelled "Variance thresholds" section) --
+                removed here, not rebuilt there. */}
             <NavItemLink
               to={routePaths.mappingRulesVersions}
               label="Rule Versions"
@@ -478,10 +352,8 @@ export function NavRail({
         <NavRailSystemLinks
           docsHref={docsHref}
           canAccessDocumentation={canAccessDocumentation}
-          canAccessRunBook={canAccessRunBook}
           isCollapsed={isCollapsed}
           username={username}
-          onNavigate={onMobileClose}
         />
 
         <NavRailAccountMenu
@@ -595,45 +467,6 @@ function NavItemLink({
   return indented ? <div className="nav-rail__indent">{link}</div> : link;
 }
 
-/**
- * One Matching Rules filter sub-item -- navigates to `/mapping/rules` plus a family or tunable
- * query param (T5: "filters into /mapping/rules -- not separate routes"). Active-state is
- * determined by `isActiveFor` inspecting the current URLSearchParams directly rather than
- * NavLink's own `isActive`, since that only compares pathname, not query params.
- */
-function MatchingRuleFilterLink({
-  label,
-  count,
-  search,
-  isActiveFor,
-  isCollapsed,
-  onNavigate,
-}: Readonly<{
-  label: string;
-  count: number;
-  search: string;
-  isActiveFor: (searchParams: URLSearchParams) => boolean;
-  isCollapsed: boolean;
-  onNavigate: () => void;
-}>) {
-  const location = useLocation();
-  const isActive =
-    location.pathname === routePaths.mappingRules &&
-    isActiveFor(new URLSearchParams(location.search));
-
-  return (
-    <NavLink
-      to={`${routePaths.mappingRules}${search}`}
-      className={isActive ? 'nav-rail__item nav-rail__item--active' : 'nav-rail__item'}
-      title={isCollapsed ? label : undefined}
-      onClick={onNavigate}
-    >
-      <span className="nav-rail__item-label">{label}</span>
-      <span className="nav-rail__pill">{count}</span>
-    </NavLink>
-  );
-}
-
 /** Collapsible nav-rail group: `<button aria-expanded>` header + children, state persisted per section/user. */
 function CollapsibleNavSection({
   sectionId,
@@ -726,17 +559,13 @@ function useSavedViewCounts(
 function NavRailSystemLinks({
   docsHref,
   canAccessDocumentation,
-  canAccessRunBook,
   isCollapsed,
   username,
-  onNavigate,
 }: Readonly<{
   docsHref: string;
   canAccessDocumentation: boolean;
-  canAccessRunBook: boolean;
   isCollapsed: boolean;
   username: string;
-  onNavigate: () => void;
 }>) {
   if (!canAccessDocumentation) {
     return null;
@@ -761,15 +590,7 @@ function NavRailSystemLinks({
               </span>
               <span className="nav-rail__item-label">User Guide</span>
             </a>
-            {canAccessRunBook ? (
-              <NavItemLink
-                to={routePaths.documentationRunBook}
-                label="Run Book"
-                icon="rules"
-                isCollapsed={isCollapsed}
-                onNavigate={onNavigate}
-              />
-            ) : null}
+            {/* N2: Run Book rendered ComingSoonPage -- removed along with the rail entry point. */}
           </div>
         </CollapsibleNavSection>
       ) : null}
