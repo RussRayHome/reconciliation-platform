@@ -3221,7 +3221,8 @@ describe('App', () => {
     expect(confirmButton).not.toBeDisabled();
   });
 
-  it('exposes Rules-based reconciliation and a collapsible Approvals section with five submenus', () => {
+  // N1: the five per-type Approvals submenus collapse into one "Pending approvals" destination.
+  it('exposes Rules-based reconciliation and one consolidated Pending approvals destination', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
@@ -3233,26 +3234,33 @@ describe('App', () => {
     expect(screen.queryByRole('link', { name: 'Approved Imports' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Rejected Imports' })).toBeNull();
 
-    expect(screen.getByRole('link', { name: 'Imported files' })).toHaveAttribute(
-      'href',
-      '/approvals/imports',
-    );
-    expect(screen.getByRole('link', { name: 'Matching Rule & Variances' })).toHaveAttribute(
-      'href',
-      '/approvals/matching-rules',
-    );
-    expect(screen.getByRole('link', { name: 'Exception Resolutions' })).toHaveAttribute(
-      'href',
-      '/approvals/exception-resolutions',
-    );
-    expect(screen.getByRole('link', { name: 'Report Distribution' })).toHaveAttribute(
-      'href',
-      '/approvals/report-distribution',
-    );
+    // The five old submenu labels no longer exist as separate rail links.
+    expect(screen.queryByRole('link', { name: 'Matching Rule & Variances' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Exception Resolutions' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Report Distribution' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('link', { name: 'Imported files' }));
+    const link = screen.getByText('Pending approvals').closest('a');
+    expect(link).toHaveAttribute('href', '/approvals');
 
-    expect(screen.getByRole('heading', { name: 'Imported files' })).toBeInTheDocument();
+    fireEvent.click(link!);
+
+    expect(screen.getByRole('heading', { name: 'Pending approvals' })).toBeInTheDocument();
+  });
+
+  // N1: "every old approval URL lands on the object it shadowed" -- kept for one release as
+  // redirects, not dead links, even though the rail no longer points at any of them.
+  it.each([
+    ['/approvals/imports', '/'],
+    ['/approvals/mapping-profiles', '/approvals'],
+    ['/approvals/matching-rules', '/mapping/rules'],
+    ['/approvals/exception-resolutions', '/exceptions'],
+    ['/approvals/report-distribution', '/export'],
+  ])('redirects legacy %s to %s', (legacyPath, targetPath) => {
+    setAuthenticatedUser('rray');
+    globalThis.history.pushState({}, '', legacyPath);
+    renderApp();
+
+    expect(window.location.pathname).toBe(targetPath);
   });
 
   // N2: Run Book renders ComingSoonPage, so its rail entry is removed for every role -- the route

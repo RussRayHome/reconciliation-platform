@@ -36,7 +36,7 @@ import {
 } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
-import { ApprovalsPage } from './components/ApprovalsPage';
+import { ImportRunApprovalStatus, PendingApprovalsInbox } from './components/ApprovalsPage';
 import { ApprovalPolicyPage } from './components/ApprovalPolicyPage';
 import { VersionsPage } from './components/VersionsPage';
 import { ComingSoonPage } from './components/ComingSoonPage';
@@ -1545,6 +1545,7 @@ function ReconciliationApp({
                     partialAccept={partialAccept}
                     durableRunPhase={durableRunPhase}
                     submittedQueuedRun={submittedQueuedRun}
+                    latestImportRunId={latestImportRun?.id ?? null}
                     onDismissDurableRun={() => setLatestImportRun(null)}
                     onRefreshDurableRun={() => {
                       void getLatestImportRunRequest().then((latest) => {
@@ -1589,6 +1590,7 @@ function ReconciliationApp({
                     partialAccept={partialAccept}
                     durableRunPhase={durableRunPhase}
                     submittedQueuedRun={submittedQueuedRun}
+                    latestImportRunId={latestImportRun?.id ?? null}
                     onDismissDurableRun={() => setLatestImportRun(null)}
                     onRefreshDurableRun={() => {
                       void getLatestImportRunRequest().then((latest) => {
@@ -1720,24 +1722,35 @@ function ReconciliationApp({
               />
               <Route path={routePaths.mappingRulesVersions} element={<VersionsPage />} />
               <Route
+                path={routePaths.approvals}
+                element={
+                  <PendingApprovalsInbox canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />
+                }
+              />
+              {/* N1: the five old per-type routes stay declared for one release as redirects to
+                  the object each used to shadow -- never rail-linked again, but no old bookmark
+                  or link breaks either. mappingProfile has no real object screen yet (still
+                  ComingSoonPage) and no way to generate a row, so it redirects to the inbox
+                  itself rather than a screen that doesn't exist. */}
+              <Route
                 path={routePaths.approvalsImports}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.importFilesBank} replace />}
               />
               <Route
                 path={routePaths.approvalsMappingProfiles}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.approvals} replace />}
               />
               <Route
                 path={routePaths.approvalsMatchingRules}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.mappingRules} replace />}
               />
               <Route
                 path={routePaths.approvalsExceptionResolutions}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.exceptions} replace />}
               />
               <Route
                 path={routePaths.approvalsReportDistribution}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.export} replace />}
               />
               {isAdmin ? (
                 <Route path={routePaths.approvalsPolicy} element={<ApprovalPolicyPage />} />
@@ -1834,7 +1847,7 @@ function QueuedRunPanel({
         <button
           type="button"
           className="secondary-button"
-          onClick={() => navigate(routePaths.approvalsImports)}
+          onClick={() => navigate(routePaths.importFilesBank)}
         >
           Open Imported files
         </button>
@@ -1925,6 +1938,7 @@ function SourceUploadSection({
   partialAccept,
   durableRunPhase,
   submittedQueuedRun,
+  latestImportRunId,
   onDismissDurableRun,
   onRefreshDurableRun,
 }: Readonly<{
@@ -1961,6 +1975,8 @@ function SourceUploadSection({
   partialAccept: PartialAcceptModel;
   durableRunPhase: LatestRunPhase;
   submittedQueuedRun: ImportRunSummary | undefined;
+  /** N1: the current durable run's id, for ImportRunApprovalStatus -- null when there is none. */
+  latestImportRunId: string | null;
   onDismissDurableRun: () => void;
   onRefreshDurableRun: () => void;
 }>) {
@@ -1991,6 +2007,12 @@ function SourceUploadSection({
   return (
     <div className="import-screen">
       <p className="import-screen__eyebrow">Reconciliations / New run</p>
+      {/* N1: "a live object screen shows its own approval state" -- AP/Billing runs aren't part
+          of the submit flow yet (see the billing tab's own note below), so this only applies to
+          the bank tab, where latestImportRunId actually tracks something. */}
+      {activeSourceType === 'bank' ? (
+        <ImportRunApprovalStatus runId={latestImportRunId} />
+      ) : null}
       <SectionCard
         title="Import source files"
         description="CSV or XLSX. Format is detected by extension; the engine preserves original file names, source line numbers, excluded rows, and normalized audit fields."

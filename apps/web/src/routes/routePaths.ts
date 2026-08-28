@@ -22,6 +22,10 @@ export const routePaths = {
   mappingRules: '/mapping/rules',
   mappingRulesVersions: '/mapping/rules/versions',
   mappingHistory: '/mapping/history',
+  /** N1: one consolidated Pending approvals inbox, replacing the five per-type rail children.
+   * The five approvalsXxx paths below stay declared as one-release redirects to the object each
+   * used to shadow (see App.tsx) -- never rail-linked again, but never dead either. */
+  approvals: '/approvals',
   approvalsImports: '/approvals/imports',
   approvalsMappingProfiles: '/approvals/mapping-profiles',
   approvalsMatchingRules: '/approvals/matching-rules',

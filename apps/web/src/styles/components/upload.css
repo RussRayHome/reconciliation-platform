@@ -98,6 +98,28 @@
     gap: 0.4rem;
   }
 
+  /* N1: the Imported Files screen's own approval-state line -- pending/rejected only, the same
+     two states RuleVersionHeader already surfaces for Matching Rules. */
+  .import-run-approval-status {
+    margin: 0 0 0.4rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    width: fit-content;
+  }
+
+  .import-run-approval-status--pending {
+    color: var(--severity-medium);
+    background: var(--severity-medium-soft);
+    border: 1px solid var(--severity-medium-soft-border);
+  }
+
+  .import-run-approval-status--rejected {
+    color: var(--negative);
+    background: var(--negative-soft);
+    border: 1px solid var(--negative-soft-border);
+  }
+
   .import-screen__eyebrow {
     margin: 0;
     padding: 0 0.1rem;
