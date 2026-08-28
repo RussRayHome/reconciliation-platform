@@ -1,7 +1,7 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import { loginToApplication, openSetup } from '../auth';
+import { loginToApplication, openSetup, submitRunButton } from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -114,7 +114,7 @@ test.describe('edge cases', () => {
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByRole('button', { name: 'Submit run' }).click();
+    await submitRunButton(page).click();
     // Either the run completes to the Review summary, or a server error alert appears.
     await expect(page.getByText('Total reviewed').or(page.getByRole('alert'))).toBeVisible({
       timeout: 30_000,
@@ -135,7 +135,7 @@ test.describe('edge cases', () => {
     await page.getByRole('link', { name: 'Bank Statements' }).click();
     await setWorkbookFiles(page, bank2, gl2);
     await page.getByLabel('Reconciliation label').fill('Second Run April');
-    await page.getByRole('button', { name: 'Submit run' }).click();
+    await submitRunButton(page).click();
 
     await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
     await expect(exceptionSummaryCell(page, 'Missing from GL')).toBeVisible();
@@ -161,7 +161,7 @@ test.describe('edge cases', () => {
     ]);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByRole('button', { name: 'Submit run' }).click();
+    await submitRunButton(page).click();
     await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
   });
 

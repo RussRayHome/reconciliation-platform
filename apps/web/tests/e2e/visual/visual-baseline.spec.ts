@@ -9,7 +9,7 @@ import type { Page } from '@playwright/test';
 import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
-import { openSetup } from '../auth';
+import { openSetup, submitRunButton } from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -260,12 +260,14 @@ const runReconciliation = async (page: Page): Promise<void> => {
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');
   await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
-  await page.getByRole('button', { name: 'Submit run' }).click();
+  await submitRunButton(page).click();
   await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible({ timeout: 30_000 });
-  // The Run Bar meter settles asynchronously after the run completes (3 of 4 steps —
-  // the export step stays pending until Close). Wait for the settled value so every
-  // post-run screenshot captures the same state.
-  await expect(page.locator('.run-bar__meter-percent')).toHaveText('75%', { timeout: 30_000 });
+  // R2 V3: the Run Bar's percentage meter (and `.run-bar__meter-percent`, this wait's original
+  // target) is deleted entirely -- replaced by four segments plus a step counter. The run
+  // completing (matching finished) but export not yet done (stays pending until Close) now reads
+  // "step 4 of 4" (the review-export step is `current`, not `complete`) rather than a 75% value.
+  // Still the same purpose: wait for the settled post-run state so every screenshot captures it.
+  await expect(page.getByText('step 4 of 4')).toBeVisible({ timeout: 30_000 });
 };
 
 for (const width of widths) {
