@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { NavLink, useLocation, useSearchParams } from 'react-router';
+import { NavLink } from 'react-router';
 
 import type { ApprovableType, ApprovalRow } from '@recon/domain';
 
@@ -9,16 +9,19 @@ import {
   decideApprovalRequest,
   getApprovalsRequest,
   withdrawImportRunRequest,
-  type ApprovalTab,
 } from '../lib/api';
 import { routePaths } from '../routes/routePaths';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 
-/** One rail submenu = one approvals table. Matching Rule & Variances covers two `ApprovableType`s
- * (they're both fields on the same versioned matching-config object, not separate entities). */
+/** N1: one inbox row-group per approvable type family. Matching Rule & Variances covers two
+ * `ApprovableType`s (they're both fields on the same versioned matching-config object, not
+ * separate entities). `objectPath` is where a row's own title links -- "the object's own screen,
+ * not a queue copy" -- and is also where each type's legacy /approvals/* URL now redirects
+ * (App.tsx). Only import/matchingRule are live (isLive below), so it's the only pair that ever
+ * actually renders a link a user can click. */
 const APPROVAL_GROUPS: ReadonlyArray<{
   key: string;
-  path: string;
+  objectPath: string;
   title: string;
   types: ApprovableType[];
   icon: SemanticIconName;
@@ -32,7 +35,7 @@ const APPROVAL_GROUPS: ReadonlyArray<{
 }> = [
   {
     key: 'import',
-    path: routePaths.approvalsImports,
+    objectPath: routePaths.importFilesBank,
     title: 'Imported files',
     // 'reconciliationRun' (File Imports & Validation) merges onto the same table as 'import' --
     // both row types render together here, same pattern as matchingRule+varianceThreshold below.
@@ -43,7 +46,9 @@ const APPROVAL_GROUPS: ReadonlyArray<{
   },
   {
     key: 'mappingProfile',
-    path: routePaths.approvalsMappingProfiles,
+    // No Mapping Profiles object screen exists yet (N2: it's still ComingSoonPage) -- and since
+    // this type is not live, no row can exist to click through anyway.
+    objectPath: routePaths.approvals,
     title: 'Mapping Profiles',
     types: ['mappingProfile'],
     icon: 'architecture',
@@ -52,7 +57,7 @@ const APPROVAL_GROUPS: ReadonlyArray<{
   },
   {
     key: 'matchingRule',
-    path: routePaths.approvalsMatchingRules,
+    objectPath: routePaths.mappingRules,
     title: 'Matching Rule & Variances',
     types: ['matchingRule', 'varianceThreshold'],
     icon: 'rule',
@@ -61,7 +66,7 @@ const APPROVAL_GROUPS: ReadonlyArray<{
   },
   {
     key: 'exceptionResolution',
-    path: routePaths.approvalsExceptionResolutions,
+    objectPath: routePaths.exceptions,
     title: 'Exception Resolutions',
     types: ['exceptionResolution'],
     icon: 'exceptions',
@@ -70,7 +75,7 @@ const APPROVAL_GROUPS: ReadonlyArray<{
   },
   {
     key: 'reportDistribution',
-    path: routePaths.approvalsReportDistribution,
+    objectPath: routePaths.export,
     title: 'Report Distribution',
     types: ['reportDistribution'],
     icon: 'reports',
@@ -78,9 +83,6 @@ const APPROVAL_GROUPS: ReadonlyArray<{
     isLive: false,
   },
 ];
-
-const groupForPathname = (pathname: string): (typeof APPROVAL_GROUPS)[number] =>
-  APPROVAL_GROUPS.find((group) => group.path === pathname) ?? APPROVAL_GROUPS[0]!;
 
 const formatAge = (ageHours: number): string => {
   if (ageHours < 24) {
@@ -98,19 +100,17 @@ const approveLabel = (row: ApprovalRow): string => {
   return 'Approve';
 };
 
-/** One rail submenu's approvals table -- reached by clicking Imported files / Mapping Profiles /
- * Matching Rule & Variances / Exception Resolutions / Report Distribution under the collapsible
- * Approvals rail section. The type shown is derived from the route, not passed as a prop. */
-export function ApprovalsPage({
+/** N1: one consolidated Pending approvals inbox, replacing the five per-type routed pages the
+ * rail used to link to directly. Always shows the 'pending' tab's rows -- for an approver that's
+ * everything awaiting their decision org-wide; for a non-approver, the same endpoint already
+ * scopes to their own pending submissions server-side (matching the old default-landing tab's
+ * behaviour exactly). Deeper history (approved/rejected/mine) lives on each object's own screen
+ * now, not a separate queue with tabs. */
+export function PendingApprovalsInbox({
   canApprove,
   isAdmin,
 }: Readonly<{ canApprove: boolean; isAdmin: boolean }>) {
-  const location = useLocation();
-  const group = groupForPathname(location.pathname);
-  const [searchParams] = useSearchParams();
-  const activeTab = (searchParams.get('tab') as ApprovalTab | null) ?? 'pending';
-
-  const [rows, setRows] = useState<ApprovalRow[]>([]);
+  const [rowsByGroup, setRowsByGroup] = useState<Record<string, ApprovalRow[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -123,10 +123,16 @@ export function ApprovalsPage({
     setLoadError(null);
     setSelectedIds(new Set());
 
-    void Promise.all(group.types.map((type) => getApprovalsRequest(type, activeTab)))
-      .then((results) => {
+    void Promise.all(
+      APPROVAL_GROUPS.map((group) =>
+        Promise.all(group.types.map((type) => getApprovalsRequest(type, 'pending'))).then(
+          (results) => [group.key, results.flat()] as const,
+        ),
+      ),
+    )
+      .then((entries) => {
         if (!cancelled) {
-          setRows(results.flat());
+          setRowsByGroup(Object.fromEntries(entries));
         }
       })
       .catch((error: unknown) => {
@@ -143,9 +149,10 @@ export function ApprovalsPage({
     return () => {
       cancelled = true;
     };
-  }, [group.key, group.types, activeTab, refreshToken]);
+  }, [refreshToken]);
 
   const refresh = (): void => setRefreshToken((token) => token + 1);
+  const allRows = Object.values(rowsByGroup).flat();
 
   const handleDecision = (row: ApprovalRow, status: 'APPROVED' | 'REJECTED'): void => {
     setActionError(null);
@@ -188,13 +195,13 @@ export function ApprovalsPage({
 
   const handleBulkApprove = (): void => {
     setActionError(null);
-    // Each selected row keeps its own type -- group.types[0] would be wrong here whenever a group
-    // merges more than one ApprovableType onto one table (import+reconciliationRun,
+    // Each selected row keeps its own type -- a group's first type would be wrong here whenever a
+    // group merges more than one ApprovableType onto one table (import+reconciliationRun,
     // matchingRule+varianceThreshold): a selected row of the second type would get decided under
     // the first type's endpoint.
     void Promise.all(
       Array.from(selectedIds).map((id) => {
-        const row = rows.find((candidate) => candidate.id === id);
+        const row = allRows.find((candidate) => candidate.id === id);
         return row ? decideApprovalRequest(row.type, id, 'APPROVED') : Promise.resolve();
       }),
     )
@@ -204,33 +211,18 @@ export function ApprovalsPage({
       });
   };
 
-  const tabs: Array<{ tab: ApprovalTab; label: string }> = canApprove
-    ? [
-        { tab: 'pending', label: 'Pending' },
-        { tab: 'approved', label: 'Approved' },
-        { tab: 'rejected', label: 'Rejected' },
-        { tab: 'mine', label: 'My submissions' },
-      ]
-    : [
-        { tab: 'pending', label: 'Submitted' },
-        { tab: 'approved', label: 'Approved' },
-        { tab: 'rejected', label: 'Rejected' },
-      ];
-
-  const showCheckboxes = canApprove && group.isLive && activeTab === 'pending';
-
   return (
     <div className="approvals">
       <header className="approvals__header">
         <p className="eyebrow">Review</p>
-        <h1 className="approvals__title">{group.title}</h1>
+        <h1 className="approvals__title">Pending approvals</h1>
         <p className="approvals__subcopy">
           {canApprove
             ? 'Items waiting on your decision appear below. Approving a versioned object promotes its draft; the live version keeps running until then.'
-            : 'Everything you submitted, and where it stands. You can withdraw or resubmit -- approving is not yours to do.'}
+            : 'Everything you submitted that is still awaiting a decision. You can withdraw or resubmit -- approving is not yours to do.'}
         </p>
         <div className="approvals__header-actions">
-          {canApprove && activeTab === 'pending' ? (
+          {canApprove ? (
             <button
               type="button"
               className="secondary-button approvals__pill-button"
@@ -247,23 +239,6 @@ export function ApprovalsPage({
           ) : null}
         </div>
       </header>
-
-      <nav className="approvals__tabs" aria-label="Approval status">
-        {tabs.map(({ tab, label }) => (
-          <NavLink
-            key={tab}
-            to={tab === 'pending' ? group.path : `${group.path}?tab=${tab}`}
-            className={
-              activeTab === tab ? 'approvals__tab approvals__tab--active' : 'approvals__tab'
-            }
-          >
-            {label}
-            {tab === activeTab && !isLoading ? (
-              <span className="approvals__tab-count">{rows.length}</span>
-            ) : null}
-          </NavLink>
-        ))}
-      </nav>
 
       {selectedIds.size > 0 ? (
         <div className="approvals__bulk-bar" role="status">
@@ -295,21 +270,25 @@ export function ApprovalsPage({
         <p>Loading approvals…</p>
       ) : (
         <div className="approvals__tables">
-          <ApprovalTable
-            title={group.title}
-            icon={group.icon}
-            tint={group.tint}
-            rows={rows}
-            isLive={group.isLive}
-            canApprove={canApprove}
-            showCheckboxes={showCheckboxes}
-            selectedIds={selectedIds}
-            onToggleSelected={toggleSelected}
-            onApprove={(row) => handleDecision(row, 'APPROVED')}
-            onReject={(row) => handleDecision(row, 'REJECTED')}
-            onClaim={handleClaim}
-            onWithdraw={handleWithdraw}
-          />
+          {APPROVAL_GROUPS.map((group) => (
+            <ApprovalTable
+              key={group.key}
+              title={group.title}
+              icon={group.icon}
+              tint={group.tint}
+              rows={rowsByGroup[group.key] ?? []}
+              isLive={group.isLive}
+              objectPath={group.objectPath}
+              canApprove={canApprove}
+              showCheckboxes={canApprove && group.isLive}
+              selectedIds={selectedIds}
+              onToggleSelected={toggleSelected}
+              onApprove={(row) => handleDecision(row, 'APPROVED')}
+              onReject={(row) => handleDecision(row, 'REJECTED')}
+              onClaim={handleClaim}
+              onWithdraw={handleWithdraw}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -322,6 +301,7 @@ function ApprovalTable({
   tint,
   rows,
   isLive,
+  objectPath,
   canApprove,
   showCheckboxes,
   selectedIds,
@@ -336,6 +316,8 @@ function ApprovalTable({
   tint: string;
   rows: ApprovalRow[];
   isLive: boolean;
+  /** N1: where a row's own title links -- "the object's own screen, not a queue copy." */
+  objectPath: string;
   canApprove: boolean;
   showCheckboxes: boolean;
   selectedIds: Set<string>;
@@ -390,7 +372,7 @@ function ApprovalTable({
                 />
               ) : null}
               <span className="approvals__row-primary">
-                <span>{row.title}</span>
+                <NavLink to={objectPath}>{row.title}</NavLink>
                 {row.meta ? <span className="approvals__row-sub">{row.meta}</span> : null}
               </span>
               <span>{row.submitter}</span>
@@ -475,5 +457,58 @@ function RowActions({
         {approveLabel(row)}
       </button>
     </>
+  );
+}
+
+/** N1: a compact approval-state line for the Imported Files screen -- the import/reconciliationRun
+ * counterpart to RuleVersionHeader's "Waiting on X" / "Published by X" display already on Matching
+ * Rules. Only PENDING and REJECTED are checked; an APPROVED run has nothing special to say here --
+ * that's just the normal completed state the rest of the screen already shows. `runId` is the
+ * current durable run's id (null when there is none), matched against the org-wide pending/rejected
+ * reconciliationRun rows rather than fetched by id directly, since no by-id endpoint exists. */
+export function ImportRunApprovalStatus({ runId }: Readonly<{ runId: string | null }>) {
+  const [row, setRow] = useState<ApprovalRow | null>(null);
+
+  useEffect(() => {
+    if (!runId) {
+      setRow(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    void Promise.all([
+      getApprovalsRequest('reconciliationRun', 'pending'),
+      getApprovalsRequest('reconciliationRun', 'rejected'),
+    ])
+      .then(([pending, rejected]) => {
+        if (cancelled) return;
+        setRow([...pending, ...rejected].find((candidate) => candidate.id === runId) ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRow(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runId]);
+
+  // Explicit membership, not an else-branch off PENDING -- APPROVED/OVERRIDDEN must render
+  // nothing here (an approved run has nothing special to say), not fall through to "Rejected by".
+  if (!row || (row.state !== 'PENDING' && row.state !== 'REJECTED')) {
+    return null;
+  }
+
+  return (
+    <p
+      className={`import-run-approval-status import-run-approval-status--${row.state.toLowerCase()}`}
+      role="status"
+    >
+      {row.state === 'PENDING'
+        ? `Pending approval from ${row.approver ?? 'an approver'}`
+        : `Rejected by ${row.approver ?? 'an approver'}`}
+    </p>
   );
 }

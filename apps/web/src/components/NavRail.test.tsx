@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
+
+import type { ApprovalCountsByGroup } from '@recon/domain';
 
 import { NavRail } from './NavRail';
 import { routePaths } from '../routes/routePaths';
@@ -29,7 +31,21 @@ async function openAccountMenu(): Promise<void> {
   await user.click(screen.getByRole('button', { name: 'Open account menu' }));
 }
 
-const defaultProps = {
+const defaultProps: {
+  unreviewedExceptionCount: number | null;
+  exceptions: never[];
+  onApplySavedView: typeof noop;
+  docsHref: string;
+  canAccessDocumentation: boolean;
+  canApprove: boolean;
+  approvalCounts: ApprovalCountsByGroup | null;
+  username: string;
+  profileLabel: string;
+  roleLabel: string;
+  onSignOut: typeof noop;
+  isMobileOpen: boolean;
+  onMobileClose: typeof noop;
+} = {
   unreviewedExceptionCount: null,
   exceptions: [],
   onApplySavedView: noop,
@@ -71,11 +87,7 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   mappingCreate: 'Create Mapping',
   mappingRules: 'Matching Rules',
   mappingRulesVersions: 'Rule Versions',
-  approvalsImports: 'Imported files',
-  approvalsMappingProfiles: 'Mapping Profiles approvals',
-  approvalsMatchingRules: 'Matching Rule & Variances',
-  approvalsExceptionResolutions: 'Exception Resolutions',
-  approvalsReportDistribution: 'Report Distribution',
+  approvals: 'Pending approvals',
   reconSummary: 'File-based',
   probableMatches: 'Rules-based',
   exceptions: 'Exceptions',
@@ -97,6 +109,14 @@ const EXPECTED_ABSENT_FROM_RAIL: Record<string, string> = {
   mappingVersions: 'N2: renders ComingSoonPage; rail entry removed, route stays',
   mappingHistory: 'N2: renders ComingSoonPage; rail entry removed, route stays',
   documentationRunBook: 'N2: renders ComingSoonPage; rail entry removed, route stays',
+  // N1: the five per-type approval routes are superseded by the one consolidated "Pending
+  // approvals" destination above -- each stays declared as a one-release redirect to the object
+  // it used to shadow (App.tsx), never rail-linked again.
+  approvalsImports: 'N1: superseded by approvals; redirects to importFilesBank',
+  approvalsMappingProfiles: 'N1: superseded by approvals; redirects to approvals itself (no object screen exists)',
+  approvalsMatchingRules: 'N1: superseded by approvals; redirects to mappingRules',
+  approvalsExceptionResolutions: 'N1: superseded by approvals; redirects to exceptions',
+  approvalsReportDistribution: 'N1: superseded by approvals; redirects to export',
 };
 
 describe('NavRail route inventory', () => {
@@ -108,6 +128,18 @@ describe('NavRail route inventory', () => {
     ].sort();
 
     expect(accountedForKeys).toEqual(allRouteKeys);
+  });
+
+  // N1: "every rail label is unique" -- the guard that keeps a future duplicate-label regression
+  // (like N1 itself fixed, five different links all needing distinguishable names) from coming
+  // back silently. Checked against the actual rendered DOM, not just the fixture above, so a
+  // fixture typo can't hide a real collision.
+  it('renders every rail link with a unique accessible name', async () => {
+    renderRail();
+    await openAccountMenu();
+
+    const names = screen.getAllByRole('link').map((link) => link.textContent?.trim());
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it.each(Object.entries(EXPECTED_RAIL_LINKS))(
@@ -162,5 +194,99 @@ describe('NavRail template downloads (N3: removed, not duplicated)', () => {
       .getAllByRole('link')
       .filter((link) => link.hasAttribute('download'));
     expect(downloadLinks).toEqual([]);
+  });
+});
+
+// N1: the five per-submenu approval badges collapse into one summed "Pending approvals" badge.
+describe('NavRail Pending approvals badge (N1: summed count)', () => {
+  const COUNTS: ApprovalCountsByGroup = {
+    import: { pending: 2, approved: 1, rejected: 1, mySubmissions: 0 },
+    mappingProfile: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+    matchingRule: { pending: 3, approved: 0, rejected: 2, mySubmissions: 0 },
+    exceptionResolution: { pending: 0, approved: 0, rejected: 4, mySubmissions: 0 },
+    reportDistribution: { pending: 1, approved: 0, rejected: 0, mySubmissions: 0 },
+  };
+
+  it('sums pending across all five groups for an approver', () => {
+    renderRail({ canApprove: true, approvalCounts: COUNTS });
+
+    // Not getByRole({name: ...}): once the badge renders (count > 0) its own aria-label
+    // ("N Pending approvals") folds into the link's accessible name too, so an exact-name query
+    // would need to know the count in advance. The label text itself is unambiguous.
+    const link = screen.getByText('Pending approvals').closest('a')!;
+    // 2 (import) + 0 (mappingProfile) + 3 (matchingRule) + 0 (exceptionResolution) + 1 (reportDistribution)
+    expect(link.querySelector('.nav-rail__badge')).toHaveTextContent('6');
+  });
+
+  it('sums rejected across all five groups for a non-approver (submitter)', () => {
+    renderRail({ canApprove: false, approvalCounts: COUNTS });
+
+    // Not getByRole({name: ...}): once the badge renders (count > 0) its own aria-label
+    // ("N Pending approvals") folds into the link's accessible name too, so an exact-name query
+    // would need to know the count in advance. The label text itself is unambiguous.
+    const link = screen.getByText('Pending approvals').closest('a')!;
+    // 1 (import) + 0 (mappingProfile) + 2 (matchingRule) + 4 (exceptionResolution) + 0 (reportDistribution)
+    expect(link.querySelector('.nav-rail__badge')).toHaveTextContent('7');
+  });
+
+  it('shows no badge while counts have not loaded yet', () => {
+    renderRail({ canApprove: true, approvalCounts: null });
+
+    // Not getByRole({name: ...}): once the badge renders (count > 0) its own aria-label
+    // ("N Pending approvals") folds into the link's accessible name too, so an exact-name query
+    // would need to know the count in advance. The label text itself is unambiguous.
+    const link = screen.getByText('Pending approvals').closest('a')!;
+    expect(link.querySelector('.nav-rail__badge')).toBeNull();
+  });
+});
+
+// N4: "Work" is renamed "Close" and holds the whole close journey in one place, in journey order
+// -- Import Files, Reconcile (renamed from Reconciliation), Exceptions, Reports (moved in from
+// Analyze).
+describe('NavRail Close category (N4: journey order)', () => {
+  it('renders Close children in journey order', () => {
+    renderRail();
+
+    const closeCategory = screen.getByLabelText('Close');
+    const text = closeCategory.textContent ?? '';
+    const importFilesIndex = text.indexOf('Import Files');
+    const reconcileIndex = text.indexOf('Reconcile');
+    const exceptionsIndex = text.indexOf('Exceptions');
+    const reportsIndex = text.indexOf('Reports');
+
+    expect(importFilesIndex).toBeGreaterThanOrEqual(0);
+    expect(reconcileIndex).toBeGreaterThan(importFilesIndex);
+    expect(exceptionsIndex).toBeGreaterThan(reconcileIndex);
+    expect(reportsIndex).toBeGreaterThan(exceptionsIndex);
+  });
+
+  it('does not render a stray "Reconciliation" label -- the section is renamed, not duplicated', () => {
+    renderRail();
+
+    expect(screen.queryByText('Reconciliation')).not.toBeInTheDocument();
+    expect(screen.getByText('Reconcile')).toBeInTheDocument();
+  });
+
+  it('leaves Reports out of the Analyze category now that it lives in Close', () => {
+    renderRail();
+
+    const analyzeCategory = screen.getByLabelText('Analyze');
+    expect(within(analyzeCategory).queryByText('Reports')).not.toBeInTheDocument();
+    expect(within(analyzeCategory).getByText('Open Items Schedule')).toBeInTheDocument();
+  });
+
+  // The rename is a label-only change -- touching the sectionId itself would silently reset
+  // every existing user's collapse state, since useNavSectionCollapse bakes the id into the
+  // storage key. Asserting the literal key string means an accidental id rename fails here.
+  it('persists collapse state under the unchanged sectionId key', async () => {
+    const user = userEvent.setup();
+    const username = 'collapse-key-test-user';
+    const storageKey = `reconciliation-platform:nav.section.reconciliation:${username}`;
+    globalThis.localStorage.removeItem(storageKey);
+
+    renderRail({ username });
+    await user.click(screen.getByRole('button', { name: 'Reconcile' }));
+
+    expect(globalThis.localStorage.getItem(storageKey)).toBe('false');
   });
 });

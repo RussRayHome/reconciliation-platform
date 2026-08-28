@@ -2258,6 +2258,73 @@ describe('App', () => {
     });
   });
 
+  // N4: navigating back to Import Files after a successful run (browser back, not a fresh
+  // landing -- applyInitialLanding only fires once per mount) must not show the just-submitted
+  // filenames sitting in the upload slots as if they hadn't been submitted yet. The button
+  // staying enabled as "Start new run" (not regressing to a disabled "Submit run") is the other
+  // half of this: resolveSubmitButtonState has to keep reading success even once the files it
+  // gates on are gone.
+  it('clears the upload slots after success without disabling the button', async () => {
+    mockImportRunSubmitFlow();
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Start new run' })).toHaveAttribute(
+        'aria-disabled',
+        'false',
+      );
+    });
+    expect(screen.queryByText('1111_bank.xlsx')).not.toBeInTheDocument();
+    expect(screen.queryByText('gl.xlsx')).not.toBeInTheDocument();
+  });
+
+  // N4: "/" resolves to the active run on a genuine initial landing. Queued/running already show
+  // their own in-progress panel on Import Files itself (the RunBar outcome panel) -- there's
+  // nowhere better to redirect to -- so "renders the active run" means staying at '/' with that
+  // panel visible, not navigating away.
+  it('/ renders the active run when the durable phase is queued or running', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      validationJob: {
+        id: 'validation-job-1',
+        status: 'QUEUED',
+        errorSummary: null,
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: null,
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Queued').length).toBeGreaterThan(0);
+    });
+    expect(globalThis.location.pathname).toBe('/');
+
+    cleanup();
+    mockedApiState.latestImportRunResponse = createImportRunSummary({ status: 'VALIDATING' });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Running').length).toBeGreaterThan(0);
+    });
+    expect(globalThis.location.pathname).toBe('/');
+  });
+
+  it('/ renders Import Files when the phase is idle', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Submit run' })).toBeInTheDocument();
+    });
+    expect(globalThis.location.pathname).toBe('/');
+  });
+
   it('names the reason for every disabled state', async () => {
     setAuthenticatedUser('rray');
     renderApp();
@@ -3221,7 +3288,8 @@ describe('App', () => {
     expect(confirmButton).not.toBeDisabled();
   });
 
-  it('exposes Rules-based reconciliation and a collapsible Approvals section with five submenus', () => {
+  // N1: the five per-type Approvals submenus collapse into one "Pending approvals" destination.
+  it('exposes Rules-based reconciliation and one consolidated Pending approvals destination', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
@@ -3233,26 +3301,33 @@ describe('App', () => {
     expect(screen.queryByRole('link', { name: 'Approved Imports' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Rejected Imports' })).toBeNull();
 
-    expect(screen.getByRole('link', { name: 'Imported files' })).toHaveAttribute(
-      'href',
-      '/approvals/imports',
-    );
-    expect(screen.getByRole('link', { name: 'Matching Rule & Variances' })).toHaveAttribute(
-      'href',
-      '/approvals/matching-rules',
-    );
-    expect(screen.getByRole('link', { name: 'Exception Resolutions' })).toHaveAttribute(
-      'href',
-      '/approvals/exception-resolutions',
-    );
-    expect(screen.getByRole('link', { name: 'Report Distribution' })).toHaveAttribute(
-      'href',
-      '/approvals/report-distribution',
-    );
+    // The five old submenu labels no longer exist as separate rail links.
+    expect(screen.queryByRole('link', { name: 'Matching Rule & Variances' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Exception Resolutions' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Report Distribution' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('link', { name: 'Imported files' }));
+    const link = screen.getByText('Pending approvals').closest('a');
+    expect(link).toHaveAttribute('href', '/approvals');
 
-    expect(screen.getByRole('heading', { name: 'Imported files' })).toBeInTheDocument();
+    fireEvent.click(link!);
+
+    expect(screen.getByRole('heading', { name: 'Pending approvals' })).toBeInTheDocument();
+  });
+
+  // N1: "every old approval URL lands on the object it shadowed" -- kept for one release as
+  // redirects, not dead links, even though the rail no longer points at any of them.
+  it.each([
+    ['/approvals/imports', '/'],
+    ['/approvals/mapping-profiles', '/approvals'],
+    ['/approvals/matching-rules', '/mapping/rules'],
+    ['/approvals/exception-resolutions', '/exceptions'],
+    ['/approvals/report-distribution', '/export'],
+  ])('redirects legacy %s to %s', (legacyPath, targetPath) => {
+    setAuthenticatedUser('rray');
+    globalThis.history.pushState({}, '', legacyPath);
+    renderApp();
+
+    expect(window.location.pathname).toBe(targetPath);
   });
 
   // N2: Run Book renders ComingSoonPage, so its rail entry is removed for every role -- the route

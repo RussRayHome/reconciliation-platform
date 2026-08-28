@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { NavLink } from 'react-router';
 
-import type { ApprovalCountsByGroup, ApprovalGroupKey, ExceptionItem } from '@recon/domain';
+import { approvalGroupKeys, type ApprovalCountsByGroup, type ExceptionItem } from '@recon/domain';
 
 import navRailLogo from '../assets/nav-rail-logo.png';
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
@@ -42,21 +42,25 @@ const persistRailCollapsed = (username: string, collapsed: boolean): void => {
   }
 };
 
-/** Per-submenu Approvals badge: items awaiting my decision (approver) or my items needing
- * attention -- rejected work I need to fix and resubmit (submitter). Null until counts load. */
-const approvalBadgeCount = (
+/** N1: one Pending approvals rail badge, summed across all five approval groups -- items awaiting
+ * my decision (approver) or my items needing attention -- rejected work I need to fix and
+ * resubmit (submitter), same per-group split `approvalBadgeCount` always used, just totalled
+ * instead of shown per submenu now that the five submenus are gone. Null until counts load. */
+const summedApprovalBadgeCount = (
   counts: ApprovalCountsByGroup | null,
-  key: ApprovalGroupKey,
   canApprove: boolean,
 ): number | null => {
   if (!counts) {
     return null;
   }
-  return canApprove ? counts[key].pending : counts[key].rejected;
+  return approvalGroupKeys.reduce(
+    (total, key) => total + (canApprove ? counts[key].pending : counts[key].rejected),
+    0,
+  );
 };
 
 /**
- * Sticky left navigation rail, grouped into four pipeline-order categories -- WORK, CONFIGURE,
+ * Sticky left navigation rail, grouped into four pipeline-order categories -- CLOSE, CONFIGURE,
  * REVIEW, ANALYZE -- plus a permission-gated System section and a footer identity/account menu.
  * Approvals is a collapsible section here, with one rail item per approvable type; clicking one
  * opens that type's own Pending/Approved/Rejected/My submissions table.
@@ -147,7 +151,11 @@ export function NavRail({
           <span className="nav-rail__item-label">Collapse</span>
         </button>
 
-        <NavRailCategory title="Work" first>
+        {/* N4: "Close" holds the whole close journey in order -- Import Files, Reconcile,
+            Exceptions, Reports. Renamed from "Work" (a label change) with Reports moved in from
+            Analyze (also a label/position change); every sectionId below is untouched, since
+            useNavSectionCollapse bakes the id into each user's collapse-state storage key. */}
+        <NavRailCategory title="Close" first>
           <CollapsibleNavSection
             sectionId="importFiles"
             label="Import Files"
@@ -177,7 +185,7 @@ export function NavRail({
 
           <CollapsibleNavSection
             sectionId="reconciliation"
-            label="Reconciliation"
+            label="Reconcile"
             icon="reports"
             username={username}
             bordered={false}
@@ -205,6 +213,14 @@ export function NavRail({
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
             badge={unreviewedExceptionCount}
+          />
+
+          <NavItemLink
+            to={routePaths.export}
+            label="Reports"
+            icon="operations"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
           />
         </NavRailCategory>
 
@@ -257,70 +273,21 @@ export function NavRail({
         </NavRailCategory>
 
         <NavRailCategory title="Review">
-          <CollapsibleNavSection
-            sectionId="approvals"
-            label="Approvals"
+          {/* N1: the five per-type approval submenus (and their section header) are removed --
+              one destination, one summed count. Each row inside links to its own object screen
+              (ApprovalsPage.tsx's APPROVAL_GROUPS), not a queue copy. */}
+          <NavItemLink
+            to={routePaths.approvals}
+            label="Pending approvals"
             icon="review"
-            username={username}
-            bordered={false}
-          >
-            <NavItemLink
-              to={routePaths.approvalsImports}
-              label="Imported files"
-              icon="upload"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-              badge={approvalBadgeCount(approvalCounts, 'import', canApprove)}
-              badgeTone={canApprove ? 'attention' : 'neutral'}
-            />
-            <NavItemLink
-              to={routePaths.approvalsMappingProfiles}
-              label="Mapping Profiles"
-              ariaLabel="Mapping Profiles approvals"
-              icon="architecture"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-              badge={approvalBadgeCount(approvalCounts, 'mappingProfile', canApprove)}
-              badgeTone={canApprove ? 'attention' : 'neutral'}
-            />
-            <NavItemLink
-              to={routePaths.approvalsMatchingRules}
-              label="Matching Rule & Variances"
-              icon="rule"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-              badge={approvalBadgeCount(approvalCounts, 'matchingRule', canApprove)}
-              badgeTone={canApprove ? 'attention' : 'neutral'}
-            />
-            <NavItemLink
-              to={routePaths.approvalsExceptionResolutions}
-              label="Exception Resolutions"
-              icon="exceptions"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-              badge={approvalBadgeCount(approvalCounts, 'exceptionResolution', canApprove)}
-              badgeTone={canApprove ? 'attention' : 'neutral'}
-            />
-            <NavItemLink
-              to={routePaths.approvalsReportDistribution}
-              label="Report Distribution"
-              icon="reports"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-              badge={approvalBadgeCount(approvalCounts, 'reportDistribution', canApprove)}
-              badgeTone={canApprove ? 'attention' : 'neutral'}
-            />
-          </CollapsibleNavSection>
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+            badge={summedApprovalBadgeCount(approvalCounts, canApprove)}
+            badgeTone={canApprove ? 'attention' : 'neutral'}
+          />
         </NavRailCategory>
 
         <NavRailCategory title="Analyze">
-          <NavItemLink
-            to={routePaths.export}
-            label="Reports"
-            icon="operations"
-            isCollapsed={isCollapsed}
-            onNavigate={onMobileClose}
-          />
           <NavItemLink
             to={routePaths.openItemsSchedule}
             label="Open Items Schedule"

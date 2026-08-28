@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 
-import { ApprovalsPage } from './ApprovalsPage';
+import { ImportRunApprovalStatus, PendingApprovalsInbox } from './ApprovalsPage';
 import { routePaths } from '../routes/routePaths';
 
 afterEach(() => {
@@ -66,14 +66,11 @@ const PENDING_ASSIGNED_RUN: ApprovalRow = {
   state: 'PENDING',
 };
 
-const renderPage = (
-  props: Partial<{ canApprove: boolean; isAdmin: boolean }> = {},
-  path: string = routePaths.approvalsImports,
-) => {
+const renderPage = (props: Partial<{ canApprove: boolean; isAdmin: boolean }> = {}) => {
   const merged = { canApprove: true, isAdmin: false, ...props };
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <ApprovalsPage canApprove={merged.canApprove} isAdmin={merged.isAdmin} />
+    <MemoryRouter initialEntries={[routePaths.approvals]}>
+      <PendingApprovalsInbox canApprove={merged.canApprove} isAdmin={merged.isAdmin} />
     </MemoryRouter>,
   );
 };
@@ -108,7 +105,7 @@ beforeEach(() => {
   });
 });
 
-describe('ApprovalsPage', () => {
+describe('PendingApprovalsInbox (N1)', () => {
   it('shows a loading message before the fetch resolves', () => {
     mockedApi.getApprovalsRequest.mockImplementation(() => new Promise(() => {}));
     renderPage();
@@ -138,11 +135,20 @@ describe('ApprovalsPage', () => {
     expect(await screen.findByText('Imported files -- nothing pending')).toBeInTheDocument();
   });
 
-  it('shows the coming-soon message for a non-live group instead of an empty queue', async () => {
+  // N1: all five groups render on the same page now -- always, not gated by which route you're on.
+  it('shows the coming-soon message for every non-live group, in the same view as the live ones', async () => {
     mockedApi.rows = [];
-    renderPage({ canApprove: true }, routePaths.approvalsMappingProfiles);
-    await screen.findByText("Mapping Profiles approvals aren't available yet");
-    expect(screen.getByText('Coming soon')).toBeTruthy();
+    renderPage({ canApprove: true });
+
+    await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalled());
+    expect(screen.getByText("Mapping Profiles approvals aren't available yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("Exception Resolutions approvals aren't available yet"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Report Distribution approvals aren't available yet"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Coming soon')).toHaveLength(3);
   });
 
   it('surfaces a load error instead of the table', async () => {
@@ -150,21 +156,6 @@ describe('ApprovalsPage', () => {
     renderPage();
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe('network down');
-  });
-
-  it('shows the approver-facing tab set for canApprove=true and the submitter set for false', async () => {
-    mockedApi.rows = [];
-    const { unmount } = renderPage({ canApprove: true });
-    await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalled());
-    expect(screen.getByRole('link', { name: /My submissions/ })).toBeTruthy();
-    unmount();
-    cleanup();
-
-    mockedApi.getApprovalsRequest.mockClear();
-    renderPage({ canApprove: false });
-    await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalled());
-    expect(screen.queryByRole('link', { name: /My submissions/ })).toBeNull();
-    expect(screen.getByRole('link', { name: /^Submitted/ })).toBeTruthy();
   });
 
   it('shows the Approval policy link only for admins', async () => {
@@ -179,6 +170,32 @@ describe('ApprovalsPage', () => {
     renderPage({ isAdmin: false });
     await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalled());
     expect(screen.queryByRole('link', { name: 'Approval policy' })).toBeNull();
+  });
+
+  // N1: "an inbox row navigates to the object screen, not a queue"
+  it('links a row title to its object screen, not a queue copy', async () => {
+    mockedApi.rows = [PENDING_ASSIGNED];
+    renderPage({ canApprove: true });
+
+    const rowLink = await screen.findByRole('link', { name: 'company_gl.xlsx' });
+    expect(rowLink).toHaveAttribute('href', routePaths.importFilesBank);
+  });
+
+  it('links a matching-rule row to the Matching Rules screen', async () => {
+    const matchingRuleRow: ApprovalRow = {
+      id: 'row-3',
+      type: 'matchingRule',
+      title: 'Matching config v9',
+      submitter: 'j.doe',
+      approver: 'm.ortega',
+      ageHours: 5,
+      state: 'PENDING',
+    };
+    mockedApi.rows = [matchingRuleRow];
+    renderPage({ canApprove: true });
+
+    const rowLink = await screen.findByRole('link', { name: 'Matching config v9' });
+    expect(rowLink).toHaveAttribute('href', routePaths.mappingRules);
   });
 
   it('claims an unassigned row and refreshes the table', async () => {
@@ -253,7 +270,7 @@ describe('ApprovalsPage', () => {
       state: 'PENDING',
     };
     mockedApi.rows = [matchingRuleRow];
-    renderPage({ canApprove: true }, routePaths.approvalsMatchingRules);
+    renderPage({ canApprove: true });
     await screen.findByText('Matching config v9');
 
     const approveButton = screen.getByRole('button', { name: 'Promote v9' });
@@ -319,7 +336,7 @@ describe('ApprovalsPage', () => {
     expect(mockedApi.decideApprovalRequest).not.toHaveBeenCalled();
   });
 
-  it('disables the header Bulk approve button until something is selected, and hides checkboxes on non-pending tabs', async () => {
+  it('disables the header Bulk approve button until something is selected', async () => {
     mockedApi.rows = [PENDING_ASSIGNED];
     renderPage({ canApprove: true });
     await screen.findByText('company_gl.xlsx');
@@ -377,7 +394,7 @@ describe('ApprovalsPage', () => {
     expect(alert.textContent).toBe('bulk approve rejected by server');
   });
 
-  it('merges import and reconciliationRun rows into one table on /approvals/imports', async () => {
+  it('merges import and reconciliationRun rows into one table', async () => {
     mockedApi.rows = [PENDING_ASSIGNED, PENDING_ASSIGNED_RUN];
     renderPage({ canApprove: true });
 
@@ -386,6 +403,23 @@ describe('ApprovalsPage', () => {
     expect(screen.getByText('Monthly recon · 8/2026')).toBeTruthy();
     expect(mockedApi.getApprovalsRequest).toHaveBeenCalledWith('import', 'pending');
     expect(mockedApi.getApprovalsRequest).toHaveBeenCalledWith('reconciliationRun', 'pending');
+  });
+
+  it('fetches every approval type across all five groups, not just live ones', async () => {
+    renderPage({ canApprove: true });
+    await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalled());
+
+    for (const type of [
+      'import',
+      'reconciliationRun',
+      'mappingProfile',
+      'matchingRule',
+      'varianceThreshold',
+      'exceptionResolution',
+      'reportDistribution',
+    ] as const) {
+      expect(mockedApi.getApprovalsRequest).toHaveBeenCalledWith(type, 'pending');
+    }
   });
 
   it('bulk-approves a mixed selection using each row\'s own type, not the group\'s first type', async () => {
@@ -401,5 +435,43 @@ describe('ApprovalsPage', () => {
       expect(mockedApi.decideApprovalRequest).toHaveBeenCalledWith('import', 'row-2', 'APPROVED'),
     );
     expect(mockedApi.decideApprovalRequest).toHaveBeenCalledWith('reconciliationRun', 'run-1', 'APPROVED');
+  });
+});
+
+// N1: "a live object screen shows its own approval state" -- the Imported Files counterpart to
+// RuleVersionHeader's "Waiting on X" / "Published by X" on Matching Rules.
+describe('ImportRunApprovalStatus (N1)', () => {
+  it('renders nothing when there is no current run', () => {
+    render(<ImportRunApprovalStatus runId={null} />);
+    expect(mockedApi.getApprovalsRequest).not.toHaveBeenCalled();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('renders nothing when the current run has no matching pending or rejected row', async () => {
+    render(<ImportRunApprovalStatus runId="run-1" />);
+    await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('shows a pending state with the assigned approver', async () => {
+    mockedApi.rows = [PENDING_ASSIGNED_RUN];
+    render(<ImportRunApprovalStatus runId="run-1" />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Pending approval from m.ortega');
+  });
+
+  it('shows a rejected state with the deciding approver', async () => {
+    mockedApi.rows = [{ ...PENDING_ASSIGNED_RUN, state: 'REJECTED', approver: 'm.ortega' }];
+    render(<ImportRunApprovalStatus runId="run-1" />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Rejected by m.ortega');
+  });
+
+  it('does not surface an approved run -- that state needs no special banner here', async () => {
+    mockedApi.rows = [{ ...PENDING_ASSIGNED_RUN, state: 'APPROVED' }];
+    render(<ImportRunApprovalStatus runId="run-1" />);
+
+    await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

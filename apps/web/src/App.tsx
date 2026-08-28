@@ -36,7 +36,7 @@ import {
 } from '@recon/domain';
 
 import { DocsOverview } from './components/DocsOverview';
-import { ApprovalsPage } from './components/ApprovalsPage';
+import { ImportRunApprovalStatus, PendingApprovalsInbox } from './components/ApprovalsPage';
 import { ApprovalPolicyPage } from './components/ApprovalPolicyPage';
 import { VersionsPage } from './components/VersionsPage';
 import { ComingSoonPage } from './components/ComingSoonPage';
@@ -466,7 +466,11 @@ const resolveSubmitButtonState = (
   durablePhaseKind: LatestRunPhase['kind'],
   hasSucceeded: boolean,
 ): SubmitButtonState => {
-  if (!isUploadStepComplete) {
+  // N4: a completed run's upload slots are reset to empty (see the `run`-succeeded effect in
+  // App), so `isUploadStepComplete` alone can no longer gate this -- without the bypass, the
+  // button would regress from "Start new run" to a disabled "Submit run" the instant success
+  // clears the files it just submitted.
+  if (!isUploadStepComplete && !hasSucceeded && durablePhaseKind !== 'succeeded') {
     return {
       disabled: true,
       label: 'Submit run',
@@ -1001,10 +1005,50 @@ function ReconciliationApp({
       persistRun(run);
       setLatestBackendReportError(null);
       setIsHydratingLatestBackendReport(false);
+      // A completed run's upload slots must not keep showing the just-submitted files -- otherwise
+      // navigating back to Import Files (browser back, not a fresh landing) shows stale filenames
+      // that read as "not yet submitted" even though the Submit button correctly says "Start new
+      // run". Reset to the same empty shape SourceUploadSection expects for a clean slate.
+      setBankFiles([null, null]);
+      setGlFile(null);
       void navigate(routePaths.reconSummary);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- navigate identity is stable per React Router.
   }, [run]);
+
+  // N4: "/" resolves to the active run on a genuine initial landing (a fresh page load), not on
+  // every later visit -- clicking Import Files in the rail after a run has succeeded must always
+  // actually land there, not bounce straight back to the run it just finished. Consumed exactly
+  // once, from inside the hydration effect below (the durable phase isn't known until that async
+  // fetch settles -- checking it synchronously at mount would only ever see 'idle', since
+  // `latestImportRun` itself starts out null). window.location, not the `location` object from
+  // useLocation(): the object closed over by this effect's `[]`-deps callback would still read
+  // wherever the user was AT MOUNT, not wherever they've actually navigated to by the time this
+  // async check fires a few hundred ms later.
+  const hasAppliedInitialLanding = useRef(false);
+  const applyInitialLanding = (phaseKind: LatestRunPhase['kind']): void => {
+    if (hasAppliedInitialLanding.current) {
+      return;
+    }
+    hasAppliedInitialLanding.current = true;
+
+    if (window.location.pathname !== routePaths.importFiles || window.location.search) {
+      return;
+    }
+
+    if (phaseKind === 'succeeded') {
+      void navigate(routePaths.reconSummary, { replace: true });
+      return;
+    }
+
+    // queued/running already show their own in-progress panel on Import Files itself (the RunBar
+    // outcome panel), and validation-failed/matching-failed likewise show their own failure panel
+    // there -- neither has anywhere better to redirect to. Only the role-based default landing
+    // (analysts land on Review) applies as a fallback for a genuinely idle account.
+    if (roleDefaultTab === 'review') {
+      void navigate(routePaths.reconSummary, { replace: true });
+    }
+  };
 
   // Issue #154: runs once per mount, never gated on `persistedRun` -- that gate was the bug (a
   // stale cached success silently suppressed ever checking the server again). Always asks the
@@ -1037,6 +1081,7 @@ function ReconciliationApp({
           setPersistedRun(report);
           persistRun(report);
           setLatestBackendReportError(null);
+          applyInitialLanding(phase.kind);
           return;
         }
 
@@ -1045,6 +1090,7 @@ function ReconciliationApp({
         setPersistedRun(undefined);
         clearPersistedRun();
         setLatestBackendReportError(null);
+        applyInitialLanding(phase.kind);
       })
       .catch((error: unknown) => {
         if (cancelled) {
@@ -1063,6 +1109,10 @@ function ReconciliationApp({
     return () => {
       cancelled = true;
     };
+    // Intentionally runs once on mount only, same reasoning as hasAppliedInitialLanding's own
+    // comment above; applyInitialLanding is deliberately excluded so this effect's identity
+    // doesn't change across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -1093,30 +1143,6 @@ function ReconciliationApp({
       void navigate(routePaths.export, { replace: true });
     }
   }, [location.pathname, location.search, navigate]);
-
-  /**
-   * Role-based default landing tab (analysts land on Review) — applies only to the very first
-   * app load, not to later visits to "/", so clicking "Import Files" always actually lands there
-   * even for roles whose default landing tab is Review.
-   */
-  const hasAppliedInitialRoleLanding = useRef(false);
-
-  useEffect(() => {
-    if (hasAppliedInitialRoleLanding.current) {
-      return;
-    }
-
-    hasAppliedInitialRoleLanding.current = true;
-
-    if (
-      location.pathname === routePaths.importFiles &&
-      !location.search &&
-      roleDefaultTab === 'review'
-    ) {
-      void navigate(routePaths.reconSummary, { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally runs once on mount only; see hasAppliedInitialRoleLanding.
-  }, []);
 
   const goToImportFiles = (): void => {
     void navigate(routePaths.importFiles);
@@ -1545,6 +1571,7 @@ function ReconciliationApp({
                     partialAccept={partialAccept}
                     durableRunPhase={durableRunPhase}
                     submittedQueuedRun={submittedQueuedRun}
+                    latestImportRunId={latestImportRun?.id ?? null}
                     onDismissDurableRun={() => setLatestImportRun(null)}
                     onRefreshDurableRun={() => {
                       void getLatestImportRunRequest().then((latest) => {
@@ -1589,6 +1616,7 @@ function ReconciliationApp({
                     partialAccept={partialAccept}
                     durableRunPhase={durableRunPhase}
                     submittedQueuedRun={submittedQueuedRun}
+                    latestImportRunId={latestImportRun?.id ?? null}
                     onDismissDurableRun={() => setLatestImportRun(null)}
                     onRefreshDurableRun={() => {
                       void getLatestImportRunRequest().then((latest) => {
@@ -1720,24 +1748,35 @@ function ReconciliationApp({
               />
               <Route path={routePaths.mappingRulesVersions} element={<VersionsPage />} />
               <Route
+                path={routePaths.approvals}
+                element={
+                  <PendingApprovalsInbox canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />
+                }
+              />
+              {/* N1: the five old per-type routes stay declared for one release as redirects to
+                  the object each used to shadow -- never rail-linked again, but no old bookmark
+                  or link breaks either. mappingProfile has no real object screen yet (still
+                  ComingSoonPage) and no way to generate a row, so it redirects to the inbox
+                  itself rather than a screen that doesn't exist. */}
+              <Route
                 path={routePaths.approvalsImports}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.importFilesBank} replace />}
               />
               <Route
                 path={routePaths.approvalsMappingProfiles}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.approvals} replace />}
               />
               <Route
                 path={routePaths.approvalsMatchingRules}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.mappingRules} replace />}
               />
               <Route
                 path={routePaths.approvalsExceptionResolutions}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.exceptions} replace />}
               />
               <Route
                 path={routePaths.approvalsReportDistribution}
-                element={<ApprovalsPage canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />}
+                element={<Navigate to={routePaths.export} replace />}
               />
               {isAdmin ? (
                 <Route path={routePaths.approvalsPolicy} element={<ApprovalPolicyPage />} />
@@ -1834,7 +1873,7 @@ function QueuedRunPanel({
         <button
           type="button"
           className="secondary-button"
-          onClick={() => navigate(routePaths.approvalsImports)}
+          onClick={() => navigate(routePaths.importFilesBank)}
         >
           Open Imported files
         </button>
@@ -1925,6 +1964,7 @@ function SourceUploadSection({
   partialAccept,
   durableRunPhase,
   submittedQueuedRun,
+  latestImportRunId,
   onDismissDurableRun,
   onRefreshDurableRun,
 }: Readonly<{
@@ -1961,6 +2001,8 @@ function SourceUploadSection({
   partialAccept: PartialAcceptModel;
   durableRunPhase: LatestRunPhase;
   submittedQueuedRun: ImportRunSummary | undefined;
+  /** N1: the current durable run's id, for ImportRunApprovalStatus -- null when there is none. */
+  latestImportRunId: string | null;
   onDismissDurableRun: () => void;
   onRefreshDurableRun: () => void;
 }>) {
@@ -1991,6 +2033,12 @@ function SourceUploadSection({
   return (
     <div className="import-screen">
       <p className="import-screen__eyebrow">Reconciliations / New run</p>
+      {/* N1: "a live object screen shows its own approval state" -- AP/Billing runs aren't part
+          of the submit flow yet (see the billing tab's own note below), so this only applies to
+          the bank tab, where latestImportRunId actually tracks something. */}
+      {activeSourceType === 'bank' ? (
+        <ImportRunApprovalStatus runId={latestImportRunId} />
+      ) : null}
       <SectionCard
         title="Import source files"
         description="CSV or XLSX. Format is detected by extension; the engine preserves original file names, source line numbers, excluded rows, and normalized audit fields."
