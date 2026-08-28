@@ -789,6 +789,22 @@ const triggerMatchingForImportRun = async (input: {
   reconciliationRunId: string;
 }): Promise<{ matchingJobId: string }> => {
   const correlationId = randomUUID();
+  // Issue #251 diagnostics (temporary): CI's e2e-functional shard 1 shows a run permanently
+  // stuck in a non-terminal status after this function runs, but the same payload/sequence
+  // reproduces cleanly outside CI -- stage timings + a heartbeat around the matching engine call
+  // (the prime suspect, since it's the one stage with no BullMQ stall-recovery or statement_timeout
+  // backstop) narrow down exactly where a CI-only run gets stuck without needing local repro.
+  const diagStart = Date.now();
+  const diagLog = (action: string, extra?: Record<string, unknown>) => {
+    input.requestLog.info({
+      action: `diag251.${action}`,
+      correlationId,
+      reconciliationRunId: input.reconciliationRunId,
+      elapsedMs: Date.now() - diagStart,
+      ...extra,
+    });
+  };
+  diagLog('trigger.start');
 
   const toUploadShape = (file: ImportValidationTriggerFile): Express.Multer.File => ({
     fieldname: 'file',
@@ -803,6 +819,7 @@ const triggerMatchingForImportRun = async (input: {
     stream: Readable.from(file.buffer),
   });
 
+  diagLog('registerLifecycleJob.start');
   const lifecycleContext = await registerLifecycleJob(
     input.lifecycleStore,
     correlationId,
@@ -810,10 +827,13 @@ const triggerMatchingForImportRun = async (input: {
     {},
     { bankFile: toUploadShape(input.files.bankFile), glFile: toUploadShape(input.files.glFile) },
   );
+  diagLog('registerLifecycleJob.done', { runId: lifecycleContext.runId });
 
+  diagLog('loadPayeeAliases.start');
   const aliases = input.pool
     ? await loadPayeeAliases(input.pool, input.organizationId, undefined)
     : [];
+  diagLog('loadPayeeAliases.done', { aliasCount: aliases.length });
 
   const bankTransactionContext = {
     runId: lifecycleContext.runId,
@@ -857,26 +877,40 @@ const triggerMatchingForImportRun = async (input: {
     },
   ];
 
-  const run = await executeReconciliationFromNormalized({
-    correlationId,
-    runId: lifecycleContext.runId,
-    sessionId: input.sessionId,
-    organizationId: input.organizationId,
-    lifecycleStore: input.lifecycleStore,
-    sourceFiles,
-    rawRows,
-    normalizedTransactions,
-    aliases,
-    onStep: input.onStep,
-    declaredAnchorDate: input.declaredAnchorDate,
-    reconciliationRunId: input.reconciliationRunId,
-    openItemStore: input.pool ? new PostgresOpenItemStore(input.pool) : undefined,
-    // Default on -- the env var is purely an ops kill switch; the real per-organization control
-    // is reconciliation_organization.carry_forward_enabled (PR C.5).
-    carryForwardEnvEnabled: parseBooleanFlag(process.env.ENABLE_CARRY_FORWARD) !== false,
+  diagLog('executeReconciliationFromNormalized.start', {
+    rawRowCount: rawRows.length,
+    normalizedTransactionCount: normalizedTransactions.length,
   });
+  const matchingHeartbeat = setInterval(() => {
+    diagLog('executeReconciliationFromNormalized.still-running');
+  }, 5000);
+  let run: Awaited<ReturnType<typeof executeReconciliationFromNormalized>>;
+  try {
+    run = await executeReconciliationFromNormalized({
+      correlationId,
+      runId: lifecycleContext.runId,
+      sessionId: input.sessionId,
+      organizationId: input.organizationId,
+      lifecycleStore: input.lifecycleStore,
+      sourceFiles,
+      rawRows,
+      normalizedTransactions,
+      aliases,
+      onStep: input.onStep,
+      declaredAnchorDate: input.declaredAnchorDate,
+      reconciliationRunId: input.reconciliationRunId,
+      openItemStore: input.pool ? new PostgresOpenItemStore(input.pool) : undefined,
+      // Default on -- the env var is purely an ops kill switch; the real per-organization control
+      // is reconciliation_organization.carry_forward_enabled (PR C.5).
+      carryForwardEnvEnabled: parseBooleanFlag(process.env.ENABLE_CARRY_FORWARD) !== false,
+    });
+  } finally {
+    clearInterval(matchingHeartbeat);
+  }
+  diagLog('executeReconciliationFromNormalized.done', { matchingRunId: run.id });
 
   input.repository.save(run);
+  diagLog('repository.save.done');
   input.requestLog.info({
     action: 'reconciliation.run.completed',
     runId: run.id,
