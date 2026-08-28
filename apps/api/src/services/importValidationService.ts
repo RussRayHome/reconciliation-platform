@@ -125,27 +125,11 @@ const assertBankOrGl = (file: ImportRunFileSummary): 'BANK' | 'GL' => {
 export const runImportValidationWorkflow = async (
   input: RunImportValidationWorkflowInput,
 ): Promise<RunImportValidationWorkflowResult> => {
-  // Issue #251 diagnostics (temporary): see app.ts's triggerMatchingForImportRun for why -- these
-  // stage timings run on every real submission (not just CI), but action-prefixed and info-level
-  // so they're cheap to grep out of noisy logs and trivial to strip once #251 is root-caused.
-  const diagStart = Date.now();
-  const diagLog = (action: string, extra?: Record<string, unknown>) => {
-    input.logger.info({
-      action: `diag251.${action}`,
-      runId: input.runId,
-      importJobId: input.importJobId,
-      elapsedMs: Date.now() - diagStart,
-      ...extra,
-    });
-  };
-  diagLog('workflow.start');
-
   await input.importValidationStore.markJobRunning(
     input.organizationId,
     input.importJobId,
     input.workerId,
   );
-  diagLog('markJobRunning.done');
   await input.onStep?.('Validating uploaded files…').catch(() => undefined);
 
   const run = await input.importRunStore.getRunSummary(input.organizationId, input.runId);
@@ -178,9 +162,7 @@ export const runImportValidationWorkflow = async (
     }
 
     const fileType = assertBankOrGl(file);
-    diagLog('file.blobStorage.get.start', { importFileId: file.importFileId, role: file.role });
     const bytes = await input.blobStorage.get(file.importFileId, input.organizationId);
-    diagLog('file.blobStorage.get.done', { importFileId: file.importFileId, byteLength: bytes.byteLength });
 
     const onIssue: RowIssueObserver | undefined = debugEnabled
       ? (issue) =>
@@ -194,15 +176,8 @@ export const runImportValidationWorkflow = async (
           })
       : undefined;
 
-    diagLog('file.validateFile.start', { importFileId: file.importFileId });
     const outcome = await validateFile({ bytes, fileFormat: file.fileFormat, fileType, onIssue });
-    diagLog('file.validateFile.done', {
-      importFileId: file.importFileId,
-      totalRowCount: outcome.totalRowCount,
-      issueCount: outcome.issues.length,
-    });
 
-    diagLog('file.recordFileValidationOutcome.start', { importFileId: file.importFileId });
     const recorded = await input.importValidationStore.recordFileValidationOutcome(
       input.organizationId,
       {
@@ -215,7 +190,6 @@ export const runImportValidationWorkflow = async (
       },
       ruleVersionIds,
     );
-    diagLog('file.recordFileValidationOutcome.done', { importFileId: file.importFileId });
 
     input.logger.info({
       action: 'import-validation.file.recorded',
@@ -237,7 +211,6 @@ export const runImportValidationWorkflow = async (
 
   const passed = fileOutcomes.every((entry) => entry.passed);
 
-  diagLog('finalizeRun.start', { passed });
   await input.importValidationStore.finalizeRun(
     input.organizationId,
     input.runId,
@@ -246,7 +219,6 @@ export const runImportValidationWorkflow = async (
       passed,
     },
   );
-  diagLog('finalizeRun.done', { passed });
 
   if (!passed) {
     input.logger.info({ action: 'import-validation.run.failed', runId: input.runId });
@@ -264,7 +236,6 @@ export const runImportValidationWorkflow = async (
     );
   }
 
-  diagLog('triggerMatching.start');
   const { matchingJobId } = await input.triggerMatching({
     bankFile: {
       buffer: bankEntry.bytes,
@@ -278,15 +249,12 @@ export const runImportValidationWorkflow = async (
     },
     declaredAnchorDate: run.periodEnd ?? undefined,
   });
-  diagLog('triggerMatching.done', { matchingJobId });
 
-  diagLog('recordMatchingJobId.start');
   await input.importValidationStore.recordMatchingJobId(
     input.organizationId,
     input.runId,
     matchingJobId,
   );
-  diagLog('recordMatchingJobId.done');
 
   input.logger.info({ action: 'import-validation.run.matched', runId: input.runId, matchingJobId });
 
