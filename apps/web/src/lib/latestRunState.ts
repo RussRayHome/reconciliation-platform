@@ -46,8 +46,17 @@ export type LatestRunPhase =
  * event never fired, so the mutation's very next step -- calling `/submit` -- never ran), not one
  * genuinely in progress. Since this lookup is org-wide, treating every DRAFT as permanently
  * "running" would let one abandoned run lock the whole organization out of starting a new one
- * forever. */
-const DRAFT_STALE_AFTER_MS = 2 * 60 * 1000;
+ * forever.
+ *
+ * 30s, not minutes: the DRAFT row is only written once `createImportRunRequest`'s upload has
+ * already finished, and `useImportRunSubmit`'s mutation calls `submitImportRunRequest` on the very
+ * next line -- the legitimate gap between the two is normally milliseconds, bounded further by
+ * `createImportRunRequest`'s own 30s stall watchdog (`lib/api.ts`) on the upload itself. Confirmed
+ * empirically against a real CI run: a 2-minute threshold left one abandoned DRAFT blocking
+ * submissions for ~90s (one hard 60s test timeout plus one test that passed only by coincidentally
+ * waiting long enough) before the org recovered; 30s tightens that same recovery window without
+ * meaningfully risking a false "stale" read on any real in-flight submission. */
+const DRAFT_STALE_AFTER_MS = 30 * 1000;
 
 const isStaleDraft = (run: ImportRunSummary): boolean =>
   run.status === 'DRAFT' && Date.now() - new Date(run.createdAt).getTime() > DRAFT_STALE_AFTER_MS;
