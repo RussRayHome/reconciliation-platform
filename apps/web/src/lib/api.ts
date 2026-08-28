@@ -519,13 +519,37 @@ export const createImportRunRequest = ({
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     }
 
+    // Issue #251: a stall watchdog, not a flat overall timeout -- a large multi-file upload on a
+    // slow connection can legitimately take minutes, so any fixed deadline from `send()` risks
+    // punishing a transfer that's still actively progressing. Reset on every upload-progress tick
+    // instead, so it only fires when *nothing* has happened (no more bytes going out, no response
+    // coming back) for the full window -- exactly the failure mode a real hang produces: the
+    // observed case had the server log a normal 200 for the create-run request while the XHR's own
+    // `load` event simply never fired, leaving this promise (and everything chained after it --
+    // the very next line in the mutation always calls `/submit`) pending forever with no error, no
+    // retry prompt, and a run stuck permanently in `DRAFT` that `resolveLatestRunPhase` then reads
+    // as perpetually "running" for the whole organization.
+    const STALL_TIMEOUT_MS = 30_000;
+    let timedOut = false;
+    let stallTimer: ReturnType<typeof setTimeout>;
+    const resetStallTimer = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        timedOut = true;
+        xhr.abort();
+      }, STALL_TIMEOUT_MS);
+    };
+    resetStallTimer();
+
     xhr.upload.addEventListener('progress', (event) => {
+      resetStallTimer();
       if (event.lengthComputable) {
         onProgress?.({ loadedBytes: event.loaded, totalBytes: event.total });
       }
     });
 
     xhr.addEventListener('load', () => {
+      clearTimeout(stallTimer);
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText) as ImportRunSummary);
@@ -559,10 +583,16 @@ export const createImportRunRequest = ({
     });
 
     xhr.addEventListener('error', () => {
+      clearTimeout(stallTimer);
       reject(new Error('Network error while uploading source files.'));
     });
 
     xhr.addEventListener('abort', () => {
+      clearTimeout(stallTimer);
+      if (timedOut) {
+        reject(new Error('Network error while uploading source files.'));
+        return;
+      }
       reject(new DOMException('Upload cancelled', 'AbortError'));
     });
 

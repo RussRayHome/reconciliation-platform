@@ -32,12 +32,26 @@ export type LatestRunPhase =
  * 6. Stage 1 (file validation) is queued but hasn't started -> queued, distinct from `running` so
  *    a reload mid-queue shows the same phase the live path already committed to (R2 D1) -- a
  *    genuinely separate wait state from a run that's actively doing work.
- * 7. Still genuinely in flight (Stage 1 running, or Stage 2 queued/running) -> running.
+ * 7. Still genuinely in flight (Stage 1 running, or Stage 2 queued/running) -> running. A `DRAFT`
+ *    run counts here only while recent (Issue #251) -- see `isStaleDraft` below.
  * 8. Anything else (e.g. `PENDING_APPROVAL` with no job linkage and no failure) -> idle; there is
  *    nothing concrete to report yet, so this deliberately doesn't guess at success.
  *
  * @param run The organization's latest import run, or `null` if it has never submitted one.
  */
+/** Issue #251: a `DRAFT` run has no backend job attached to it at all -- nothing is or ever will
+ * be processing it until `/submit` is called, unlike `VALIDATING`/`validationJob: RUNNING`, which
+ * already have a real job in flight. A DRAFT still sitting there after a generous window is
+ * evidence of an abandoned client-side submission (the observed case: an upload's XHR `load`
+ * event never fired, so the mutation's very next step -- calling `/submit` -- never ran), not one
+ * genuinely in progress. Since this lookup is org-wide, treating every DRAFT as permanently
+ * "running" would let one abandoned run lock the whole organization out of starting a new one
+ * forever. */
+const DRAFT_STALE_AFTER_MS = 2 * 60 * 1000;
+
+const isStaleDraft = (run: ImportRunSummary): boolean =>
+  run.status === 'DRAFT' && Date.now() - new Date(run.createdAt).getTime() > DRAFT_STALE_AFTER_MS;
+
 export const resolveLatestRunPhase = (run: ImportRunSummary | null): LatestRunPhase => {
   if (!run) {
     return { kind: 'idle' };
@@ -72,7 +86,7 @@ export const resolveLatestRunPhase = (run: ImportRunSummary | null): LatestRunPh
   }
 
   if (
-    run.status === 'DRAFT' ||
+    (run.status === 'DRAFT' && !isStaleDraft(run)) ||
     run.status === 'VALIDATING' ||
     run.validationJob?.status === 'RUNNING'
   ) {
