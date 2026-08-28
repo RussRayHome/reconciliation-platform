@@ -2258,6 +2258,73 @@ describe('App', () => {
     });
   });
 
+  // N4: navigating back to Import Files after a successful run (browser back, not a fresh
+  // landing -- applyInitialLanding only fires once per mount) must not show the just-submitted
+  // filenames sitting in the upload slots as if they hadn't been submitted yet. The button
+  // staying enabled as "Start new run" (not regressing to a disabled "Submit run") is the other
+  // half of this: resolveSubmitButtonState has to keep reading success even once the files it
+  // gates on are gone.
+  it('clears the upload slots after success without disabling the button', async () => {
+    mockImportRunSubmitFlow();
+    setAuthenticatedUser('rray');
+    renderApp();
+    fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Start new run' })).toHaveAttribute(
+        'aria-disabled',
+        'false',
+      );
+    });
+    expect(screen.queryByText('1111_bank.xlsx')).not.toBeInTheDocument();
+    expect(screen.queryByText('gl.xlsx')).not.toBeInTheDocument();
+  });
+
+  // N4: "/" resolves to the active run on a genuine initial landing. Queued/running already show
+  // their own in-progress panel on Import Files itself (the RunBar outcome panel) -- there's
+  // nowhere better to redirect to -- so "renders the active run" means staying at '/' with that
+  // panel visible, not navigating away.
+  it('/ renders the active run when the durable phase is queued or running', async () => {
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      validationJob: {
+        id: 'validation-job-1',
+        status: 'QUEUED',
+        errorSummary: null,
+        queuedAt: '2026-08-21T00:00:00.000Z',
+        finishedAt: null,
+      },
+    });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Queued').length).toBeGreaterThan(0);
+    });
+    expect(globalThis.location.pathname).toBe('/');
+
+    cleanup();
+    mockedApiState.latestImportRunResponse = createImportRunSummary({ status: 'VALIDATING' });
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Running').length).toBeGreaterThan(0);
+    });
+    expect(globalThis.location.pathname).toBe('/');
+  });
+
+  it('/ renders Import Files when the phase is idle', async () => {
+    setAuthenticatedUser('rray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Submit run' })).toBeInTheDocument();
+    });
+    expect(globalThis.location.pathname).toBe('/');
+  });
+
   it('names the reason for every disabled state', async () => {
     setAuthenticatedUser('rray');
     renderApp();

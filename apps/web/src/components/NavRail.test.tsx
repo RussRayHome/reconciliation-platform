@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -237,5 +237,56 @@ describe('NavRail Pending approvals badge (N1: summed count)', () => {
     // would need to know the count in advance. The label text itself is unambiguous.
     const link = screen.getByText('Pending approvals').closest('a')!;
     expect(link.querySelector('.nav-rail__badge')).toBeNull();
+  });
+});
+
+// N4: "Work" is renamed "Close" and holds the whole close journey in one place, in journey order
+// -- Import Files, Reconcile (renamed from Reconciliation), Exceptions, Reports (moved in from
+// Analyze).
+describe('NavRail Close category (N4: journey order)', () => {
+  it('renders Close children in journey order', () => {
+    renderRail();
+
+    const closeCategory = screen.getByLabelText('Close');
+    const text = closeCategory.textContent ?? '';
+    const importFilesIndex = text.indexOf('Import Files');
+    const reconcileIndex = text.indexOf('Reconcile');
+    const exceptionsIndex = text.indexOf('Exceptions');
+    const reportsIndex = text.indexOf('Reports');
+
+    expect(importFilesIndex).toBeGreaterThanOrEqual(0);
+    expect(reconcileIndex).toBeGreaterThan(importFilesIndex);
+    expect(exceptionsIndex).toBeGreaterThan(reconcileIndex);
+    expect(reportsIndex).toBeGreaterThan(exceptionsIndex);
+  });
+
+  it('does not render a stray "Reconciliation" label -- the section is renamed, not duplicated', () => {
+    renderRail();
+
+    expect(screen.queryByText('Reconciliation')).not.toBeInTheDocument();
+    expect(screen.getByText('Reconcile')).toBeInTheDocument();
+  });
+
+  it('leaves Reports out of the Analyze category now that it lives in Close', () => {
+    renderRail();
+
+    const analyzeCategory = screen.getByLabelText('Analyze');
+    expect(within(analyzeCategory).queryByText('Reports')).not.toBeInTheDocument();
+    expect(within(analyzeCategory).getByText('Open Items Schedule')).toBeInTheDocument();
+  });
+
+  // The rename is a label-only change -- touching the sectionId itself would silently reset
+  // every existing user's collapse state, since useNavSectionCollapse bakes the id into the
+  // storage key. Asserting the literal key string means an accidental id rename fails here.
+  it('persists collapse state under the unchanged sectionId key', async () => {
+    const user = userEvent.setup();
+    const username = 'collapse-key-test-user';
+    const storageKey = `reconciliation-platform:nav.section.reconciliation:${username}`;
+    globalThis.localStorage.removeItem(storageKey);
+
+    renderRail({ username });
+    await user.click(screen.getByRole('button', { name: 'Reconcile' }));
+
+    expect(globalThis.localStorage.getItem(storageKey)).toBe('false');
   });
 });
