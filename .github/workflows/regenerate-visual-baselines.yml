@@ -12,7 +12,12 @@ on:
 jobs:
   regenerate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 was inherited from docker-validate.yml's e2e-visual job, but that job only *compares*
+    # snapshots and is short-circuited by visual-path-check. Regeneration starts the whole
+    # compose stack and re-renders every baseline, which overran 20 minutes on run
+    # 33271984066 (npm ci took 44s; the render itself ran ~19 minutes and was still going).
+    # Manually dispatched and rare, so a generous ceiling costs nothing.
+    timeout-minutes: 45
     # GITHUB_TOKEN defaults to read-only in this org (confirmed on dashboard-status.yml's
     # `aggregate` job -- see its comment) -- without this, the push step below fails with
     # "Write access to repository not granted" regardless of whether the commit itself succeeds.
