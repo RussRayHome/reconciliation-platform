@@ -28,3 +28,6 @@ dashboard-status/
 .ci-out/
 .ci-artifacts/
 certs/
+
+# Generated reconciliation workbooks (npm run fixtures:generate)
+fixtures/*.xlsx

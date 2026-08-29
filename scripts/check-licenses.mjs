@@ -9,7 +9,7 @@
  * production optional native builds (@msgpackr-extract/msgpackr-extract-{darwin,linux,win32}-*),
  * and npm only resolves the one matching the host OS -- so the generated report differed between
  * a local macOS run and Linux CI even with an identical lockfile and zero real dependency
- * changes (surfaced 2026-08-09: docs/dependency-licenses.generated.json kept failing CI's
+ * changes (surfaced 2026-08-09: generated/dependency-licenses.generated.json kept failing CI's
  * `--check` after a clean, verified-correct macOS regeneration). package-lock.json's own
  * `packages` entries already carry `license`, `optional`, and `os`/`cpu` -- everything needed to
  * both build the report and exclude host-specific optional builds -- deterministically, the same
@@ -26,7 +26,7 @@
  * platform-nondeterminism was the more pressing problem.
  *
  * Two modes, mirroring scripts/generate-openapi-docs.ts's --check convention:
- *   --generate (default): scan, then overwrite docs/dependency-licenses.generated.json.
+ *   --generate (default): scan, then overwrite generated/dependency-licenses.generated.json.
  *   --check: scan, then (a) fail if the committed file is stale and (b) fail if any package's
  *            license isn't covered by scripts/ops/license-allowlist.txt. Never writes.
  *
@@ -55,7 +55,7 @@ const splitCompoundLicense = (license) => {
 };
 
 const repoRoot = process.cwd();
-const outputPath = path.join(repoRoot, 'docs', 'dependency-licenses.generated.json');
+const outputPath = path.join(repoRoot, 'generated', 'dependency-licenses.generated.json');
 const allowlistPath = path.join(repoRoot, 'scripts', 'ops', 'license-allowlist.txt');
 const lockfilePath = path.join(repoRoot, 'package-lock.json');
 

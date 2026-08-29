@@ -13,11 +13,11 @@
  * Assumes the reconciliation queue is disabled (POST /api/reconciliation/run responds
  * synchronously, 201) -- true for this infra build, which provisions no Redis/ElastiCache.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// Always invoked as `npm run infra:smoke-test` from infra/ (package.json's "infra:smoke-test"
-// script), so process.cwd() is infra/ and the repo root is exactly one level up.
+// Always invoked as `npm run infra:smoke-test` from infra/, so cwd is infra/ and the repo root
+// is one level up.
 const REPO_ROOT = resolve(process.cwd(), '..');
 
 // Must match infra/scripts/seed-smoke-orgs.sql -- keep the two in sync.
@@ -79,12 +79,25 @@ async function checkRouting(baseUrl: string): Promise<void> {
 async function checkStoring(baseUrl: string, tokenA: string): Promise<string | undefined> {
   const group = 'Storing';
 
-  const bankFile = readFileSync(resolve(REPO_ROOT, 'docs/sample-files/sample-bank.xlsx'));
-  const glFile = readFileSync(resolve(REPO_ROOT, 'docs/sample-files/sample-qbo.xlsx'));
+  // The sample workbooks are generated, not committed -- `npm run fixtures:generate` writes them
+  // from @recon/test-fixtures, which is the single source of truth. They used to be committed
+  // under docs/sample-files/ and had drifted from the generator (a gl -> qbo rename applied on one
+  // side only), so a regenerated checkout produced files this test could not find.
+  const bankPath = resolve(REPO_ROOT, 'fixtures/sample-bank.xlsx');
+  const glPath = resolve(REPO_ROOT, 'fixtures/sample-gl.xlsx');
+  for (const required of [bankPath, glPath]) {
+    if (!existsSync(required)) {
+      throw new Error(
+        `Missing fixture ${required}. Run \`npm run fixtures:generate\` from the repo root first.`,
+      );
+    }
+  }
+  const bankFile = readFileSync(bankPath);
+  const glFile = readFileSync(glPath);
 
   const form = new FormData();
   form.append('bankFile', new Blob([bankFile]), 'sample-bank.xlsx');
-  form.append('glFile', new Blob([glFile]), 'sample-qbo.xlsx');
+  form.append('glFile', new Blob([glFile]), 'sample-gl.xlsx');
 
   const response = await fetch(`${baseUrl}/api/reconciliation/run`, {
     method: 'POST',

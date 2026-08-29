@@ -7,15 +7,15 @@ type CliOptions = {
   checkOnly: boolean;
 };
 
-const defaultOutputPath = 'docs/openapi.generated.json';
+const defaultOutputPath = 'generated/openapi.generated.json';
 
 const usage = [
-  'Usage: tsx scripts/generate-openapi-docs.ts [--out docs/openapi.generated.json] [--check]',
+  'Usage: tsx scripts/generate-openapi-docs.ts [--out generated/openapi.generated.json] [--check]',
   '',
   'Examples:',
   '  tsx scripts/generate-openapi-docs.ts',
   '  tsx scripts/generate-openapi-docs.ts --check',
-  '  tsx scripts/generate-openapi-docs.ts --out docs/openapi.generated.json',
+  '  tsx scripts/generate-openapi-docs.ts --out generated/openapi.generated.json',
 ].join('\n');
 
 type ParsedOutFlag = {

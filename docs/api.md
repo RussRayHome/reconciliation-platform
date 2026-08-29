@@ -82,10 +82,13 @@ Optional form fields:
 
 Example:
 
+Run `npm run fixtures:generate` first — the sample workbooks are generated on demand into
+`fixtures/` rather than committed.
+
 ```bash
 curl -X POST http://localhost:4000/api/reconciliation/run \
-  -F "bankFile=@./docs/sample-files/sample-bank.xlsx" \
-  -F "qboFile=@./docs/sample-files/sample-qbo.xlsx" \
+  -F "bankFile=@./fixtures/sample-bank.xlsx" \
+  -F "glFile=@./fixtures/sample-gl.xlsx" \
   -F "accountIdentifier=OPERATING-001" \
   -F "reconciliationFrequency=Monthly" \
   -F "periodLabel=2026-04"

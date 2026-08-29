@@ -163,7 +163,7 @@ export type CarryForwardDecision =
 
 /**
  * Whether carry-forward should apply to this run -- PR C.5 (see
- * docs/PR-D-Gating-Change-Document.pdf), gating PR D's carry-forward-into-matching mechanism.
+ * design/matching/engine/PR-D-Gating-Change-Document.pdf), gating PR D's carry-forward-into-matching mechanism.
  * Deliberately NOT read from `reconciliation_matching_config_version.variance_overrides`: that
  * column is `Partial<Record<keyof MatchingConfig, number>>`, every `MatchingConfig` field is
  * numeric, and the whole versioning stack isn't wired to the engine yet

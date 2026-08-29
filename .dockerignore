@@ -28,7 +28,7 @@ tests
 *.log
 .DS_Store
 **/.DS_Store
-docs/sample-files
+fixtures/*.xlsx
 infra
 .env.docker.*
 CLAUDE.md

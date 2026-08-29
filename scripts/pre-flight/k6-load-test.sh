@@ -148,7 +148,7 @@ set +e
 docker run --rm \
   --network "$api_network" \
   -v "$ROOT_DIR/scripts/perf:/scripts:ro" \
-  -v "$ROOT_DIR/docs/sample-files/multi-account-merge-test:/fixtures:ro" \
+  -v "$ROOT_DIR/fixtures/multi-account-merge-test:/fixtures:ro" \
   -v "$REPORT_DIR:/results:rw" \
   -e "K6_BASE_URL=http://${api_container_name}:4000" \
   -e "K6_PROMETHEUS_RW_SERVER_URL=$K6_PROMETHEUS_RW_URL" \

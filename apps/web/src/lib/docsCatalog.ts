@@ -1,5 +1,5 @@
 import apiDoc from '../../../../docs/api.md?raw';
-import apiReferenceGeneratedDoc from '../../../../docs/api-reference-generated.md?raw';
+import apiReferenceGeneratedDoc from '../../../../generated/api-reference-generated.md?raw';
 import architectureDoc from '../../../../docs/architecture.md?raw';
 import architectureDiagramSvgUrl from '../../../../docs/images/application-architecture.svg?url';
 import changelogDoc from '../../../../CHANGELOG.md?raw';
@@ -91,7 +91,7 @@ export const projectDocuments: ProjectDocument[] = [
     summary:
       'Generated class, method, and property documentation coverage and API reference for exported TypeScript classes.',
     audience: 'Engineers validating implementation-level API contracts',
-    pathLabel: 'docs/api-reference-generated.md',
+    pathLabel: 'generated/api-reference-generated.md',
     content: apiReferenceGeneratedDoc,
   },
   {

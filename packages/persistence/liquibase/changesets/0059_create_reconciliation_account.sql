@@ -45,7 +45,7 @@ SELECT gen_random_uuid(), organization_id, account_identifier
 GROUP BY organization_id, account_identifier
 ON CONFLICT (organization_id, account_identifier) DO NOTHING;
 
--- Known real accounts (see docs/matching-instrument-gating-and-aging-plan.md's fixture analysis
+-- Known real accounts (see design/matching/engine/matching-instrument-gating-and-aging-plan.md's fixture analysis
 -- and this plan's own §3.3): 1061/5703 are Truist, 5259/5042 are Huntington. Only updates a row
 -- that the backfill above actually created for that identifier in some organization -- this does
 -- not invent accounts that were never referenced.

@@ -1,7 +1,7 @@
 --liquibase formatted sql
 
 --changeset recon:0066-add_organization_carry_forward_settings splitStatements:false
--- Unreconciled Item Roll-Forward, PR C.5 (see docs/PR-D-Gating-Change-Document.pdf). Carry-forward
+-- Unreconciled Item Roll-Forward, PR C.5 (see design/matching/engine/PR-D-Gating-Change-Document.pdf). Carry-forward
 -- enablement is a rollout property, not a matching tolerance: it records whether an organization
 -- has been onboarded onto open-item roll-forward, not a threshold an analyst tunes. Deliberately
 -- NOT placed in reconciliation_matching_config_version.variance_overrides, for two reasons: (1)

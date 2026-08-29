@@ -1,6 +1,6 @@
 /**
  * Generates representative sample bank and GL reconciliation workbooks and writes them
- * to `docs/sample-files/`. Used to produce reference artifacts for documentation and
+ * to `fixtures/`. Used to produce reference artifacts for documentation and
  * manual testing. Invoked via `npm run fixtures:generate`.
  */
 import {
@@ -13,7 +13,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 
 import path from 'node:path';
 
-const outputDirectory = path.resolve('docs', 'sample-files');
+const outputDirectory = path.resolve('fixtures');
 
 const main = async (): Promise<void> => {
   await mkdir(outputDirectory, { recursive: true });

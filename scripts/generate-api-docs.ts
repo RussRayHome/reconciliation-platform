@@ -48,7 +48,7 @@ type MissingDocItem = {
   kind: 'class' | ClassMemberKind;
 };
 
-const defaultOutputPath = 'docs/api-reference-generated.md';
+const defaultOutputPath = 'generated/api-reference-generated.md';
 const sourceRoots = ['apps', 'packages', 'scripts'];
 const ignoredDirectories = new Set([
   '.git',
@@ -62,12 +62,12 @@ const ignoredDirectories = new Set([
 ]);
 
 const usage = [
-  'Usage: tsx scripts/generate-api-docs.ts [--out docs/api-reference-generated.md] [--check]',
+  'Usage: tsx scripts/generate-api-docs.ts [--out generated/api-reference-generated.md] [--check]',
   '',
   'Examples:',
   '  tsx scripts/generate-api-docs.ts',
   '  tsx scripts/generate-api-docs.ts --check',
-  '  tsx scripts/generate-api-docs.ts --out docs/api-reference-generated.md',
+  '  tsx scripts/generate-api-docs.ts --out generated/api-reference-generated.md',
 ].join('\n');
 
 const printUsageAndExit = (): never => {

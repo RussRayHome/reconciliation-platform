@@ -2,7 +2,7 @@ name: Dependabot License Manifest Autofix
 
 # Dependabot bumps package.json/package-lock.json but has no way to run our custom
 # licenses:generate script, so every Dependabot PR that touches a dependency fails
-# Docker Validate's security-scan job on a stale docs/dependency-licenses.generated.json.
+# Docker Validate's security-scan job on a stale generated/dependency-licenses.generated.json.
 # This regenerates and pushes the fix straight to the PR branch so the manifest is
 # already correct by the time Docker Validate runs (or re-runs).
 #
@@ -42,12 +42,12 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- docs/dependency-licenses.generated.json; then
+          if git diff --quiet -- generated/dependency-licenses.generated.json; then
             echo "License manifest already up to date."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/dependency-licenses.generated.json
+          git add generated/dependency-licenses.generated.json
           git commit -m "chore(deps): regenerate license manifest [autofix]"
           git push origin "HEAD:${HEAD_REF}"

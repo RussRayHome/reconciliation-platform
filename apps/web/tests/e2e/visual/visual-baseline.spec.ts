@@ -18,7 +18,7 @@ import {
 import reconciliationRunReportFixture from './fixtures/reconciliationRunReport.json' with { type: 'json' };
 
 // Visual acceptance oracle, originally recorded for the CSS layering refactor
-// (docs/css-refactor-plan.md, EXECUTED 2026-07-30, 15/15 zero-diff) -- that refactor's own
+// (design/_shared/css/css-refactor-plan.md, EXECUTED 2026-07-30, 15/15 zero-diff) -- that refactor's own
 // baselines already served their purpose and are done. The same discipline continues though:
 // baselines are only ever regenerated deliberately, via the canonical container
 // (docker/e2e-visual.Dockerfile, `npm run test:e2e:visual:container:update-snapshots`), reviewed

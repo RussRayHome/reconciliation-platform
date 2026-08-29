@@ -145,7 +145,10 @@ API still keeps a file-backed latest-run snapshot (`RECONCILIATION_RUN_STORE_PAT
 
 ## 7. API architecture notes
 
-- Express app sets `trust proxy` to support gateway forwarding.
+- Express app sets `trust proxy` to support gateway forwarding. **Currently `true`
+  (`app.ts:1725`), which makes `req.ip` attacker-controlled via `X-Forwarded-For` and
+  bypasses the API rate limiter; `express-rate-limit`'s warning for this is suppressed at
+  `app.ts:1297`. Tracked as action item 1 in ADR-0004.**
 - Correlation IDs are propagated in response headers.
 - Diagnostics middleware tracks failed requests and exceptions.
 - Developer endpoints are policy-gated by environment.
@@ -185,15 +188,44 @@ When changing these areas, expect these follow-up updates:
 
 - matching/classification logic -> update `docs/reconciliation-rules.md` and tests
 - endpoint contracts -> update `docs/api.md` and integration tests
-- persistence schema/stores -> update `docs/postgresql-persistence-architecture.md` and DB tests
+- persistence schema/stores -> update `design/persistence/postgresql-persistence-architecture.md` and DB tests
 - deployment behavior/scripts -> update `docs/local-docker-platform.md` and preflight checks
 - setup workflows -> update `docs/developer-setup.md`
 
-## 11. Related references
+## 11. Signup verification and abuse defence
+
+Self-registration is defended in four layers. See
+`design/adr/0004-signup-abuse-controls.md` for the decisions and
+`design/create-account/signup-abuse-defense-work-plan.md` for sizing.
+
+| Layer | Control | Runs | Establishes |
+| ----- | ------- | ---- | ----------- |
+| 1 | Cloudflare Turnstile | signup form + server-side `siteverify` | The client passed a browser-integrity check |
+| 2 | Email: normalize, disposable blocklist, role list, MX | in-process, `validation.ts` | The address is well-formed, not throwaway, and reachable |
+| 3 | Phone: E.164 parse, Twilio Lookup line type, Twilio Verify | `phoneVerificationService.ts`, last in the handler | Someone received a code at a number of a known line type |
+| 4 | Rate limiting (app) and edge rate limiting | `app.ts` limiter; AWS WAF or Cloudflare | Bounds attack rate and vendor spend |
+
+Ordering is a hard constraint, not a preference: free in-process checks (layers 1 and 2) run before
+any paid network call (layer 3), and layer 4 must bind before layer 3 is reachable — a paid lookup
+on an unauthenticated endpoint behind a bypassable limiter is a way for an attacker to spend our
+money.
+
+**Scope.** These layers raise the unit cost of an abusive account; they do not establish identity.
+NIST SP 800-63B forbids email as an out-of-band authenticator and classifies SMS as RESTRICTED, so
+neither channel is identity proofing at any assurance level. The control that bounds damage from an
+account that passes every layer is consumption metering (ADR-0004 DECIDE 3), not the layers above.
+
+Entity verification (`EntityVerificationProvider`) is retained as optional enrichment only and is
+being removed from `isFullyVerified`; Secretary of State filing numbers are public records and
+stop no one.
+
+## 12. Related references
 
 - `docs/api.md`
 - `docs/reconciliation-rules.md`
-- `docs/postgresql-persistence-architecture.md`
+- `design/persistence/postgresql-persistence-architecture.md`
 - `docs/local-docker-platform.md`
 - `docs/test-strategy.md`
 - `docs/class-method-reference.md`
+- `design/adr/0004-signup-abuse-controls.md`
+- `design/create-account/signup-abuse-defense-work-plan.md`
