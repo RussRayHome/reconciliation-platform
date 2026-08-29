@@ -554,6 +554,16 @@ jobs:
           cache: 'npm'
       - run: npm ci
 
+      - name: Neutralise this checkout's local git hooks
+        # `npm ci` above runs the root "prepare" script, which sets core.hooksPath=.githooks, so
+        # the `git push origin status-data` further down would fire .githooks/pre-push ->
+        # `npm run verify:push` -- the full local CI mirror, including the Docker-stack
+        # deploy-cleanup test (Issue #180). That hook guards a human's push; a status-data publish
+        # gains nothing from it and pays ~6 minutes for it on every run, per attempt of the retry
+        # loop. Confirmed as the cause of a 16-minute hang on regenerate-visual-baselines.yml
+        # (run 33273647800), which has the same npm-ci-then-push shape.
+        run: git config --unset-all core.hooksPath || true
+
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:

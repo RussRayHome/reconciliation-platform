@@ -35,6 +35,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Neutralise this checkout's local git hooks
+        # `npm ci` above runs the root "prepare" script, which sets core.hooksPath=.githooks, so
+        # the `git push` below would fire .githooks/pre-push -> `npm run verify:push` -- the full
+        # local CI mirror, including the Docker-stack deploy-cleanup test (Issue #180). That hook
+        # guards a human's push; here it is pure duplicated work that can only block or hang the
+        # autofix. Confirmed as the cause of a 16-minute hang on regenerate-visual-baselines.yml
+        # (run 33273647800), which has the same npm-ci-then-push shape.
+        run: git config --unset-all core.hooksPath || true
+
       - run: npm run licenses:generate
 
       - name: Commit and push if the manifest changed

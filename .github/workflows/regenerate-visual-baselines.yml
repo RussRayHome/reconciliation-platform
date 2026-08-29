@@ -13,10 +13,11 @@ jobs:
   regenerate:
     runs-on: ubuntu-latest
     # 20 was inherited from docker-validate.yml's e2e-visual job, but that job only *compares*
-    # snapshots and is short-circuited by visual-path-check. Regeneration starts the whole
-    # compose stack and re-renders every baseline, which overran 20 minutes on run
-    # 33271984066 (npm ci took 44s; the render itself ran ~19 minutes and was still going).
-    # Manually dispatched and rare, so a generous ceiling costs nothing.
+    # snapshots and is short-circuited by visual-path-check. Regeneration starts the whole compose
+    # stack and re-renders every baseline, which took 5m37s on run 33273647800 -- the 20-minute
+    # overrun on run 33271984066 was never the render; it was the pre-push hook this job used to
+    # inherit from `npm ci` (see the "Neutralise this checkout's local git hooks" step below).
+    # Manually dispatched and rare, so a generous ceiling still costs nothing.
     timeout-minutes: 45
     # GITHUB_TOKEN defaults to read-only in this org (confirmed on dashboard-status.yml's
     # `aggregate` job -- see its comment) -- without this, the push step below fails with
@@ -57,6 +58,18 @@ jobs:
         # the container image, there's no ABI mismatch to protect against the way there is on a
         # macOS dev machine.
         run: npm ci
+
+      - name: Neutralise this checkout's local git hooks
+        # `npm ci` above runs the root "prepare" script, which sets core.hooksPath=.githooks.
+        # That makes this job's own `git push` below fire .githooks/pre-push, whose entire body is
+        # `npm run verify:push` -- typecheck, lint, the docs/licence drift checks, and the full
+        # unit + integration suite including the Docker-stack deploy-cleanup test (Issue #180).
+        # Six minutes when it passes (measured on run 32842343171, which paid it silently); on run
+        # 33273647800 it was still running 16 minutes in, and the retry loop below re-runs it once
+        # per attempt, so a failing hook cannot fit inside any timeout. The hook exists to stop a
+        # human pushing unverified work -- this push's whole purpose is to trigger exactly those
+        # checks on the PR, so running them here is duplicated work that can only ever block.
+        run: git config --unset-all core.hooksPath || true
 
       - name: Regenerate baselines inside the P4 container
         run: npm run test:e2e:visual:container:update-snapshots
