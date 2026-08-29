@@ -80,7 +80,7 @@ npm run fixtures:generate
 
 Outputs:
 
-- Writes `sample-bank.xlsx` and `sample-qbo.xlsx` into `docs/sample-files/`.
+- Writes `sample-bank.xlsx`, `sample-gl.xlsx` and the all-exceptions pair into `fixtures/` (git-ignored).
 
 When to use it:
 
@@ -95,7 +95,7 @@ Notes:
 
 Purpose:
 
-- Generates `docs/api-reference-generated.md` from exported TypeScript classes.
+- Generates `generated/api-reference-generated.md` from exported TypeScript classes.
 - Enforces documentation coverage for exported classes, constructors, methods, and non-private properties.
 
 How to run:
@@ -367,7 +367,7 @@ Quick example with repo sample files:
 
 ```bash
 npm run fixtures:generate
-npm run analyze:reconciliation -- --account 5703 --bank ./docs/sample-files/sample-bank.xlsx --qbo ./docs/sample-files/sample-qbo.xlsx
+npm run analyze:reconciliation -- --account 5703 --bank ./fixtures/sample-bank.xlsx --qbo ./fixtures/sample-gl.xlsx
 ```
 
 Key options:
@@ -485,7 +485,7 @@ Use status:
 - Compatibility wrapper around the shared second-pass comparison logic.
 - Still tailored to the known Error Report layouts.
 
-### `docs/archive/second-pass-report.txt`
+### `design/exceptions/second-pass-report.txt`
 
 Purpose:
 

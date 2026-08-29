@@ -12,7 +12,7 @@
 // Direct:
 //   docker run --rm --network reconciliation-platform-stage_app \
 //     -v "$(pwd)/scripts/perf:/scripts:ro" \
-//     -v "$(pwd)/docs/sample-files/multi-account-merge-test:/fixtures:ro" \
+//     -v "$(pwd)/fixtures/multi-account-merge-test:/fixtures:ro" \
 //     -e K6_BASE_URL=http://reconciliation-platform-stage-api-1:4000 \
 //     -e K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write \
 //     grafana/k6:2.2.0 run --out experimental-prometheus-rw /scripts/k6-golden-path.js

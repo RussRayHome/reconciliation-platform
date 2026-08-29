@@ -1,7 +1,7 @@
 # ISSUE-021: JWT revocation strategy undecided
 
 **Status:** Open · **Severity:** Carried over · **Area:** Auth / Design
-**Location:** `docs/adr/0002-authentication-and-authorization.md` — DECIDE 1
+**Location:** `design/adr/0002-authentication-and-authorization.md` — DECIDE 1
 **Source:** 2026-08-03
 
 ## Problem

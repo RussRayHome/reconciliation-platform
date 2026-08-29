@@ -90,7 +90,7 @@ Generated sample files for testing:
 npm run fixtures:generate
 ```
 
-Samples are written to `docs/sample-files/`.
+Samples are written to `fixtures/` (git-ignored).
 
 ## 5. Quality gate workflow
 
@@ -341,7 +341,7 @@ Before merge:
 2. Run Docker preflight and predeploy checks for deployment-facing changes.
 3. Ensure required branch protection checks pass.
 
-See `docs/branch-protection.md` for recommended required checks.
+See `design/github_design/branch-protection.md` for recommended required checks.
 
 ## 11. Complete root script catalog
 
@@ -429,7 +429,7 @@ Source of truth: `package.json` scripts at the repository root.
 ### Governance and data tooling
 
 - `github:protect-main`: applies required GitHub branch-protection checks to `main`.
-- `fixtures:generate`: generates sample reconciliation fixture workbooks under `docs/sample-files/`.
+- `fixtures:generate`: generates sample reconciliation fixture workbooks under `fixtures/` (git-ignored).
 - `analyze:reconciliation`: runs reconciliation sensitivity analysis across amount/date/similarity windows.
 - `compare:workbooks`: runs workbook comparison CLI (`parity`, `row`, `second-pass`) for reconciliation outputs.
 
@@ -439,5 +439,5 @@ Source of truth: `package.json` scripts at the repository root.
 - `docs/api.md`
 - `docs/reconciliation-rules.md`
 - `docs/local-docker-platform.md`
-- `docs/postgresql-persistence-architecture.md`
+- `design/persistence/postgresql-persistence-architecture.md`
 - `docs/test-strategy.md`

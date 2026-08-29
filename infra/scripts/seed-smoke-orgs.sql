@@ -6,7 +6,7 @@
 -- (reconciliation_organization / reconciliation_user) -- nothing a real customer would ever see.
 --
 -- Why this exists: there is no self-service signup today (see create-users.psql's own header,
--- and docs/adr/... for the still-open product decisions around real org onboarding). infra's
+-- and design/adr/... for the still-open product decisions around real org onboarding). infra's
 -- post-deploy smoke test (scripts/smoke-test.ts) needs two organizations to prove row-level
 -- security actually isolates them under the live deployment's real app_user credentials -- this
 -- is the narrow, production-safe seed that makes that check possible without waiting on a full

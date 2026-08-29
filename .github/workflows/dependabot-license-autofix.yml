@@ -2,7 +2,7 @@ name: Dependabot License Manifest Autofix
 
 # Dependabot bumps package.json/package-lock.json but has no way to run our custom
 # licenses:generate script, so every Dependabot PR that touches a dependency fails
-# Docker Validate's security-scan job on a stale docs/dependency-licenses.generated.json.
+# Docker Validate's security-scan job on a stale generated/dependency-licenses.generated.json.
 # This regenerates and pushes the fix straight to the PR branch so the manifest is
 # already correct by the time Docker Validate runs (or re-runs).
 #
@@ -35,6 +35,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Neutralise this checkout's local git hooks
+        # `npm ci` above runs the root "prepare" script, which sets core.hooksPath=.githooks, so
+        # the `git push` below would fire .githooks/pre-push -> `npm run verify:push` -- the full
+        # local CI mirror, including the Docker-stack deploy-cleanup test (Issue #180). That hook
+        # guards a human's push; here it is pure duplicated work that can only block or hang the
+        # autofix. Confirmed as the cause of a 16-minute hang on regenerate-visual-baselines.yml
+        # (run 33273647800), which has the same npm-ci-then-push shape.
+        run: git config --unset-all core.hooksPath || true
+
       - run: npm run licenses:generate
 
       - name: Commit and push if the manifest changed
@@ -42,12 +51,12 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- docs/dependency-licenses.generated.json; then
+          if git diff --quiet -- generated/dependency-licenses.generated.json; then
             echo "License manifest already up to date."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/dependency-licenses.generated.json
+          git add generated/dependency-licenses.generated.json
           git commit -m "chore(deps): regenerate license manifest [autofix]"
           git push origin "HEAD:${HEAD_REF}"

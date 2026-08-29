@@ -1,7 +1,7 @@
 # ISSUE-020: Recheck database CVE exceptions — due 2026-11-01
 
 **Status:** Open · **Severity:** Carried over · **Area:** Security / Dependencies
-**Location:** `docs/security-exceptions.md`
+**Location:** `design/security/security-exceptions.md`
 **Source:** Assessed 2026-08-03, 90-day window
 
 ## Problem

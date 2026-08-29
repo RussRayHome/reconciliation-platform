@@ -42,7 +42,7 @@ Primary docs:
 - `docs/architecture.md`
 - `docs/local-docker-platform.md`
 - `docs/test-strategy.md`
-- `docs/postgresql-persistence-architecture.md`
+- `design/persistence/postgresql-persistence-architecture.md`
 
 ## Monorepo layout
 
@@ -200,9 +200,9 @@ Important flags:
 - `docs/developer-setup.md`: setup, workflows, troubleshooting, and validation.
 - `docs/architecture.md`: system flow, module boundaries, and data movement.
 - `docs/local-docker-platform.md`: container topology and preflight runbooks.
-- `docs/postgresql-persistence-architecture.md`: durable lifecycle model.
+- `design/persistence/postgresql-persistence-architecture.md`: durable lifecycle model.
 - `docs/test-strategy.md`: unit/integration/e2e and quality-gate strategy.
-- `docs/branch-protection.md`: recommended required checks.
+- `design/github_design/branch-protection.md`: recommended required checks.
 - `docs/class-method-reference.md`: method-level behavioral reference.
 
 ## Release and change tracking

@@ -2,9 +2,9 @@
 # node_modules/ need no entry here. This file is only for artifacts that ARE committed but are
 # produced by a generator — formatting them makes the committed copy diverge from what the
 # generator emits, and `npm run docs:api:check` / `docs:openapi:check` then fail in CI.
-docs/api-reference-generated.md
-docs/openapi.generated.json
-docs/dependency-licenses.generated.json
+generated/api-reference-generated.md
+generated/openapi.generated.json
+generated/dependency-licenses.generated.json
 
 # Playwright visual baselines
 apps/web/tests/e2e/**/*-snapshots/

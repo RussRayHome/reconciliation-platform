@@ -42,7 +42,7 @@ durable.
 
 ## The `app_user` credential — why the API doesn't connect as `recon_app`
 
-Postgres row-level security (`docs/adr/0001-multi-tenant-isolation-model.md`) is what keeps one
+Postgres row-level security (`design/adr/0001-multi-tenant-isolation-model.md`) is what keeps one
 organization's data away from another's, and it's enforced against the `app_user` role, not the
 superuser `recon_app` migration/owner role (`recon_app` bypasses RLS entirely). Docker/local
 already gets this right (`compose.yaml`'s `API_DATABASE_URL` fails loudly if not pointed at

@@ -1,7 +1,7 @@
 # ISSUE-016: `docs:openapi:check` fails — generated OpenAPI doc is out of date
 
 **Status:** Open · **Severity:** Carried over · **Area:** CI / Docs
-**Location:** `docs/openapi.generated.json`
+**Location:** `generated/openapi.generated.json`
 **Source:** 2026-08-03. **Confirmed pre-existing** — reproduced by stashing all local changes.
 
 ## Problem

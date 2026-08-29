@@ -1,4 +1,5 @@
 import { expect, expectedPathname, test } from '../fixtures';
+import { routePaths } from '../../../src/routes/routePaths';
 
 // ─── Login screen outbound links ────────────────────────────────────────────
 // Never click-tested before (ISSUE-033): each of these resolves the login screen's only
@@ -145,6 +146,15 @@ test.describe('successful signup', () => {
     // separately per-feature (e.g. Create Mapping) by isFullyVerified.
     await page.getByRole('button', { name: 'Skip and enter the app' }).click();
     await expect(page.getByRole('link', { name: 'Bank Statements' })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe(expectedPathname('/'));
+
+    // Lands on Review, not on Import Files. SignupScreen.tsx defaults the role select to
+    // 'financial-analyst', which resolveRoleLandingTab() maps to the 'review' tab, so App.tsx's
+    // applyInitialLanding() replaces '/' with /recon-summary for a brand-new (run-less) account.
+    // Polled rather than read once: that redirect fires from the GET-latest-run response handler,
+    // so a single synchronous read of page.url() races the fetch -- it sampled '/' before the
+    // response landed until a faster runner started losing that race (PR #257 CI).
+    await expect
+      .poll(() => new URL(page.url()).pathname)
+      .toBe(expectedPathname(routePaths.reconSummary));
   });
 });
