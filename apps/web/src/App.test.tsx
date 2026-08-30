@@ -2022,6 +2022,84 @@ describe('App', () => {
     }
   });
 
+  // Issue #268: the direct companion to the test above, which only ever transitions a queued run
+  // to a *failure*. A failure needs no report, so that test never exercised the one terminal phase
+  // that does need one -- 'succeeded' -- and the missing report fetch shipped undetected.
+  //
+  // Asserts 'Reconciliation complete' (the `currentStepLabel`, reachable only once `reportRun` is
+  // genuinely populated) rather than the RunBar's 'Complete' pill. The pill is derived from the
+  // durable phase alone, so it reads 'Complete' even with the bug present -- asserting on it would
+  // pass against the broken build. Only the step label separates "the server says it finished"
+  // from "we actually hold the report".
+  it('fetches the report when a queued run reaches the succeeded phase, without a reload', async () => {
+    vi.useFakeTimers();
+    try {
+      const runResponse = createRunResponse();
+      installFakeImportRunXhr();
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = requestUrl(input);
+        if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ importJobId: 'import-job-1', status: 'queued' }), {
+              status: 202,
+            }),
+          );
+        }
+        throw new Error(`unexpected fetch call to ${url}`);
+      });
+
+      setAuthenticatedUser('rray');
+      renderApp();
+
+      fillUploadInputs();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
+
+      mockedApiState.latestImportRunResponse = createImportRunSummary({
+        validationJob: {
+          id: 'validation-job-1',
+          status: 'QUEUED',
+          errorSummary: null,
+          queuedAt: '2026-08-21T00:00:00.000Z',
+          finishedAt: null,
+        },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getAllByText('Queued').length).toBeGreaterThan(0);
+
+      // The backend finished between ticks -- exactly the live Dev shape that exposed this: the
+      // run is RECONCILED with its matching job linked, and the report is resolvable by that id.
+      mockedApiState.latestImportRunResponse = createImportRunSummary({
+        status: 'RECONCILED',
+        matchingJobId: runResponse.id,
+        validationJob: {
+          id: 'validation-job-1',
+          status: 'SUCCEEDED',
+          errorSummary: null,
+          queuedAt: '2026-08-21T00:00:00.000Z',
+          finishedAt: '2026-08-21T00:00:03.000Z',
+        },
+      });
+      mockedApiState.matchingRunReportResponse = runResponse;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      // A second flush: the poll tick above only updates the durable phase. The report fetch is a
+      // separate async effect that can't even be scheduled until that state change has rendered.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getAllByText('Reconciliation complete').length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // R2 V2: the run step can now terminate -- these five cover the acceptance criteria directly.
   // All mount the durable phase straight from `mockedApiState.latestImportRunResponse` (no live
   // submission needed) since the step-chip status is derived from the same phase either way.
