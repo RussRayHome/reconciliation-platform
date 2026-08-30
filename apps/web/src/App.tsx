@@ -867,6 +867,68 @@ function ReconciliationApp({
       globalThis.clearInterval(intervalId);
     };
   }, [durableRunPhase.kind]);
+
+  // Issue #268: the queued (async) path's missing final step. `useImportRunSubmit` resolves as
+  // `{kind:'queued'}` the moment `/submit` returns 202 and deliberately never fetches a report,
+  // and the poll effect above only refreshes `latestImportRun` before clearing its own interval
+  // once the phase turns terminal. That left `succeeded` as the one terminal phase nothing ever
+  // acted on: the report fetch lived solely in the mount-once hydration effect below, which for a
+  // run submitted *during* this session already ran (against an org that had no run yet) and
+  // never runs again. The result was a finished run still rendering `currentProgressStep`'s
+  // in-progress label -- while `resolveRunStatusTone` read the same durable phase as 'complete'
+  // -- until the user manually reloaded.
+  //
+  // Keyed on the matching job id, not a boolean: that dedupes repeat renders and concurrent
+  // ticks for the same run while still letting a genuinely different run (a resubmit in the same
+  // session) fetch its own report.
+  const fetchedReportMatchingJobIdRef = useRef<string | null>(null);
+  const succeededMatchingJobId =
+    durableRunPhase.kind === 'succeeded' ? durableRunPhase.matchingJobId : null;
+  const hasReportRun = Boolean(reportRun);
+  useEffect(() => {
+    if (!succeededMatchingJobId || hasReportRun) {
+      return undefined;
+    }
+
+    if (fetchedReportMatchingJobIdRef.current === succeededMatchingJobId) {
+      return undefined;
+    }
+    fetchedReportMatchingJobIdRef.current = succeededMatchingJobId;
+
+    let cancelled = false;
+
+    void getReconciliationRunByIdRequest(succeededMatchingJobId)
+      .then((report) => {
+        // Same precedence the mount hydration applies: a live mutation's own result is always
+        // fresher than this background fetch, whichever of the two settles second.
+        if (cancelled || runRef.current) {
+          return;
+        }
+
+        setPersistedRun(report);
+        persistRun(report);
+        setLatestBackendReportError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+
+        // Release the dedupe key so a transient network failure can't permanently suppress the
+        // report -- the RunBar's own `onRefreshDurableRun` re-reports the same phase, which is
+        // what gives the user a way to retry without reloading.
+        fetchedReportMatchingJobIdRef.current = null;
+        setLatestBackendReportError(
+          error instanceof Error
+            ? error.message
+            : 'Unable to load the completed reconciliation run.',
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [succeededMatchingJobId, hasReportRun]);
   // Issue #154 (live status push, Pub/Sub not polling): the last statusMessage received over the
   // run's live NDJSON stream, replacing the generic progress-step label with real step-by-step
   // text while a run is actually in flight. Reset (not just left stale) whenever the phase leaves
