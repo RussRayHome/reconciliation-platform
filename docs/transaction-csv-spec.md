@@ -109,3 +109,30 @@ any new schema:
 Neither format carries a `Serial Number` column, so `serialNumber`-dependent matching stays
 under-served — a follow-up product question (what source document would even carry one), not part
 of this schema.
+
+### The subledger schemas are not documented here yet
+
+A third header set ships in code but has no section above: `BILLING_HEADERS`
+(`fileValidation/types.ts:36-49`, twelve columns) plus fourteen `AP_*` validation rules seeded by
+changeset 0071. It is deliberately unreachable today —
+`apps/api/src/services/importValidationService.ts:104-115` refuses any source type other than
+BANK or GL — so documenting it as a live schema would overstate what the platform accepts.
+
+Two decisions govern what lands here, and both are recorded outside this repository in
+`design/adr/`:
+
+- **Names — decided.** ADR-0007 names the AP subledger source type `VENDOR_BILL`; ADR-0014 names
+  the AR side `CUSTOMER_INVOICE`, establishing the convention `<COUNTERPARTY>_<DOCUMENT>`.
+  `BILLING` is retired rather than repurposed — it has already been read in opposite directions by
+  two documents in this project. Both renames land in one changeset; no state exists in which
+  `BILLING` and `VENDOR_BILL` are simultaneously valid.
+- **Columns — open.** ADR-0008 is Blocked pending a decision on GL account identity. The shipped
+  `BILLING_HEADERS` carries a `GL Account` column; the proposed `VENDOR_BILL` column set does not,
+  while the GL schema in §3 carries no account column on either side. Until that resolves, the
+  control-account tie-out is not derivable from the shipped file contract.
+
+When the AP schema lands (senior-plan task A4), it becomes a §-level section here on the same terms
+as §2 and §3 — the template is the single source of truth, and
+`apps/web/public/templates/` gains a matching downloadable file. The generator's contract binding
+in `recon-test-data/src/emit/generated/contract.ts` must change in the same commit: the two
+repositories are contract-bound, and a one-sided column change drifts silently.
