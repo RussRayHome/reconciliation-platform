@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-27T18:22:31.547Z",
+  "generatedAt": "2026-08-31T13:18:36.641Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
   "packageCount": 523,
   "packages": [
@@ -472,11 +472,11 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser-utils@10.70.0",
+      "package": "@sentry/browser-utils@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser@10.70.0",
+      "package": "@sentry/browser@10.71.0",
       "license": "MIT"
     },
     {
@@ -484,39 +484,39 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/core@10.70.0",
+      "package": "@sentry/core@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/feedback@10.70.0",
+      "package": "@sentry/feedback@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/node-core@10.70.0",
+      "package": "@sentry/node-core@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/node@10.70.0",
+      "package": "@sentry/node@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/opentelemetry@10.70.0",
+      "package": "@sentry/opentelemetry@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/react@10.70.0",
+      "package": "@sentry/react@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay-canvas@10.70.0",
+      "package": "@sentry/replay-canvas@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay@10.70.0",
+      "package": "@sentry/replay@10.71.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/server-utils@10.70.0",
+      "package": "@sentry/server-utils@10.71.0",
       "license": "MIT"
     },
     {
@@ -528,23 +528,23 @@
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-core@5.101.4",
+      "package": "@tanstack/query-core@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-persist-client-core@5.101.4",
+      "package": "@tanstack/query-persist-client-core@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-sync-storage-persister@5.101.4",
+      "package": "@tanstack/query-sync-storage-persister@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-query-persist-client@5.101.4",
+      "package": "@tanstack/react-query-persist-client@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-query@5.101.4",
+      "package": "@tanstack/react-query@5.102.8",
       "license": "MIT"
     },
     {
@@ -636,7 +636,7 @@
       "license": "MIT"
     },
     {
-      "package": "@types/node@26.2.0",
+      "package": "@types/node@26.4.0",
       "license": "MIT"
     },
     {
@@ -652,7 +652,7 @@
       "license": "MIT"
     },
     {
-      "package": "@types/react-dom@19.2.4",
+      "package": "@types/react-dom@19.2.5",
       "license": "MIT"
     },
     {
@@ -668,11 +668,11 @@
       "license": "MIT"
     },
     {
-      "package": "@xyflow/react@12.11.3",
+      "package": "@xyflow/react@12.11.5",
       "license": "MIT"
     },
     {
-      "package": "@xyflow/system@0.0.80",
+      "package": "@xyflow/system@0.0.81",
       "license": "MIT"
     },
     {
@@ -728,7 +728,7 @@
       "license": "MIT"
     },
     {
-      "package": "aws-cdk-lib@2.266.0",
+      "package": "aws-cdk-lib@2.267.0",
       "license": "Apache-2.0"
     },
     {
@@ -800,7 +800,7 @@
       "license": "UNKNOWN"
     },
     {
-      "package": "bullmq@6.2.0",
+      "package": "bullmq@6.3.1",
       "license": "MIT"
     },
     {
