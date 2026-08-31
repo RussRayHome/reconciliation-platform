@@ -62,9 +62,26 @@ The file needs ~54s for its 120 tests even running alone, so individual tests si
 5000ms default. Vitest's file-level parallelism is enough to push this one over; serial execution
 is not. Machine load makes it worse (3 failures vs 1) but is not the cause.
 
-**Not yet fixed.** The proportionate remedies are a raised `testTimeout` scoped to `unit-web` (or to
-this file), or reduced file parallelism for that project. Deferred deliberately so the baseline
-records the tree as it actually is.
+### Resolved — `testTimeout: 10000` on `unit-web`
+
+Fixed in this branch: `vitest.config.ts` now sets `testTimeout: 10000` for the `unit-web` project,
+which previously declared none and inherited vitest's 5000ms default. Doubling the budget absorbs
+parallel contention without masking a genuine hang; `unit-data` already carries a per-project
+timeout (180000) for the same class of reason.
+
+Re-run after the change, same host, same full parallel suite:
+
+| Step | Exit | Files | Tests | Pass | Fail |
+|---|---|---|---|---|---|
+| `npm run test:unit` | **0** | 91 | 1297 | **1297** | **0** |
+
+The table under *Results* is left as recorded — it is the "before", and the point of a baseline is
+that it does not get edited to match what happened next.
+
+A suite-wide `--maxWorkers=1` lane was considered and **rejected**: `coverage` passing 2051/2051
+under `--no-file-parallelism` while `test:unit` failed one test is evidence of a single marginal
+test, not a suite-wide contention problem. Scoping the remedy to the timeout keeps the parallelism
+that makes the suite fast.
 
 ## Scoping — the totals are not comparable across scripts
 
