@@ -63,10 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -76,7 +76,7 @@ jobs:
           npm run test:unit -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/unit/unit-results.json
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: unit
@@ -87,10 +87,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -100,7 +100,7 @@ jobs:
           npm run test:integration:dashboard -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/integration/integration-results.json
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: integration
@@ -111,10 +111,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -123,7 +123,7 @@ jobs:
           npx tsx scripts/ci/run-check.ts --name "Postgres DB tests" --meta .ci-out/postgres/meta.json --
           npm run test:postgres -- --reporter=json --outputFile.json=.ci-out/postgres/postgres-results.json
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: postgres
@@ -134,10 +134,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -147,7 +147,7 @@ jobs:
         if: always()
         run: npm run lint -- --format json --output-file .ci-out/lint/lint-results.json || true
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: lint
@@ -158,17 +158,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - run: npm ci
       - run: npx tsx scripts/ci/run-check.ts --name "Static analysis (typecheck)" --meta .ci-out/typecheck/meta.json -- npm run typecheck
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: typecheck
@@ -179,10 +179,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -191,7 +191,7 @@ jobs:
       - if: always()
         run: mkdir -p .ci-out/coverage && cp coverage/coverage-summary.json .ci-out/coverage/coverage-summary.json || true
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: coverage
@@ -202,10 +202,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -220,7 +220,7 @@ jobs:
       # the matching aggregate-dashboard-status.ts comment, which must be reverted at the same time.
       - run: npx tsx scripts/ci/run-check.ts --name "Complexity" --meta .ci-out/complexity/meta.json -- npm run analyze:complexity:json || true
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: complexity
@@ -231,10 +231,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -249,7 +249,7 @@ jobs:
       # status.ts comment, which must be reverted at the same time.
       - run: npx tsx scripts/ci/run-check.ts --name "Dependencies" --meta .ci-out/dependencies/meta.json -- npm run analyze:deps:json || true
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: dependencies
@@ -260,10 +260,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -296,7 +296,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/security/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: security
@@ -308,7 +308,7 @@ jobs:
         # had no answer for.
         run: npm run security:sbom --silent
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: sbom
@@ -319,11 +319,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
           fetch-depth: 0 # gitleaks/trufflehog scan full git history, not just the checked-out tree
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -366,7 +366,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/secrets/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: secrets
@@ -416,10 +416,10 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -489,7 +489,7 @@ jobs:
           DATABASE_URL: postgresql://app_user:P%40ssw0rd@postgres:5432/reconciliation_platform
           DISABLE_API_RATE_LIMIT: 'true'
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-functional-${{ matrix.shard }}
@@ -503,10 +503,10 @@ jobs:
     # sharding across multiple runners would just mean N cold container builds instead of one.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -543,7 +543,7 @@ jobs:
           # doesn't declare this itself, so it must be passed through from the invoking shell here.
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e-visual/e2e-results.json
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-visual
@@ -571,11 +571,11 @@ jobs:
       contents: write
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event_name == 'push' && github.sha || env.TARGET_BRANCH }}
           fetch-depth: 0 # full history -- commitsThisWeek/branch-compare/tag lookups need it
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -591,77 +591,77 @@ jobs:
         # (run 33273647800), which has the same npm-ci-then-push shape.
         run: git config --unset-all core.hooksPath || true
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: unit
           path: .ci-artifacts/unit
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: integration
           path: .ci-artifacts/integration
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: postgres
           path: .ci-artifacts/postgres
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: lint
           path: .ci-artifacts/lint
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: typecheck
           path: .ci-artifacts/typecheck
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: coverage
           path: .ci-artifacts/coverage
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: complexity
           path: .ci-artifacts/complexity
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: dependencies
           path: .ci-artifacts/dependencies
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: security
           path: .ci-artifacts/security
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: secrets
           path: .ci-artifacts/secrets
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: e2e-functional-1
           path: .ci-artifacts/e2e-functional-1
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: e2e-functional-2
           path: .ci-artifacts/e2e-functional-2
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: e2e-functional-3
           path: .ci-artifacts/e2e-functional-3
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: e2e-functional-4
           path: .ci-artifacts/e2e-functional-4
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         continue-on-error: true
         with:
           name: e2e-visual
@@ -689,7 +689,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: dashboard-status-${{ env.TARGET_BRANCH }}
           path: dashboard-status/${{ env.TARGET_BRANCH }}.json
