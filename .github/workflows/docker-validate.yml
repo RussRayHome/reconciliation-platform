@@ -449,9 +449,17 @@ jobs:
         run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml build
 
       - name: Scan container images for vulnerabilities
+        env:
+          TRIVY_VERSION: '0.73.0'
         run: |
           set -euo pipefail
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          # Pinned release tarball, not `curl main/install.sh | sudo sh`. Piping an unpinned script
+          # from a moving branch into a root shell lets an upstream change alter what this security
+          # gate detects, with no diff and no review. Same shape as the gitleaks install below.
+          # 0.73.0 matches the aquasec/trivy pin in apps/api/Dockerfile -- bump both together.
+          curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -o /tmp/trivy.tar.gz
+          sudo tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
+          rm /tmp/trivy.tar.gz
           trivy --version
           project="${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}"
           # "data" is compose.yaml's internal network, not a buildable service -- there is no
