@@ -1,0 +1,52 @@
+# Config for GitHub's built-in "Generate release notes" (Releases UI, or
+# POST /repos/{owner}/{repo}/releases/generate-notes).
+#
+# This is a PLATFORM feature, not a workflow: GitHub renders the notes on its own
+# infrastructure, so it spawns no runner and bills no Actions minutes. Deliberately not
+# release-drafter / semantic-release / conventional-changelog, which do the same job inside a
+# workflow and would burn minutes on every release.
+#
+# GitHub reads this file from the DEFAULT branch (dev), so edits take effect once merged --
+# not while they sit on a feature branch.
+#
+# Categorisation is by PULL REQUEST label, not issue label, and a PR lands in the FIRST
+# category whose label list it matches, so the order below is significant.
+changelog:
+  exclude:
+    labels:
+      - kind:deps
+    authors:
+      # kind:deps alone is not enough for the backlog: `dependabot.yml` referenced a
+      # `dependencies` label that never existed on this repo, and Dependabot silently drops
+      # unknown labels, so all 25 Dependabot PRs opened before 2026-09-01 carry no kind:deps
+      # (most carry no labels at all). Excluding the authors catches those too.
+      - dependabot[bot]
+      - github-actions[bot]
+  categories:
+    - title: Security
+      labels:
+        - kind:security
+    - title: Bug Fixes
+      labels:
+        - kind:bug
+    - title: Features
+      labels:
+        - kind:feature
+    - title: Performance
+      labels:
+        - kind:perf
+    - title: Accessibility
+      labels:
+        - kind:a11y
+    - title: Documentation
+      labels:
+        - kind:docs
+    - title: Tests & CI
+      labels:
+        - kind:test
+    - title: Maintenance
+      labels:
+        - kind:chore
+    - title: Other Changes
+      labels:
+        - '*'
