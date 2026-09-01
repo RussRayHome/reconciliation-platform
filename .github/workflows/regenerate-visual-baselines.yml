@@ -167,6 +167,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 14  # a human downloads this to apply the baselines
           name: regenerated-visual-baselines
           path: apps/web/tests/e2e/visual/visual-baseline.spec.ts-snapshots
           if-no-files-found: ignore

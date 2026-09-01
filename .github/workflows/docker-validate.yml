@@ -215,6 +215,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-functional-${{ matrix.shard }}-failure
           path: test-results/e2e
           if-no-files-found: ignore
@@ -353,6 +354,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-visual-diff
           path: test-results/e2e
           if-no-files-found: ignore
