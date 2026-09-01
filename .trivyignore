@@ -55,13 +55,6 @@ CVE-2026-54512 exp:2026-11-01
 CVE-2026-54513 exp:2026-11-01
 GHSA-r7wm-3cxj-wff9 exp:2026-11-01
 
-# mssql-jdbc, bundled by Liquibase for SQL Server support -- this project only ever runs
-# migrations against Postgres, never SQL Server. Confirmed unused 2026-08-09. Deleting the jar
-# from the image (matching the approach already used for apps/api/Dockerfile's runtime stage) is
-# the better fix and removes this finding rather than suppressing it -- tracked as a fast
-# follow-up; allowlisted here in the meantime since the underlying code path is never executed.
-CVE-2025-59250 exp:2026-09-01
-
 # org.postgresql:postgresql, Liquibase's bundled JDBC driver -- genuinely used (this project
 # only targets Postgres). No non-breaking fix in the image today; needs a Liquibase release
 # bundling a patched driver version.
