@@ -78,6 +78,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: unit
           path: .ci-out/unit
           if-no-files-found: warn
@@ -101,6 +102,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: integration
           path: .ci-out/integration
           if-no-files-found: warn
@@ -123,6 +125,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: postgres
           path: .ci-out/postgres
           if-no-files-found: warn
@@ -146,6 +149,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: lint
           path: .ci-out/lint
           if-no-files-found: warn
@@ -166,6 +170,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: typecheck
           path: .ci-out/typecheck
           if-no-files-found: warn
@@ -188,6 +193,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: coverage
           path: .ci-out/coverage
           if-no-files-found: warn
@@ -216,6 +222,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: complexity
           path: .ci-out/complexity
           if-no-files-found: warn
@@ -244,6 +251,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: dependencies
           path: .ci-out/dependencies
           if-no-files-found: warn
@@ -282,6 +290,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: security
           path: .ci-out/security
           if-no-files-found: warn
@@ -293,6 +302,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: sbom
           path: .ci-out/sbom
           if-no-files-found: warn
@@ -344,6 +354,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: secrets
           path: .ci-out/secrets
           if-no-files-found: warn
@@ -466,6 +477,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-functional-${{ matrix.shard }}
           path: .ci-out/e2e
           if-no-files-found: warn
@@ -519,6 +531,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-visual
           path: .ci-out/e2e-visual
           if-no-files-found: warn
