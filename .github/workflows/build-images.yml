@@ -9,6 +9,13 @@ name: Build Images
 on:
   workflow_dispatch:
 
+# WS8a: least privilege -- one token-authenticated checkout, nothing else. When WS4 adds GHCR
+# publishing this block must gain `packages: write` alongside `contents: read`, not replace it:
+# an explicit permissions block is restrictive, so listing only `packages: write` would silently
+# drop contents and break the checkout.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,6 +33,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       - name: Build API image
         run: |
