@@ -10,7 +10,7 @@ updates:
     open-pull-requests-limit: 10
     target-branch: dev
     labels:
-      - dependencies
+      - kind:deps
       - automated
     groups:
       security-patches:
@@ -36,5 +36,6 @@ updates:
       timezone: 'America/New_York'
     target-branch: dev
     labels:
-      - dependencies
-      - ci
+      - kind:deps
+      - automated
+      - comp:ci
