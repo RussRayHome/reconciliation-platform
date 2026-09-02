@@ -274,6 +274,25 @@ for (const width of widths) {
   test.describe(`visual baseline @${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
 
+    // Freeze the clock before every navigation. App.tsx:355 derives the default reconciliation
+    // label from `new Date()` -- `Monthly Recon for ${month} ${currentYear}` -- so the Setup screen
+    // renders the *current* month. A PNG baseline cannot track that: every capture taken in one
+    // month diffs against every run in the next.
+    //
+    // This is exactly what happened on 2026-09-01. dev sat on the same commit (317825f4) for the
+    // 08-31 nightly that passed and the 09-01 nightly that failed; nothing changed but the calendar.
+    // The diff was ~742 pixels (ratio 0.01), confined to the two label strings -- "August 2026"
+    // against "September 2026" -- with the rest of the form pixel-identical. It would have recurred
+    // on 1 October, 1 November, and every month boundary after.
+    //
+    // Fixed to mid-August 2026 deliberately: that is the month the committed baselines were captured
+    // in, so they stay valid and no regeneration cycle is needed. setFixedTime (not clock.install)
+    // because it only pins Date.now()/new Date() -- timers keep running, so the scrollHeight polling
+    // and networkidle waits elsewhere in this file are unaffected.
+    test.beforeEach(async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-08-15T12:00:00Z'));
+    });
+
     test(`login and error state @${width}`, async ({ page }) => {
       await page.goto('/');
       await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();

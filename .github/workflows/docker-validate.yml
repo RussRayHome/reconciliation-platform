@@ -321,7 +321,22 @@ jobs:
         # on GitHub-hosted ubuntu-latest runners. First run on a fresh runner builds the image
         # from scratch (no registry cache configured yet) -- a real cost, tracked as a known
         # follow-up, not solved here.
-        run: docker compose -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e npm run test:e2e:visual -- --reporter=list
+        run: |
+          set -euo pipefail
+          # Start Redis before the suite. This lane loaded only compose.e2e.yaml, which defines the two
+          # harness containers and nothing else -- `redis` lives in compose.yaml and was therefore never
+          # started here. The app's logout-denylist check needs it and returns 503 without it, so every
+          # visual test after `login` failed; `login` passed only because it is the one page that does
+          # not traverse that path. It surfaced as "waiting for fonts to load..." in Playwright's
+          # pre-screenshot wait, which buried the actual 503s further up the log.
+          #
+          # Nothing in dev changed when this began failing: head_sha 317825f4 both passed (2026-08-31)
+          # and failed (2026-09-01). The lane's "self-contained, no backing services" assumption simply
+          # stopped holding once the visual specs began traversing a Redis-backed path. e2e-functional
+          # already does the equivalent for postgres, so this makes the two lanes consistent rather
+          # than introducing a new pattern.
+          docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml up -d redis --wait
+          docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e npm run test:e2e:visual -- --reporter=list
 
       - name: Upload diff artifacts
         # The PNG diff is the code review (per the plan's own standing convention) -- this upload
