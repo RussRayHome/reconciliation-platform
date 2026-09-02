@@ -335,8 +335,8 @@ jobs:
           # stopped holding once the visual specs began traversing a Redis-backed path. e2e-functional
           # already does the equivalent for postgres, so this makes the two lanes consistent rather
           # than introducing a new pattern.
-          docker compose -f compose.yaml -f compose.e2e.yaml up -d redis --wait
-          docker compose -f compose.yaml -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e npm run test:e2e:visual -- --reporter=list
+          docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml up -d redis --wait
+          docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e npm run test:e2e:visual -- --reporter=list
 
       - name: Upload diff artifacts
         # The PNG diff is the code review (per the plan's own standing convention) -- this upload
