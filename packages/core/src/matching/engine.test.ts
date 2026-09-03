@@ -480,6 +480,57 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.exceptionCategory).toBe('AmountMismatch');
   });
 
+  // H5 (#274). The test above ties at 0.72, which the old `score < 0.95` gate already caught. This
+  // one ties at the TOP of the scale via 'Reference + Amount Match', which passes the score as a
+  // literal 1 -- the case that could never escalate, and therefore resolved silently by input row
+  // order because both candidate sorts are stable.
+  it('flags an AmbiguousReview when two GL candidates tie at the top of the scale', () => {
+    const bank = buildTransaction({
+      id: 'bank-tie-top',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-04-01',
+      amount: -500,
+      referenceNumber: 'INV-9001',
+      normalizedReferenceTokens: ['INV', '9001'],
+      normalizedComparisonTokens: ['ACME'],
+    });
+    // Two GL entries carrying the SAME reference and the SAME amount. The reference is what the
+    // rule matches on, so it cannot discriminate between them -- which is precisely the tie.
+    const glFirst = buildTransaction({
+      id: 'gl-tie-a',
+      source: 'gl',
+      lineNumber: 2,
+      transactionDate: '2025-04-01',
+      amount: -500,
+      referenceNumber: 'INV-9001',
+      normalizedReferenceTokens: ['INV', '9001'],
+      normalizedComparisonTokens: ['ACME'],
+    });
+    const glSecond = buildTransaction({
+      id: 'gl-tie-b',
+      source: 'gl',
+      lineNumber: 3,
+      // Posted outside `duplicateDateWindowDays`, so this is NOT collapsed as a duplicate of
+      // gl-tie-a -- duplicate detection requires same amount AND a close date. 'Reference + Amount
+      // Match' does not consider the date at all, so both GL rows still score exactly 1 against the
+      // bank line: a genuine tie. Same invoice reference and amount, booked in two periods.
+      transactionDate: '2025-06-15',
+      amount: -500,
+      referenceNumber: 'INV-9001',
+      normalizedReferenceTokens: ['INV', '9001'],
+      normalizedComparisonTokens: ['ACME'],
+    });
+
+    const result = reconcileMatches(
+      [bank, glFirst, glSecond],
+      defaultReconciliationConfig.matching,
+    );
+
+    const dispositions = result.matchResults.map((match) => match.disposition);
+    expect(dispositions).toContain('AmbiguousReview');
+  });
+
   it('flags a bank transaction as AmbiguousReview when two GL candidates score equally well', () => {
     // bank has 1 token; each GL has 2 tokens with 1 shared → textSimilarity = 2/3 ≈ 0.667
     // 0.667 is in [reviewSimilarityThreshold(0.4), textSimilarityThreshold(0.7)) → Rule 5 fires
