@@ -55,7 +55,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -101,7 +101,7 @@ jobs:
           # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -149,7 +149,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -231,7 +231,7 @@ jobs:
 
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-functional-${{ matrix.shard }}-failure
@@ -323,7 +323,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -373,7 +373,7 @@ jobs:
         # container writes there via its bind mount (compose.e2e.yaml), so it's already on the
         # runner's own filesystem by the time this step runs, same as e2e-functional's upload above.
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-visual-diff
@@ -409,7 +409,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -452,7 +452,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -537,7 +537,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
