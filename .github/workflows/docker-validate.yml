@@ -6,6 +6,15 @@ on:
     branches:
       - main
 
+# WS8a: least privilege. With no `permissions:` block these jobs inherited the repo default, which
+# is `write` (and can_approve_pull_request_reviews=true) -- a write-scoped token held while `npm ci`
+# runs PR-supplied lifecycle scripts and `docker compose build` executes PR-supplied Dockerfile
+# content. Nothing here needs write. `contents: read` covers the seven token-authenticated checkouts;
+# `pull-requests: read` is required by visual-path-check's `gh pr diff`.
+permissions:
+  contents: read
+  pull-requests: read
+
 # Without this, a duplicate/near-simultaneous pull_request event (observed twice on PR #146 the
 # same night this workflow's jobs got their per-step timeouts, ~1s apart, identical head SHA)
 # spins up two full, independent runs of every job below -- doubling real CI cost for zero
@@ -33,6 +42,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
       # mirror (deb.nodesource.com) via apt, which apt itself routes through
@@ -85,6 +97,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       - uses: actions/setup-node@v7
         with:
@@ -121,6 +136,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
       # mirror (deb.nodesource.com) via apt, which apt itself routes through
@@ -215,6 +233,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-functional-${{ matrix.shard }}-failure
           path: test-results/e2e
           if-no-files-found: ignore
@@ -291,6 +310,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
       # mirror (deb.nodesource.com) via apt, which apt itself routes through
@@ -353,6 +375,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-visual-diff
           path: test-results/e2e
           if-no-files-found: ignore
@@ -373,6 +396,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
       # mirror (deb.nodesource.com) via apt, which apt itself routes through
@@ -413,6 +439,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
       # mirror (deb.nodesource.com) via apt, which apt itself routes through
@@ -441,9 +470,17 @@ jobs:
         run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml build
 
       - name: Scan container images for vulnerabilities
+        env:
+          TRIVY_VERSION: '0.73.0'
         run: |
           set -euo pipefail
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          # Pinned release tarball, not `curl main/install.sh | sudo sh`. Piping an unpinned script
+          # from a moving branch into a root shell lets an upstream change alter what this security
+          # gate detects, with no diff and no review. Same shape as the gitleaks install below.
+          # 0.73.0 matches the aquasec/trivy pin in apps/api/Dockerfile -- bump both together.
+          curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -o /tmp/trivy.tar.gz
+          sudo tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
+          rm /tmp/trivy.tar.gz
           trivy --version
           project="${COMPOSE_PROJECT_NAME:-reconciliation-platform-dev}"
           # "data" is compose.yaml's internal network, not a buildable service -- there is no
@@ -487,6 +524,9 @@ jobs:
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
+          # WS8e: the line above writes the token into .git/config. Scrub it before any
+          # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
       # The hand-rolled curl|apt-get install this replaced fetched Node from an external Debian
       # mirror (deb.nodesource.com) via apt, which apt itself routes through

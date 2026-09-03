@@ -3,14 +3,13 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '09:00'
       timezone: 'America/New_York'
     open-pull-requests-limit: 10
     target-branch: dev
     labels:
-      - dependencies
+      - kind:deps
       - automated
     groups:
       security-patches:
@@ -30,11 +29,11 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '09:30'
       timezone: 'America/New_York'
     target-branch: dev
     labels:
-      - dependencies
-      - ci
+      - kind:deps
+      - automated
+      - comp:ci
