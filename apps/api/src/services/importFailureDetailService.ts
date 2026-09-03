@@ -164,8 +164,35 @@ export interface ErrorReportRow {
   message: string;
 }
 
-const csvField = (value: string): string =>
-  /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+/**
+ * Neutralises CSV formula injection (Issue #258, OWASP "CSV Injection").
+ *
+ * A spreadsheet evaluates a cell as a formula when its text begins with `=`, `+`, `-` or `@`, so a
+ * value that starts with one of those is executable content, not data. CSV has no cell types to
+ * distinguish the two -- unlike XLSX, where every value carries an explicit type. Prefixing with an
+ * apostrophe forces the consumer to read it as text.
+ *
+ * The exposed field here is `file`, which is the uploaded filename (`file.originalname`) and is
+ * fully attacker-controlled at position 0. `message` is NOT: every validation message begins with a
+ * literal ("Date must be YYYY-MM-DD, got ...") and interpolates user text only after it, so a
+ * payload can never reach the first character. Verified by grep over rowValidators.ts -- zero
+ * messages start with an interpolation. `line`, `column`, `code` and `severity` are integers and
+ * internal enums. Escaping is applied to every field regardless: it costs nothing, and it stops the
+ * guarantee depending on message wording that a later edit could change.
+ *
+ * All four characters are escaped, including `-`. Issue #258 asked that a value like
+ * "-125.50 REVERSAL" round-trip unescaped, but that concern belongs to transaction DESCRIPTIONS,
+ * which go to the XLSX workbook, not to this report. No column here carries monetary text: a
+ * filename, a line number, a field name, an error code, a severity, and a message that always
+ * starts with English. Leaving `-` unescaped would keep "-2+3+cmd|'/C calc'!A0" live for nothing.
+ */
+const escapeFormula = (value: string): string =>
+  /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+
+const csvField = (value: string): string => {
+  const escaped = escapeFormula(value);
+  return /[",\n]/.test(escaped) ? `"${escaped.replaceAll('"', '""')}"` : escaped;
+};
 
 /** Builds the error-report CSV (README §7.8: `file,line,column,code,severity,message,raw_value`,
  * one row per finding, ordered by file then line then column). `raw_value` is always empty --
