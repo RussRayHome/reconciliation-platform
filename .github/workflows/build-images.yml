@@ -137,7 +137,15 @@ jobs:
           echo "web: environment-path-segment=dev"
 
           # web: it actually serves. /healthz is the same endpoint the image's own HEALTHCHECK uses.
-          docker run -d --name smoke-web -p 18080:8080 "$WEB_REF"
+          #
+          # --add-host api:127.0.0.1 is required, not incidental. apps/web/nginx.conf declares
+          # `proxy_pass http://api:4000` for the /api/ locations, and nginx resolves upstream names
+          # at CONFIG-PARSE time -- so without a resolvable `api` the container dies at startup with
+          # "host not found in upstream" and never serves anything. (Confirmed: that is exactly how
+          # the first version of this step failed.) The target does not need to be a real API:
+          # /healthz is served by nginx itself, not proxied, so pointing `api` at loopback satisfies
+          # the parser without pretending the backend is up.
+          docker run -d --name smoke-web --add-host api:127.0.0.1 -p 18080:8080 "$WEB_REF"
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1; then
               echo "web: /healthz responded after ${i}s"
