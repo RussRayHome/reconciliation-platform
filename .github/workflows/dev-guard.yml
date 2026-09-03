@@ -1,0 +1,146 @@
+name: Dev Guard
+
+# The two checks that had no PR-side equivalent, preserved when WS3 removed Dashboard Status's
+# push-to-dev trigger (5,861 billable minutes, ~$35.17/month, ~66% of it duplicating what
+# docker-validate had already run on the PR).
+#
+# Everything else in Dashboard Status genuinely was duplicate work. These two are not:
+#
+#   secrets     docker-validate contains NO secret scanning at all -- its own Trivy comment points
+#               at "the dedicated gitleaks/trufflehog pipeline", which is this. Losing it would
+#               have left `dev` scanned only by a weekly cron, and that cron is unreliable:
+#               measured fire times drifted from +30 min to +12 h over six days in Aug 2026, and
+#               GitHub documents that queued scheduled jobs "may be dropped" under load.
+#
+#   e2e-visual  non-gating on PRs by design (continue-on-error in docker-validate, a soak signal),
+#               so push-to-dev was the only place a visual regression could actually stop anything.
+#               `dev` is the last boundary before Stage.
+#
+# ~814 billable minutes/month (~$4.88) against the 5,861 removed.
+#
+# Deliberately NOT path-filtered. A `paths-ignore` here would skip BOTH jobs on a docs-only push,
+# and secrets appear in Markdown and workflow YAML as readily as in source -- the one check that
+# must never be skipped is the one a path filter would skip first. e2e-visual could be gated
+# separately for a ~20% saving on its share, but that needs the same fail-open `!cancelled()`
+# plumbing docker-validate uses, and getting that wrong marks a broken gate green. Not worth it
+# for ~120 minutes a month.
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch: {}
+
+# One run per ref. A rapid merge sequence only needs the tip validated -- superseded runs are
+# pointless here, and unlike Dashboard Status this workflow publishes nothing, so there is no
+# status artifact for a cancelled run to leave half-written.
+concurrency:
+  group: dev-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege (WS8a). Neither job writes anything back to the repository; both only read the
+# tree they were triggered on.
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # No `ref:` -- for a push event the default checkout IS github.sha, so every job in this
+      # workflow necessarily sees the same commit. Dashboard Status needs an explicit expression
+      # because it also runs on schedule/dispatch, where there is no triggering SHA.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks/trufflehog scan full git history, not just the checked-out tree
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - name: Install gitleaks
+        # Version pinned rather than "latest" so a new gitleaks release can't silently change
+        # findings on an unrelated commit; bump deliberately.
+        env:
+          GITLEAKS_VERSION: '8.30.1'
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          rm /tmp/gitleaks.tar.gz
+      - name: Install trufflehog
+        env:
+          TRUFFLEHOG_VERSION: '3.97.1'
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz" -o /tmp/trufflehog.tar.gz
+          sudo tar -xzf /tmp/trufflehog.tar.gz -C /usr/local/bin trufflehog
+          rm /tmp/trufflehog.tar.gz
+      - name: Run secret scan
+        # security-scan-secrets.mjs holds raw matches only in a short-lived local and emits sha256
+        # fingerprints plus partial masks -- so tee-ing this job's stdout cannot leak a credential
+        # into the log. Never redirect gitleaks'/trufflehog's own raw output here.
+        run: |
+          set -o pipefail
+          mkdir -p .ci-out/secrets
+          npm run security:scan:secrets --silent 2>&1 | tee .ci-out/secrets/secret-scan-output.txt
+          exit "${PIPESTATUS[0]}"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          retention-days: 7
+          name: secrets-dev-guard
+          path: .ci-out/secrets
+          if-no-files-found: warn
+
+  e2e-visual:
+    runs-on: ubuntu-latest
+    # No shard matrix: visual-baseline.spec.ts is one file and its own internal parallel mode
+    # already spreads its tests across workers inside the single container run below.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install dependencies
+        # compose.e2e.yaml bind-mounts the repo root over the container's /app and uses an anonymous
+        # volume to shadow /app/node_modules with the image's own install. On a fresh runner that
+        # shadow does not reliably auto-populate from the image, surfacing as an unresolvable import
+        # of a real dependency. Installing here means the bind-mounted node_modules the container
+        # sees is a real, complete install -- and this runner is Linux like the image, so there is
+        # no ABI mismatch to guard against.
+        run: npm ci
+      - name: Pre-create the output directory
+        # The visual-e2e container runs as root internally and writes its JSON report inside
+        # .ci-out/e2e-visual. Through the bind mount, whichever process creates that directory
+        # first owns it on the host -- if the container does, run-check.ts's later meta.json write
+        # (as the unprivileged runner user) fails with EACCES. Creating it here keeps it
+        # runner-owned even after root writes into it.
+        run: mkdir -p .ci-out/e2e-visual
+      - name: Start Redis
+        # This lane needs redis from compose.yaml, not just compose.e2e.yaml's two harness
+        # containers -- without it the app's logout-denylist check returns 503 on every page after
+        # login, and the visual assertions then fail on a pixel diff that looks nothing like the
+        # cause.
+        run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml up -d redis --wait
+      - name: Run visual E2E tests
+        # No continue-on-error, deliberately. On PRs this lane IS non-blocking (a soak signal), but
+        # `dev` is the last boundary before Stage -- a visual regression reaching Stage is exactly
+        # what this job exists to stop.
+        run: >
+          npx tsx scripts/ci/run-check.ts --name "E2E visual tests" --meta .ci-out/e2e-visual/meta.json --
+          docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e
+          npm run test:e2e:visual -- --reporter=list,json
+        env:
+          # Read inside the container by playwright.config.ts; compose.e2e.yaml does not declare it,
+          # so it must be passed through from the invoking shell.
+          PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e-visual/e2e-results.json
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          retention-days: 7
+          name: e2e-visual-dev-guard
+          path: .ci-out/e2e-visual
+          if-no-files-found: warn

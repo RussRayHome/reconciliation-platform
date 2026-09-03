@@ -27,6 +27,16 @@ concurrency:
 
 jobs:
   test:
+    needs: visual-path-check
+    # Skipped entirely when the PR changes nothing but issue_tracker/**, docs/** and **.md.
+    #
+    # `!cancelled()` is load-bearing, not defensive decoration. A job whose `needs:` FAILED is
+    # skipped by default -- and GitHub reports a skipped job as SUCCESS to branch protection. So
+    # without this, a broken gate job would mark every required check green on completely
+    # unvalidated code. Fail open: run unless the gate cleanly said "docs only".
+    if: >-
+      ${{ !cancelled() && (needs.visual-path-check.result != 'success'
+      || needs.visual-path-check.outputs.docs_only != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -82,6 +92,16 @@ jobs:
   # Mirrors that job's own steps (self-contained via testcontainers in globalSetup.ts; no separate
   # `docker compose up postgres` needed here, unlike e2e-functional below).
   postgres:
+    needs: visual-path-check
+    # Skipped entirely when the PR changes nothing but issue_tracker/**, docs/** and **.md.
+    #
+    # `!cancelled()` is load-bearing, not defensive decoration. A job whose `needs:` FAILED is
+    # skipped by default -- and GitHub reports a skipped job as SUCCESS to branch protection. So
+    # without this, a broken gate job would mark every required check green on completely
+    # unvalidated code. Fail open: run unless the gate cleanly said "docs only".
+    if: >-
+      ${{ !cancelled() && (needs.visual-path-check.result != 'success'
+      || needs.visual-path-check.outputs.docs_only != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -113,6 +133,16 @@ jobs:
         run: npm run test:postgres
 
   e2e-functional:
+    needs: visual-path-check
+    # Skipped entirely when the PR changes nothing but issue_tracker/**, docs/** and **.md.
+    #
+    # `!cancelled()` is load-bearing, not defensive decoration. A job whose `needs:` FAILED is
+    # skipped by default -- and GitHub reports a skipped job as SUCCESS to branch protection. So
+    # without this, a broken gate job would mark every required check green on completely
+    # unvalidated code. Fail open: run unless the gate cleanly said "docs only".
+    if: >-
+      ${{ !cancelled() && (needs.visual-path-check.result != 'success'
+      || needs.visual-path-check.outputs.docs_only != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -254,6 +284,11 @@ jobs:
     timeout-minutes: 5
     outputs:
       run_visual: ${{ steps.check.outputs.run_visual }}
+      # docs_only is the inverse of run_visual, emitted explicitly so the jobs gated on it below
+      # read correctly. This job keeps its original name even though it now gates far more than the
+      # visual lane: `visual-path-check` is one of dev's ten REQUIRED contexts, and a renamed
+      # context is never reported at all -- branch protection then waits on it forever.
+      docs_only: ${{ steps.check.outputs.docs_only }}
     steps:
       - name: Determine whether only inert paths changed
         id: check
@@ -264,6 +299,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "Not a pull_request event -- always running the visual lane."
             echo "run_visual=true" >> "$GITHUB_OUTPUT"
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -274,6 +310,7 @@ jobs:
           if ! CHANGED=$(gh pr diff "${{ github.event.pull_request.number }}" --name-only 2>&1); then
             echo "Could not determine changed files (gh pr diff failed: $CHANGED) -- running visual lane to be safe."
             echo "run_visual=true" >> "$GITHUB_OUTPUT"
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -282,8 +319,10 @@ jobs:
           if [ -z "$NON_INERT" ]; then
             echo "Every changed file matches an inert path (issue_tracker/**, docs/**, **.md) -- skipping visual lane."
             echo "run_visual=false" >> "$GITHUB_OUTPUT"
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_visual=true" >> "$GITHUB_OUTPUT"
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
           fi
 
   e2e-visual:
@@ -381,6 +420,16 @@ jobs:
           if-no-files-found: ignore
 
   security-scan:
+    needs: visual-path-check
+    # Skipped entirely when the PR changes nothing but issue_tracker/**, docs/** and **.md.
+    #
+    # `!cancelled()` is load-bearing, not defensive decoration. A job whose `needs:` FAILED is
+    # skipped by default -- and GitHub reports a skipped job as SUCCESS to branch protection. So
+    # without this, a broken gate job would mark every required check green on completely
+    # unvalidated code. Fail open: run unless the gate cleanly said "docs only".
+    if: >-
+      ${{ !cancelled() && (needs.visual-path-check.result != 'success'
+      || needs.visual-path-check.outputs.docs_only != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -424,6 +473,16 @@ jobs:
         run: npm run licenses:check
 
   docker-validate:
+    needs: visual-path-check
+    # Skipped entirely when the PR changes nothing but issue_tracker/**, docs/** and **.md.
+    #
+    # `!cancelled()` is load-bearing, not defensive decoration. A job whose `needs:` FAILED is
+    # skipped by default -- and GitHub reports a skipped job as SUCCESS to branch protection. So
+    # without this, a broken gate job would mark every required check green on completely
+    # unvalidated code. Fail open: run unless the gate cleanly said "docs only".
+    if: >-
+      ${{ !cancelled() && (needs.visual-path-check.result != 'success'
+      || needs.visual-path-check.outputs.docs_only != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
