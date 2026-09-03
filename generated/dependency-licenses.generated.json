@@ -1,20 +1,8 @@
 {
-  "generatedAt": "2026-08-27T18:22:31.547Z",
+  "generatedAt": "2026-09-03T13:15:09.912Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 523,
+  "packageCount": 511,
   "packages": [
-    {
-      "package": "@apm-js-collab/code-transformer-bundler-plugins@0.7.4",
-      "license": "MIT"
-    },
-    {
-      "package": "@apm-js-collab/code-transformer@0.18.1",
-      "license": "Apache-2.0"
-    },
-    {
-      "package": "@apm-js-collab/tracing-hooks@0.13.0",
-      "license": "Apache-2.0"
-    },
     {
       "package": "@aws-cdk/asset-awscli-v1@2.2.292",
       "license": "Apache-2.0"
@@ -62,10 +50,6 @@
     {
       "package": "@isaacs/cliui@8.0.2",
       "license": "ISC"
-    },
-    {
-      "package": "@jridgewell/sourcemap-codec@1.5.5",
-      "license": "MIT"
     },
     {
       "package": "@js-sdsl/ordered-map@4.4.2",
@@ -472,11 +456,11 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser-utils@10.70.0",
+      "package": "@sentry/browser-utils@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser@10.70.0",
+      "package": "@sentry/browser@10.72.0",
       "license": "MIT"
     },
     {
@@ -484,39 +468,39 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/core@10.70.0",
+      "package": "@sentry/core@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/feedback@10.70.0",
+      "package": "@sentry/feedback@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/node-core@10.70.0",
+      "package": "@sentry/node-core@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/node@10.70.0",
+      "package": "@sentry/node@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/opentelemetry@10.70.0",
+      "package": "@sentry/opentelemetry@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/react@10.70.0",
+      "package": "@sentry/react@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay-canvas@10.70.0",
+      "package": "@sentry/replay-canvas@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay@10.70.0",
+      "package": "@sentry/replay@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/server-utils@10.70.0",
+      "package": "@sentry/server-utils@10.72.0",
       "license": "MIT"
     },
     {
@@ -528,23 +512,23 @@
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-core@5.101.4",
+      "package": "@tanstack/query-core@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-persist-client-core@5.101.4",
+      "package": "@tanstack/query-persist-client-core@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-sync-storage-persister@5.101.4",
+      "package": "@tanstack/query-sync-storage-persister@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-query-persist-client@5.101.4",
+      "package": "@tanstack/react-query-persist-client@5.102.8",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-query@5.101.4",
+      "package": "@tanstack/react-query@5.102.8",
       "license": "MIT"
     },
     {
@@ -620,10 +604,6 @@
       "license": "MIT"
     },
     {
-      "package": "@types/estree@1.0.9",
-      "license": "MIT"
-    },
-    {
       "package": "@types/memcached@2.2.10",
       "license": "MIT"
     },
@@ -636,7 +616,7 @@
       "license": "MIT"
     },
     {
-      "package": "@types/node@26.2.0",
+      "package": "@types/node@26.4.0",
       "license": "MIT"
     },
     {
@@ -652,7 +632,7 @@
       "license": "MIT"
     },
     {
-      "package": "@types/react-dom@19.2.4",
+      "package": "@types/react-dom@19.2.5",
       "license": "MIT"
     },
     {
@@ -668,11 +648,11 @@
       "license": "MIT"
     },
     {
-      "package": "@xyflow/react@12.11.3",
+      "package": "@xyflow/react@12.11.5",
       "license": "MIT"
     },
     {
-      "package": "@xyflow/system@0.0.80",
+      "package": "@xyflow/system@0.0.81",
       "license": "MIT"
     },
     {
@@ -716,10 +696,6 @@
       "license": "MIT"
     },
     {
-      "package": "astring@1.9.0",
-      "license": "MIT"
-    },
-    {
       "package": "async@3.2.6",
       "license": "MIT"
     },
@@ -728,7 +704,7 @@
       "license": "MIT"
     },
     {
-      "package": "aws-cdk-lib@2.266.0",
+      "package": "aws-cdk-lib@2.267.0",
       "license": "Apache-2.0"
     },
     {
@@ -800,7 +776,7 @@
       "license": "UNKNOWN"
     },
     {
-      "package": "bullmq@6.2.0",
+      "package": "bullmq@6.3.2",
       "license": "MIT"
     },
     {
@@ -1088,14 +1064,6 @@
       "license": "MIT"
     },
     {
-      "package": "esquery@1.7.0",
-      "license": "BSD-3-Clause"
-    },
-    {
-      "package": "estraverse@5.3.0",
-      "license": "BSD-2-Clause"
-    },
-    {
       "package": "etag@1.8.1",
       "license": "MIT"
     },
@@ -1108,7 +1076,7 @@
       "license": "MIT"
     },
     {
-      "package": "express-rate-limit@8.6.2",
+      "package": "express-rate-limit@8.7.0",
       "license": "MIT"
     },
     {
@@ -1448,10 +1416,6 @@
       "license": "MIT"
     },
     {
-      "package": "magic-string@0.30.21",
-      "license": "MIT"
-    },
-    {
       "package": "math-intrinsics@1.1.0",
       "license": "MIT"
     },
@@ -1466,10 +1430,6 @@
     {
       "package": "merge-descriptors@2.0.0",
       "license": "MIT"
-    },
-    {
-      "package": "meriyah@6.1.4",
-      "license": "ISC"
     },
     {
       "package": "mime-db@1.52.0",
@@ -1528,11 +1488,11 @@
       "license": "MIT"
     },
     {
-      "package": "msgpackr@2.0.5",
+      "package": "msgpackr@2.1.0",
       "license": "MIT"
     },
     {
-      "package": "multer@2.2.0",
+      "package": "multer@2.3.0",
       "license": "MIT"
     },
     {
@@ -1736,7 +1696,7 @@
       "license": "MIT"
     },
     {
-      "package": "react-router@8.3.0",
+      "package": "react-router@8.3.1",
       "license": "MIT"
     },
     {
@@ -1836,10 +1796,6 @@
       "license": "BSD-3-Clause"
     },
     {
-      "package": "semifies@1.0.0",
-      "license": "Apache-2.0"
-    },
-    {
       "package": "semver@7.8.5",
       "license": "ISC"
     },
@@ -1890,10 +1846,6 @@
     {
       "package": "sonic-boom@4.2.1",
       "license": "MIT"
-    },
-    {
-      "package": "source-map@0.6.1",
-      "license": "BSD-3-Clause"
     },
     {
       "package": "split2@4.2.0",
@@ -2088,7 +2040,7 @@
       "license": "MIT"
     },
     {
-      "package": "zod@4.4.3",
+      "package": "zod@4.5.4",
       "license": "MIT"
     },
     {
