@@ -1,7 +1,7 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import { loginToApplication, openSetup, submitRunButton } from '../auth';
+import { FORM_VALIDATION_CREDENTIAL, loginToApplication, openSetup, submitRunButton } from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createAllExceptionsBankFileValidationWorkbook,
@@ -10,12 +10,25 @@ import {
   createSampleGlFileValidationWorkbook,
 } from '../fileValidationWorkbooks';
 import { XLSX_MIME, exceptionSummaryCell, openExceptions, runReconciliation, setWorkbookFiles } from '../reconciliationHelpers';
-
-test.beforeEach(async ({ page }) => {
-  await loginToApplication(page);
-});
+import { resetRunsForWorker } from '../runState';
 
 test.describe('form validation', () => {
+  // Logs in to the pristine 'E2E Form Validation' organization rather than this worker's own.
+  //
+  // Every assertion below describes the form's PRE-RUN state -- a disabled submit button reading
+  // "Submit run". That only holds while the organization has never completed a run: durableRunPhase
+  // is fetched from the server on each page load (App.tsx's mount-time getLatestImportRunRequest),
+  // so one terminal run anywhere in the organization turns the button into "Retry run"/"Start new
+  // run", which reports ENABLED and fails these tests. Per-worker organizations remove the
+  // cross-worker version of that, but not this one -- a single worker runs several spec files in
+  // sequence against its own organization, so an earlier spec's run would decide these outcomes by
+  // file ordering. Nothing ever submits as this account (the structural-validation spec below,
+  // which does submit, deliberately uses the worker account instead), so the phase stays pristine
+  // by construction and these tests do not depend on execution order at all.
+  test.beforeEach(async ({ page }) => {
+    await loginToApplication(page, FORM_VALIDATION_CREDENTIAL);
+  });
+
   test('submit button is disabled before any files are uploaded', async ({ page }) => {
     await openSetup(page);
     await expect(submitRunButton(page)).toBeDisabled();
@@ -59,6 +72,19 @@ test.describe('form validation', () => {
     await expect(submitRunButton(page)).toBeDisabled();
   });
 
+});
+
+// Separate from 'form validation' above on purpose: this spec SUBMITS, which leaves a terminal
+// (failed) run on whichever organization it runs as. Kept out of the pristine E2E Form Validation
+// organization so that organization never acquires a run phase, and the pre-run assertions above
+// stay independent of execution order. It asserts an error message rather than the button's
+// pre-run state, so this worker's own organization is fine regardless of what ran before it.
+test.describe('structural validation', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetRunsForWorker();
+    await loginToApplication(page);
+  });
+
   // Since Phase 10, .csv is a valid extension -- this junk content now passes client-side
   // gating and hits the File Validation Engine's Step 1 (STRUCT_HEADER_MISSING) instead of a
   // generic upload-time alert.
@@ -92,6 +118,11 @@ test.describe('form validation', () => {
 });
 
 test.describe('annual reconciliation frequency', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetRunsForWorker();
+    await loginToApplication(page);
+  });
+
   test('switching to Annual hides the month picker and shows the year picker', async ({ page }) => {
     await openSetup(page);
     await expect(page.getByLabel('Monthly reconciliation month')).toBeVisible();
@@ -114,6 +145,11 @@ test.describe('annual reconciliation frequency', () => {
 });
 
 test.describe('combined all-exceptions workbook', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetRunsForWorker();
+    await loginToApplication(page);
+  });
+
   test('exception triage is populated after running all-exceptions fixture', async ({ page }) => {
     const [bankBuffer, glBuffer] = await Promise.all([
       createAllExceptionsBankFileValidationWorkbook(),

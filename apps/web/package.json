@@ -21,5 +21,9 @@
     "react-router": "^8.3.0",
     "recharts": "^3.9.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.0"
   }
 }
