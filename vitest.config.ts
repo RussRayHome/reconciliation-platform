@@ -87,6 +87,12 @@ export default defineConfig({
           // `.ts`, so they sat in the repo never running and never reported as missing.
           include: ['apps/web/src/**/*.test.{ts,tsx}'],
           setupFiles: ['apps/web/src/test/setup.ts'],
+          // 10s rather than the 5s default (Issue #284). App.test.tsx runs 120 tests in ~54s on
+          // its own, so its heavier interaction tests sit close to 5s before any contention; under
+          // vitest's file-level parallelism one of them tips over, while the same test passes under
+          // `coverage`'s --no-file-parallelism. Doubling the budget absorbs that without masking a
+          // genuine hang -- `unit-data` already carries a per-project timeout for the same reason.
+          testTimeout: 10000,
         },
       },
       {
