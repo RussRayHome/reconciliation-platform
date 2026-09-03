@@ -200,11 +200,30 @@ jobs:
           docker buildx imagetools create --tag "${WEB_IMAGE}:dev" "${WEB_IMAGE}@${WEB_DIGEST}"
 
           # Verify the promotion landed on the tested content, not merely that the command exited 0.
-          API_DEV=$(docker buildx imagetools inspect "${API_IMAGE}:dev" --format '{{.Manifest.Digest}}')
-          WEB_DEV=$(docker buildx imagetools inspect "${WEB_IMAGE}:dev" --format '{{.Manifest.Digest}}')
-          [ "$API_DEV" = "$API_DIGEST" ] || { echo "api :dev resolved to ${API_DEV}, expected ${API_DIGEST}" >&2; exit 1; }
-          [ "$WEB_DEV" = "$WEB_DIGEST" ] || { echo "web :dev resolved to ${WEB_DEV}, expected ${WEB_DIGEST}" >&2; exit 1; }
-          echo ":dev, :sha-${SHORT} and the tested digests all agree"
+          #
+          # CONTAINMENT, not equality. `imagetools create` does not re-point a tag at an existing
+          # digest -- it builds a NEW OCI index wrapping the source manifest and pushes that, so
+          # :dev's own digest is the index digest and is necessarily DIFFERENT from the manifest
+          # digest it contains. The first version of this step asserted equality and could never
+          # have passed; the run log made it obvious ("copying sha256:86f4715... / pushing
+          # sha256:2b61c2d..."). The plan specified the same impossible check.
+          #
+          # What actually matters is that :dev resolves to the tested manifest, which is exactly
+          # what containment proves: a consumer pulling :dev for linux/amd64 gets that manifest.
+          assert_contains() {
+            local tag="$1" want="$2" label="$3"
+            if docker buildx imagetools inspect "$tag" --raw \
+                 | jq -e --arg d "$want" '[.manifests[]?.digest] | index($d)' >/dev/null; then
+              echo "${label} :dev index contains the tested digest ${want}"
+            else
+              echo "${label} :dev does NOT contain ${want} -- promotion did not land on tested content." >&2
+              docker buildx imagetools inspect "$tag" --raw >&2 || true
+              exit 1
+            fi
+          }
+          assert_contains "${API_IMAGE}:dev" "$API_DIGEST" api
+          assert_contains "${WEB_IMAGE}:dev" "$WEB_DIGEST" web
+          echo ":dev resolves to the digests that passed the smoke test (:sha-${SHORT})"
 
       - name: Summarise what to pull
         if: always()
