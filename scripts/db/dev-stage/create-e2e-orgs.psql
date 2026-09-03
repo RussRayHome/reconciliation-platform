@@ -1,0 +1,108 @@
+-- =============================================================================
+-- DEV AND STAGE ENVIRONMENTS ONLY -- DO NOT RUN IN PRODUCTION.
+--
+-- Seeds one organization per Playwright worker slot, each with its own
+-- senior-analyst login, so parallel E2E workers cannot observe each other's
+-- reconciliation runs.
+--
+-- Why this exists: the app fetches `durableRunPhase` fresh from the server on
+-- every page load (App.tsx's mount-time getLatestImportRunRequest), scoped to
+-- the logged-in user's organization -- not to per-test state. Every seeded
+-- login in create-users.psql belongs to the same 'Default Organization', so the
+-- moment ANY test completed a run, every other test's Import Files screen
+-- switched to the post-run phase: the submit button became "Start new run" and
+-- reported enabled. Specs asserting the pre-run disabled state then failed
+-- depending purely on which worker won the race, which is why the failure moved
+-- between shards and between tests on identical commits.
+--
+-- Idempotent: safe to run multiple times. Run AFTER create-users.psql (both
+-- after migrations, since both write to reconciliation_user).
+--
+--   psql -U recon_app -d reconciliation_platform -f scripts/db/dev-stage/create-e2e-orgs.psql
+--
+-- Slot count: 8. Playwright's TEST_PARALLEL_INDEX is 0..workers-1, and workers
+-- defaults to half the machine's cores. 8 covers the CI runners and a developer
+-- laptop with room to spare; auth.ts falls back to the shared 'Default
+-- Organization' accounts if a slot's login is missing, so an under-provisioned
+-- pool degrades to today's behaviour rather than failing to log in.
+-- =============================================================================
+
+\echo 'Seeding per-worker E2E organizations and logins'
+
+DO $$
+DECLARE
+  slot integer;
+  org_name text;
+  login_name text;
+  org_uuid uuid;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'reconciliation_user') THEN
+    RAISE NOTICE 'reconciliation_user does not exist yet -- skipping E2E org seed (re-run after migrations).';
+    RETURN;
+  END IF;
+
+  FOR slot IN 0..7 LOOP
+    org_name := 'E2E Worker ' || slot;
+    login_name := 'e2e_w' || slot;
+
+    -- entity_verification_status must be 'verified': changeset 0034 gates
+    -- POST /api/mapping/profiles on it, and these accounts are pre-provisioned
+    -- rather than signed up through the real flow.
+    SELECT id INTO org_uuid FROM reconciliation_organization WHERE name = org_name;
+    IF org_uuid IS NULL THEN
+      INSERT INTO reconciliation_organization (id, name, entity_verification_status)
+      VALUES (gen_random_uuid(), org_name, 'verified')
+      RETURNING id INTO org_uuid;
+    ELSE
+      UPDATE reconciliation_organization
+      SET entity_verification_status = 'verified'
+      WHERE id = org_uuid;
+    END IF;
+
+    -- senior-analyst: the least-privileged role that can submit an import run
+    -- (canSubmitImportRuns, packages/domain/src/enums.ts). Matches bray2, the
+    -- account the upload/submit specs use today.
+    INSERT INTO reconciliation_user
+      (user_name, first_name, last_name, password_hash, role, organization_id, identity_verification_status)
+    VALUES
+      (login_name, 'E2E', 'Worker' || slot, crypt('P@ssw0rd', gen_salt('bf')),
+       'senior-analyst', org_uuid, 'verified')
+    ON CONFLICT (user_name) DO UPDATE
+      SET password_hash = EXCLUDED.password_hash,
+          role = EXCLUDED.role,
+          organization_id = EXCLUDED.organization_id,
+          identity_verification_status = 'verified';
+  END LOOP;
+
+  -- A ninth organization, reserved for the specs that assert the Import Files form's PRE-RUN
+  -- state (a disabled submit button, a "Submit run" label). Those assertions only hold while the
+  -- organization has never completed a run, and per-worker organizations alone do not guarantee
+  -- that: one worker runs several spec files in sequence against its own organization, so any
+  -- earlier spec that completed a run would decide their outcome by file ordering. Nothing ever
+  -- submits a run as this account, so its phase stays pristine by construction rather than by
+  -- being reset between tests.
+  SELECT id INTO org_uuid FROM reconciliation_organization WHERE name = 'E2E Form Validation';
+  IF org_uuid IS NULL THEN
+    INSERT INTO reconciliation_organization (id, name, entity_verification_status)
+    VALUES (gen_random_uuid(), 'E2E Form Validation', 'verified')
+    RETURNING id INTO org_uuid;
+  ELSE
+    UPDATE reconciliation_organization
+    SET entity_verification_status = 'verified'
+    WHERE id = org_uuid;
+  END IF;
+
+  INSERT INTO reconciliation_user
+    (user_name, first_name, last_name, password_hash, role, organization_id, identity_verification_status)
+  VALUES
+    ('e2e_form', 'E2E', 'Form', crypt('P@ssw0rd', gen_salt('bf')),
+     'senior-analyst', org_uuid, 'verified')
+  ON CONFLICT (user_name) DO UPDATE
+    SET password_hash = EXCLUDED.password_hash,
+        role = EXCLUDED.role,
+        organization_id = EXCLUDED.organization_id,
+        identity_verification_status = 'verified';
+
+  RAISE NOTICE 'Seeded 8 E2E worker organizations (E2E Worker 0..7), logins (e2e_w0..e2e_w7), and the pristine E2E Form Validation organization (e2e_form).';
+END;
+$$;

@@ -25,7 +25,14 @@ on:
     # late. Also moved earlier (was 08:00) to build in real buffer: even a ~1 hour scheduling
     # delay plus the full ~30-minute worst-case run (E2E timing out at its 20-minute cap) should
     # still finish well before a normal morning check-in, not run into it.
-    - cron: '17 7 * * *'
+    #
+    # Weekly (Mondays), not nightly, since 2026-09-02. At ~51.6 billable minutes per run, 27
+    # nightly runs cost ~$8.36/month against a bill that was already ~$87. The dashboard is the
+    # only consumer of this schedule and does not need daily freshness; a weekly heartbeat keeps
+    # it current enough to be worth reading and still surfaces a systematically broken job, which
+    # a dispatch-only workflow would not (it only ever runs when someone already suspects a
+    # problem). Push-to-dev still triggers this workflow, so merges keep refreshing the feed.
+    - cron: '17 7 * * 1'
   workflow_dispatch: {} # manual trigger from GitHub's UI, for testing this workflow itself
   push:
     branches: [dev]
@@ -422,6 +429,10 @@ jobs:
           docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} run --rm migrate
           docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} exec -T postgres \
             psql -U recon_app -d reconciliation_platform < scripts/db/dev-stage/create-users.psql
+          # Per-worker organizations -- see the matching step in docker-validate.yml. Both lanes
+          # run the same specs, so both need the same isolation seed.
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} exec -T postgres \
+            psql -U recon_app -d reconciliation_platform < scripts/db/dev-stage/create-e2e-orgs.psql
       # Runner-user-owned before the container below (running as root) touches it -- same
       # root-write-wins-ownership gotcha e2e-visual's job hit first (see that job's own "Pre-create
       # the output directory" step comment). Without this, run-check.ts's later write of meta.json

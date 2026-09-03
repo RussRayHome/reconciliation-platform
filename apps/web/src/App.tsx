@@ -44,7 +44,7 @@ import { CreateMappingScreen } from './components/CreateMappingScreen';
 import { SignupScreen } from './components/SignupScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
-import { SourceDropZone } from './components/SourceDropZone';
+import { MIN_BANK_ACCOUNTS, SourceDropZone } from './components/SourceDropZone';
 import { RovingTabList } from './components/RovingTabList';
 import {
   CloseExportSection,
@@ -466,14 +466,31 @@ const resolveSubmitButtonState = (
   durablePhaseKind: LatestRunPhase['kind'],
   hasSucceeded: boolean,
 ): SubmitButtonState => {
-  // N4: a completed run's upload slots are reset to empty (see the `run`-succeeded effect in
-  // App), so `isUploadStepComplete` alone can no longer gate this -- without the bypass, the
-  // button would regress from "Start new run" to a disabled "Submit run" the instant success
-  // clears the files it just submitted.
-  if (!isUploadStepComplete && !hasSucceeded && durablePhaseKind !== 'succeeded') {
+  // What the button SAYS follows the run phase; whether it is ENABLED follows whether the files
+  // are actually there. Keeping those separate is the point.
+  //
+  // N4 originally bypassed the upload check whenever a run had succeeded, because a completed run
+  // resets its own upload slots (see the `run`-succeeded effect in App) and the caption would
+  // otherwise regress from "Start new run" to "Submit run". That fixed the caption by switching
+  // off the guard, which left the button live with no files attached -- and the submit handler
+  // below silently returns in exactly that state, so the click did nothing, said nothing, and the
+  // user got no indication anything had gone wrong. Deriving the label separately keeps the
+  // caption stable through the slot reset without ever enabling a button that cannot act.
+  const resolvePhaseLabel = (): string => {
+    if (hasSucceeded || durablePhaseKind === 'succeeded') {
+      return 'Start new run';
+    }
+    if (durablePhaseKind === 'validation-failed' || durablePhaseKind === 'matching-failed') {
+      return 'Retry run';
+    }
+    return 'Submit run';
+  };
+  const phaseLabel = resolvePhaseLabel();
+
+  if (!isUploadStepComplete) {
     return {
       disabled: true,
-      label: 'Submit run',
+      label: phaseLabel,
       reason: 'Add every bank workbook and the GL workbook.',
     };
   }
@@ -481,7 +498,7 @@ const resolveSubmitButtonState = (
   if (isLabelMissing) {
     return {
       disabled: true,
-      label: 'Submit run',
+      label: phaseLabel,
       reason: 'Give the run a label — it names every export.',
     };
   }
@@ -503,15 +520,9 @@ const resolveSubmitButtonState = (
     };
   }
 
-  if (hasSucceeded || durablePhaseKind === 'succeeded') {
-    return { disabled: false, label: 'Start new run', reason: null };
-  }
-
-  if (durablePhaseKind === 'validation-failed' || durablePhaseKind === 'matching-failed') {
-    return { disabled: false, label: 'Retry run', reason: null };
-  }
-
-  return { disabled: false, label: 'Submit run', reason: null };
+  // Nothing blocks submission: same phase-derived caption as the disabled rows above, so the
+  // wording never depends on which branch returns it.
+  return { disabled: false, label: phaseLabel, reason: null };
 };
 
 const resolveRunElapsedMs = (
@@ -1324,8 +1335,13 @@ function ReconciliationApp({
   const trimmedPeriodLabel = periodLabel.trim();
   const isLabelMissing = trimmedPeriodLabel.length === 0;
   const hasStartedUploadStep = Boolean(bankFiles.some(Boolean) || glFile);
+  // `>= MIN_BANK_ACCOUNTS`, not `> 0`: `[].every(Boolean)` is vacuously TRUE, so an empty
+  // bankFiles array would satisfy the rest of this and enable submission with no bank workbook at
+  // all. Today SourceDropZone's remove control is hidden at the minimum, so the array cannot empty
+  // -- but that makes the guarantee depend on a component elsewhere rather than on this check.
+  // Naming the constant states the rule where the rule is enforced.
   const isUploadStepComplete = Boolean(
-    bankFiles.length > 0 && bankFiles.every(Boolean) && glFile,
+    bankFiles.length >= MIN_BANK_ACCOUNTS && bankFiles.every(Boolean) && glFile,
   );
   const isConfigurationStepComplete = isUploadStepComplete && !isLabelMissing;
   const isRunStepComplete = Boolean(run);

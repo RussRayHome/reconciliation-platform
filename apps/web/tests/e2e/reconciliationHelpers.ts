@@ -14,21 +14,48 @@ export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsh
 export async function setWorkbookFiles(page: Page, bankBuffer: Buffer, glBuffer: Buffer): Promise<void> {
   const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
 
-  await page.locator('#bank-workbook-input').setInputFiles({
-    name: '1111_bank.xlsx',
-    mimeType: XLSX_MIME,
-    buffer: bankBuffer,
-  });
-  await page.locator('#bank-workbook-b-input').setInputFiles({
-    name: '2222_bank.xlsx',
-    mimeType: XLSX_MIME,
-    buffer: bankAccountBBuffer,
-  });
-  await page.locator('#gl-workbook-input').setInputFiles({
-    name: 'gl.xlsx',
-    mimeType: XLSX_MIME,
-    buffer: glBuffer,
-  });
+  await attachAndVerify(page, 'bank-workbook-input', '1111_bank.xlsx', bankBuffer);
+  await attachAndVerify(page, 'bank-workbook-b-input', '2222_bank.xlsx', bankAccountBBuffer);
+  await attachAndVerify(page, 'gl-workbook-input', 'gl.xlsx', glBuffer);
+}
+
+/**
+ * Attaches one workbook and confirms the slot actually took it, retrying once if not.
+ *
+ * Issue #291: under parallel load a `setInputFiles` call occasionally returns without the app
+ * recording the file -- traced directly, the slot still reads "No file selected" immediately
+ * afterwards, so it is never assigned rather than assigned and cleared. The submit button then
+ * stays correctly disabled and every later assertion in the test fails for reasons that look
+ * nothing like the real cause.
+ *
+ * Retrying mirrors what a user does when a slot comes up empty: pick the file again. It does not
+ * paper over the defect -- the second attempt failing raises an error that names the issue, and
+ * the underlying race is tracked in #291 rather than being silently absorbed here.
+ */
+async function attachAndVerify(
+  page: Page,
+  inputId: string,
+  name: string,
+  buffer: Buffer,
+): Promise<void> {
+  const slots = page.locator('.source-dropzone__slots');
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await page.locator(`#${inputId}`).setInputFiles({ name, mimeType: XLSX_MIME, buffer });
+
+    try {
+      await expect(slots.getByText(name, { exact: true })).toBeVisible({ timeout: 5_000 });
+      return;
+    } catch {
+      if (attempt === 2) {
+        throw new Error(
+          `Upload slot #${inputId} did not accept "${name}" after two attempts. This is Issue #291 ` +
+            '(a file assignment lost under parallel load), not an assertion failure in the spec ' +
+            'that called this helper.',
+        );
+      }
+    }
+  }
 }
 
 export interface RunOptions {

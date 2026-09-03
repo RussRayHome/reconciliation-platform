@@ -167,6 +167,12 @@ jobs:
           docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} run --rm migrate
           docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} exec -T postgres \
             psql -U recon_app -d reconciliation_platform < scripts/db/dev-stage/create-users.psql
+          # One organization per Playwright worker slot. Without it the whole suite shares
+          # 'Default Organization', where any completed run flips every other spec's Import Files
+          # screen into its post-run phase -- the cause of e2e-functional failing on a different
+          # test each run against unchanged commits.
+          docker compose -f compose.yaml --env-file ci-e2e.env -p reconciliation-platform-ci-e2e-${{ matrix.shard }} exec -T postgres \
+            psql -U recon_app -d reconciliation_platform < scripts/db/dev-stage/create-e2e-orgs.psql
 
       # DISABLE_API_RATE_LIMIT: the route-sweep and signup specs (ISSUE-026/ISSUE-033) each do
       # real logins in sequence -- against a local Postgres, this reproducibly tripped the API's

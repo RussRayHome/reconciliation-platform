@@ -2,6 +2,7 @@ import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup, submitRunButton } from '../auth';
+import { resetRunsForWorker } from '../runState';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -12,7 +13,12 @@ import {
 } from '../fileValidationWorkbooks';
 import { exceptionSummaryCell, runReconciliation, setWorkbookFiles } from '../reconciliationHelpers';
 
+// Before login: these specs drive the Import Files screen, whose behaviour depends on whether
+// this worker's organization already has a terminal run (see runState.ts). Without this they
+// inherit whatever the previous spec on this worker left behind, and the submit button they
+// click is the post-run "Start new run" -- correctly disabled when no files are attached.
 test.beforeEach(async ({ page }) => {
+  await resetRunsForWorker();
   await loginToApplication(page);
 });
 

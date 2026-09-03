@@ -17,8 +17,14 @@ import {
   timingDifferenceGlFileValidationRows,
 } from '../fileValidationWorkbooks';
 import { exceptionRow, exceptionSummaryCell, openExceptions, runReconciliation, setWorkbookFiles } from '../reconciliationHelpers';
+import { resetRunsForWorker } from '../runState';
 
+// Before login, not after: every test here drives a reconciliation from the Import Files screen,
+// and that screen's behaviour depends on whether this worker's organization already has a terminal
+// run (see runState.ts). Clearing first means each test starts from the pre-run state it was
+// written against instead of inheriting whatever the previous spec on this worker left behind.
 test.beforeEach(async ({ page }) => {
+  await resetRunsForWorker();
   await loginToApplication(page);
 });
 

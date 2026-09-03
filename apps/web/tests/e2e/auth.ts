@@ -22,6 +22,30 @@ const dedupeCredentials = (credentials: LoginCredentials[]): LoginCredentials[] 
   });
 };
 
+/** The account for this Playwright worker's own organization, seeded by
+ * scripts/db/dev-stage/create-e2e-orgs.psql.
+ *
+ * `durableRunPhase` is fetched from the server per page load and scoped to the logged-in user's
+ * organization, so every test sharing one organization also shares run state: once ANY test
+ * completed a run, the Import Files submit button switched to "Start new run" (enabled) for
+ * everyone, and the specs asserting the pre-run disabled state failed depending on which worker
+ * won the race. Giving each worker slot its own organization removes that cross-worker channel.
+ *
+ * TEST_PARALLEL_INDEX is Playwright's own 0..workers-1 slot number, stable for the life of a
+ * worker, which is exactly the granularity the seeded pool is keyed on. It is absent outside a
+ * Playwright run, and the seed may not have been applied at all -- in both cases this contributes
+ * no candidate and the shared-organization fallbacks below still log in, so this degrades to the
+ * previous behaviour rather than breaking. */
+const resolveWorkerCredential = (): LoginCredentials[] => {
+  const slot = process.env.TEST_PARALLEL_INDEX?.trim();
+
+  if (!slot || !/^\d+$/.test(slot)) {
+    return [];
+  }
+
+  return [{ username: `e2e_w${slot}`, password: 'P@ssw0rd' }];
+};
+
 const resolveLoginCandidates = (): LoginCredentials[] => {
   const envUsername = process.env.PLAYWRIGHT_LOGIN_USERNAME?.trim();
   const envPassword = process.env.PLAYWRIGHT_LOGIN_PASSWORD;
@@ -54,13 +78,31 @@ const resolveLoginCandidates = (): LoginCredentials[] => {
 
   return dedupeCredentials([
     ...configuredCredential,
+    ...resolveWorkerCredential(),
     ...recentSuccessfulCredential,
     ...fallbackCredentials,
   ]);
 };
 
-export const loginToApplication = async (page: Page): Promise<void> => {
-  const candidates = resolveLoginCandidates();
+/** The pristine organization reserved for pre-run form assertions. See create-e2e-orgs.psql. */
+export const FORM_VALIDATION_CREDENTIAL: LoginCredentials = {
+  username: 'e2e_form',
+  password: 'P@ssw0rd',
+};
+
+/**
+ * @param preferred Tried first, ahead of the worker and shared-organization accounts. Use it when a
+ * spec needs a specific organization's run state rather than whichever one this worker owns. The
+ * usual candidates still follow as fallbacks, so an environment without the E2E seed applied logs
+ * in exactly as it did before instead of failing outright.
+ */
+export const loginToApplication = async (
+  page: Page,
+  preferred?: LoginCredentials,
+): Promise<void> => {
+  const candidates = preferred
+    ? dedupeCredentials([preferred, ...resolveLoginCandidates()])
+    : resolveLoginCandidates();
   const loginHeading = page.getByRole('heading', { name: 'Log in' });
   const submitButton = page.getByRole('button', { name: 'Log in' });
   // Import Files became a CollapsibleNavSection (R1 WP1) -- its own header is a button, not a
