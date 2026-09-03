@@ -40,6 +40,19 @@ RUN apk add --no-cache openssl && \
 
 FROM nginxinc/nginx-unprivileged:mainline-alpine AS runtime
 
+# Links the published GHCR package back to this repository. Without it an org-owned package can
+# land unconnected, which is the condition under which `packages: write` alone is not sufficient
+# to publish (the repo then has to be added manually under the package's Manage Actions access).
+LABEL org.opencontainers.image.source="https://github.com/RussRayHome/reconciliation-platform"
+
+# Re-declared: ARG scope is per-stage, so the `build` stage's copy above is not visible here.
+# Vite bakes this value into the bundle at build time, which makes it the one build argument that
+# produces a materially different image -- `docker compose -f compose.yaml build` passes nothing
+# (empty segment) while the dev overlay passes 'dev'. Recording it as a label is what lets the
+# publish pipeline ASSERT the overlay was actually applied, rather than assuming it.
+ARG VITE_ENVIRONMENT_PATH_SEGMENT=
+LABEL com.reconciliation.environment-path-segment="${VITE_ENVIRONMENT_PATH_SEGMENT}"
+
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 # NOT /etc/nginx/conf.d/ -- the base image's own nginx.conf globs `include
 # /etc/nginx/conf.d/*.conf;` at http{} scope, which would apply this file's add_header directives
