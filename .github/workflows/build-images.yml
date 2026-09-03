@@ -1,20 +1,37 @@
 name: Build Images
 
-# One-off, manually-triggered build: packages the API and web runtime images the same way
-# docker:dev would, so they can be pulled down and used to redeploy the local dev stack without
-# rebuilding from source there. Deliberately workflow_dispatch-only, not wired to push -- this is
-# not a standing CI/CD pipeline, just a way to get a GitHub-built image onto a developer machine
-# on demand. Uploads as build artifacts rather than pushing to a registry (GHCR would need
-# packages:write/read scopes this environment doesn't have configured).
+# Builds the API and web runtime images the way docker:dev would, publishes them to GHCR, and
+# promotes the `:dev` tag ONLY to a digest that passed its own smoke test.
+#
+# WS4. Still workflow_dispatch-only on purpose: the plan's `packages: write` sufficiency question
+# is [unverified] -- RussRayHome is an Organization, and an org-owned package can land
+# "unconnected", in which case the repo must be added under the package's Manage Actions access
+# before publishing works at all. That cannot be resolved from a laptop (listing org packages needs
+# read:packages, which the local token lacks), so it gets resolved by dispatching this manually.
+# Add `push: branches: [dev]` only after a manual run has published successfully.
 on:
   workflow_dispatch:
 
-# WS8a: least privilege -- one token-authenticated checkout, nothing else. When WS4 adds GHCR
-# publishing this block must gain `packages: write` alongside `contents: read`, not replace it:
-# an explicit permissions block is restrictive, so listing only `packages: write` would silently
-# drop contents and break the checkout.
+# A rapid merge sequence on dev has been observed at five merges in 52 seconds -- two of them 4 s
+# apart -- against a ~2.4-minute build. GitHub documents queued runs as FIFO by wait time but
+# states ordering is NOT guaranteed, so without this two runs could promote `:dev` out of order and
+# leave it pointing at the older commit. cancel-in-progress trades away images for intermediate
+# commits in a burst (they stop being rollback targets) in exchange for `:dev` never going
+# backwards; `false` would instead pay 5x the minutes to build every commit in a burst.
+concurrency:
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: true
+
+# An explicit permissions block is RESTRICTIVE -- it lists everything the token gets. `packages:
+# write` alone would silently drop `contents` and break the checkout below, so both are named.
 permissions:
   contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/russrayhome/reconciliation-platform-dev-api
+  WEB_IMAGE: ghcr.io/russrayhome/reconciliation-platform-dev-web
 
 jobs:
   build:
@@ -37,22 +54,180 @@ jobs:
           # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
-      - name: Build API image
+      - name: Build api and web through the dev overlay
+        # Built through compose WITH compose.dev.yaml, and naming `api web` explicitly.
+        #
+        # The overlay is required: it is what passes VITE_ENVIRONMENT_PATH_SEGMENT=dev, which Vite
+        # bakes into the bundle. `docker compose -f compose.yaml build` passes nothing, so the image
+        # docker-validate builds on a PR is NOT the image the dev stack runs. Closing that gap is
+        # the whole point of this workstream.
+        #
+        # Naming the services is equally required: the overlay hardcodes ENABLE_PGAUDIT=true on
+        # `postgres`, where compose.yaml defaults it false and CI writes false. Building unnamed
+        # services through the overlay would produce a pgaudit-enabled postgres image -- a service
+        # this workflow deliberately keeps local and unpublished, and one that would then differ
+        # from what CI builds.
         run: |
           set -euo pipefail
-          docker build --target runtime -f apps/api/Dockerfile -t reconciliation-platform-dev-api:${{ github.sha }} .
+          docker compose --env-file .env.docker.dev.fallback \
+            -f compose.yaml -f compose.dev.yaml build api web
 
-      - name: Build web image
+      - name: Log in to GHCR
+        # `run:` with docker login, not docker/login-action. The repo's Actions policy is
+        # allowed_actions=selected with github_owned_allowed=true and an EMPTY third-party
+        # allowlist (WS8d), so any docker/* action would be rejected outright. Keeping the
+        # allowlist empty is the point, not an inconvenience to work around.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: echo "$GITHUB_TOKEN" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Push commit-tagged images and capture their digests
+        id: push
+        # A commit-named tag is conventionally stable but still a MUTABLE registry tag -- anything
+        # holding packages:write can re-push it at different content. Only the digest is immutable,
+        # so everything downstream of here is written in digests and the tag is treated as nothing
+        # more than a human-navigable handle.
         run: |
           set -euo pipefail
-          docker build --build-arg VITE_ENVIRONMENT_PATH_SEGMENT=dev -f apps/web/Dockerfile -t reconciliation-platform-dev-web:${{ github.sha }} .
+          SHORT="${GITHUB_SHA:0:12}"
 
+          docker tag reconciliation-platform-dev-api "${API_IMAGE}:sha-${SHORT}"
+          docker tag reconciliation-platform-dev-web "${WEB_IMAGE}:sha-${SHORT}"
+          docker push "${API_IMAGE}:sha-${SHORT}"
+          docker push "${WEB_IMAGE}:sha-${SHORT}"
+
+          API_DIGEST=$(docker buildx imagetools inspect "${API_IMAGE}:sha-${SHORT}" --format '{{.Manifest.Digest}}')
+          WEB_DIGEST=$(docker buildx imagetools inspect "${WEB_IMAGE}:sha-${SHORT}" --format '{{.Manifest.Digest}}')
+          test -n "$API_DIGEST" && test -n "$WEB_DIGEST"
+
+          {
+            echo "short=${SHORT}"
+            echo "api_digest=${API_DIGEST}"
+            echo "web_digest=${WEB_DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+          echo "api ${API_IMAGE}@${API_DIGEST}"
+          echo "web ${WEB_IMAGE}@${WEB_DIGEST}"
+
+      - name: Smoke-test the pushed digests
+        # Tests the DIGEST, not the tag: a tag could have moved between the push above and here.
+        # Pulled fresh from the registry rather than reusing the local build, so this exercises the
+        # artifact a consumer would actually get.
+        env:
+          API_REF: ${{ env.API_IMAGE }}@${{ steps.push.outputs.api_digest }}
+          WEB_REF: ${{ env.WEB_IMAGE }}@${{ steps.push.outputs.web_digest }}
+        run: |
+          set -euo pipefail
+          docker pull -q "$API_REF"
+          docker pull -q "$WEB_REF"
+
+          # api: the entrypoint bundle exists and is syntactically loadable. `node --check` parses
+          # without executing -- running it for real would start a server that then blocks waiting
+          # for a database this job deliberately does not stand up.
+          docker run --rm --entrypoint node "$API_REF" --check /app/apps/api/dist/index.cjs
+          echo "api: entrypoint bundle parses"
+
+          # web: assert the overlay's build arg actually reached the image. This is the divergence
+          # WS4 exists to close, so it is checked rather than assumed -- an empty value here means
+          # the image was built without compose.dev.yaml and must not be promoted.
+          SEGMENT=$(docker inspect --format '{{index .Config.Labels "com.reconciliation.environment-path-segment"}}' "$WEB_REF")
+          if [ "$SEGMENT" != "dev" ]; then
+            echo "web: environment-path-segment is '${SEGMENT}', expected 'dev' -- built without the dev overlay." >&2
+            exit 1
+          fi
+          echo "web: environment-path-segment=dev"
+
+          # web: it actually serves. /healthz is the same endpoint the image's own HEALTHCHECK uses.
+          docker run -d --name smoke-web -p 18080:8080 "$WEB_REF"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1; then
+              echo "web: /healthz responded after ${i}s"
+              docker rm -f smoke-web >/dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "web: /healthz did not respond within 30s" >&2
+          docker logs smoke-web >&2 || true
+          docker rm -f smoke-web >/dev/null || true
+          exit 1
+
+      - name: Verify the commit tags still resolve to the tested digests
+        # Compare-and-swap #1, on IMAGE identity: catches a concurrent overwrite of :sha-* between
+        # the push and now. Distinct from the git-identity check in the next step -- one race lives
+        # in the registry, the other in the merge queue, and both are real.
+        env:
+          SHORT: ${{ steps.push.outputs.short }}
+          API_DIGEST: ${{ steps.push.outputs.api_digest }}
+          WEB_DIGEST: ${{ steps.push.outputs.web_digest }}
+        run: |
+          set -euo pipefail
+          API_NOW=$(docker buildx imagetools inspect "${API_IMAGE}:sha-${SHORT}" --format '{{.Manifest.Digest}}')
+          WEB_NOW=$(docker buildx imagetools inspect "${WEB_IMAGE}:sha-${SHORT}" --format '{{.Manifest.Digest}}')
+          [ "$API_NOW" = "$API_DIGEST" ] || { echo "api :sha-${SHORT} moved: ${API_DIGEST} -> ${API_NOW}" >&2; exit 1; }
+          [ "$WEB_NOW" = "$WEB_DIGEST" ] || { echo "web :sha-${SHORT} moved: ${WEB_DIGEST} -> ${WEB_NOW}" >&2; exit 1; }
+          echo "both commit tags still resolve to the tested digests"
+
+      - name: Promote :dev to the tested digests
+        # Compare-and-swap #2, on GIT identity: only promote if this run's commit is still dev's
+        # head. concurrency above cancels superseded runs, but cancellation is not instantaneous --
+        # this is what actually prevents an older run moving :dev backwards.
+        #
+        # imagetools create re-points the tag at an EXISTING digest. No rebuild: rebuilding at
+        # promotion time would re-open the very divergence this workflow exists to close.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHORT: ${{ steps.push.outputs.short }}
+          API_DIGEST: ${{ steps.push.outputs.api_digest }}
+          WEB_DIGEST: ${{ steps.push.outputs.web_digest }}
+        run: |
+          set -euo pipefail
+          DEV_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/dev" --jq '.object.sha')
+          if [ "$DEV_HEAD" != "$GITHUB_SHA" ]; then
+            echo "dev has moved (${GITHUB_SHA:0:12} -> ${DEV_HEAD:0:12}) -- skipping :dev promotion." >&2
+            echo "The commit-tagged images are published and remain usable by digest." >&2
+            exit 0
+          fi
+
+          docker buildx imagetools create --tag "${API_IMAGE}:dev" "${API_IMAGE}@${API_DIGEST}"
+          docker buildx imagetools create --tag "${WEB_IMAGE}:dev" "${WEB_IMAGE}@${WEB_DIGEST}"
+
+          # Verify the promotion landed on the tested content, not merely that the command exited 0.
+          API_DEV=$(docker buildx imagetools inspect "${API_IMAGE}:dev" --format '{{.Manifest.Digest}}')
+          WEB_DEV=$(docker buildx imagetools inspect "${WEB_IMAGE}:dev" --format '{{.Manifest.Digest}}')
+          [ "$API_DEV" = "$API_DIGEST" ] || { echo "api :dev resolved to ${API_DEV}, expected ${API_DIGEST}" >&2; exit 1; }
+          [ "$WEB_DEV" = "$WEB_DIGEST" ] || { echo "web :dev resolved to ${WEB_DEV}, expected ${WEB_DIGEST}" >&2; exit 1; }
+          echo ":dev, :sha-${SHORT} and the tested digests all agree"
+
+      - name: Summarise what to pull
+        if: always()
+        env:
+          SHORT: ${{ steps.push.outputs.short }}
+          API_DIGEST: ${{ steps.push.outputs.api_digest }}
+          WEB_DIGEST: ${{ steps.push.outputs.web_digest }}
+        run: |
+          {
+            echo "### Published images"
+            echo
+            echo '```'
+            echo "${API_IMAGE}@${API_DIGEST}"
+            echo "${WEB_IMAGE}@${WEB_DIGEST}"
+            echo '```'
+            echo
+            echo "Also tagged \`:sha-${SHORT}\`, and \`:dev\` if this commit was still dev's head."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Tarball uploads retained deliberately, for now. The plan calls for removing them once a
+      # GHCR pull is verified from the laptop -- keeping both costs ~76 GB-hours/month of billable
+      # Actions storage while GHCR container storage is currently free. But GHCR publishing here is
+      # unproven (see the [unverified] permissions note at the top), and these tarballs are the only
+      # existing way to get an image onto the laptop. Remove them in the follow-up that adds the
+      # push trigger, not before.
       - name: Save images to tarballs
         run: |
           set -euo pipefail
           mkdir -p /tmp/images
-          docker save reconciliation-platform-dev-api:${{ github.sha }} -o /tmp/images/api.tar
-          docker save reconciliation-platform-dev-web:${{ github.sha }} -o /tmp/images/web.tar
+          docker save reconciliation-platform-dev-api -o /tmp/images/api.tar
+          docker save reconciliation-platform-dev-web -o /tmp/images/web.tar
 
       - name: Upload API image artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

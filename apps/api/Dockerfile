@@ -60,6 +60,10 @@ COPY --from=manifests / /app/
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 FROM runtime-base AS runtime
+# Links the published GHCR package back to this repository. Without it an org-owned package can
+# land unconnected, which is the condition under which `packages: write` alone is not sufficient
+# to publish (the repo then has to be added manually under the package's Manage Actions access).
+LABEL org.opencontainers.image.source="https://github.com/RussRayHome/reconciliation-platform"
 ENV NODE_ENV=production
 ENV RECONCILIATION_RUN_STORE_PATH=/var/lib/reconciliation/latest-reconciliation-run.json
 
