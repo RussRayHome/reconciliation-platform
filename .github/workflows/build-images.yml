@@ -3,13 +3,20 @@ name: Build Images
 # Builds the API and web runtime images the way docker:dev would, publishes them to GHCR, and
 # promotes the `:dev` tag ONLY to a digest that passed its own smoke test.
 #
-# WS4. Still workflow_dispatch-only on purpose: the plan's `packages: write` sufficiency question
-# is [unverified] -- RussRayHome is an Organization, and an org-owned package can land
-# "unconnected", in which case the repo must be added under the package's Manage Actions access
-# before publishing works at all. That cannot be resolved from a laptop (listing org packages needs
-# read:packages, which the local token lacks), so it gets resolved by dispatching this manually.
-# Add `push: branches: [dev]` only after a manual run has published successfully.
+# WS4. Runs on every push to dev, and on demand.
+#
+# The `packages: write` sufficiency question the plan marked [unverified] is now RESOLVED: three
+# manual dispatches published successfully, and the org-owned package was created and linked to
+# this repository by the org.opencontainers.image.source label alone -- no Manage Actions access
+# configuration was needed. Verified further from the laptop: `:dev` pulls, its index contains the
+# smoke-tested digest, the environment-path-segment label survives the round trip, the api
+# entrypoint parses and web serves /healthz.
+#
+# ~2.4 minutes per merge to dev (~$0.42/month) buys a `:dev` tag that always matches dev's head and
+# always points at an image that passed its own smoke test.
 on:
+  push:
+    branches: [dev]
   workflow_dispatch:
 
 # A rapid merge sequence on dev has been observed at five merges in 52 seconds -- two of them 4 s
@@ -242,30 +249,3 @@ jobs:
             echo
             echo "Also tagged \`:sha-${SHORT}\`, and \`:dev\` if this commit was still dev's head."
           } >> "$GITHUB_STEP_SUMMARY"
-
-      # Tarball uploads retained deliberately, for now. The plan calls for removing them once a
-      # GHCR pull is verified from the laptop -- keeping both costs ~76 GB-hours/month of billable
-      # Actions storage while GHCR container storage is currently free. But GHCR publishing here is
-      # unproven (see the [unverified] permissions note at the top), and these tarballs are the only
-      # existing way to get an image onto the laptop. Remove them in the follow-up that adds the
-      # push trigger, not before.
-      - name: Save images to tarballs
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/images
-          docker save reconciliation-platform-dev-api -o /tmp/images/api.tar
-          docker save reconciliation-platform-dev-web -o /tmp/images/web.tar
-
-      - name: Upload API image artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: api-image
-          path: /tmp/images/api.tar
-          retention-days: 1
-
-      - name: Upload web image artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: web-image
-          path: /tmp/images/web.tar
-          retention-days: 1
