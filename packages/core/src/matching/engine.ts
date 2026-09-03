@@ -253,9 +253,22 @@ const buildCandidate = (
   };
 };
 
+/**
+ * H7 (#276): what every MatchResult records about the configuration that produced it.
+ *
+ * Threaded explicitly rather than read from a module-level default: the recorded provenance has to
+ * be whatever the engine was HANDED for this run, or it is not provenance.
+ */
+interface MatchProvenance {
+  appliedAmountTolerance: number;
+  matchingConfigVersionId?: string;
+}
+
+/** See {@link MatchProvenance} -- `provenance` is required so no result can omit it. */
 const createMatchResult = (
   candidate: MatchCandidate,
   disposition: MatchDisposition,
+  provenance: MatchProvenance,
   exceptionCategory?: MatchResult['exceptionCategory'],
 ): MatchResult => ({
   id: randomUUID(),
@@ -270,6 +283,8 @@ const createMatchResult = (
   dateDifferenceDays: candidate.dateDifferenceDays,
   amountDifference: candidate.amountDifference,
   evidence: candidate.evidence,
+  appliedAmountTolerance: provenance.appliedAmountTolerance,
+  matchingConfigVersionId: provenance.matchingConfigVersionId,
   likelyMatchingReference: candidate.glTransactionId,
   exceptionCategory,
 });
@@ -458,7 +473,7 @@ const rankCandidates = (
               'AmountMismatch',
               [
                 `Check #${bankTransaction.checkNumber} matches across both sources.`,
-                'Recorded amounts differ beyond configured tolerance — likely a posting error or partial payment.',
+                `Recorded amounts differ by more than the configured tolerance of ${config.amountTolerance} — likely a posting error or partial payment.`,
               ],
               'CheckNumberMismatch',
             ),
@@ -480,7 +495,7 @@ const rankCandidates = (
               'DateVariance',
               [
                 `Check #${bankTransaction.checkNumber} matches across both sources.`,
-                'Amounts agree within configured tolerance.',
+                `Amounts agree within the configured tolerance of ${config.amountTolerance}.`,
                 'Posting date variance exceeds the primary window — check may have been recorded in a different period.',
               ],
               'DateVariance',
@@ -494,7 +509,7 @@ const rankCandidates = (
         candidates.push(
           buildCandidate(bankTransaction, glTransaction, 'Reference + Amount Match', 1, 'Exact', [
             'Reference or check values align strongly.',
-            'Amounts agree within configured tolerance.',
+            `Amounts agree within the configured tolerance of ${config.amountTolerance}.`,
           ]),
         );
         continue;
@@ -517,7 +532,7 @@ const rankCandidates = (
             'AmountMismatch',
             [
               'Reference or document number aligns strongly across both sources.',
-              'Recorded amounts differ beyond configured tolerance — likely a transposition or recording error.',
+              `Recorded amounts differ by more than the configured tolerance of ${config.amountTolerance} — likely a transposition or recording error.`,
             ],
             'AmountMismatch',
           ),
@@ -550,7 +565,7 @@ const rankCandidates = (
               [
                 `Bank description matched learned alias "${aliasHit.alias.bankPattern}" → "${aliasHit.alias.canonicalPayeeName}".`,
                 `Alias confidence ${(aliasHit.alias.matchConfidence * 100).toFixed(0)}%; effective similarity ${(effectiveSimilarity * 100).toFixed(0)}%.`,
-                'Amounts agree within configured tolerance.',
+                `Amounts agree within the configured tolerance of ${config.amountTolerance}.`,
               ],
               withinPrimaryWindow ? undefined : 'DateVariance',
             ),
@@ -620,7 +635,7 @@ const rankCandidates = (
             0.93,
             'Exact',
             [
-              'Amounts agree within configured tolerance.',
+              `Amounts agree within the configured tolerance of ${config.amountTolerance}.`,
               'Dates fall within the primary tolerance window.',
               'Merchant, payee, or description tokens align strongly.',
             ],
@@ -670,7 +685,7 @@ const rankCandidates = (
             0.82,
             'DateVariance',
             [
-              'Amounts agree within configured tolerance.',
+              `Amounts agree within the configured tolerance of ${config.amountTolerance}.`,
               'Date variance remains outside the primary tolerance but inside the extended review window.',
             ],
             'DateVariance',
@@ -811,7 +826,7 @@ const rankCandidates = (
             'AmountMismatch',
             [
               'Dates and narrative context indicate likely related transactions.',
-              'Recorded amounts differ beyond configured tolerance.',
+              `Recorded amounts differ by more than the configured tolerance of ${config.amountTolerance}.`,
             ],
           ),
         );
@@ -899,7 +914,7 @@ const rankFuzzyCandidates = (
           0.55 + fuzzy.best * 0.1,
           'Probable',
           [
-            'Amounts agree within configured tolerance and dates fall within the primary tolerance window.',
+            `Amounts agree within the configured tolerance of ${config.amountTolerance} and dates fall within the primary tolerance window.`,
             `Description or payee text shares little vocabulary between sources (best similarity ${(fuzzy.best * 100).toFixed(0)}%), but this amount occurs at most ${config.distinctiveAmountMaxOccurrences} time(s) on each side, making amount and date alone a trustworthy signal.`,
             'Reviewer confirmation is required before treating this as a confirmed match.',
           ],
@@ -997,7 +1012,17 @@ export const reconcileMatches = (
   config: MatchingConfig,
   aliases: PayeeAlias[] = [],
   onCandidateOutcome?: CandidateOutcomeObserver,
+  /**
+   * H7 (#276): the published matching-config version whose overrides produced `config`, when one
+   * did. Omitted for engine defaults, which is the only honest value while #260 leaves
+   * `OVERRIDES_APPLIED_TO_ENGINE` false -- no published version currently reaches this function.
+   */
+  matchingConfigVersionId?: string,
 ): MatchEngineResult => {
+  const provenance: MatchProvenance = {
+    appliedAmountTolerance: config.amountTolerance,
+    matchingConfigVersionId,
+  };
   const activeTransactions = transactions.filter(
     (transaction) => !transaction.isExcluded && transaction.dataQualityIssues.length === 0,
   );
@@ -1075,6 +1100,7 @@ export const reconcileMatches = (
       const ambiguousResult = createMatchResult(
         candidate,
         'AmbiguousReview',
+        provenance,
         'AmbiguousMatchRequiringReview',
       );
       probableMatches.push(ambiguousResult);
@@ -1103,7 +1129,7 @@ export const reconcileMatches = (
       exceptionCategory = candidate.exceptionCategory ?? 'AmountMismatch';
     }
 
-    const result = createMatchResult(candidate, disposition, exceptionCategory);
+    const result = createMatchResult(candidate, disposition, provenance, exceptionCategory);
     if (disposition === 'ExactMatch') {
       matchResults.push(result);
       exactMatchedBank.add(candidate.bankTransactionId);
@@ -1157,7 +1183,12 @@ export const reconcileMatches = (
       continue;
     }
 
-    const result = createMatchResult(candidate, 'ProbableMatch', 'WeakDescriptionMatch');
+    const result = createMatchResult(
+      candidate,
+      'ProbableMatch',
+      provenance,
+      'WeakDescriptionMatch',
+    );
     probableMatches.push(result);
     matchResults.push(result);
     reviewedBank.add(candidate.bankTransactionId);

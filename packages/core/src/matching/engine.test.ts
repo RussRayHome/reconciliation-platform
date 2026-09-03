@@ -1227,3 +1227,86 @@ describe('reconcileMatches', () => {
     });
   });
 });
+
+describe('match provenance (H7, #276)', () => {
+  const buildMatchingPair = (): NormalizedTransaction[] => [
+    buildTransaction({
+      id: 'bank-prov',
+      source: 'bank',
+      transactionDate: '2025-03-04',
+      referenceNumber: 'INV-90210',
+      normalizedReferenceTokens: ['inv', '90210'],
+      description: 'ACME SUPPLY CO',
+      normalizedComparisonTokens: ['acme', 'supply', 'co'],
+      amount: 1450.75,
+    }),
+    buildTransaction({
+      id: 'gl-prov',
+      source: 'gl',
+      transactionDate: '2025-03-04',
+      referenceNumber: 'INV-90210',
+      normalizedReferenceTokens: ['inv', '90210'],
+      description: 'ACME SUPPLY CO',
+      normalizedComparisonTokens: ['acme', 'supply', 'co'],
+      amount: 1450.75,
+    }),
+  ];
+
+  it('records the tolerance actually in force, not the engine default', () => {
+    // 0.25 rather than the default 0.01: a constant returned by mistake would still satisfy an
+    // assertion written against the default, so the fixture deliberately uses a value no code
+    // path could produce on its own.
+    const config = { ...defaultReconciliationConfig.matching, amountTolerance: 0.25 };
+
+    const result = reconcileMatches(buildMatchingPair(), config);
+
+    expect(result.matchResults.length).toBeGreaterThan(0);
+    for (const match of result.matchResults) {
+      expect(match.appliedAmountTolerance).toBe(0.25);
+    }
+  });
+
+  it('leaves the config version undefined when the run used engine defaults', () => {
+    const result = reconcileMatches(buildMatchingPair(), defaultReconciliationConfig.matching);
+
+    for (const match of result.matchResults) {
+      expect(match.matchingConfigVersionId).toBeUndefined();
+    }
+  });
+
+  it('threads a supplied config version onto every result', () => {
+    const versionId = '7f1d2c34-5b6a-4c8d-9e0f-1a2b3c4d5e6f';
+
+    const result = reconcileMatches(
+      buildMatchingPair(),
+      defaultReconciliationConfig.matching,
+      [],
+      undefined,
+      versionId,
+    );
+
+    expect(result.matchResults.length).toBeGreaterThan(0);
+    for (const match of result.matchResults) {
+      expect(match.matchingConfigVersionId).toBe(versionId);
+    }
+  });
+
+  it('never claims a tolerance in evidence text without stating its value', () => {
+    // The defect this closes: pairwise rules emitted "Amounts agree within configured tolerance"
+    // with no number, so a reader could not tell what the engine compared against. Asserted as an
+    // invariant over whatever rules happen to fire rather than against one rule's wording.
+    const config = { ...defaultReconciliationConfig.matching, amountTolerance: 0.25 };
+
+    const result = reconcileMatches(buildMatchingPair(), config);
+    const allEvidence = [
+      ...result.matchResults.flatMap((match) => match.evidence),
+      ...result.probableMatches.flatMap((match) => match.evidence),
+    ];
+
+    const toleranceClaims = allEvidence.filter((line) => line.includes('configured tolerance'));
+    expect(toleranceClaims.length).toBeGreaterThan(0);
+    for (const line of toleranceClaims) {
+      expect(line).toContain('0.25');
+    }
+  });
+});

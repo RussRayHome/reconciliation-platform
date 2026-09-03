@@ -219,6 +219,7 @@ const createReviewReadyJob = async (store: PostgresReconciliationLifecycleStore)
 
   const probableMatch: MatchResult = {
     id: randomUUID(),
+    appliedAmountTolerance: 0.05,
     disposition: 'ProbableMatch',
     confidence: 'Probable',
     ruleId: 'amount-date-reference-variance',
@@ -547,6 +548,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
 
     const exactMatch: MatchResult = {
       id: randomUUID(),
+      appliedAmountTolerance: 0.05,
       disposition: 'ExactMatch',
       confidence: 'Exact',
       ruleId: 'amount-date-text-match',
@@ -561,6 +563,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
     };
     const probableMatch: MatchResult = {
       id: randomUUID(),
+      appliedAmountTolerance: 0.05,
       disposition: 'ProbableMatch',
       confidence: 'Probable',
       ruleId: 'amount-date-reference-variance',
@@ -901,6 +904,35 @@ describe('PostgresReconciliationLifecycleStore', () => {
     const persistedLines = rawRowResult.rows.map((row) => row.line_number);
     expect(new Set(persistedLines).size).toBe(1);
     expect([2, 3]).toContain(persistedLines[0]);
+  });
+
+  it('round-trips match provenance and reports an unrecorded tolerance as null (H7, #276)', async () => {
+    if (startupError) {
+      throw startupError;
+    }
+
+    const store = new PostgresReconciliationLifecycleStore(pool);
+    const { jobId } = await createReviewReadyJob(store);
+    const readModelStore = new PostgresReconciliationReadModelStore(pool);
+
+    // 0.05 rather than the engine default 0.01: a read path that substituted a default would
+    // still satisfy an assertion written against the default.
+    const persisted = await readModelStore.findRunReportById(defaultOrganizationId, jobId);
+    expect(persisted?.probableMatches[0]?.appliedAmountTolerance).toBe(0.05);
+    expect(persisted?.probableMatches[0]?.matchingConfigVersionId).toBeUndefined();
+
+    // Rows written before changeset 0072 carry no tolerance at all. The read model has to report
+    // that absence rather than filling it in -- presenting a guess as the value the engine applied
+    // is the defect #276 exists to close. rowCount is asserted because an UPDATE matching nothing
+    // reports success exactly as loudly as one that changed a row.
+    const cleared = await pool.query(
+      'UPDATE reconciliation_match_result SET applied_amount_tolerance = NULL WHERE job_id = $1',
+      [jobId],
+    );
+    expect(cleared.rowCount).toBeGreaterThan(0);
+
+    const historical = await readModelStore.findRunReportById(defaultOrganizationId, jobId);
+    expect(historical?.probableMatches[0]?.appliedAmountTolerance).toBeNull();
   });
 
   it('upserts reviewer decisions in place, increments record version, and leaves a single durable row', async () => {
@@ -1258,6 +1290,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
         matchResults: [
           {
             id: randomUUID(),
+            appliedAmountTolerance: 0.05,
             disposition: 'ExactMatch',
             confidence: 'Exact',
             ruleId: 'amount-date-text-match',
@@ -1322,6 +1355,7 @@ describe('PostgresReconciliationLifecycleStore', () => {
 
     const probableMatch: MatchResult = {
       id: randomUUID(),
+      appliedAmountTolerance: 0.05,
       disposition: 'ProbableMatch',
       confidence: 'Probable',
       ruleId: 'amount-date-reference-variance',

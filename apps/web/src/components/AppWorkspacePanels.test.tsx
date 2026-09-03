@@ -16,6 +16,7 @@ const buildProbableMatches = (count: number): MatchResult[] =>
     dateDifferenceDays: index % 3,
     amountDifference: index * 1.25,
     evidence: [`Evidence ${index + 1}`],
+    appliedAmountTolerance: 0.05,
   }));
 
 const buildRun = (probableMatchCount: number): ReconciliationRunReport => ({

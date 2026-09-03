@@ -67,6 +67,10 @@ const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => 
   confidence: overrides.confidence ?? 'DateVariance',
   ruleId: overrides.ruleId,
   ruleName: overrides.ruleName ?? 'Amount + Extended Date Window Match',
+  // H7 (#276): required on MatchResult so a disposition always records the tolerance
+  // that produced it. Defaulted here; assert on it where provenance is the subject.
+  appliedAmountTolerance: overrides.appliedAmountTolerance ?? 0.01,
+  matchingConfigVersionId: overrides.matchingConfigVersionId,
   reason: overrides.reason,
   score: overrides.score ?? 0.82,
   bankTransactionId: overrides.bankTransactionId,
