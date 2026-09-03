@@ -19,11 +19,11 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.0.0",
+    "multer": "^2.3.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.0.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

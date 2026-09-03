@@ -14,13 +14,13 @@
     "@recon/domain": "0.1.0",
     "@recon/ui": "0.1.0",
     "@tanstack/react-query": "^5.101.1",
-    "@xyflow/react": "^12.11.3",
+    "@xyflow/react": "^12.11.5",
     "lodash": "^4.18.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router": "^8.3.0",
+    "react-router": "^8.3.1",
     "recharts": "^3.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",
