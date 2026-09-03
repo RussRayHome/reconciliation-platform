@@ -2320,7 +2320,10 @@ describe('App', () => {
     });
   });
 
-  it('re-enables as Start new run after success', async () => {
+  // The caption is what this covers. It used to also assert the button re-enabled, but success
+  // clears the upload slots, so an enabled button there could not actually submit anything -- see
+  // 'clears the upload slots after success and disables the button until files are re-added'.
+  it('relabels to Start new run after success', async () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
     renderApp();
@@ -2329,20 +2332,22 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Start new run' })).toHaveAttribute(
-        'aria-disabled',
-        'false',
-      );
+      expect(screen.getByRole('button', { name: 'Start new run' })).toBeInTheDocument();
     });
   });
 
   // N4: navigating back to Import Files after a successful run (browser back, not a fresh
   // landing -- applyInitialLanding only fires once per mount) must not show the just-submitted
-  // filenames sitting in the upload slots as if they hadn't been submitted yet. The button
-  // staying enabled as "Start new run" (not regressing to a disabled "Submit run") is the other
-  // half of this: resolveSubmitButtonState has to keep reading success even once the files it
-  // gates on are gone.
-  it('clears the upload slots after success without disabling the button', async () => {
+  // filenames sitting in the upload slots as if they hadn't been submitted yet. The caption
+  // staying "Start new run" (not regressing to "Submit run") is the other half of this.
+  //
+  // The button is DISABLED here, and that is the fix, not a regression. It previously stayed
+  // enabled: resolveSubmitButtonState skipped the upload check in the succeeded phase purely to
+  // hold the caption steady, which left a live button with no files behind it -- and App's submit
+  // handler silently returns in exactly that state, so clicking did nothing and reported nothing.
+  // The caption is now derived from the phase independently of enablement, so it stays correct
+  // while the guard stays on.
+  it('clears the upload slots after success and disables the button until files are re-added', async () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
     renderApp();
@@ -2353,7 +2358,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Start new run' })).toHaveAttribute(
         'aria-disabled',
-        'false',
+        'true',
       );
     });
     expect(screen.queryByText('1111_bank.xlsx')).not.toBeInTheDocument();
