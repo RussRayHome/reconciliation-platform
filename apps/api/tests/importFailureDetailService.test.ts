@@ -178,4 +178,45 @@ describe('buildErrorReportCsv', () => {
     const lines = csv.trim().split('\n');
     expect(lines[1]).toBe('gl.csv,,,GL_UNBALANCED,ERROR,file-level,');
   });
+
+  // Issue #258. The `file` column is the uploaded filename and is fully attacker-controlled at
+  // position 0; a spreadsheet executes a cell whose text starts with = + - or @. CSV carries no
+  // cell types to distinguish data from formula, so the value is neutralised on write.
+  it.each([
+    '=HYPERLINK("http://attacker/","click").xlsx',
+    '+1-555-0100.csv',
+    '@SUM(A1:A9).xlsx',
+    "-2+3+cmd|'/C calc'!A0.csv",
+  ])('escapes a formula-leading filename: %s', (filename) => {
+    const csv = buildErrorReportCsv([
+      { file: filename, line: 1, column: 'Date', code: 'BANK_DATE_FORMAT', severity: 'ERROR', message: 'bad date' },
+    ]);
+    const field = csv.trim().split('\n')[1]!;
+    // Quoting may wrap the field when it contains a comma or quote, so assert the apostrophe sits
+    // immediately before the payload rather than pinning the whole line.
+    expect(/^"?'/.test(field)).toBe(true);
+  });
+
+  it('leaves a value that does not start with a formula character untouched', () => {
+    const csv = buildErrorReportCsv([
+      { file: '1111_bank.xlsx', line: 2, column: 'Debit', code: 'BANK_DEBIT_FORMAT', severity: 'ERROR',
+        message: 'Debit must be a valid amount: "-125.50 REVERSAL"' },
+    ]);
+    const line = csv.trim().split('\n')[1]!;
+    expect(line.startsWith('1111_bank.xlsx')).toBe(true);
+    expect(line).toContain('-125.50 REVERSAL');
+  });
+
+  // Every validation message begins with a literal and interpolates user text only after it, so a
+  // payload cannot reach position 0 of `message`. This pins that property and documents why
+  // `message` was never the exposed field -- only `file` was.
+  it('does not escape a message that merely CONTAINS a formula payload', () => {
+    const csv = buildErrorReportCsv([
+      { file: 'gl.csv', line: 3, column: 'Date', code: 'GL_DATE_FORMAT', severity: 'ERROR',
+        message: 'Date must be YYYY-MM-DD, got "=1+1"' },
+    ]);
+    const line = csv.trim().split('\n')[1]!;
+    expect(line).toContain('Date must be YYYY-MM-DD');
+    expect(line).not.toContain("'Date");
+  });
 });
