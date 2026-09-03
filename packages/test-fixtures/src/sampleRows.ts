@@ -252,7 +252,7 @@ export const staleOutstandingBelowThresholdGlRows = [
 export const staleOutstandingMixedResidualBankRows = [
   ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
   ['2025-03-15', 'UNBOOKED BANK FEE', '1', '', '45.00', '', '955.00'],
-  ['2025-04-30', 'MONTH-END ACTIVITY', '2', '', '100.00', '', '750.00'],
+  ['2025-04-30', 'MONTH-END ACTIVITY', '2', '', '100.00', '', '855.00'],
 ];
 
 export const staleOutstandingMixedResidualGlRows = [
