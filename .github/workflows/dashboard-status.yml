@@ -31,16 +31,23 @@ on:
     # only consumer of this schedule and does not need daily freshness; a weekly heartbeat keeps
     # it current enough to be worth reading and still surfaces a systematically broken job, which
     # a dispatch-only workflow would not (it only ever runs when someone already suspects a
-    # problem). Push-to-dev still triggers this workflow, so merges keep refreshing the feed.
+    # problem).
     - cron: '17 7 * * 1'
   workflow_dispatch: {} # manual trigger from GitHub's UI, for testing this workflow itself
-  push:
-    branches: [dev]
-    # Docs-only commits can't change any check's outcome, and a full run costs ~24 job-minutes.
-    paths-ignore:
-      - 'issue_tracker/**'
-      - 'docs/**'
-      - '**.md'
+  #
+  # WS3, 2026-09-03: the push-to-dev trigger is GONE. It was the single largest line item on the
+  # August Actions bill -- 5,861 billable minutes, ~$35.17/month -- and ~66% of it re-ran work
+  # docker-validate had already done on the PR that produced the very commit being pushed.
+  #
+  # The PR run is not a weaker check than the post-merge run. `dev` has `strict: true`, so a PR
+  # must be up to date before it merges, and docker-validate checks out `refs/pull/N/merge` -- the
+  # merge RESULT, not the PR head. Squash and merge-commit both produce that same tree. A post-merge
+  # run can still fail, but it cannot gate anything: by then the code is already on dev.
+  #
+  # Two things did NOT have a PR-side equivalent and are preserved in dev-guard.yml rather than
+  # dropped: the full-history secret scan (docker-validate has no secret scanning at all) and the
+  # visual regression lane (non-gating on PRs by design, so `dev` was its only real gate). Together
+  # those cost ~814 min/month against the 5,861 removed.
 
 # Serialises runs per ref, which matters for two reasons. `aggregate` holds contents:write and
 # pushes to the status-data branch -- two overlapping runs would race there and one would die on
@@ -64,6 +71,12 @@ env:
   # result attributed to a commit that was never tested is worse than a red one -- it is silent,
   # and the published artifact looks authoritative. Schedule and workflow_dispatch have no
   # triggering SHA, so they keep the original tip-of-branch behaviour.
+  #
+  # WS3 removed the push trigger (see the `on:` block), so today the `github.sha` branch is
+  # unreachable and every job resolves to TARGET_BRANCH. The expression is kept rather than
+  # simplified to a bare `env.TARGET_BRANCH`: it is the guard that makes a push trigger safe, and
+  # deleting it would silently remove the protection if anyone re-adds `push:` later. Twelve
+  # identical expressions are cheaper to leave in place than a mixed-commit run is to debug.
 
 jobs:
   unit:
