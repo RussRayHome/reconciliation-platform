@@ -17,13 +17,13 @@
     "infra:smoke-test": "tsx scripts/smoke-test.ts"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.260.0",
+    "aws-cdk-lib": "^2.267.0",
     "constructs": "^10.4.2"
   },
   "devDependencies": {
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.4.0",
     "aws-cdk": "^2.1128.1",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }
