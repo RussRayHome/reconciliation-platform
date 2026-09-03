@@ -932,6 +932,52 @@ export interface MatchEngineResult {
  *   matches a known alias pattern, boosting match confidence where raw text similarity
  *   would otherwise be below threshold.
  */
+/**
+ * G5 (#272): cleared and unmatched must partition the non-duplicate population -- every transaction
+ * is in exactly one, never both and never neither.
+ *
+ * "Cleared" means exactly matched. ProbableMatch and grouped-review rows are NOT cleared and belong
+ * to the unmatched side; see the note at the return site for why, and for the measured consequences
+ * of defining it otherwise.
+ *
+ * This holds by construction today, which is the point of asserting it: it locks the invariant so a
+ * later change to how the sets are built cannot silently reintroduce the ambiguity between "has no
+ * match result" and "has not cleared".
+ *
+ * Deliberately an assertion, not an enforcement mechanism. Several residual stages legitimately
+ * reason over transactions the engine already touched, and #278 (H9) shows what confining a stage
+ * to the unmatched set produces: `classifyAchReturnStage` builds both sides of its pair from
+ * `remainingUnmatchedBank`, so once the original debit matches its GL entry the pair can never form
+ * and ACHReturn becomes unreachable.
+ */
+export const assertClearedPartition = (
+  population: readonly { id: string }[],
+  cleared: ReadonlySet<string>,
+  unmatched: ReadonlySet<string>,
+  side: string,
+): void => {
+  const both: string[] = [];
+  const neither: string[] = [];
+
+  for (const { id } of population) {
+    const isCleared = cleared.has(id);
+    const isUnmatched = unmatched.has(id);
+    if (isCleared && isUnmatched) {
+      both.push(id);
+    } else if (!isCleared && !isUnmatched) {
+      neither.push(id);
+    }
+  }
+
+  if (both.length > 0 || neither.length > 0) {
+    throw new Error(
+      `Matching engine cleared/unmatched partition violated on the ${side} side: ` +
+        `${both.length} in BOTH (${both.slice(0, 5).join(', ')}), ` +
+        `${neither.length} in NEITHER (${neither.slice(0, 5).join(', ')}).`,
+    );
+  }
+};
+
 /** Fires once per candidate as the classification loop disposes of it, `undefined` unless a
  * caller actually wants the detail (apps/api only supplies one when LOG_LEVEL=debug). Bounded by
  * candidate count (already the post-filter output of rankCandidates), not the O(bank x gl) raw
@@ -1119,20 +1165,36 @@ export const reconcileMatches = (
     onCandidateOutcome?.(candidate, 'ProbableMatch');
   }
 
+  // `unmatched` here means NOT CLEARED -- not "no match result exists". Only an exact match clears
+  // a transaction. A ProbableMatch (`reviewed*`, including the fuzzy second pass above) and a
+  // grouped reservation both produce a MatchResult while leaving the transaction uncleared, so a
+  // transaction legitimately appears in BOTH `matchResults` and the unmatched sets. That is
+  // correct, not a leak (#272, owner decision 2026-09-03).
+  //
+  // Do NOT "fix" this by also subtracting `reviewed*` and `groupedReservations.reserved*`. It was
+  // tried and measured: the residual exception classifier reads these sets as its input population
+  // (`exceptionClassifier.ts`), so narrowing them starves the stages downstream. Subtracting all
+  // three fails 10 core tests -- 9 grouping-classification tests, because per #273 every grouping
+  // becomes a GroupedReviewMatch rather than clearing, plus TimingDifference. Subtracting only
+  // `reviewed*` still fails TimingDifference, because DateVariance and TimingDifference exceptions
+  // are produced FROM rows consumed as ProbableMatch. Those categories are the mechanism, not a
+  // symptom.
+  const unmatchedBankTransactionIds = new Set(
+    remainingBank.filter((t) => !exactMatchedBank.has(t.id)).map((t) => t.id),
+  );
+  const unmatchedGlTransactionIds = new Set(
+    remainingGl.filter((t) => !exactMatchedGl.has(t.id)).map((t) => t.id),
+  );
+
+  assertClearedPartition(remainingBank, exactMatchedBank, unmatchedBankTransactionIds, 'bank');
+  assertClearedPartition(remainingGl, exactMatchedGl, unmatchedGlTransactionIds, 'GL');
+
   return {
     matchResults,
     groupedMatchResults,
     probableMatches,
-    unmatchedBankTransactionIds: new Set(
-      remainingBank
-        .filter((transaction) => !exactMatchedBank.has(transaction.id))
-        .map((transaction) => transaction.id),
-    ),
-    unmatchedGlTransactionIds: new Set(
-      remainingGl
-        .filter((transaction) => !exactMatchedGl.has(transaction.id))
-        .map((transaction) => transaction.id),
-    ),
+    unmatchedBankTransactionIds,
+    unmatchedGlTransactionIds,
     duplicateTransactionIds: duplicateIds,
   };
 };
