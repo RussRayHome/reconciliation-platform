@@ -728,6 +728,7 @@ export const runReconciliationWorkflow = async (input: {
       periodLabel,
       aliases,
       onStep: input.onStep,
+      varianceOverrides,
     });
 
     input.repository.save(run);
@@ -736,10 +737,6 @@ export const runReconciliationWorkflow = async (input: {
       runId: run.id,
       exceptions: run.exceptions.length,
     });
-
-    if (varianceOverrides) {
-      run.appliedVarianceOverrides = varianceOverrides;
-    }
 
     return {
       accountIdentifier,
