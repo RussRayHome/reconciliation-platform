@@ -72,7 +72,7 @@ Consumes `multipart/form-data`.
 Required file fields:
 
 - `bankFile` (`.xlsx`)
-- `qboFile` (`.xlsx`)
+- `glFile` (`.xlsx`)
 
 Optional form fields:
 

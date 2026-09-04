@@ -28,13 +28,20 @@ ago — `packages/domain/src/messages.ts` has long mapped `MissingFromQBO` to th
 display string "Missing from GL" — but only the display layer followed. Changesets
 0022 and 0023 retire the old vocabulary everywhere else:
 
-- **0022** renames the seven `qbo_*` columns to `gl_*`, plus the one index whose
-  _name_ embedded the old term (renaming a column does not rename its indexes).
+- **0022** renames the seven `qbo_*` columns to `gl_*`, plus one of the two indexes
+  whose _name_ embedded the old term (renaming a column does not rename its indexes).
 - **0023** migrates stored enum values: `source_system`/`source_type`/
   `template_type` `'qbo'` → `'gl'`, `source_direction` `'bank_to_qbo'` →
   `'bank_to_gl'`, and the two `ErrorCategory` values `MissingFromQBO` /
   `DuplicateInQBO` → `MissingFromGL` / `DuplicateInGL`, across nine CHECK
   constraints, the category keys inside the summary JSONB, and `rule_id`.
+- **0073** finishes what 0022 started. 0022 applied the "a column rename does not
+  rename its indexes" rule to `..._job_qbo_transaction_lookup_idx` but missed the
+  other index and every constraint, so `reconciliation_match_result_qbo_transaction_idx`
+  and `reconciliation_match_result_qbo_transaction_fk` kept the retired spelling
+  while already pointing at `gl_transaction_id`. Both are renamed to `..._gl_...`,
+  matching the `_bank_transaction_idx` / `_bank_transaction_fk` pair on the same
+  table. Metadata-only; no index rebuild and no constraint revalidation.
 
 Because the display strings were already correct, this rename is invisible to
 users; it only removes the split between what the UI says and what the database

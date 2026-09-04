@@ -31,7 +31,7 @@ _Rendered ERD generated from the schema definition in `packages/persistence/src/
 ## Cascade and nullability notes
 
 - `reconciliation_source_file`, `reconciliation_import_batch`, `reconciliation_raw_row`, `reconciliation_canonical_row`, `reconciliation_match_group`, `reconciliation_match_result`, `reconciliation_rule_result`, `reconciliation_exception`, `reconciliation_review_observation`, `reconciliation_job_summary`, `reconciliation_export`, `reconciliation_review_decision`, `reconciliation_audit_event` all cascade delete from `reconciliation_job` (`ON DELETE CASCADE`).
-- `reconciliation_match_result.bank_transaction_id`, `reconciliation_match_result.qbo_transaction_id`, `reconciliation_rule_result.candidate_transaction_id`, and `reconciliation_exception.canonical_row_id` are nullable with `ON DELETE SET NULL` — exception and match records survive canonical row deletion.
+- `reconciliation_match_result.bank_transaction_id`, `reconciliation_match_result.gl_transaction_id`, `reconciliation_rule_result.candidate_transaction_id`, and `reconciliation_exception.canonical_row_id` are nullable with `ON DELETE SET NULL` — exception and match records survive canonical row deletion.
 - `reconciliation_rule_result.target_id` and `reconciliation_review_decision.target_id` are polymorphic references (no enforced FK) — `target_kind` / `target_type` discriminates the referenced table.
 
 ## Migration history

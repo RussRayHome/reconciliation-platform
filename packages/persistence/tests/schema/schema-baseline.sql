@@ -3770,7 +3770,7 @@ SELECT is(
 SELECT triggers_are('public', 'reconciliation_match_group', ARRAY[]::name[], 'reconciliation_match_group has exactly the expected triggers');
 SELECT columns_are('public', 'reconciliation_match_result', ARRAY['id', 'job_id', 'result_bucket', 'bank_transaction_id', 'gl_transaction_id', 'disposition', 'confidence', 'rule_id', 'rule_name', 'reason', 'score', 'amount_difference', 'date_difference_days', 'evidence_json', 'likely_matching_reference', 'exception_category', 'created_at', 'organization_id', 'applied_amount_tolerance', 'matching_config_version_id']::name[], 'reconciliation_match_result has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_match_result', ARRAY['id']::name[], 'reconciliation_match_result primary key');
-SELECT indexes_are('public', 'reconciliation_match_result', ARRAY['reconciliation_match_result_bank_transaction_idx', 'reconciliation_match_result_job_bank_transaction_lookup_idx', 'reconciliation_match_result_job_gl_transaction_lookup_idx', 'reconciliation_match_result_job_idx', 'reconciliation_match_result_job_result_bucket_created_idx', 'reconciliation_match_result_organization_idx', 'reconciliation_match_result_pkey', 'reconciliation_match_result_qbo_transaction_idx']::name[], 'reconciliation_match_result has exactly the expected indexes');
+SELECT indexes_are('public', 'reconciliation_match_result', ARRAY['reconciliation_match_result_bank_transaction_idx', 'reconciliation_match_result_gl_transaction_idx', 'reconciliation_match_result_job_bank_transaction_lookup_idx', 'reconciliation_match_result_job_gl_transaction_lookup_idx', 'reconciliation_match_result_job_idx', 'reconciliation_match_result_job_result_bucket_created_idx', 'reconciliation_match_result_organization_idx', 'reconciliation_match_result_pkey']::name[], 'reconciliation_match_result has exactly the expected indexes');
 SELECT is(
   (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_match_result' AND relnamespace = 'public'::regnamespace),
   true,
@@ -4714,7 +4714,7 @@ SELECT is(
   (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
      JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
     WHERE d.adrelid = 'public.reconciliation_payee_alias'::regclass AND a.attname = 'source_direction'),
-  $dflt$'bank_to_qbo'::text$dflt$,
+  $dflt$'bank_to_gl'::text$dflt$,
   'reconciliation_payee_alias.source_direction default'
 );
 SELECT col_type_is('public', 'reconciliation_payee_alias', 'match_confidence', 'double precision', 'reconciliation_payee_alias.match_confidence is double precision');
@@ -7604,10 +7604,10 @@ SELECT fk_ok('public', 'reconciliation_mapping_profile_version', ARRAY['profile_
 SELECT fk_ok('public', 'reconciliation_match_group', ARRAY['job_id']::name[], 'public', 'reconciliation_job', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_match_group', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_match_result', ARRAY['bank_transaction_id']::name[], 'public', 'reconciliation_canonical_row', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_match_result', ARRAY['gl_transaction_id']::name[], 'public', 'reconciliation_canonical_row', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_match_result', ARRAY['job_id']::name[], 'public', 'reconciliation_job', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_match_result', ARRAY['matching_config_version_id']::name[], 'public', 'reconciliation_matching_config_version', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_match_result', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
-SELECT fk_ok('public', 'reconciliation_match_result', ARRAY['gl_transaction_id']::name[], 'public', 'reconciliation_canonical_row', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_matching_config_version', ARRAY['created_by']::name[], 'public', 'reconciliation_user', ARRAY['user_name']::name[]);
 SELECT fk_ok('public', 'reconciliation_matching_config_version', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_matching_config_version', ARRAY['pending_approval_owner']::name[], 'public', 'reconciliation_user', ARRAY['user_name']::name[]);

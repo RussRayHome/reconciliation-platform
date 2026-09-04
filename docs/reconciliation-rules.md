@@ -99,7 +99,7 @@ Duplicate detection runs inside each source independently (bank and GL) and requ
 - date difference within duplicate window
 - either description similarity above threshold or exact reference similarity
 
-Duplicate rows are removed from cross-source matching and later classified as `DuplicateInBank` or `DuplicateInQBO`.
+Duplicate rows are removed from cross-source matching and later classified as `DuplicateInBank` or `DuplicateInGL`.
 
 ### One-to-one candidate ranking order
 
@@ -199,7 +199,7 @@ Residual staging currently executes in this order:
 11. grouped residual detection
 12. timing difference detection
 13. voided check cleared detection
-14. missing-item fallback (`MissingFromQBO` / `MissingFromBank` / `DepositInTransit`)
+14. missing-item fallback (`MissingFromGL` / `MissingFromBank` / `DepositInTransit`)
 
 ### Advisory-protected categories
 
@@ -214,7 +214,7 @@ Transactions tied to these advisory categories are removed from residual missing
 ### Category generation highlights
 
 - `InvalidOrMissingData`: rows with missing or malformed amount, date, or other data-quality failures.
-- `DuplicateInBank` / `DuplicateInQBO`: same-source duplicates detected by amount equality, date proximity, and description similarity.
+- `DuplicateInBank` / `DuplicateInGL`: same-source duplicates detected by amount equality, date proximity, and description similarity.
 - `StaleOutstandingCheck`: unmatched, check-like, negative GL items older than the stale outstanding threshold (default 45 days).
 - `OutstandingCheck`: unmatched, check-like, negative GL items within the stale threshold but not yet cleared in bank.
 - `ACHReturn`: paired bank debit and credit that net to zero within the reversal window, with ACH or NSF indicators in the description; both sides are classified.
@@ -233,7 +233,7 @@ Transactions tied to these advisory categories are removed from residual missing
 - `TimingDifference`: residual timing-compatible same-amount pairs in the extended window (default 21 days).
 - `VoidedCheckCleared`: unmatched bank debit identified as check-like (check number present, `serialNumber` set, or description contains `check`/`chk`) with no GL counterpart; runs after all other stages so legitimate matches are not misclassified.
 - `DepositInTransit`: unmatched GL credit recorded near the statement period end (within the deposit-in-transit window, default 7 days) with no bank counterpart; not check-like.
-- `MissingFromQBO` / `MissingFromBank`: final unmatched fallback after all prior stages have been applied.
+- `MissingFromGL` / `MissingFromBank`: final unmatched fallback after all prior stages have been applied.
 - Match-result-derived categories: `DateVariance`, `TimingDifference`, `AmountMismatch`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `DescriptionMerchantVariance`, `AmbiguousMatchRequiringReview`.
 
 For `DateVariance` match results, classifier post-processing can upgrade the category to `LikelyMiscoding` or `TimingDifference` when evidence supports the stronger interpretation.
@@ -245,7 +245,7 @@ When more than one category could apply to the same transaction key, the lower p
 | Level | Categories                                                                                                                                                                                                    |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | `InvalidOrMissingData`                                                                                                                                                                                        |
-| 2     | `DuplicateInBank`, `DuplicateInQBO`                                                                                                                                                                           |
+| 2     | `DuplicateInBank`, `DuplicateInGL`                                                                                                                                                                           |
 | 3     | `AmountMismatch`, `ACHReturn`, `NSFReturnedDeposit`, `ChargebackReturn`                                                                                                                                       |
 | 4     | `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`, `LikelySplitCombineIssue`, `DepositGroupingIssue`, `ReversalVoid`, `IntercompanyMismatch` |
 | 5     | `LikelyMiscoding`                                                                                                                                                                                             |
@@ -256,7 +256,7 @@ When more than one category could apply to the same transaction key, the lower p
 | 10    | `AmbiguousMatchRequiringReview`                                                                                                                                                                               |
 | 11    | `StaleOutstandingCheck`                                                                                                                                                                                       |
 | 12    | `OutstandingCheck`, `DepositInTransit`, `VoidedCheckCleared`                                                                                                                                                  |
-| 13    | `MissingFromQBO`, `MissingFromBank`, `InterestIncome`                                                                                                                                                         |
+| 13    | `MissingFromGL`, `MissingFromBank`, `InterestIncome`                                                                                                                                                         |
 
 ## 7. Severity, messaging, and sort order
 
@@ -265,7 +265,7 @@ Default severity mapping is supplied by `reporting.severityByCategory` in config
 Default severity groups:
 
 - `Critical`: `InvalidOrMissingData`
-- `High`: `MissingFromBank`, `MissingFromQBO`, `AmountMismatch`, `DuplicateInBank`, `DuplicateInQBO`, `LikelySplitCombineIssue`, `DepositGroupingIssue`, `LikelyMiscoding`, `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`, `NSFReturnedDeposit`, `VoidedCheckCleared`, `ACHReturn`, `ChargebackReturn`, `IntercompanyMismatch`
+- `High`: `MissingFromBank`, `MissingFromGL`, `AmountMismatch`, `DuplicateInBank`, `DuplicateInGL`, `LikelySplitCombineIssue`, `DepositGroupingIssue`, `LikelyMiscoding`, `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`, `NSFReturnedDeposit`, `VoidedCheckCleared`, `ACHReturn`, `ChargebackReturn`, `IntercompanyMismatch`
 - `Medium`: `DateVariance`, `TimingDifference`, `CheckNumberMismatch`, `ReferenceNumberMismatch`, `StaleOutstandingCheck`, `AmbiguousMatchRequiringReview`, `ReversalVoid`
 - `Low`: `DescriptionMerchantVariance`, `OutstandingCheck`, `DepositInTransit`, `InterestIncome`
 
@@ -325,13 +325,13 @@ Bank-to-GL reconciliation is governed primarily by **ASC 305 (Cash and Cash Equi
 | Amount mismatch                             | ASC 305-10 | `AmountMismatch`                                  | Matched pair where amounts differ beyond `amountTolerance` with high description similarity                          |
 | Likely miscoding                            | ASC 820-10 | `LikelyMiscoding`                                 | Distinctive same-amount near-date pair where description/reference conflict suggests wrong account                   |
 | Duplicate bank posting                      | ASC 305-10 | `DuplicateInBank`                                 | Same-source same-amount duplicate within `duplicateDateWindowDays`                                                   |
-| Duplicate book entry                        | ASC 305-10 | `DuplicateInQBO`                                  | Same-source same-amount duplicate in GL within duplicate window                                                      |
+| Duplicate book entry                        | ASC 305-10 | `DuplicateInGL`                                  | Same-source same-amount duplicate in GL within duplicate window                                                      |
 | Split transaction / grouped deposit         | ASC 230-10 | `LikelySplitCombineIssue`, `DepositGroupingIssue` | Balanced residual grouped sets where split or batched posting is likely                                              |
 | Check number mismatch                       | ASC 305-10 | `CheckNumberMismatch`                             | Amount and text align but check numbers differ                                                                       |
 | Reference number mismatch                   | ASC 305-10 | `ReferenceNumberMismatch`                         | Amount and text align but reference numbers differ                                                                   |
 | Description / merchant variance             | ASC 305-10 | `DescriptionMerchantVariance`                     | Amount and date match but description similarity is in the grey zone                                                 |
 | Ambiguous match requiring review            | ASC 305-10 | `AmbiguousMatchRequiringReview`                   | Multiple near-equal candidates exist for the same transaction                                                        |
-| Missing from GL (book)                      | ASC 305-10 | `MissingFromQBO`                                  | Bank transaction has no book counterpart after all other stages                                                      |
+| Missing from GL (book)                      | ASC 305-10 | `MissingFromGL`                                  | Bank transaction has no book counterpart after all other stages                                                      |
 | Missing from bank                           | ASC 305-10 | `MissingFromBank`                                 | GL transaction has no bank counterpart after all other stages                                                        |
 | Invalid or missing data                     | ASC 855-10 | `InvalidOrMissingData`                            | Amount, date, or other required field is absent or malformed                                                         |
 
@@ -340,8 +340,8 @@ Bank-to-GL reconciliation is governed primarily by **ASC 305 (Cash and Cash Equi
 | GAAP assertion (ASC 315-10 / PCAOB AS 2315) | Coverage status   | Supporting categories                                                                                                                            |
 | ------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Existence — recorded cash events occurred   | Covered           | `ExactMatch`, `ProbableMatch`, all grouped categories                                                                                            |
-| Completeness — all cash events are recorded | Covered           | `MissingFromQBO`, `MissingFromBank`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck`                                             |
-| Accuracy — amounts and periods are correct  | Covered           | `AmountMismatch`, `DateVariance`, `TimingDifference`, `InvalidOrMissingData`, `DuplicateInBank`, `DuplicateInQBO`                                |
+| Completeness — all cash events are recorded | Covered           | `MissingFromGL`, `MissingFromBank`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck`                                             |
+| Accuracy — amounts and periods are correct  | Covered           | `AmountMismatch`, `DateVariance`, `TimingDifference`, `InvalidOrMissingData`, `DuplicateInBank`, `DuplicateInGL`                                |
 | Cutoff — transactions in the right period   | Covered           | `DateVariance`, `TimingDifference`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck`                                              |
 | Classification — correct account assignment | Partially covered | `LikelyMiscoding`, `IntercompanyMismatch`, `LoanPaymentSplit`, `BankServiceChargeAmortization`, `CheckNumberMismatch`, `ReferenceNumberMismatch` |
 | Presentation — output is auditable          | Partially covered | Summary metrics, exception export workbook, reviewer observations, rule traces stored per exception                                              |

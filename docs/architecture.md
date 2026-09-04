@@ -7,7 +7,7 @@ This document explains how the reconciliation platform is structured, how data f
 The platform reconciles two accounting data sources:
 
 - bank workbook export
-- QuickBooks Online workbook export
+- general ledger (GL) workbook export
 
 It produces:
 
@@ -103,7 +103,7 @@ Shared fixtures: packages/test-fixtures
 ## 5. End-to-end data flow
 
 1. **Submission**
-   - Web posts multipart form data (`bankFile`, `qboFile`) to `POST /api/reconciliation/run`.
+   - Web posts multipart form data (`bankFile`, `glFile`) to `POST /api/reconciliation/run`.
 
 2. **Input processing**
    - API validates files and request metadata.
