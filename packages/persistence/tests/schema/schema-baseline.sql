@@ -6,7 +6,7 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(2352);
+SELECT plan(2357);
 
 SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
@@ -4122,9 +4122,9 @@ SELECT is(
   'reconciliation_matching_config_version row-level security policies'
 );
 SELECT triggers_are('public', 'reconciliation_matching_config_version', ARRAY[]::name[], 'reconciliation_matching_config_version has exactly the expected triggers');
-SELECT columns_are('public', 'reconciliation_open_item', ARRAY['id', 'organization_id', 'account_id', 'opened_in_run_id', 'first_detected_job_id', 'source_system', 'category', 'natural_key', 'natural_key_tier', 'original_transaction_date', 'amount', 'check_number', 'reference_number', 'description_snapshot', 'status', 'owner_user_id', 'due_date', 'cleared_in_run_id', 'cleared_at', 'cleared_match_result_id', 'disposition_code', 'disposition_note', 'superseded_by_open_item_id', 'created_at', 'updated_at']::name[], 'reconciliation_open_item has exactly the expected columns');
+SELECT columns_are('public', 'reconciliation_open_item', ARRAY['id', 'organization_id', 'account_id', 'opened_in_run_id', 'first_detected_job_id', 'source_system', 'category', 'natural_key', 'natural_key_tier', 'original_transaction_date', 'amount', 'check_number', 'reference_number', 'description_snapshot', 'status', 'owner_user_id', 'due_date', 'cleared_in_run_id', 'cleared_at', 'cleared_match_result_id', 'disposition_code', 'disposition_note', 'superseded_by_open_item_id', 'created_at', 'updated_at', 'written_off_by']::name[], 'reconciliation_open_item has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_open_item', ARRAY['id']::name[], 'reconciliation_open_item primary key');
-SELECT indexes_are('public', 'reconciliation_open_item', ARRAY['reconciliation_open_item_aging_idx', 'reconciliation_open_item_cleared_in_run_idx', 'reconciliation_open_item_natural_key_open_key', 'reconciliation_open_item_opened_in_run_idx', 'reconciliation_open_item_pkey']::name[], 'reconciliation_open_item has exactly the expected indexes');
+SELECT indexes_are('public', 'reconciliation_open_item', ARRAY['reconciliation_open_item_aging_idx', 'reconciliation_open_item_cleared_in_run_idx', 'reconciliation_open_item_natural_key_open_key', 'reconciliation_open_item_opened_in_run_idx', 'reconciliation_open_item_pkey', 'reconciliation_open_item_written_off_by_idx']::name[], 'reconciliation_open_item has exactly the expected indexes');
 SELECT is(
   (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_open_item' AND relnamespace = 'public'::regnamespace),
   true,
@@ -4355,6 +4355,15 @@ SELECT is(
   $dflt$now()$dflt$,
   'reconciliation_open_item.updated_at default'
 );
+SELECT col_type_is('public', 'reconciliation_open_item', 'written_off_by', 'uuid', 'reconciliation_open_item.written_off_by is uuid');
+SELECT col_is_null('public', 'reconciliation_open_item', 'written_off_by', 'reconciliation_open_item.written_off_by is nullable');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_open_item'::regclass AND a.attname = 'written_off_by'),
+  NULL,
+  'reconciliation_open_item.written_off_by default'
+);
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
      FROM pg_constraint con
@@ -4362,7 +4371,8 @@ SELECT is(
   $chk$reconciliation_open_item_category_check => CHECK ((category = ANY (ARRAY['OutstandingCheck'::text, 'StaleOutstandingCheck'::text, 'DepositInTransit'::text, 'MissingFromBank'::text, 'MissingFromGL'::text, 'TimingDifference'::text, 'IntercompanyMismatch'::text, 'NSFReturnedDeposit'::text, 'AmountMismatch'::text])))
 reconciliation_open_item_natural_key_tier_check => CHECK ((natural_key_tier = ANY (ARRAY[1, 2, 3])))
 reconciliation_open_item_source_system_check => CHECK ((source_system = ANY (ARRAY['bank'::text, 'gl'::text])))
-reconciliation_open_item_status_check => CHECK ((status = ANY (ARRAY['OPEN'::text, 'CLEARED'::text, 'WRITTEN_OFF'::text, 'ADJUSTED'::text, 'VOIDED'::text, 'SUPERSEDED'::text])))$chk$,
+reconciliation_open_item_status_check => CHECK ((status = ANY (ARRAY['OPEN'::text, 'CLEARED'::text, 'WRITTEN_OFF'::text, 'ADJUSTED'::text, 'VOIDED'::text, 'SUPERSEDED'::text])))
+reconciliation_open_item_writeoff_approver_recorded_check => CHECK (((status <> 'WRITTEN_OFF'::text) OR (written_off_by IS NOT NULL)))$chk$,
   'reconciliation_open_item check/unique/exclusion constraints'
 );
 SELECT is(
@@ -4385,11 +4395,16 @@ SELECT is(
   $policy$reconciliation_open_item_tenant_isolation => cmd=ALL roles=public using=(organization_id = (current_setting('app.current_organization_id'::text, true))::uuid) check=$policy$,
   'reconciliation_open_item row-level security policies'
 );
-SELECT triggers_are('public', 'reconciliation_open_item', ARRAY['trg_reconciliation_open_item_updated_at']::name[], 'reconciliation_open_item has exactly the expected triggers');
+SELECT triggers_are('public', 'reconciliation_open_item', ARRAY['trg_reconciliation_open_item_updated_at', 'trg_reconciliation_open_item_writeoff_sod']::name[], 'reconciliation_open_item has exactly the expected triggers');
 SELECT is(
   (SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgname = 'trg_reconciliation_open_item_updated_at' AND tgrelid = 'public.reconciliation_open_item'::regclass),
   $trig$CREATE TRIGGER trg_reconciliation_open_item_updated_at BEFORE UPDATE ON public.reconciliation_open_item FOR EACH ROW EXECUTE FUNCTION set_updated_at()$trig$,
   'reconciliation_open_item.trg_reconciliation_open_item_updated_at definition'
+);
+SELECT is(
+  (SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgname = 'trg_reconciliation_open_item_writeoff_sod' AND tgrelid = 'public.reconciliation_open_item'::regclass),
+  $trig$CREATE TRIGGER trg_reconciliation_open_item_writeoff_sod BEFORE INSERT OR UPDATE ON public.reconciliation_open_item FOR EACH ROW EXECUTE FUNCTION enforce_open_item_writeoff_segregation_of_duty()$trig$,
+  'reconciliation_open_item.trg_reconciliation_open_item_writeoff_sod definition'
 );
 SELECT columns_are('public', 'reconciliation_open_item_event', ARRAY['event_id', 'open_item_id', 'organization_id', 'run_id', 'event_type', 'from_status', 'to_status', 'actor', 'details_json', 'created_at']::name[], 'reconciliation_open_item_event has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_open_item_event', ARRAY['event_id']::name[], 'reconciliation_open_item_event primary key');
@@ -6949,7 +6964,7 @@ SELECT is(
   $chk$reconciliation_user_email_key => UNIQUE (email)
 reconciliation_user_id_key => UNIQUE (id)
 reconciliation_user_identity_verification_status_check => CHECK ((identity_verification_status = ANY (ARRAY['pending'::text, 'verified'::text])))
-reconciliation_user_role_check => CHECK ((role = ANY (ARRAY['financial-analyst'::text, 'senior-analyst'::text, 'staff-accountant'::text, 'controller'::text, 'vp-finance'::text, 'cfo'::text, 'admin'::text, 'superuser'::text])))$chk$,
+reconciliation_user_role_check => CHECK ((role = ANY (ARRAY['financial-analyst'::text, 'senior-analyst'::text, 'staff-accountant'::text, 'controller'::text, 'vp-finance'::text, 'cfo'::text, 'coo'::text, 'ceo'::text, 'admin'::text, 'superuser'::text])))$chk$,
   'reconciliation_user check/unique/exclusion constraints'
 );
 SELECT is(
@@ -7395,6 +7410,7 @@ SELECT fk_ok('public', 'reconciliation_open_item', ARRAY['opened_in_run_id']::na
 SELECT fk_ok('public', 'reconciliation_open_item', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_open_item', ARRAY['owner_user_id']::name[], 'public', 'reconciliation_user', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_open_item', ARRAY['superseded_by_open_item_id']::name[], 'public', 'reconciliation_open_item', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_open_item', ARRAY['written_off_by']::name[], 'public', 'reconciliation_user', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_open_item_event', ARRAY['open_item_id']::name[], 'public', 'reconciliation_open_item', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_open_item_event', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_open_item_event', ARRAY['run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);
@@ -7449,7 +7465,8 @@ SELECT is(
      JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = 'public'
       AND NOT EXISTS (SELECT 1 FROM pg_depend dep WHERE dep.objid = p.oid AND dep.deptype = 'e')),
-  $funcs$reconciliation_run_timeline(p_organization_id uuid, p_run_id uuid) RETURNS TABLE(stage text, occurred_at timestamp with time zone, event_type text, status text, actor text, message text, details jsonb) LANGUAGE sql
+  $funcs$enforce_open_item_writeoff_segregation_of_duty() RETURNS trigger LANGUAGE plpgsql
+reconciliation_run_timeline(p_organization_id uuid, p_run_id uuid) RETURNS TABLE(stage text, occurred_at timestamp with time zone, event_type text, status text, actor text, message text, details jsonb) LANGUAGE sql
 set_reconciliation_user_last_changed() RETURNS trigger LANGUAGE plpgsql
 set_updated_at() RETURNS trigger LANGUAGE plpgsql
 sync_reconciliation_run_account_terminal_good() RETURNS trigger LANGUAGE plpgsql$funcs$,

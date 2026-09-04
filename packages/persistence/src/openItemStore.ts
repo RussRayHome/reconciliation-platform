@@ -8,7 +8,9 @@ import type {
   OpenItemCandidate,
   OpenItemRecord,
   SourceSystem,
+  UserRole,
 } from '@recon/domain';
+import { canApproveWriteOff, writeOffBandForAmount } from '@recon/domain';
 
 import { runInTenantScope } from './postgres';
 
@@ -65,7 +67,12 @@ export type ReopenRunResult =
 export type WriteOffOpenItemResult =
   | { outcome: 'written_off' }
   | { outcome: 'not_found' }
-  | { outcome: 'not_open'; status: string };
+  | { outcome: 'not_open'; status: string }
+  /** The actor's role sits below the band this item's amount falls into (Issue #283). */
+  | { outcome: 'insufficient_authority'; amount: number; requiredRoleLabel: string }
+  /** The actor submitted the run that opened this item, so may not also write it off. Raised by
+   *  the database trigger (changeset 0075), not by this store -- the store only translates it. */
+  | { outcome: 'segregation_of_duty' };
 
 export interface ProjectOpenItemsInput {
   /** `reconciliation_job.id` -- recorded on a newly-opened item as `first_detected_job_id`. */
@@ -699,16 +706,28 @@ export class PostgresOpenItemStore {
   }
 
   /**
-   * Writes off an open item (PR E.4, mechanism only): sets it to `WRITTEN_OFF` with a required
-   * disposition code/note, and logs the transition -- same append-only event trail as every other
-   * status change on this entity. Never deletes the row.
+   * Writes off an open item (PR E.4): sets it to `WRITTEN_OFF` with a required disposition
+   * code/note, and logs the transition -- same append-only event trail as every other status
+   * change on this entity. Never deletes the row.
    *
-   * Deliberately has no automatic amount/age approval gate: the plan's own §8 open decisions list
-   * the write-off approval thresholds (dollar and age bands, and who approves) as an unresolved
-   * policy question, not an engineering one. Whoever calls this with a valid actor is the
-   * approver, the same lightweight posture `scripts/ops/set-carry-forward-enabled.ts` already
-   * uses for carry-forward enablement -- a real threshold can be layered on top of this mechanism
-   * once that policy answer exists, without changing this method's own contract.
+   * Two approval controls, added by Issue #283 (B5), which this method previously had none of:
+   *
+   * 1. DOLLAR BANDS, enforced here. The actor's role is read from the database rather than taken
+   *    from the caller -- the API layer knows the authenticated role, but a store that trusts a
+   *    caller-supplied role is one internal call away from being bypassed, and the role is a
+   *    single column on a row this method already has to load.
+   * 2. SEGREGATION OF DUTY, enforced by the database (changeset 0075). Whoever submitted the run
+   *    that opened this item may not write it off. This method does not re-implement that check:
+   *    it performs the UPDATE and translates the trigger's rejection, so the control holds for
+   *    every write path including psql, not just this one.
+   *
+   * The ordering is deliberate. The band check runs first and returns without writing, so an
+   * under-authorised actor gets a specific answer rather than a generic constraint failure; the
+   * segregation check can only be evaluated by the database, so it necessarily surfaces as a
+   * caught error rather than a pre-check.
+   *
+   * Age bands were part of the same policy question and are NOT implemented -- Issue #283 settled
+   * dollar thresholds only. `original_transaction_date` is on the row when that answer arrives.
    */
   async writeOffOpenItem(
     organizationId: string,
@@ -721,15 +740,24 @@ export class PostgresOpenItemStore {
     },
   ): Promise<WriteOffOpenItemResult> {
     return runInTenantScope(this.pool, organizationId, async (client) => {
-      const actorUserId = await this.resolveUserId(client, organizationId, input.actorUsername);
-      if (!actorUserId) {
+      const actorResult = await client.query<{ id: string; role: UserRole }>(
+        'SELECT id, role FROM reconciliation_user WHERE user_name = $1 AND organization_id = $2',
+        [input.actorUsername, organizationId],
+      );
+      const actor = actorResult.rows[0];
+      if (!actor) {
         throw new Error(
           `writeOffOpenItem: actor username "${input.actorUsername}" has no matching reconciliation_user row.`,
         );
       }
 
-      const existing = await client.query<{ status: string }>(
-        `SELECT status FROM reconciliation_open_item WHERE id = $1 AND organization_id = $2`,
+      // `amount` is NUMERIC; pg returns it as a string to avoid the float64 rounding that would
+      // otherwise decide band membership at the threshold. Cast in SQL so the intent is explicit
+      // rather than relying on the driver's default type mapping.
+      const existing = await client.query<{ status: string; amount: string }>(
+        `SELECT status, amount::text AS amount
+           FROM reconciliation_open_item
+          WHERE id = $1 AND organization_id = $2`,
         [input.openItemId, organizationId],
       );
       const current = existing.rows[0];
@@ -740,12 +768,33 @@ export class PostgresOpenItemStore {
         return { outcome: 'not_open', status: current.status };
       }
 
-      await client.query(
-        `UPDATE reconciliation_open_item
-            SET status = 'WRITTEN_OFF', disposition_code = $2, disposition_note = $3
-          WHERE id = $1`,
-        [input.openItemId, input.dispositionCode, input.dispositionNote ?? null],
-      );
+      const amount = Number(current.amount);
+      if (!canApproveWriteOff(actor.role, amount)) {
+        return {
+          outcome: 'insufficient_authority',
+          amount,
+          requiredRoleLabel: writeOffBandForAmount(amount).requiredRoleLabel,
+        };
+      }
+
+      try {
+        await client.query(
+          `UPDATE reconciliation_open_item
+              SET status = 'WRITTEN_OFF', disposition_code = $2, disposition_note = $3,
+                  written_off_by = $4
+            WHERE id = $1`,
+          [input.openItemId, input.dispositionCode, input.dispositionNote ?? null, actor.id],
+        );
+      } catch (error) {
+        // Only the named segregation rejection is a policy outcome. The sibling
+        // approver-recorded CHECK shares SQLSTATE 23514 but means this code failed to set
+        // written_off_by, which is a bug and must not be reported to the user as a control.
+        const constraint = (error as { constraint?: string }).constraint;
+        if (constraint === 'reconciliation_open_item_writeoff_segregation_of_duty') {
+          return { outcome: 'segregation_of_duty' };
+        }
+        throw error;
+      }
       await client.query(
         `INSERT INTO reconciliation_open_item_event
            (open_item_id, organization_id, run_id, event_type, from_status, to_status, actor,

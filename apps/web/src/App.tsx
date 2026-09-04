@@ -137,13 +137,16 @@ const roleDisplayLabels: Record<UserRole, string> = {
   controller: 'Controller',
   'vp-finance': 'VP Finance',
   cfo: 'CFO',
+  coo: 'COO',
+  ceo: 'CEO',
   admin: 'Admin',
   superuser: 'SuperUser',
 };
 
 /** Role-aware landing tab (design doc: "Role sets the default landing view"). The two other
  * individual-contributor analyst roles land on Review like financial-analyst; the management-tier
- * roles (controller/vp-finance/cfo) land on Setup alongside admin/superuser. */
+ * roles (controller/vp-finance/cfo, and the officer roles coo/ceo added by Issue #283) land on
+ * Setup alongside admin/superuser. */
 const analystTierLandingRoles = new Set<UserRole>([
   'financial-analyst',
   'senior-analyst',

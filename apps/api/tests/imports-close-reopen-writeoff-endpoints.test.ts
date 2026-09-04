@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
 import { ERROR_DEFINITIONS, OPERATIONS } from '@recon/domain';
+import type { UserRole } from '@recon/domain';
 
 import { createApp } from '../src/app';
 import { authedApp } from './testHelpers/authToken';
@@ -19,8 +20,12 @@ interface FakeRun {
 interface FakeOpenItem {
   id: string;
   status: string;
+  /** Signed, as in the real column -- a credit is negative. Issue #283 bands on the ABSOLUTE
+   *  value, so the fixtures below are deliberately negative to keep that at the route layer too. */
+  amount: number;
   disposition_code: string | null;
   disposition_note: string | null;
+  written_off_by: string | null;
 }
 
 /**
@@ -64,10 +69,21 @@ const createFakeCloseReopenPool = () => {
     },
   ];
   const openItems: FakeOpenItem[] = [
-    { id: 'item-open', status: 'OPEN', disposition_code: null, disposition_note: null },
-    { id: 'item-cleared', status: 'CLEARED', disposition_code: null, disposition_note: null },
+    // -1,200: comfortably inside the lowest authority band.
+    { id: 'item-open', status: 'OPEN', amount: -1200, disposition_code: null, disposition_note: null, written_off_by: null },
+    { id: 'item-cleared', status: 'CLEARED', amount: -1200, disposition_code: null, disposition_note: null, written_off_by: null },
+    // -50,000: above the CFO band's 40,000 ceiling, so it requires COO authority.
+    { id: 'item-large', status: 'OPEN', amount: -50000, disposition_code: null, disposition_note: null, written_off_by: null },
+    // Small enough that the band check passes; the UPDATE below rejects it the way the trigger does.
+    { id: 'item-sod', status: 'OPEN', amount: -1200, disposition_code: null, disposition_note: null, written_off_by: null },
   ];
-  const userIdByUsername = new Map([['test-user', 'user-test-user']]);
+  // Issue #283 reads the actor's ROLE from the database, not from the bearer token, so which
+  // authority a test exercises is set HERE -- changing authedApp's `role` claim does not move it.
+  const usersByUsername = new Map<string, { id: string; role: UserRole }>([
+    ['test-user', { id: 'user-test-user', role: 'controller' }],
+    ['test-analyst', { id: 'user-test-analyst', role: 'senior-analyst' }],
+    ['test-coo', { id: 'user-test-coo', role: 'coo' }],
+  ]);
 
   const query = (
     text: string,
@@ -75,8 +91,11 @@ const createFakeCloseReopenPool = () => {
   ): Promise<{ rows: unknown[]; rowCount: number }> => {
     if (text.includes('FROM reconciliation_user')) {
       const [username] = params as [string];
-      const id = userIdByUsername.get(username);
-      return Promise.resolve({ rows: id ? [{ id }] : [], rowCount: id ? 1 : 0 });
+      const user = usersByUsername.get(username);
+      return Promise.resolve({
+        rows: user ? [{ id: user.id, role: user.role }] : [],
+        rowCount: user ? 1 : 0,
+      });
     }
 
     if (text.includes('SELECT id, status FROM reconciliation_run')) {
@@ -142,21 +161,41 @@ const createFakeCloseReopenPool = () => {
       return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
-    if (text.includes('SELECT status FROM reconciliation_open_item')) {
+    if (text.includes('FROM reconciliation_open_item') && text.includes('amount::text')) {
       const [id] = params as [string];
       const item = openItems.find((candidate) => candidate.id === id);
+      // `amount::text` -- pg returns NUMERIC as a string and the store parses it back with
+      // Number(), so returning a number here would hide a real driver-shape assumption.
       return Promise.resolve({
-        rows: item ? [{ status: item.status }] : [],
+        rows: item ? [{ status: item.status, amount: String(item.amount) }] : [],
         rowCount: item ? 1 : 0,
       });
     }
 
     if (text.includes("UPDATE reconciliation_open_item") && text.includes("'WRITTEN_OFF'")) {
-      const [id, dispositionCode, dispositionNote] = params as [string, string, string | null];
+      const [id, dispositionCode, dispositionNote, writtenOffBy] = params as [
+        string,
+        string,
+        string | null,
+        string,
+      ];
+      // Changeset 0075's segregation-of-duty check is a database trigger, so the only faithful
+      // fake of it is the error it raises. The constraint NAME matters and is not decoration: the
+      // store discriminates on it to tell this apart from the approver-recorded CHECK, which
+      // shares SQLSTATE 23514 but means the code failed to set written_off_by.
+      if (id === 'item-sod') {
+        return Promise.reject(
+          Object.assign(new Error('Segregation of duty'), {
+            code: '23514',
+            constraint: 'reconciliation_open_item_writeoff_segregation_of_duty',
+          }),
+        );
+      }
       const item = openItems.find((candidate) => candidate.id === id)!;
       item.status = 'WRITTEN_OFF';
       item.disposition_code = dispositionCode;
       item.disposition_note = dispositionNote;
+      item.written_off_by = writtenOffBy;
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
 
@@ -321,13 +360,56 @@ describe('POST /api/imports/open-items/:id/write-off', () => {
     expect(response.status).toBe(409);
   });
 
-  it('returns 403 for a role without canApprove', async () => {
+  it("returns 403 when the amount exceeds the actor's band, naming the authority required", async () => {
     const app = appWithPool(createFakeCloseReopenPool());
 
-    const response = await authedApp(app, { role: 'senior-analyst', sub: 'test-user' })
-      .post('/api/imports/open-items/item-open/write-off')
+    // item-large is -50,000. Banding on the ABSOLUTE value puts it above the CFO ceiling, so a
+    // controller -- who may approve runs of any size -- cannot write this one off. Comparing the
+    // raw signed amount would find -50000 <= 20000 and admit it at the lowest band.
+    const response = await authedApp(app, { role: 'controller', sub: 'test-user' })
+      .post('/api/imports/open-items/item-large/write-off')
       .send({ dispositionCode: 'STALE_UNCLAIMED' });
 
     expect(response.status).toBe(403);
+    expect(response.body.message).toContain('COO');
+  });
+
+  it('admits an analyst inside the lowest band, which the old canApprove gate rejected', async () => {
+    const app = appWithPool(createFakeCloseReopenPool());
+
+    // The deliberate widening in Issue #283: senior-analyst has canApprove === false and used to
+    // be 403'd by the route before any amount was consulted. Pinning it means re-adding a
+    // canApprove gate fails a test rather than silently narrowing authority back.
+    const response = await authedApp(app, { role: 'senior-analyst', sub: 'test-analyst' })
+      .post('/api/imports/open-items/item-open/write-off')
+      .send({ dispositionCode: 'STALE_UNCLAIMED' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ outcome: 'written_off' });
+  });
+
+  it('lets a COO write off the amount a controller was refused', async () => {
+    const app = appWithPool(createFakeCloseReopenPool());
+
+    // Same item as the 403 above with only the actor changed, so a band check that rejected
+    // everything rather than only under-authorised actors would fail here.
+    const response = await authedApp(app, { role: 'coo', sub: 'test-coo' })
+      .post('/api/imports/open-items/item-large/write-off')
+      .send({ dispositionCode: 'STALE_UNCLAIMED' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ outcome: 'written_off' });
+  });
+
+  it('returns 409 when the database rejects the pairing for segregation of duty', async () => {
+    const app = appWithPool(createFakeCloseReopenPool());
+
+    // 409 rather than 403, matching how run-approval segregation is already surfaced: the actor's
+    // role IS sufficient for this amount -- it is this maker/checker pairing that is not.
+    const response = await authedApp(app, { role: 'controller', sub: 'test-user' })
+      .post('/api/imports/open-items/item-sod/write-off')
+      .send({ dispositionCode: 'STALE_UNCLAIMED' });
+
+    expect(response.status).toBe(409);
   });
 });

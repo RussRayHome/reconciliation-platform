@@ -264,7 +264,9 @@ export type SourceFileApprovalStatus = (typeof sourceFileApprovalStatuses)[numbe
  *  separate application (apps/developer-dashboard-api/web) with its own GitHub-OAuth login,
  *  unreachable from and unaware of this product's own auth. See changeset 0033. The six business
  *  roles (financial-analyst through cfo) are the self-serve-selectable roles offered at signup;
- *  admin/superuser are not choosable there. See changeset 0034. */
+ *  admin/superuser are not choosable there. See changeset 0034. `coo`/`ceo` were added by
+ *  changeset 0075 as write-off approval authorities (Issue #283) and are likewise NOT
+ *  self-serve-selectable -- an officer role is assigned, not claimed at signup. */
 export const userRoles = [
   'financial-analyst',
   'senior-analyst',
@@ -272,6 +274,8 @@ export const userRoles = [
   'controller',
   'vp-finance',
   'cfo',
+  'coo',
+  'ceo',
   'admin',
   'superuser',
 ] as const;
@@ -349,6 +353,22 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canApprove: true,
     canSubmitImportRuns: false,
   },
+  coo: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+    canApprove: true,
+    canSubmitImportRuns: false,
+  },
+  ceo: {
+    canAccessApplication: true,
+    canAccessDocumentation: true,
+    canAdjustSliderDefaults: false,
+    canAccessRunBook: false,
+    canApprove: true,
+    canSubmitImportRuns: false,
+  },
   admin: {
     canAccessApplication: true,
     canAccessDocumentation: true,
@@ -366,6 +386,72 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canSubmitImportRuns: true,
   },
 };
+
+/**
+ * Write-off approval authority bands (Issue #283, B5).
+ *
+ * Deliberately a separate axis from `canApprove`, which governs the import/run approval workflow.
+ * A write-off is not the same act as approving a run: it erases a reconciling item outright -- for
+ * AP, a vendor liability -- so the authority required scales with the amount rather than being one
+ * yes/no capability. Keeping the axes separate is what lets a financial-analyst clear small items
+ * without also gaining run-approval rights, and what stops a controller approving an unbounded
+ * write-off simply because they may approve runs.
+ *
+ * Two consequences worth being explicit about, because both change today's behaviour:
+ *   - financial-analyst/senior-analyst/staff-accountant GAIN write-off up to the first threshold
+ *     (`canApprove` is false for all three, so the route 403s them today).
+ *   - controller/vp-finance are NARROWED: they may approve runs at any size but write off only up
+ *     to the first threshold, where previously `canApprove` let them write off any amount.
+ *
+ * Ranks, not role lists, so a band comparison is a single integer test and adding a role is one
+ * entry rather than an edit to every band.
+ */
+export const writeOffAuthorityRankByRole: Record<UserRole, number> = {
+  'financial-analyst': 1,
+  'senior-analyst': 1,
+  'staff-accountant': 1,
+  controller: 1,
+  'vp-finance': 1,
+  cfo: 2,
+  coo: 3,
+  ceo: 4,
+  // Platform-operator roles, which hold every other capability in `rolePermissionsByRole`
+  // unconditionally; giving them a lower rank here would be the only capability they lack.
+  admin: 4,
+  superuser: 4,
+};
+
+/**
+ * Bands are keyed on the *absolute* amount. An open item's `amount` is signed -- a credit carries a
+ * negative value -- and a -$50,000 write-off is exactly as material as a +$50,000 one, so comparing
+ * the raw signed value would route every credit into the lowest band regardless of size.
+ *
+ * `maxAmount` is inclusive: exactly $20,000 needs rank 1, $20,000.01 needs rank 2. `null` is the
+ * open-ended top band.
+ */
+export const writeOffApprovalBands: ReadonlyArray<{
+  maxAmount: number | null;
+  requiredRank: number;
+  requiredRoleLabel: string;
+}> = [
+  { maxAmount: 20000, requiredRank: 1, requiredRoleLabel: 'Financial Analyst' },
+  { maxAmount: 40000, requiredRank: 2, requiredRoleLabel: 'CFO' },
+  { maxAmount: 75000, requiredRank: 3, requiredRoleLabel: 'COO' },
+  { maxAmount: null, requiredRank: 4, requiredRoleLabel: 'CEO' },
+];
+
+/** The band governing `amount`. Never undefined -- the final band is open-ended. */
+export const writeOffBandForAmount = (amount: number): (typeof writeOffApprovalBands)[number] => {
+  const magnitude = Math.abs(amount);
+  return (
+    writeOffApprovalBands.find((band) => band.maxAmount !== null && magnitude <= band.maxAmount) ??
+    writeOffApprovalBands[writeOffApprovalBands.length - 1]!
+  );
+};
+
+/** Whether `role` carries enough authority to write off `amount`. */
+export const canApproveWriteOff = (role: UserRole, amount: number): boolean =>
+  writeOffAuthorityRankByRole[role] >= writeOffBandForAmount(amount).requiredRank;
 
 /** Status of the outside-source Secretary of State entity/filing-number check, tracked per
  *  organization. 'pending' until the check resolves; 'failed' is retryable, not terminal. */
