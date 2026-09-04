@@ -17,6 +17,7 @@ import type {
   TransformKind,
   ValidationRuleScope,
   ValidationSeverity,
+  ValidationSourceType,
 } from './enums';
 
 /** Metadata registered for a single uploaded spreadsheet (bank or GL). */
@@ -789,6 +790,17 @@ export interface ValidationRuleVersion {
   ruleCode: string;
   versionNumber: number;
   scope: ValidationRuleScope;
+  /**
+   * Which source a rule applies to, or undefined when it is source-independent. H8 (#277,
+   * changeset 0074): `reconciliation_validation_rule_version` gained this column so it is a strict
+   * superset of `validation_rule_version` rather than an alternative to it -- the rival family
+   * already carried the PERIOD/ACCOUNTING scopes the accounting tier needs, and this was the one
+   * dimension it lacked.
+   *
+   * Optional because a SCHEMA- or FILE-scoped rule is not specific to one source; forcing a value
+   * would mean inventing one. Matches the nullable column on both tables.
+   */
+  sourceType?: ValidationSourceType;
   severity: ValidationSeverity;
   description: string;
   status: MappingProfileStatus;

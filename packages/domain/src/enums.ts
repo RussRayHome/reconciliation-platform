@@ -131,6 +131,18 @@ export const mappingProfileStatuses = ['ACTIVE', 'DEPRECATED'] as const;
 /** Union of valid mapping profile / version lifecycle statuses. */
 export type MappingProfileStatus = (typeof mappingProfileStatuses)[number];
 
+/**
+ * Which source a validation rule applies to (H8, Issue #277, changeset 0074).
+ *
+ * Named here because it had no domain type: the values existed only as an inline union at
+ * `core/fileValidation/types.ts:107` and as CHECK constraints on two tables, which is how the two
+ * rule families drifted apart in the first place. BILLING covers the AP/AR document rules added by
+ * changesets 0070/0071.
+ */
+export const validationSourceTypes = ['BANK', 'GL', 'BILLING'] as const;
+/** Union of sources a validation rule may target. */
+export type ValidationSourceType = (typeof validationSourceTypes)[number];
+
 /** Authentication event kinds recorded in `reconciliation_login_event` (ISSUE-050.2). */
 export const loginEventTypes = ['LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT'] as const;
 /** Union of valid login-event kinds. */
