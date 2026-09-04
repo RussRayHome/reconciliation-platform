@@ -171,13 +171,62 @@ export const fuzzyContainmentSimilarity = (left: string[], right: string[]): num
   return matchedCount / shorterUnique.length;
 };
 
+/**
+ * Trigram (3-gram) Jaccard similarity -- the same algorithm PostgreSQL's `pg_trgm` uses, so a
+ * future move of this comparison into SQL would agree with it rather than quietly re-scoring.
+ *
+ * Issue #310. Added because every other signal here compares whole TOKENS, and so is blind to
+ * token-boundary differences that a human reads straight through. Measured against real bank
+ * descriptors:
+ *
+ *   WALMART STORE 1234 / WAL-MART #1234   dice 0.33  overlap 0.33  fuzzy 0.33  ->  trigram 0.50
+ *   Office Depot       / OfficeDepot      dice 0.00  overlap 0.00  fuzzy 0.00  ->  trigram 0.67
+ *
+ * A hyphen or a missing space re-tokenizes the string and drops the token-based signals to nearly
+ * nothing. Trigrams ignore token boundaries entirely, so they recover exactly the case the others
+ * cannot. They do NOT recover abbreviations (AMAZON / AMZN scores 0.21) -- that is what the payee
+ * alias table exists for, and no string-distance metric can bridge it.
+ *
+ * Each word is padded with two leading spaces and one trailing space before slicing, matching
+ * pg_trgm, so short words still produce grams and word starts are weighted.
+ */
+export const trigramSimilarity = (left: string[], right: string[]): number => {
+  const grams = (tokens: string[]): Set<string> => {
+    const out = new Set<string>();
+    for (const token of tokens) {
+      const padded = `  ${token} `;
+      for (let index = 0; index < padded.length - 2; index += 1) {
+        out.add(padded.slice(index, index + 3));
+      }
+    }
+    return out;
+  };
+
+  const leftGrams = grams(left);
+  const rightGrams = grams(right);
+  if (!leftGrams.size || !rightGrams.size) {
+    return 0;
+  }
+
+  let shared = 0;
+  leftGrams.forEach((gram) => {
+    if (rightGrams.has(gram)) {
+      shared += 1;
+    }
+  });
+
+  return shared / (leftGrams.size + rightGrams.size - shared);
+};
+
 /** Combined description-similarity signal, used only where a caller needs the strongest available
  * evidence of relatedness for scoring/evidence text -- never as a hard matching gate. */
 export interface DescriptionSimilarity {
   dice: number;
   overlap: number;
   fuzzyOverlap: number;
-  /** The strongest of the three signals above. */
+  /** Trigram Jaccard -- the only signal here that is blind to token boundaries (Issue #310). */
+  trigram: number;
+  /** The strongest of the four signals above. */
   best: number;
 }
 
@@ -185,11 +234,13 @@ export const describeTokenSimilarity = (left: string[], right: string[]): Descri
   const dice = tokenSimilarity(left, right);
   const overlap = overlapCoefficient(left, right);
   const fuzzyOverlap = fuzzyContainmentSimilarity(left, right);
+  const trigram = trigramSimilarity(left, right);
 
   return {
     dice,
     overlap,
     fuzzyOverlap,
-    best: Math.max(dice, overlap, fuzzyOverlap),
+    trigram,
+    best: Math.max(dice, overlap, fuzzyOverlap, trigram),
   };
 };
