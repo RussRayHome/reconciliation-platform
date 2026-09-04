@@ -822,6 +822,8 @@ export class PostgresReconciliationLifecycleStore {
               JSON.stringify(result.evidence),
               result.likelyMatchingReference ?? null,
               result.exceptionCategory ?? null,
+              result.appliedAmountTolerance,
+              result.matchingConfigVersionId ?? null,
             ] as const,
         );
 
@@ -845,6 +847,8 @@ export class PostgresReconciliationLifecycleStore {
             'evidence_json',
             'likely_matching_reference',
             'exception_category',
+            'applied_amount_tolerance',
+            'matching_config_version_id',
           ],
           values,
         );

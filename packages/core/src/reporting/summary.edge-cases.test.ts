@@ -64,6 +64,10 @@ const buildMatchResult = (overrides: Partial<MatchResult> = {}): MatchResult => 
   disposition: overrides.disposition ?? 'ExactMatch',
   confidence: overrides.confidence ?? 'Exact',
   ruleName: overrides.ruleName ?? 'Exact amount and normalized text',
+  // H7 (#276): required on MatchResult so a disposition always records the tolerance
+  // that produced it. Defaulted here; assert on it where provenance is the subject.
+  appliedAmountTolerance: overrides.appliedAmountTolerance ?? 0.01,
+  matchingConfigVersionId: overrides.matchingConfigVersionId,
   score: overrides.score ?? 0.99,
   bankTransactionId: overrides.bankTransactionId,
   glTransactionId: overrides.glTransactionId,

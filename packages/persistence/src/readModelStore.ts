@@ -89,6 +89,8 @@ type MatchResultRow = {
   evidence_json: unknown;
   likely_matching_reference: string | null;
   exception_category: MatchResult['exceptionCategory'] | null;
+  applied_amount_tolerance: string | number | null;
+  matching_config_version_id: string | null;
 };
 
 type ExceptionRow = {
@@ -267,6 +269,11 @@ const mapMatchResult = (row: MatchResultRow): MatchResult => ({
   evidence: asStringArray(row.evidence_json),
   likelyMatchingReference: row.likely_matching_reference ?? undefined,
   exceptionCategory: row.exception_category ?? undefined,
+  // H7 (#276): NULL survives as null rather than falling back to a default. A row written before
+  // changeset 0072 has no recorded tolerance, and substituting the current default here would
+  // present a guess as the value the engine actually applied.
+  appliedAmountTolerance: asNumber(row.applied_amount_tolerance),
+  matchingConfigVersionId: row.matching_config_version_id ?? undefined,
 });
 
 const mapException = (runId: string, row: ExceptionRow): ExceptionItem => ({
@@ -468,7 +475,8 @@ const fetchProbableMatches = async (client: PoolClient, runId: string): Promise<
   const result = await client.query<MatchResultRow>(
     `SELECT id, bank_transaction_id, gl_transaction_id, disposition, confidence, rule_id,
             rule_name, reason, score, amount_difference, date_difference_days,
-            evidence_json, likely_matching_reference, exception_category
+            evidence_json, likely_matching_reference, exception_category,
+            applied_amount_tolerance, matching_config_version_id
        FROM reconciliation_match_result
       WHERE job_id = $1
         AND result_bucket = 'PROBABLE'

@@ -158,7 +158,7 @@ export const classifyExceptions = ({
               : 'Duplicate Detection in GL',
             'Same-source duplicate detected from amount equality, close dates, and similar description or reference tokens.',
             [
-              'Same amount within configured tolerance.',
+              `Same amount within the configured tolerance of ${matching.amountTolerance}.`,
               'Date proximity falls within duplicate detection window.',
               'Description or reference similarity indicates a duplicate posting.',
             ],

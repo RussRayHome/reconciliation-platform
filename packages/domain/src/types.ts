@@ -162,6 +162,44 @@ export interface MatchResult {
   dateDifferenceDays: number | null;
   amountDifference: number;
   evidence: string[];
+  /**
+   * H7 (#276): the amount tolerance the engine ACTUALLY applied when it reached this disposition,
+   * captured from the config in force for the run rather than re-derived later.
+   *
+   * Required, not optional. An exception that cannot be re-explained after a tolerance change is
+   * the defect this closes, and a field a caller may omit reproduces it -- the record would be
+   * silently absent exactly where nobody remembered to populate it. Evidence STRINGS carried the
+   * number for grouped rules and omitted it for pairwise ones ("Amounts agree within configured
+   * tolerance"), so the value existed in prose for some dispositions and nowhere for others.
+   *
+   * Required KEY, nullable VALUE. Every result the engine produces carries a number. `null` is
+   * reachable only by reading a row written before changeset 0072 added the column, where the
+   * tolerance genuinely was not recorded. Defaulting those to the current default would fabricate
+   * the audit value this field exists to make trustworthy, so the read path reports the absence
+   * instead. A `?:` optional would have let a future producer omit the field silently; a required
+   * key forces the choice to be made at every call site.
+   */
+  appliedAmountTolerance: number | null;
+  /**
+   * The published matching-config version whose overrides produced this disposition, or `undefined`
+   * when the run used engine defaults.
+   *
+   * Undefined is the honest value today: `OVERRIDES_APPLIED_TO_ENGINE` is false (#260), so no
+   * published version ever reaches the engine. Recording an ACTIVE version id now would assert that
+   * its overrides shaped a disposition they never touched -- the false audit record #260 is named
+   * after.
+   *
+   * This field is the PRECONDITION for wiring those overrides: `reconcileMatches` takes the version
+   * id as an explicit argument alongside the config, so whatever the engine is handed is what gets
+   * recorded, and #260 cannot wire overrides without provenance following automatically.
+   *
+   * Deliberately NOT a field on `MatchingConfig`: that type's keys are its tunable thresholds, and
+   * every `keyof MatchingConfig` consumer would then treat this as one -- `ruleCatalog`'s metric
+   * ranges and `MatchingConfigVersion.varianceOverrides` (a `Partial<Record<keyof MatchingConfig,
+   * number>>`) both broke when it was tried, the latter by admitting a version id as a numeric
+   * override.
+   */
+  matchingConfigVersionId?: string;
   likelyMatchingReference?: string;
   exceptionCategory?: ErrorCategory;
   reviewerNotes?: string;
