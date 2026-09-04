@@ -714,6 +714,26 @@ export const runReconciliationWorkflow = async (input: {
       },
     ];
 
+    // Issue #260, second half. Resolve the organization's ACTIVE matching-config version and apply
+    // its overrides to this run. Before this, an approver could publish a version through the full
+    // maker-checker workflow, see it marked ACTIVE, and have the engine never see it -- the
+    // overrides existed only as a row nothing read.
+    //
+    // Layering: the ACTIVE version is the governed baseline; a request-body override for the same
+    // metric is more specific and wins. Both are recorded in `run.appliedVarianceOverrides` by
+    // `executeReconciliationFromNormalized`, which builds that record from the config it actually
+    // handed the engine, so the audit trail does not depend on which source a value came from.
+    let activeVersionId: string | undefined;
+    let effectiveOverrides = varianceOverrides;
+    if (input.pool) {
+      const versions = await listMatchingConfigVersions(input.pool, input.organizationId);
+      const active = versions.find((version) => version.status === 'ACTIVE');
+      if (active) {
+        activeVersionId = active.id;
+        effectiveOverrides = { ...active.varianceOverrides, ...(varianceOverrides ?? {}) };
+      }
+    }
+
     const run = await executeReconciliationFromNormalized({
       correlationId,
       sessionId: input.sessionId,
@@ -728,6 +748,8 @@ export const runReconciliationWorkflow = async (input: {
       periodLabel,
       aliases,
       onStep: input.onStep,
+      varianceOverrides: effectiveOverrides,
+      matchingConfigVersionId: activeVersionId,
     });
 
     input.repository.save(run);
@@ -736,10 +758,6 @@ export const runReconciliationWorkflow = async (input: {
       runId: run.id,
       exceptions: run.exceptions.length,
     });
-
-    if (varianceOverrides) {
-      run.appliedVarianceOverrides = varianceOverrides;
-    }
 
     return {
       accountIdentifier,

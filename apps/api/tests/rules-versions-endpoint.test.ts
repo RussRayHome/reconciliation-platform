@@ -115,7 +115,7 @@ const createFakePool = (
 };
 
 describe('GET /api/rules/versions', () => {
-  it('splits the org history into active/draft plus the full list, with overridesAppliedToEngine false', async () => {
+  it('splits the org history into active/draft plus the full list, with overridesAppliedToEngine true', async () => {
     const pool = createFakePool({ listRows: [DRAFT_ROW, ACTIVE_ROW] });
     const app = createApp(undefined, undefined, undefined, pool);
     const response = await authedApp(app).get('/api/rules/versions').expect(200);
@@ -123,7 +123,11 @@ describe('GET /api/rules/versions', () => {
     expect(response.body.active.id).toBe('mcv-0');
     expect(response.body.draft.id).toBe('mcv-1');
     expect(response.body.history).toHaveLength(2);
-    expect(response.body.overridesAppliedToEngine).toBe(false);
+    // Issue #260: true since a run resolves its organization's ACTIVE version and hands those
+    // overrides to the engine. This flag is what the UI reads to decide whether an ACTIVE version's
+    // sliders are more than cosmetic, so it asserting `false` was the visible half of the defect --
+    // the platform telling its own users the values do not apply.
+    expect(response.body.overridesAppliedToEngine).toBe(true);
   });
 
   it('returns null active/draft when neither exists yet', async () => {

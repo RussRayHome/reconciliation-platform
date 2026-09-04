@@ -166,7 +166,7 @@ Notes:
 
 - The helper resolves the repository-local `compose.yaml` automatically, so it does not require you to `cd` into the repo root first.
 - If `.env.docker` exists, it is passed to `docker compose` automatically.
-- Set `DOCKER_ENV_FILE=./path/to/file` to use a different env file across the typed helpers and shell/PowerShell runbooks. `DOCKER_COMPOSE_ENV_FILE` remains supported as a legacy alias.
+- Set `DOCKER_ENV_FILE=./path/to/file` to use a different env file across the typed helpers and shell runbooks. `DOCKER_COMPOSE_ENV_FILE` remains supported as a legacy alias.
 - Docker Desktop start/stop automation is implemented for macOS only.
 - Starting `web` may also start `api` and `postgres` because of the compose dependency chain.
 
@@ -323,27 +323,27 @@ Purpose:
 
 The `scripts/pre-flight/` directory contains the Bash runbooks used for deployment pre-checks and deployment orchestration.
 The `scripts/in-flight/` directory contains Bash checks intended to run against an already-running stack.
-The `scripts/ops/` directory now contains PowerShell entrypoints plus supporting static assets (for example the DB CVE allowlist and ZAP stage targets).
+The `scripts/ops/` directory contains supporting static assets (for example the DB CVE allowlist and ZAP stage targets) and `set-carry-forward-enabled.ts`.
 
-### `pre-flight/deploy.sh` and `ops/deploy.ps1`
+### `pre-flight/deploy.sh`
 
 Purpose:
 
 - Build images, start PostgreSQL, run the dedicated migration service, create database users, then start the API and NGINX gateway. Also starts pgweb and nginx-ui when defined in the compose config (dev and stage).
 
-### `pre-flight/redeploy.sh` and `ops/redeploy.ps1`
+### `pre-flight/redeploy.sh`
 
 Purpose:
 
 - Perform a clean cleanup followed by a fresh deploy.
 
-### `pre-flight/run-migrations.sh` and `ops/run-migrations.ps1`
+### `pre-flight/run-migrations.sh`
 
 Purpose:
 
 - Execute only the dedicated migration container.
 
-### `pre-flight/health-check.sh` and `ops/health-check.ps1`
+### `pre-flight/health-check.sh`
 
 Purpose:
 
@@ -356,13 +356,13 @@ Purpose:
 - Validate environment-prefixed gateway URLs after test execution.
 - Checks application, docs, developer dashboard, pgweb (when present), and dashboard server runtime endpoints.
 
-### `pre-flight/cleanup.sh` and `ops/cleanup.ps1`
+### `pre-flight/cleanup.sh`
 
 Purpose:
 
 - Stop the local production-like stack, with optional volume pruning.
 
-### `pre-flight/validate-env.sh` and `ops/validate-env.ps1`
+### `pre-flight/validate-env.sh`
 
 Purpose:
 

@@ -1,5 +1,13 @@
 import { defineConfig } from 'vitest/config';
 
+// Standalone entrypoint for `npm run test:postgres`. The same files also run as the `unit-data`
+// project inside vitest.config.ts, which `coverage` drives -- see that project's comment for why
+// both exist (Issue #286).
+//
+// `test:postgres` sets RUN_POSTGRES_TESTS=true. Nothing in the test code reads it and it is NOT a
+// gate; its only consumer is scripts/local-env-check.sh:92, which greps `ps -eo command` for it to
+// tell a live postgres-integration run apart from an orphaned testcontainer before flagging one for
+// cleanup. Deleting it would weaken that detection, so it stays -- documented rather than removed.
 export default defineConfig({
   test: {
     name: 'postgres-integration',

@@ -71,12 +71,26 @@ export default defineConfig({
       },
       {
         test: {
+          // Same files as `postgres-integration` in vitest.postgres.config.ts, under a second name.
+          // Kept apart deliberately: this project is a member of the multi-project run `coverage`
+          // drives, while that config is a standalone entrypoint for `test:postgres` so the suite
+          // can run without pulling in unit-core/unit-web/integration. Issue #286 proposed
+          // collapsing them; documented instead, because both project names appear in CI job output
+          // and in the coverage project list.
           name: 'unit-data',
           environment: 'node',
           include: ['packages/persistence/tests/**/*.test.ts'],
           globalSetup: ['packages/persistence/tests/globalSetup.ts'],
           testTimeout: 180000,
           hookTimeout: 180000,
+          // Issue #286. These files drive `liquibase update` against per-file databases, but roles
+          // are cluster-wide, so two running concurrently race on pg_authid/pg_shdepend and Postgres
+          // kills the loser with "tuple concurrently updated". vitest.postgres.config.ts sets this
+          // for the same reason. Until now this project was safe ONLY because the `coverage` script
+          // happens to pass --no-file-parallelism on the command line -- `vitest --project
+          // unit-data` on its own would hit the race. Safety now travels with the project instead
+          // of depending on a caller remembering a flag.
+          fileParallelism: false,
         },
       },
       {

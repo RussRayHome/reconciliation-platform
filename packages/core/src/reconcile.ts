@@ -48,7 +48,13 @@ export const runReconciliation = async (
     transactionCount: normalizedTransactions.length,
   });
 
-  const matching = reconcileMatches(normalizedTransactions, input.config.matching);
+  const matching = reconcileMatches(
+    normalizedTransactions,
+    input.config.matching,
+    [],
+    undefined,
+    input.matchingConfigVersionId,
+  );
   appendAuditEvent('reconciliation.match.completed', {
     matchResultCount: matching.matchResults.length,
     groupedMatchResultCount: matching.groupedMatchResults.length,

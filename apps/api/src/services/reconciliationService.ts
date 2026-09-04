@@ -86,6 +86,8 @@ interface RunReconciliationPipelineInput {
    * unconditionally (Issue #154, changeset-independent of this) -- `onStep` only adds the publish
    * side, so its absence never loses data, only live status text. */
   onStep?: QueueStepReporter;
+  /** See `ReconciliationInput.matchingConfigVersionId`. Passed straight through to the engine. */
+  matchingConfigVersionId?: string;
 }
 
 /** Fault-finding detail for the vetting phase, LOG_LEVEL=debug only -- undefined (not a no-op)
@@ -133,6 +135,7 @@ const runReconciliationPipeline = async ({
   t0,
   log,
   onStep,
+  matchingConfigVersionId,
 }: RunReconciliationPipelineInput): Promise<ReconciliationRun> => {
   const runPersistStep = async <T>(action: string, fn: () => Promise<T>): Promise<T> => {
     const stepStart = Date.now();
@@ -352,6 +355,10 @@ const runReconciliationPipeline = async ({
       config.matching,
       aliases,
       buildCandidateOutcomeObserver(log),
+      // Issue #260/#276: the ACTIVE version whose overrides produced `config.matching`, so every
+      // MatchResult records the version that actually shaped it. Undefined when the run used engine
+      // defaults or a caller-supplied override with no version behind it.
+      matchingConfigVersionId,
     );
     const matchResultsByDisposition = matching.matchResults.reduce<Record<string, number>>(
       (acc, result) => {
@@ -692,6 +699,20 @@ export interface ExecuteReconciliationFromNormalizedInput {
   aliases?: PayeeAlias[];
   /** See `RunReconciliationPipelineInput.onStep`'s doc comment. */
   onStep?: QueueStepReporter;
+  /**
+   * The ACTIVE matching-config version's variance overrides, keyed by metric id. Metric ids ARE
+   * `keyof MatchingConfig` -- `ruleCatalog.ts` derives them from `Record<keyof MatchingConfig,
+   * MetricRange>`, and the draft endpoint rejects anything outside `RULES_CATALOG_METRIC_IDS` --
+   * so they map straight onto `config.matching`.
+   *
+   * Issue #260: before this existed the caller ran the engine WITHOUT overrides and then stamped
+   * `run.appliedVarianceOverrides` onto the finished run, asserting a tolerance that was never
+   * applied. Threading them here makes the recorded value the value used, by construction rather
+   * than by convention.
+   */
+  varianceOverrides?: Record<string, number>;
+  /** See `ReconciliationInput.matchingConfigVersionId`. */
+  matchingConfigVersionId?: string;
 }
 
 /**
@@ -721,6 +742,8 @@ export const executeReconciliationFromNormalized = async ({
   carryForwardEnvEnabled,
   aliases = [],
   onStep,
+  varianceOverrides,
+  matchingConfigVersionId,
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
   const log = serviceLogger.child({ correlationId, sessionId, accountIdentifier });
   const t0 = Date.now();
@@ -732,17 +755,42 @@ export const executeReconciliationFromNormalized = async ({
     normalizedCount: normalizedTransactions.length,
   });
 
-  const config =
+  const baseConfig =
     resolveReconciliationConfig(accountIdentifier, sampleAccountOverrides) ??
     defaultReconciliationConfig;
+
+  // Issue #260. Overrides are applied to the config the engine is about to use, and
+  // `appliedOverrides` records only what genuinely landed on it. An unknown metric id is dropped
+  // rather than silently widening the config -- the draft endpoint already rejects those against
+  // RULES_CATALOG_METRIC_IDS, so anything arriving here is either known or a bug worth not
+  // honouring.
+  const appliedOverrides: Record<string, number> = {};
+  const config = varianceOverrides
+    ? {
+        ...baseConfig,
+        matching: Object.entries(varianceOverrides).reduce(
+          (matching, [metricId, value]) => {
+            if (!(metricId in matching)) {
+              log.warn({ action: 'service.config.override.unknown', metricId });
+              return matching;
+            }
+            appliedOverrides[metricId] = value;
+            return { ...matching, [metricId]: value };
+          },
+          { ...baseConfig.matching },
+        ),
+      }
+    : baseConfig;
+
   log.debug({
     action: 'service.config.resolved',
     accountIdentifier,
     dateToleranceDays: config.matching.dateToleranceDays,
     timingDifferenceDays: config.matching.timingDifferenceDays,
+    appliedVarianceOverrides: Object.keys(appliedOverrides).length,
   });
 
-  return runReconciliationPipeline({
+  const run = await runReconciliationPipeline({
     correlationId,
     runId,
     organizationId,
@@ -751,6 +799,7 @@ export const executeReconciliationFromNormalized = async ({
     rawRows,
     getNormalizedTransactions: () => normalizedTransactions,
     config,
+    matchingConfigVersionId,
     accountIdentifier,
     reconciliationFrequency,
     periodLabel,
@@ -763,4 +812,14 @@ export const executeReconciliationFromNormalized = async ({
     log,
     onStep,
   });
+
+  // Issue #260: recorded here, from the same `appliedOverrides` the config above was built from,
+  // so the run cannot claim a tolerance the engine did not use. Left undefined when nothing was
+  // applied -- a silent record is correct; an empty object would read as "overrides ran and
+  // changed nothing", which is a different claim.
+  if (Object.keys(appliedOverrides).length > 0) {
+    run.appliedVarianceOverrides = appliedOverrides;
+  }
+
+  return run;
 };

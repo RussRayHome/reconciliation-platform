@@ -1014,8 +1014,9 @@ export const reconcileMatches = (
   onCandidateOutcome?: CandidateOutcomeObserver,
   /**
    * H7 (#276): the published matching-config version whose overrides produced `config`, when one
-   * did. Omitted for engine defaults, which is the only honest value while #260 leaves
-   * `OVERRIDES_APPLIED_TO_ENGINE` false -- no published version currently reaches this function.
+   * did. Omitted for engine defaults. Since #260 wired the versioning stack to the engine
+   * (`OVERRIDES_APPLIED_TO_ENGINE` is now true), a run that resolves an ACTIVE version passes its
+   * id here, so recorded provenance names the version that actually shaped the disposition.
    */
   matchingConfigVersionId?: string,
 ): MatchEngineResult => {
@@ -1082,11 +1083,38 @@ export const reconcileMatches = (
     const topScore = siblingCandidates[0]?.score ?? candidate.score;
     const closeAlternatives = siblingCandidates.filter((item) => topScore - item.score < 0.1);
 
+    // H5 (#274): an EXACT tie at the top must escalate regardless of how high the score is.
+    //
+    // Both candidate sorts are stable (`right.score - left.score`), so equal scores keep their
+    // input order and the winner is decided by which row happened to appear first in the uploaded
+    // file. Nothing records that a coin was flipped.
+    //
+    // `candidate.score < 0.95` below excluded precisely the ties most in need of review, and it did
+    // so systematically rather than occasionally: `Reference + Amount Match` passes the score as a
+    // LITERAL 1, so every tie between two such candidates scored exactly 1.0 and could never reach
+    // the ambiguity gate. Two GL entries with the same reference and amount silently resolved to
+    // whichever was read first.
+    //
+    // A tie at the top of the scale is the case most in need of review, not least: two candidates
+    // the engine cannot separate on its own evidence.
+    // A tie bypasses BOTH original conditions, not just the score.
+    //
+    // `referenceSimilarity < threshold` is a sound heuristic for a single candidate -- a strong
+    // reference match is trustworthy even when the text is weak. It is exactly wrong for a tie:
+    // 'Reference + Amount Match' fires only when `referenceSimilarity >= threshold`, so its
+    // candidates always fail that condition and could never escalate on that path either. When two
+    // GL entries carry the SAME strong reference and the SAME amount, the reference has stopped
+    // discriminating between them. The thing that made the match trustworthy is the thing that is
+    // now ambiguous.
+    const topScoreIsTied =
+      siblingCandidates.filter((item) => item.score === topScore).length > 1;
+
     if (
       config.textSimilarityThreshold > 0.12 &&
       closeAlternatives.length > 1 &&
-      candidate.score < 0.95 &&
-      candidate.referenceSimilarity < config.referenceSimilarityThreshold
+      (topScoreIsTied ||
+        (candidate.score < 0.95 &&
+          candidate.referenceSimilarity < config.referenceSimilarityThreshold))
     ) {
       if (
         isGroupedReserved ||
