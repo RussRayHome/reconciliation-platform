@@ -17,6 +17,7 @@ import type {
   TransformKind,
   ValidationRuleScope,
   ValidationSeverity,
+  ValidationSourceType,
 } from './enums';
 
 /** Metadata registered for a single uploaded spreadsheet (bank or GL). */
@@ -783,19 +784,29 @@ export interface StagedTransaction {
   createdAt: string;
 }
 
-/** A versioned, reproducible validation rule definition. Stored in `reconciliation_validation_rule_version`. */
+/** A versioned, reproducible validation rule definition. Stored in `validation_rule_version`. */
 export interface ValidationRuleVersion {
   id: string;
   ruleCode: string;
   versionNumber: number;
   scope: ValidationRuleScope;
+  /**
+   * Which source a rule applies to, or undefined when it is source-independent. H8 (#277,
+   * changeset 0074): named here because it previously had no domain type -- the values existed
+   * only as an inline union in `core/fileValidation/types.ts` and as a CHECK constraint, which is
+   * part of how the two rule families drifted apart.
+   *
+   * Optional because a SCHEMA- or FILE-scoped rule is not specific to one source; forcing a value
+   * would mean inventing one. Matches the nullable column.
+   */
+  sourceType?: ValidationSourceType;
   severity: ValidationSeverity;
   description: string;
   status: MappingProfileStatus;
   createdAt: string;
 }
 
-/** The outcome of evaluating one validation rule version against a staged transaction or whole file. Stored in `reconciliation_validation_result`. */
+/** The outcome of evaluating one validation rule version against a file's rows. Stored in `validation_issue`. */
 export interface ValidationResult {
   id: string;
   stagedTransactionId?: string;

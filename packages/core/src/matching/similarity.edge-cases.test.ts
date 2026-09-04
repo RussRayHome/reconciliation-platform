@@ -6,6 +6,7 @@ import {
   overlapCoefficient,
   fuzzyContainmentSimilarity,
   describeTokenSimilarity,
+  trigramSimilarity,
 } from './similarity';
 
 describe('Similarity Utilities - Edge Cases', () => {
@@ -136,7 +137,9 @@ describe('Similarity Utilities - Edge Cases', () => {
       const left = ['GEORGIA', 'DEPT', 'OF', 'REVENUE'];
       const right = ['ACH', 'CORP', 'DEBIT', 'GA', 'GEORGIA', 'ITS', 'TAX'];
       const result = describeTokenSimilarity(left, right);
-      expect(result.best).toBe(Math.max(result.dice, result.overlap, result.fuzzyOverlap));
+      expect(result.best).toBe(
+        Math.max(result.dice, result.overlap, result.fuzzyOverlap, result.trigram),
+      );
     });
 
     it('degrades gracefully to 0 for empty inputs on either side', () => {
@@ -144,6 +147,9 @@ describe('Similarity Utilities - Edge Cases', () => {
         dice: 0,
         overlap: 0,
         fuzzyOverlap: 0,
+        // Issue #310 added trigram as a fourth signal; it is 0 here for the same reason as the
+        // others -- one side has no grams to share.
+        trigram: 0,
         best: 0,
       });
     });
@@ -265,5 +271,57 @@ describe('Similarity Utilities - Edge Cases', () => {
       expect(amountMatch).toBe(true);
       expect(dateMatch).toBeDefined();
     });
+  });
+});
+
+describe('trigramSimilarity (Issue #310)', () => {
+  const norm = (value: string): string[] =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+
+  // The defect this closes: every other signal compares whole tokens, so a hyphen or a missing
+  // space re-tokenizes the string and collapses the score. These are real bank descriptor shapes,
+  // not contrived ones -- measured against the live functions before the fix.
+  it.each([
+    ['WALMART STORE 1234', 'WAL-MART #1234', 0.4],
+    ['Office Depot', 'OfficeDepot', 0.6],
+    ['STARBUCKS COFFEE #227', 'STARBUCK COFFEE 227', 0.8],
+  ])('recovers the token-boundary case %s / %s', (left, right, floor) => {
+    expect(trigramSimilarity(norm(left), norm(right))).toBeGreaterThanOrEqual(floor);
+  });
+
+  it('keeps unrelated descriptors apart', () => {
+    expect(trigramSimilarity(norm('SHELL OIL 574'), norm('CHEVRON 8821'))).toBe(0);
+    expect(trigramSimilarity(norm('PAYROLL 05/31'), norm('RENT PAYMENT MAY'))).toBeLessThan(0.2);
+  });
+
+  it('does NOT bridge abbreviations -- that is the payee alias table’s job', () => {
+    // AMAZON vs AMZN shares almost no character sequence. No string-distance metric recovers this;
+    // asserting it here so a future change does not mistake the alias table for redundant.
+    expect(trigramSimilarity(norm('AMAZON MKTPLACE PMTS'), norm('AMZN Mktp US'))).toBeLessThan(0.3);
+  });
+
+  it('is symmetric and returns 1 for identical token sets', () => {
+    const a = norm('SHELL OIL 574');
+    const b = norm('shell oil 574');
+    expect(trigramSimilarity(a, b)).toBe(1);
+    expect(trigramSimilarity(a, b)).toBe(trigramSimilarity(b, a));
+  });
+
+  it('returns 0 when either side is empty', () => {
+    expect(trigramSimilarity([], norm('SHELL OIL'))).toBe(0);
+    expect(trigramSimilarity(norm('SHELL OIL'), [])).toBe(0);
+  });
+
+  it('is included in the blended best', () => {
+    const left = norm('Office Depot');
+    const right = norm('OfficeDepot');
+    const blended = describeTokenSimilarity(left, right);
+    expect(blended.dice).toBe(0);
+    expect(blended.trigram).toBeGreaterThan(0.6);
+    expect(blended.best).toBe(blended.trigram);
   });
 });

@@ -6,9 +6,9 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(2422);
+SELECT plan(2352);
 
-SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'reconciliation_validation_result', 'reconciliation_validation_rule_version', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
+SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
 SELECT col_is_pk('public', 'canonical_record', ARRAY['id']::name[], 'canonical_record primary key');
 SELECT indexes_are('public', 'canonical_record', ARRAY['canonical_record_counterparty_id_idx', 'normalized_record_account_txn_date_idx', 'normalized_record_organization_idx', 'normalized_record_pkey', 'normalized_record_reconciliation_run_idx', 'normalized_record_signed_amount_idx']::name[], 'canonical_record has exactly the expected indexes');
@@ -6978,231 +6978,6 @@ SELECT is(
   $trig$CREATE TRIGGER trg_reconciliation_user_password_changed BEFORE UPDATE ON public.reconciliation_user FOR EACH ROW EXECUTE FUNCTION set_reconciliation_user_last_changed()$trig$,
   'reconciliation_user.trg_reconciliation_user_password_changed definition'
 );
-SELECT columns_are('public', 'reconciliation_validation_result', ARRAY['id', 'staged_transaction_id', 'source_file_id', 'rule_version_id', 'severity', 'passed', 'message', 'created_at', 'organization_id']::name[], 'reconciliation_validation_result has exactly the expected columns');
-SELECT col_is_pk('public', 'reconciliation_validation_result', ARRAY['id']::name[], 'reconciliation_validation_result primary key');
-SELECT indexes_are('public', 'reconciliation_validation_result', ARRAY['reconciliation_validation_result_organization_idx', 'reconciliation_validation_result_pkey', 'reconciliation_validation_result_severity_idx', 'reconciliation_validation_result_source_file_idx', 'reconciliation_validation_result_staged_transaction_idx']::name[], 'reconciliation_validation_result has exactly the expected indexes');
-SELECT is(
-  (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_validation_result' AND relnamespace = 'public'::regnamespace),
-  true,
-  'reconciliation_validation_result has row-level security enabled'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'id', 'uuid', 'reconciliation_validation_result.id is uuid');
-SELECT col_not_null('public', 'reconciliation_validation_result', 'id', 'reconciliation_validation_result.id is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'id'),
-  NULL,
-  'reconciliation_validation_result.id default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'staged_transaction_id', 'uuid', 'reconciliation_validation_result.staged_transaction_id is uuid');
-SELECT col_is_null('public', 'reconciliation_validation_result', 'staged_transaction_id', 'reconciliation_validation_result.staged_transaction_id is nullable');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'staged_transaction_id'),
-  NULL,
-  'reconciliation_validation_result.staged_transaction_id default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'source_file_id', 'uuid', 'reconciliation_validation_result.source_file_id is uuid');
-SELECT col_is_null('public', 'reconciliation_validation_result', 'source_file_id', 'reconciliation_validation_result.source_file_id is nullable');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'source_file_id'),
-  NULL,
-  'reconciliation_validation_result.source_file_id default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'rule_version_id', 'uuid', 'reconciliation_validation_result.rule_version_id is uuid');
-SELECT col_not_null('public', 'reconciliation_validation_result', 'rule_version_id', 'reconciliation_validation_result.rule_version_id is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'rule_version_id'),
-  NULL,
-  'reconciliation_validation_result.rule_version_id default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'severity', 'text', 'reconciliation_validation_result.severity is text');
-SELECT col_not_null('public', 'reconciliation_validation_result', 'severity', 'reconciliation_validation_result.severity is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'severity'),
-  NULL,
-  'reconciliation_validation_result.severity default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'passed', 'boolean', 'reconciliation_validation_result.passed is boolean');
-SELECT col_not_null('public', 'reconciliation_validation_result', 'passed', 'reconciliation_validation_result.passed is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'passed'),
-  NULL,
-  'reconciliation_validation_result.passed default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'message', 'text', 'reconciliation_validation_result.message is text');
-SELECT col_not_null('public', 'reconciliation_validation_result', 'message', 'reconciliation_validation_result.message is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'message'),
-  NULL,
-  'reconciliation_validation_result.message default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'created_at', 'timestamp with time zone', 'reconciliation_validation_result.created_at is timestamp with time zone');
-SELECT col_not_null('public', 'reconciliation_validation_result', 'created_at', 'reconciliation_validation_result.created_at is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'created_at'),
-  $dflt$now()$dflt$,
-  'reconciliation_validation_result.created_at default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_result', 'organization_id', 'uuid', 'reconciliation_validation_result.organization_id is uuid');
-SELECT col_not_null('public', 'reconciliation_validation_result', 'organization_id', 'reconciliation_validation_result.organization_id is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_result'::regclass AND a.attname = 'organization_id'),
-  NULL,
-  'reconciliation_validation_result.organization_id default'
-);
-SELECT is(
-  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
-     FROM pg_constraint con
-    WHERE con.conrelid = 'public.reconciliation_validation_result'::regclass AND con.contype IN ('c', 'u', 'x')),
-  $chk$reconciliation_validation_result_severity_check => CHECK ((severity = ANY (ARRAY['FATAL'::text, 'WARNING'::text, 'INFO'::text])))
-reconciliation_validation_result_target_check => CHECK (((staged_transaction_id IS NOT NULL) OR (source_file_id IS NOT NULL)))$chk$,
-  'reconciliation_validation_result check/unique/exclusion constraints'
-);
-SELECT is(
-  (SELECT COALESCE(string_agg(p.grantee || ' => ' || p.privs, E'\n' ORDER BY p.grantee), '')
-     FROM (
-       SELECT grantee, string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privs
-         FROM information_schema.table_privileges
-        WHERE table_schema = 'public' AND table_name = 'reconciliation_validation_result'
-          AND grantee <> (SELECT rolname FROM pg_roles WHERE oid = (SELECT relowner FROM pg_class WHERE relname = 'reconciliation_validation_result' AND relnamespace = 'public'::regnamespace))
-        GROUP BY grantee
-     ) p),
-  $grants$app_user => DELETE,INSERT,SELECT,UPDATE
-recon_app_runtime => DELETE,INSERT,SELECT,UPDATE$grants$,
-  'reconciliation_validation_result grants'
-);
-SELECT is(
-  (SELECT COALESCE(string_agg(policyname || ' => cmd=' || cmd || ' roles=' || array_to_string(roles, ',') || ' using=' || COALESCE(qual, '') || ' check=' || COALESCE(with_check, ''), E'\n' ORDER BY policyname), '')
-     FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'reconciliation_validation_result'),
-  $policy$reconciliation_validation_result_tenant_isolation => cmd=ALL roles=public using=(organization_id = (current_setting('app.current_organization_id'::text, true))::uuid) check=$policy$,
-  'reconciliation_validation_result row-level security policies'
-);
-SELECT triggers_are('public', 'reconciliation_validation_result', ARRAY[]::name[], 'reconciliation_validation_result has exactly the expected triggers');
-SELECT columns_are('public', 'reconciliation_validation_rule_version', ARRAY['id', 'rule_code', 'version_number', 'scope', 'severity', 'description', 'status', 'created_at']::name[], 'reconciliation_validation_rule_version has exactly the expected columns');
-SELECT col_is_pk('public', 'reconciliation_validation_rule_version', ARRAY['id']::name[], 'reconciliation_validation_rule_version primary key');
-SELECT indexes_are('public', 'reconciliation_validation_rule_version', ARRAY['reconciliation_validation_rule_version_key', 'reconciliation_validation_rule_version_pkey']::name[], 'reconciliation_validation_rule_version has exactly the expected indexes');
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'id', 'uuid', 'reconciliation_validation_rule_version.id is uuid');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'id', 'reconciliation_validation_rule_version.id is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'id'),
-  NULL,
-  'reconciliation_validation_rule_version.id default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'rule_code', 'text', 'reconciliation_validation_rule_version.rule_code is text');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'rule_code', 'reconciliation_validation_rule_version.rule_code is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'rule_code'),
-  NULL,
-  'reconciliation_validation_rule_version.rule_code default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'version_number', 'integer', 'reconciliation_validation_rule_version.version_number is integer');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'version_number', 'reconciliation_validation_rule_version.version_number is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'version_number'),
-  NULL,
-  'reconciliation_validation_rule_version.version_number default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'scope', 'text', 'reconciliation_validation_rule_version.scope is text');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'scope', 'reconciliation_validation_rule_version.scope is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'scope'),
-  NULL,
-  'reconciliation_validation_rule_version.scope default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'severity', 'text', 'reconciliation_validation_rule_version.severity is text');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'severity', 'reconciliation_validation_rule_version.severity is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'severity'),
-  NULL,
-  'reconciliation_validation_rule_version.severity default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'description', 'text', 'reconciliation_validation_rule_version.description is text');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'description', 'reconciliation_validation_rule_version.description is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'description'),
-  NULL,
-  'reconciliation_validation_rule_version.description default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'status', 'text', 'reconciliation_validation_rule_version.status is text');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'status', 'reconciliation_validation_rule_version.status is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'status'),
-  $dflt$'ACTIVE'::text$dflt$,
-  'reconciliation_validation_rule_version.status default'
-);
-SELECT col_type_is('public', 'reconciliation_validation_rule_version', 'created_at', 'timestamp with time zone', 'reconciliation_validation_rule_version.created_at is timestamp with time zone');
-SELECT col_not_null('public', 'reconciliation_validation_rule_version', 'created_at', 'reconciliation_validation_rule_version.created_at is NOT NULL');
-SELECT is(
-  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
-     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-    WHERE d.adrelid = 'public.reconciliation_validation_rule_version'::regclass AND a.attname = 'created_at'),
-  $dflt$now()$dflt$,
-  'reconciliation_validation_rule_version.created_at default'
-);
-SELECT is(
-  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
-     FROM pg_constraint con
-    WHERE con.conrelid = 'public.reconciliation_validation_rule_version'::regclass AND con.contype IN ('c', 'u', 'x')),
-  $chk$reconciliation_validation_rule_version_key => UNIQUE (rule_code, version_number)
-reconciliation_validation_rule_version_scope_check => CHECK ((scope = ANY (ARRAY['FILE'::text, 'SCHEMA'::text, 'ROW'::text, 'CROSS_ROW'::text, 'PERIOD'::text, 'ACCOUNTING'::text])))
-reconciliation_validation_rule_version_severity_check => CHECK ((severity = ANY (ARRAY['FATAL'::text, 'WARNING'::text, 'INFO'::text])))
-reconciliation_validation_rule_version_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'DEPRECATED'::text])))
-reconciliation_validation_rule_version_version_number_check => CHECK ((version_number > 0))$chk$,
-  'reconciliation_validation_rule_version check/unique/exclusion constraints'
-);
-SELECT is(
-  (SELECT COALESCE(string_agg(p.grantee || ' => ' || p.privs, E'\n' ORDER BY p.grantee), '')
-     FROM (
-       SELECT grantee, string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privs
-         FROM information_schema.table_privileges
-        WHERE table_schema = 'public' AND table_name = 'reconciliation_validation_rule_version'
-          AND grantee <> (SELECT rolname FROM pg_roles WHERE oid = (SELECT relowner FROM pg_class WHERE relname = 'reconciliation_validation_rule_version' AND relnamespace = 'public'::regnamespace))
-        GROUP BY grantee
-     ) p),
-  $grants$app_user => DELETE,INSERT,SELECT,UPDATE
-recon_app_runtime => DELETE,INSERT,SELECT,UPDATE$grants$,
-  'reconciliation_validation_rule_version grants'
-);
-SELECT is(
-  (SELECT COALESCE(string_agg(policyname || ' => cmd=' || cmd || ' roles=' || array_to_string(roles, ',') || ' using=' || COALESCE(qual, '') || ' check=' || COALESCE(with_check, ''), E'\n' ORDER BY policyname), '')
-     FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'reconciliation_validation_rule_version'),
-  $policy$$policy$,
-  'reconciliation_validation_rule_version row-level security policies'
-);
-SELECT triggers_are('public', 'reconciliation_validation_rule_version', ARRAY[]::name[], 'reconciliation_validation_rule_version has exactly the expected triggers');
 SELECT columns_are('public', 'run_source_file', ARRAY['id', 'organization_id', 'reconciliation_run_id', 'import_file_id', 'role', 'created_at']::name[], 'run_source_file has exactly the expected columns');
 SELECT col_is_pk('public', 'run_source_file', ARRAY['id']::name[], 'run_source_file primary key');
 SELECT indexes_are('public', 'run_source_file', ARRAY['run_source_file_import_file_idx', 'run_source_file_organization_idx', 'run_source_file_pkey', 'run_source_file_reconciliation_run_idx', 'run_source_file_run_import_file_key']::name[], 'run_source_file has exactly the expected indexes');
@@ -7413,7 +7188,7 @@ SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
      FROM pg_constraint con
     WHERE con.conrelid = 'public.validation_issue'::regclass AND con.contype IN ('c', 'u', 'x')),
-  $chk$validation_issue_severity_check => CHECK ((severity = ANY (ARRAY['ERROR'::text, 'WARNING'::text])))$chk$,
+  $chk$validation_issue_severity_check => CHECK ((severity = ANY (ARRAY['ERROR'::text, 'WARNING'::text, 'INFO'::text])))$chk$,
   'validation_issue check/unique/exclusion constraints'
 );
 SELECT is(
@@ -7526,8 +7301,8 @@ SELECT is(
      FROM pg_constraint con
     WHERE con.conrelid = 'public.validation_rule_version'::regclass AND con.contype IN ('c', 'u', 'x')),
   $chk$validation_rule_version_code_version_key => UNIQUE (rule_code, version_number)
-validation_rule_version_scope_check => CHECK ((scope = ANY (ARRAY['SCHEMA'::text, 'FILE'::text, 'ROW'::text, 'CROSS_ROW'::text])))
-validation_rule_version_severity_check => CHECK ((severity = ANY (ARRAY['ERROR'::text, 'WARNING'::text])))
+validation_rule_version_scope_check => CHECK ((scope = ANY (ARRAY['SCHEMA'::text, 'FILE'::text, 'ROW'::text, 'CROSS_ROW'::text, 'PERIOD'::text, 'ACCOUNTING'::text])))
+validation_rule_version_severity_check => CHECK ((severity = ANY (ARRAY['ERROR'::text, 'WARNING'::text, 'INFO'::text])))
 validation_rule_version_source_type_check => CHECK (((source_type IS NULL) OR (source_type = ANY (ARRAY['BANK'::text, 'GL'::text, 'BILLING'::text]))))
 validation_rule_version_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'DEPRECATED'::text])))
 validation_rule_version_version_number_check => CHECK ((version_number > 0))$chk$,
@@ -7660,10 +7435,6 @@ SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['promoted_by']
 SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['raw_row_id']::name[], 'public', 'reconciliation_raw_row', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['source_file_id']::name[], 'public', 'reconciliation_source_file', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_user', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
-SELECT fk_ok('public', 'reconciliation_validation_result', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
-SELECT fk_ok('public', 'reconciliation_validation_result', ARRAY['rule_version_id']::name[], 'public', 'reconciliation_validation_rule_version', ARRAY['id']::name[]);
-SELECT fk_ok('public', 'reconciliation_validation_result', ARRAY['source_file_id']::name[], 'public', 'reconciliation_source_file', ARRAY['id']::name[]);
-SELECT fk_ok('public', 'reconciliation_validation_result', ARRAY['staged_transaction_id']::name[], 'public', 'reconciliation_staged_transaction', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['import_file_id']::name[], 'public', 'import_file', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['reconciliation_run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);

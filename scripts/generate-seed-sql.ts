@@ -465,7 +465,7 @@ const ASSUMED_CURRENCY_CODE = 'USD';
  * Drives the File-Validation import pipeline, which is a SEPARATE store from the matching
  * lifecycle and writes the tables the old seed never touched at all: reconciliation_run,
  * import_file, import_file_content, run_source_file, import_job, canonical_record,
- * validation_issue and reconciliation_validation_result.
+ * validation_issue.
  *
  * The final `recordMatchingJobId` call is what links reconciliation_run.matching_job_id to the
  * reconciliation_job persisted by the matching half. That FK is ON DELETE NO ACTION, so it also

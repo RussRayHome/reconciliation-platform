@@ -97,8 +97,11 @@ describe('Liquibase migrations', () => {
       'reconciliation_mapping_profile_version',
       'reconciliation_template_definition',
       'reconciliation_staged_transaction',
-      'reconciliation_validation_rule_version',
-      'reconciliation_validation_result',
+      // reconciliation_validation_rule_version and reconciliation_validation_result were dropped by
+      // changeset 0074 (H8, Issue #277). They were the legacy validation family from changeset 0016
+      // -- superseded by the File Validation engine, empty, and read by no code -- and their only
+      // remaining contribution was three enum values (PERIOD, ACCOUNTING, INFO), which 0074 added to
+      // validation_rule_version / validation_issue instead.
       'reconciliation_import_approval',
       'reconciliation_approval_history',
     ]) {
