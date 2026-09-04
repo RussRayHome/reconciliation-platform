@@ -80,9 +80,9 @@ describe('Liquibase rollback', () => {
       // reconciliation_match_result.applied_amount_tolerance/matching_config_version_id plus an FK
       // to reconciliation_matching_config_version -- a different table again), and 0073 (renames an
       // index and an FK constraint on reconciliation_match_result and resets a default on
-      // reconciliation_payee_alias -- both different tables), and 0074 (adds source_type to
-      // reconciliation_validation_rule_version and widens the status CHECK on both validation rule
-      // tables -- different tables again) all sit on top of it without touching
+      // reconciliation_payee_alias -- both different tables), and 0074 (widens validation_rule_version's scope and
+      // severity CHECKs and drops the two legacy reconciliation_validation_* tables -- different
+      // tables again) all sit on top of it without touching
       // the schema this test cares about, so rolling back 25 changesets (0074 down through 0050)
       // lands on the same DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a
       // future changeset lands here, extend the count again rather than re-pinning this test to a
@@ -194,8 +194,8 @@ describe('Liquibase rollback', () => {
       // CHECK, no reconciliation_user changes), 0072 (adds two provenance columns and an FK to
       // reconciliation_match_result, no reconciliation_user changes), and 0073 (renames a
       // match_result index and FK and resets a payee_alias default, no reconciliation_user
-      // changes), and 0074 (adds source_type to reconciliation_validation_rule_version and widens
-      // the status CHECK on both validation rule tables, no reconciliation_user changes) all sit on
+      // changes), and 0074 (widens validation_rule_version's CHECK constraints and drops
+      // two legacy tables, no reconciliation_user changes) all sit on
       // top of it without reversing anything this test cares about.
       runLiquibase(containerId, database.name, 'rollback-count', '--count=49');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);

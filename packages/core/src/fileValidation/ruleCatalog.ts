@@ -8,10 +8,20 @@ import type { Severity } from './types';
  * equivalence.
  */
 
-/** Mirrors the older reconciliation_validation_rule_version.scope convention (changeset 0016) --
- * FILE/CROSS_ROW are new to this engine (0016's rules never needed them), SCHEMA covers the
- * Step 1/2 structural gates, ROW covers Step 3 per-field checks. */
-export type FileValidationRuleScope = 'SCHEMA' | 'FILE' | 'ROW' | 'CROSS_ROW';
+/** SCHEMA covers the Step 1/2 structural gates, ROW covers Step 3 per-field checks, FILE and
+ * CROSS_ROW are file- and multi-row-level checks.
+ *
+ * PERIOD and ACCOUNTING were added by changeset 0074 (H8, Issue #277). They previously existed only
+ * on `reconciliation_validation_rule_version` -- a legacy table from changeset 0016 that this
+ * engine superseded and that 0074 dropped -- which meant the accounting tier had a scope declared
+ * for it in a table nothing read, and no member to use in the type that governs live rules. */
+export type FileValidationRuleScope =
+  | 'SCHEMA'
+  | 'FILE'
+  | 'ROW'
+  | 'CROSS_ROW'
+  | 'PERIOD'
+  | 'ACCOUNTING';
 
 export interface FileValidationRuleDefinition {
   code: string;

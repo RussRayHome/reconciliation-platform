@@ -195,7 +195,19 @@ export const validationRuleScopes = [
 export type ValidationRuleScope = (typeof validationRuleScopes)[number];
 
 /** Severity of a validation rule and the results it produces. */
-export const validationSeverities = ['FATAL', 'WARNING', 'INFO'] as const;
+/**
+ * Severity of a validation rule / result (H8, Issue #277, changeset 0075).
+ *
+ * ERROR | WARNING | INFO -- the live File Validation engine's list plus INFO. The rival family
+ * previously used FATAL|WARNING|INFO, disagreeing with the live one on two of three values. FATAL
+ * was dropped as a synonym for ERROR rather than kept alongside it: two words for one severity is
+ * how the divergence started. Choosing this direction left every existing severity valid, so none
+ * of the 79 seeded rules was rewritten.
+ *
+ * INFO is the addition -- advisory checks that should not fail a run, which the accounting tier
+ * needs and ERROR|WARNING could not express.
+ */
+export const validationSeverities = ['ERROR', 'WARNING', 'INFO'] as const;
 /** Union of valid validation severities. */
 export type ValidationSeverity = (typeof validationSeverities)[number];
 
