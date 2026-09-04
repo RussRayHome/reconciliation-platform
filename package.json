@@ -147,6 +147,7 @@
     "db:restore:stage": "DOCKER_ENV_FILE=.env.docker.stage DOCKER_ENV_FALLBACK_FILE=.env.docker.stage.fallback DOCKER_COMPOSE_EXTRA_FILE=compose.stage.yaml bash scripts/pre-flight/restore.sh stage",
     "db:seed:dev": "bash scripts/pre-flight/run-seed.sh dev",
     "db:seed:stage": "bash scripts/pre-flight/run-seed.sh stage",
+    "db:seed:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-seed-sql.ts",
     "github:protect-dev": "NODE_OPTIONS=--no-deprecation tsx scripts/github-branch-protection.ts",
     "github:protect-main": "NODE_OPTIONS=--no-deprecation tsx scripts/github-branch-protection.ts --branch main",
     "fixtures:generate": "NODE_OPTIONS=--no-deprecation tsx scripts/generate-fixtures.ts",

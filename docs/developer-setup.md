@@ -423,8 +423,12 @@ Source of truth: `package.json` scripts at the repository root.
 - `db:backup:stage`: dumps the stage database.
 - `db:restore:dev`: restores the dev database from the most recent backup (or a specified dump file).
 - `db:restore:stage`: restores the stage database from the most recent backup.
-- `db:seed:dev`: inserts a baseline representative dataset into the dev database (idempotent).
-- `db:seed:stage`: inserts a baseline representative dataset into the stage database (idempotent).
+- `db:seed:dev`: inserts the generated baseline dataset into the dev database. Re-runnable — it
+  removes what a previous run inserted before reinserting, and asserts the schema version it was
+  generated against first. Requires `create-users.psql` to have run.
+- `db:seed:stage`: the same, against the stage database.
+- `db:seed:generate`: regenerates `scripts/db/dev-stage/seed.psql` from the shared test fixtures by
+  running them through the real pipeline and persistence layer. Needs a migrated scratch database.
 
 ### Governance and data tooling
 
