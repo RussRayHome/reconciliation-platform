@@ -154,8 +154,8 @@ npm run db:backup:dev       # same as db:backup
 npm run db:backup:stage     # dump stage database
 npm run db:restore:dev      # restore dev from most recent backup (or specify a file)
 npm run db:restore:stage    # restore stage from most recent backup
-npm run db:seed:dev         # insert baseline representative dataset into dev
-npm run db:seed:stage       # insert baseline representative dataset into stage
+npm run db:seed:dev         # insert the generated baseline dataset into dev (re-runnable)
+npm run db:seed:stage       # insert the generated baseline dataset into stage (re-runnable)
 ```
 
 Backup files are written to `.backups/` (gitignored). Restore stops dependent services, restores with `pg_restore -j 4`, re-applies grants, then restarts services.

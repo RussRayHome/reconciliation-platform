@@ -251,10 +251,34 @@ Notes:
 
 Purpose:
 
-- SQL seed file containing a representative baseline dataset for development and testing.
-- Contains two reconciliation jobs: one FINALIZED (with matches, exceptions, and an export) and one FAILED.
-- Covers all 14 tables in the schema.
-- Idempotent: uses `ON CONFLICT DO NOTHING` throughout.
+- **Generated file — do not edit by hand.** Produced by `scripts/generate-seed-sql.ts`, which runs
+  the shared test fixtures through the real pipeline (`runReconciliation`) and the real persistence
+  layer, then dumps what the application actually wrote. The previous hand-written version drifted
+  until it could no longer run at all (Issue #305), which is why this one is generated.
+- Populates **24 tables** across both pipelines: the File-Validation import path
+  (`reconciliation_run`, `import_file`, `import_job`, `canonical_record`, `validation_issue`,
+  `run_source_file`) and the matching path (`reconciliation_job` and its artifacts).
+- One reconciliation run carrying **54 exceptions across 30 of the 31 exception categories**, 11
+  match results, 5 probable matches and 7 grouped matches — one per grouped rule.
+  `InvalidOrMissingData` is absent because it has no producer in the current pipeline
+  (`packages/core/src/reconcile.test.ts:205`, Issue #137).
+- Re-runnable: it begins by deleting what a previous run inserted, in the order the live foreign-key
+  graph requires (`reconciliation_run` → `reconciliation_job` → `import_file`). Verified to leave
+  zero rows behind — no orphans.
+- Asserts the schema version it was generated against before inserting anything, and refuses to run
+  otherwise. It reads `databasechangelog` for that check and never writes to it.
+- Does **not** own `reconciliation_organization`, `reconciliation_user` or `validation_rule_version`
+  — run `create-users.psql` first; the other two come from migrations. Environment-specific ids are
+  resolved by name at run time, so the file is portable across databases.
+
+Regenerate with:
+
+```bash
+npm run db:seed:generate -- --database seedgen
+```
+
+The target database is scratch space: migrate it to the current changelog and run
+`create-users.psql` against it first. It is never the dev or stage database.
 
 ### `pre-flight/run-seed.sh`
 
