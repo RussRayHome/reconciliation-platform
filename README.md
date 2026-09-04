@@ -19,7 +19,7 @@ The reconciliation platform compares bank and GL workbooks, classifies accountin
 Use this repo to run reconciliation and review results:
 
 1. Start the app (`npm run dev` for local, or `npm run docker:deploy` for Docker).
-2. Upload `bankFile` and `qboFile` in the Upload tab.
+2. Upload `bankFile` and `glFile` in the Upload tab.
 3. Set account identifier, reconciliation frequency, and period label.
 4. Run reconciliation.
 5. Review summary metrics, probable matches, and exceptions.
@@ -69,7 +69,7 @@ The repository intentionally uses PostgreSQL only; no MSSQL scaffold is maintain
 ## End-to-end workflow
 
 1. **Upload and ingest**
-   - API accepts multipart `.xlsx` uploads (`bankFile`, `qboFile`).
+   - API accepts multipart `.xlsx` uploads (`bankFile`, `glFile`).
    - Parser preserves source lineage (file, sheet, row, raw values).
 
 2. **Normalize and validate**

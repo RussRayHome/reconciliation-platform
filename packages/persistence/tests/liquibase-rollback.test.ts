@@ -76,14 +76,16 @@ describe('Liquibase rollback', () => {
       // new table), 0070 (widens canonical_record's source_type CHECK constraint to add BILLING,
       // a constraint redefinition on a different table), and 0071 (seeds validation_rule_version
       // with BILLING rule rows and widens its own source_type CHECK -- data plus a constraint
-      // redefinition, still a different table), and 0072 (adds
+      // redefinition, still a different table), 0072 (adds
       // reconciliation_match_result.applied_amount_tolerance/matching_config_version_id plus an FK
-      // to reconciliation_matching_config_version -- a different table again) all sit on top of it
-      // without touching the schema this test cares about, so rolling back 23 changesets (0072 down
-      // through 0050) lands on the same DDL diff a --count=1 rollback used to produce when 0050 was
-      // HEAD. When a future changeset lands here, extend the count again rather than re-pinning
-      // this test to a single changeset number.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=23');
+      // to reconciliation_matching_config_version -- a different table again), and 0073 (renames an
+      // index and an FK constraint on reconciliation_match_result and resets a default on
+      // reconciliation_payee_alias -- both different tables) all sit on top of it without touching
+      // the schema this test cares about, so rolling back 24 changesets (0073 down through 0050)
+      // lands on the same DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a
+      // future changeset lands here, extend the count again rather than re-pinning this test to a
+      // single changeset number.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=24');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -98,7 +100,7 @@ describe('Liquibase rollback', () => {
 
     it('removes the changesets from the tracking table and restores it on reapply', async () => {
       // Checked after beforeAll's final `update` call re-applies everything -- this asserts the
-      // round trip (update -> rollback-count=20 -> update) lands back on the full changelog count,
+      // round trip (update -> rollback-count=24 -> update) lands back on the full changelog count,
       // not the count immediately after the rollback step (which beforeAll never captures).
       expect(await changelogCount(database!.pool)).toBe(changesetFileCount);
     });
@@ -119,7 +121,7 @@ describe('Liquibase rollback', () => {
       // reconciliation_run_event, 0070 redefines canonical_record's source_type CHECK, and 0071
       // seeds validation_rule_version plus redefines its own source_type CHECK -- none touch
       // reconciliation_login_event, so 0050 remains the most recent changeset with a schema diff
-      // this test's col_type_is approach can observe. See the --count=22 comment above.
+      // this test's col_type_is approach can observe. See the --count=24 comment above.
       expect(migratedSchema).toContain(
         "col_type_is('public', 'reconciliation_login_event', 'session_id', 'uuid'",
       );
@@ -187,10 +189,12 @@ describe('Liquibase rollback', () => {
       // reconciliation_run_event, a new table, no reconciliation_user changes), 0070 (widens
       // canonical_record's source_type CHECK to add BILLING, no reconciliation_user changes), and
       // 0071 (seeds validation_rule_version with BILLING rows and widens its own source_type
-      // CHECK, no reconciliation_user changes), and 0072 (adds two provenance columns and an FK to
-      // reconciliation_match_result, no reconciliation_user changes) all sit on top of it without
+      // CHECK, no reconciliation_user changes), 0072 (adds two provenance columns and an FK to
+      // reconciliation_match_result, no reconciliation_user changes), and 0073 (renames a
+      // match_result index and FK and resets a payee_alias default, no reconciliation_user
+      // changes) all sit on top of it without
       // reversing anything this test cares about.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=47');
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=48');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

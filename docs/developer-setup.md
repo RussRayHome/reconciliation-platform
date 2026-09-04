@@ -78,7 +78,7 @@ Use the harness when you want predictable local ports and explicit start/stop be
 ## 4. Run a reconciliation locally
 
 1. Open the web app.
-2. Upload both source files (`bankFile`, `qboFile`).
+2. Upload both source files (`bankFile`, `glFile`).
 3. Set account identifier (optional), reconciliation frequency, and period label.
 4. Submit the run.
 5. Review summary, probable matches, and exception report.

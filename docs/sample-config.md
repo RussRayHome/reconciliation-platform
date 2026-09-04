@@ -50,7 +50,7 @@ The reconciliation engine is configuration-driven. Default values live in `packa
 export const sampleAccountOverrides = [
   {
     accountIdentifier: 'OPERATING-001',
-    qbo: {
+    gl: {
       excludeBeginningBalance: true,
       beginningBalancePatterns: ['BEGINNING BALANCE', 'OPENING BALANCE'],
     },

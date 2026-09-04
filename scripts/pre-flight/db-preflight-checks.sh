@@ -378,7 +378,7 @@ check_indexes_and_constraints() {
   local actual_fks
 
   required_index_sql="'reconciliation_job_state_idx','reconciliation_match_result_job_idx','reconciliation_exception_job_idx','reconciliation_review_decision_job_idx','reconciliation_audit_event_job_idx','reconciliation_job_completed_report_idx','reconciliation_match_result_job_result_bucket_created_idx','reconciliation_exception_job_line_order_idx'"
-  required_fk_sql="'reconciliation_match_result_bank_transaction_fk','reconciliation_match_result_qbo_transaction_fk','reconciliation_rule_result_candidate_transaction_fk','reconciliation_exception_canonical_row_fk'"
+  required_fk_sql="'reconciliation_match_result_bank_transaction_fk','reconciliation_match_result_gl_transaction_fk','reconciliation_rule_result_candidate_transaction_fk','reconciliation_exception_canonical_row_fk'"
 
   expected_indexes=8
   expected_fks=4

@@ -354,27 +354,27 @@ Purpose:
 How to run:
 
 ```bash
-npm run analyze:reconciliation -- --account <accountId> --bank <bank.xlsx> --qbo <qbo.xlsx>
+npm run analyze:reconciliation -- --account <accountId> --bank <bank.xlsx> --gl <gl.xlsx>
 ```
 
 Example:
 
 ```bash
-npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --qbo ./data/qbo.xlsx
+npm run analyze:reconciliation -- --account 5703 --bank ./data/bank.xlsx --gl ./data/gl.xlsx
 ```
 
 Quick example with repo sample files:
 
 ```bash
 npm run fixtures:generate
-npm run analyze:reconciliation -- --account 5703 --bank ./fixtures/sample-bank.xlsx --qbo ./fixtures/sample-gl.xlsx
+npm run analyze:reconciliation -- --account 5703 --bank ./fixtures/sample-bank.xlsx --gl ./fixtures/sample-gl.xlsx
 ```
 
 Key options:
 
 - `--account`: account identifier used to resolve reconciliation config.
 - `--bank`: path to the source bank workbook.
-- `--qbo`: path to the source GL workbook.
+- `--gl`: path to the source GL workbook.
 - `--windows`: comma-separated list of candidate day windows.
 - `--thresholds`: comma-separated list of similarity thresholds from `0` to `1`.
 - `--similarity-days`: maximum day distance used by similarity analysis.

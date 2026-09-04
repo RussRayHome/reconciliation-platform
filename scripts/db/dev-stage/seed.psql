@@ -5,7 +5,7 @@
 -- Idempotent: safe to run multiple times (ON CONFLICT DO NOTHING).
 --
 -- Contains:
---   Job A — FINALIZED: 2 bank + 2 QBO transactions, 1 match, 1 exception
+--   Job A — FINALIZED: 2 bank + 2 GL transactions, 1 match, 1 exception
 --   Job B — FAILED:    file registration only, simulates pipeline failure
 --
 -- How to run:
@@ -46,9 +46,9 @@ INSERT INTO reconciliation_source_file (
 (
   'a0000000-0000-0000-0000-000000000003',
   'a0000000-0000-0000-0000-000000000001',
-  'qbo', 'xlsx', 'qbo-april-2026.xlsx',
+  'gl', 'xlsx', 'gl-april-2026.xlsx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  18432, 'seed-sha256-qbo-a', 'Sheet1', 1, 2,
+  18432, 'seed-sha256-gl-a', 'Sheet1', 1, 2,
   '[]', 2, '2026-04-01 09:00:00+00', '2026-04-01 09:00:00+00', '2026-04-01 09:00:00+00'
 ) ON CONFLICT DO NOTHING;
 
@@ -96,7 +96,7 @@ INSERT INTO reconciliation_raw_row (
   'OFFICE DEPOT', '-89.47', '2026-04-01 09:00:45+00'
 ) ON CONFLICT DO NOTHING;
 
--- Raw rows — qbo
+-- Raw rows — gl
 INSERT INTO reconciliation_raw_row (
   id, job_id, source_file_id, import_batch_id, source_system, line_number,
   row_hash, raw_values_json, description_raw, amount_raw, created_at
@@ -106,7 +106,7 @@ INSERT INTO reconciliation_raw_row (
   'a0000000-0000-0000-0000-000000000001',
   'a0000000-0000-0000-0000-000000000003',
   'a0000000-0000-0000-0000-000000000005',
-  'qbo', 2, 'seed-hash-qbo-1',
+  'gl', 2, 'seed-hash-gl-1',
   '{"date":"04/03/2026","description":"Acme Software Inc","amount":"250.00"}',
   'Acme Software Inc', '250.00', '2026-04-01 09:00:45+00'
 ),
@@ -115,7 +115,7 @@ INSERT INTO reconciliation_raw_row (
   'a0000000-0000-0000-0000-000000000001',
   'a0000000-0000-0000-0000-000000000003',
   'a0000000-0000-0000-0000-000000000005',
-  'qbo', 3, 'seed-hash-qbo-2',
+  'gl', 3, 'seed-hash-gl-2',
   '{"date":"04/15/2026","description":"MISSING FROM BANK","amount":"500.00"}',
   'MISSING FROM BANK', '500.00', '2026-04-01 09:00:45+00'
 ) ON CONFLICT DO NOTHING;
@@ -152,7 +152,7 @@ INSERT INTO reconciliation_canonical_row (
   '[]', false, false, 'seed-ctx-bank-2', '2026-04-01 09:01:00+00'
 ) ON CONFLICT DO NOTHING;
 
--- Canonical rows — qbo
+-- Canonical rows — gl
 INSERT INTO reconciliation_canonical_row (
   id, job_id, raw_row_id, source_file_id, source_system,
   spreadsheet_file_name, worksheet_name, line_number,
@@ -166,29 +166,29 @@ INSERT INTO reconciliation_canonical_row (
   'a0000000-0000-0000-0000-000000000001',
   'a0000000-0000-0000-0000-000000000008',
   'a0000000-0000-0000-0000-000000000003',
-  'qbo', 'qbo-april-2026.xlsx', 'Sheet1', 2,
+  'gl', 'gl-april-2026.xlsx', 'Sheet1', 2,
   '2026-04-03', 250.00, 'Acme Software Inc',
   'acme software inc', ARRAY['acme','software','inc'],
   '{"date":"04/03/2026","description":"Acme Software Inc","amount":"250.00"}',
-  '[]', false, false, 'seed-ctx-qbo-1', '2026-04-01 09:01:00+00'
+  '[]', false, false, 'seed-ctx-gl-1', '2026-04-01 09:01:00+00'
 ),
 (
   'a0000000-0000-0000-0000-000000000013',
   'a0000000-0000-0000-0000-000000000001',
   'a0000000-0000-0000-0000-000000000009',
   'a0000000-0000-0000-0000-000000000003',
-  'qbo', 'qbo-april-2026.xlsx', 'Sheet1', 3,
+  'gl', 'gl-april-2026.xlsx', 'Sheet1', 3,
   '2026-04-15', 500.00, 'MISSING FROM BANK',
   'missing from bank', ARRAY['missing','from','bank'],
   '{"date":"04/15/2026","description":"MISSING FROM BANK","amount":"500.00"}',
-  '[]', false, false, 'seed-ctx-qbo-2', '2026-04-01 09:01:00+00'
+  '[]', false, false, 'seed-ctx-gl-2', '2026-04-01 09:01:00+00'
 ) ON CONFLICT DO NOTHING;
 
 -- Match group
 INSERT INTO reconciliation_match_group (
   id, job_id, disposition, confidence, category,
-  bank_transaction_ids, qbo_transaction_ids,
-  bank_members_json, qbo_members_json,
+  bank_transaction_ids, gl_transaction_ids,
+  bank_members_json, gl_members_json,
   total_amount, date_difference_days,
   score, rule_id, rule_name, reason, evidence_json, created_at
 ) VALUES (
@@ -206,7 +206,7 @@ INSERT INTO reconciliation_match_group (
 -- Match result
 INSERT INTO reconciliation_match_result (
   id, job_id, result_bucket,
-  bank_transaction_id, qbo_transaction_id,
+  bank_transaction_id, gl_transaction_id,
   disposition, confidence, rule_id, rule_name, reason,
   score, amount_difference, date_difference_days, evidence_json, created_at
 ) VALUES (
@@ -233,7 +233,7 @@ INSERT INTO reconciliation_rule_result (
   '[]', 1, '2026-04-01 09:02:00+00'
 ) ON CONFLICT DO NOTHING;
 
--- Exception — qbo item with no bank match
+-- Exception — gl item with no bank match
 INSERT INTO reconciliation_exception (
   id, job_id, canonical_row_id, category, severity, source_system,
   spreadsheet_file_name, line_number, transaction_date, amount,
@@ -243,9 +243,9 @@ INSERT INTO reconciliation_exception (
   'a0000000-0000-0000-0000-000000000017',
   'a0000000-0000-0000-0000-000000000001',
   'a0000000-0000-0000-0000-000000000013',
-  'MISSING_FROM_BANK', 'HIGH', 'qbo',
-  'qbo-april-2026.xlsx', 3, '2026-04-15', 500.00,
-  'No matching bank transaction found for QBO entry of $500.00',
+  'MISSING_FROM_BANK', 'HIGH', 'gl',
+  'gl-april-2026.xlsx', 3, '2026-04-15', 500.00,
+  'No matching bank transaction found for GL entry of $500.00',
   ARRAY['Verify bank statement for April 15', 'Contact bank if transaction is missing'],
   ARRAY['missing','from','bank'], ARRAY[]::UUID[], '2026-04-01 09:02:00+00'
 ) ON CONFLICT DO NOTHING;
@@ -257,19 +257,19 @@ INSERT INTO reconciliation_review_observation (
 ) VALUES (
   'a0000000-0000-0000-0000-000000000018',
   'a0000000-0000-0000-0000-000000000001',
-  'UNMATCHED_EXPOSURE', 'Unmatched QBO Items Require Attention',
-  '1 QBO transaction totalling $500.00 has no corresponding bank entry.',
+  'UNMATCHED_EXPOSURE', 'Unmatched GL Items Require Attention',
+  '1 GL transaction totalling $500.00 has no corresponding bank entry.',
   'HIGH', ARRAY[]::UUID[],
   '2026-04-01 09:02:00+00', '2026-04-01 09:02:00+00'
 ) ON CONFLICT DO NOTHING;
 
 -- Job summary
 INSERT INTO reconciliation_job_summary (
-  job_id, total_records_reviewed, bank_records, qbo_records,
+  job_id, total_records_reviewed, bank_records, gl_records,
   exact_matches, probable_matches, unmatched_items, duplicates,
-  bank_duplicates, qbo_duplicates, date_variances, timing_differences,
-  data_quality_issues, amount_mismatches, missing_from_bank, missing_from_qbo,
-  unmatched_bank_net_amount, unmatched_qbo_net_amount,
+  bank_duplicates, gl_duplicates, date_variances, timing_differences,
+  data_quality_issues, amount_mismatches, missing_from_bank, missing_from_gl,
+  unmatched_bank_net_amount, unmatched_gl_net_amount,
   clean_matched_amount, unresolved_exposure,
   counts_by_category_json, amount_by_category_json, charts_json,
   created_at, updated_at

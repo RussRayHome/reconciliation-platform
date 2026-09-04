@@ -168,7 +168,7 @@ Module: apps/api/src/services/reconciliationService.ts
   - ExecuteReconciliationInput
     - correlationId: string
     - bankFile: UploadedFile
-    - qboFile: UploadedFile
+    - glFile: UploadedFile
     - accountIdentifier?: string
     - periodLabel?: string
 - Output:
@@ -179,7 +179,7 @@ Module: apps/api/src/services/reconciliationService.ts
 {
   config: ReconciliationConfig | unresolved,
   parsedBank: undefined,
-  parsedQbo: undefined,
+  parsedGl: undefined,
   runId: undefined
 }
 ```
@@ -190,7 +190,7 @@ Module: apps/api/src/services/reconciliationService.ts
 {
   config: ReconciliationConfig,
   parsedBank: ParsedWorkbook,
-  parsedQbo: ParsedWorkbook,
+  parsedGl: ParsedWorkbook,
   run: ReconciliationRun
 }
 ```
@@ -295,7 +295,7 @@ Module: packages/core/src/parsers/excelParser.ts
   workbookLoaded: true,
   sourceFile: {
     fileName: string,
-    source: 'bank' | 'qbo',
+    source: 'bank' | 'gl',
     headerRow: number,
     transactionStartRow: number,
     excludedRowNumbers: number[]
@@ -513,7 +513,7 @@ Module: packages/core/src/matching/engine.ts
     - matchResults
     - probableMatches
     - unmatchedBankTransactionIds
-    - unmatchedQboTransactionIds
+    - unmatchedGlTransactionIds
     - duplicateTransactionIds
 - State before:
 
@@ -521,7 +521,7 @@ Module: packages/core/src/matching/engine.ts
 {
   activeTransactions: NormalizedTransaction[],
   matchedBank: Set<string> = new Set(),
-  matchedQbo: Set<string> = new Set(),
+  matchedGl: Set<string> = new Set(),
   matchResults: [],
   probableMatches: []
 }
@@ -534,7 +534,7 @@ Module: packages/core/src/matching/engine.ts
   matchResults: MatchResult[],
   probableMatches: MatchResult[],
   unmatchedBankTransactionIds: Set<string>,
-  unmatchedQboTransactionIds: Set<string>,
+  unmatchedGlTransactionIds: Set<string>,
   duplicateTransactionIds: Set<string>
 }
 ```
@@ -557,7 +557,7 @@ Supporting modules used internally by this method:
     - normalizedTransactions
     - matchResults
     - unmatchedBankTransactionIds
-    - unmatchedQboTransactionIds
+    - unmatchedGlTransactionIds
     - duplicateTransactionIds
     - groupedMatchResults
     - reporting config
@@ -1064,7 +1064,7 @@ sequenceDiagram
   participant Sum as buildSummaryMetrics
   participant Export as exportWorkbook
   Caller->>Run: runReconciliation(input)
-  Run->>Normalize: normalizeTransactions(bank+qbo rows)
+  Run->>Normalize: normalizeTransactions(bank+gl rows)
   Normalize-->>Run: NormalizedTransaction[]
   Run->>Match: reconcileMatches(...)
   Match-->>Run: MatchEngineResult
