@@ -1014,8 +1014,9 @@ export const reconcileMatches = (
   onCandidateOutcome?: CandidateOutcomeObserver,
   /**
    * H7 (#276): the published matching-config version whose overrides produced `config`, when one
-   * did. Omitted for engine defaults, which is the only honest value while #260 leaves
-   * `OVERRIDES_APPLIED_TO_ENGINE` false -- no published version currently reaches this function.
+   * did. Omitted for engine defaults. Since #260 wired the versioning stack to the engine
+   * (`OVERRIDES_APPLIED_TO_ENGINE` is now true), a run that resolves an ACTIVE version passes its
+   * id here, so recorded provenance names the version that actually shaped the disposition.
    */
   matchingConfigVersionId?: string,
 ): MatchEngineResult => {

@@ -86,6 +86,8 @@ interface RunReconciliationPipelineInput {
    * unconditionally (Issue #154, changeset-independent of this) -- `onStep` only adds the publish
    * side, so its absence never loses data, only live status text. */
   onStep?: QueueStepReporter;
+  /** See `ReconciliationInput.matchingConfigVersionId`. Passed straight through to the engine. */
+  matchingConfigVersionId?: string;
 }
 
 /** Fault-finding detail for the vetting phase, LOG_LEVEL=debug only -- undefined (not a no-op)
@@ -133,6 +135,7 @@ const runReconciliationPipeline = async ({
   t0,
   log,
   onStep,
+  matchingConfigVersionId,
 }: RunReconciliationPipelineInput): Promise<ReconciliationRun> => {
   const runPersistStep = async <T>(action: string, fn: () => Promise<T>): Promise<T> => {
     const stepStart = Date.now();
@@ -352,6 +355,10 @@ const runReconciliationPipeline = async ({
       config.matching,
       aliases,
       buildCandidateOutcomeObserver(log),
+      // Issue #260/#276: the ACTIVE version whose overrides produced `config.matching`, so every
+      // MatchResult records the version that actually shaped it. Undefined when the run used engine
+      // defaults or a caller-supplied override with no version behind it.
+      matchingConfigVersionId,
     );
     const matchResultsByDisposition = matching.matchResults.reduce<Record<string, number>>(
       (acc, result) => {
@@ -704,6 +711,8 @@ export interface ExecuteReconciliationFromNormalizedInput {
    * than by convention.
    */
   varianceOverrides?: Record<string, number>;
+  /** See `ReconciliationInput.matchingConfigVersionId`. */
+  matchingConfigVersionId?: string;
 }
 
 /**
@@ -734,6 +743,7 @@ export const executeReconciliationFromNormalized = async ({
   aliases = [],
   onStep,
   varianceOverrides,
+  matchingConfigVersionId,
 }: ExecuteReconciliationFromNormalizedInput): Promise<ReconciliationRun> => {
   const log = serviceLogger.child({ correlationId, sessionId, accountIdentifier });
   const t0 = Date.now();
@@ -789,6 +799,7 @@ export const executeReconciliationFromNormalized = async ({
     rawRows,
     getNormalizedTransactions: () => normalizedTransactions,
     config,
+    matchingConfigVersionId,
     accountIdentifier,
     reconciliationFrequency,
     periodLabel,

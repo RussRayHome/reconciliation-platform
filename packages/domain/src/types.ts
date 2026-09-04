@@ -184,14 +184,14 @@ export interface MatchResult {
    * The published matching-config version whose overrides produced this disposition, or `undefined`
    * when the run used engine defaults.
    *
-   * Undefined is the honest value today: `OVERRIDES_APPLIED_TO_ENGINE` is false (#260), so no
-   * published version ever reaches the engine. Recording an ACTIVE version id now would assert that
-   * its overrides shaped a disposition they never touched -- the false audit record #260 is named
-   * after.
+   * Populated since #260 wired the versioning stack to the engine: a run resolves its
+   * organization's ACTIVE version, hands those overrides to the engine, and passes the version id
+   * alongside them. Undefined still means engine defaults -- no ACTIVE version, or a
+   * caller-supplied override with no version behind it.
    *
-   * This field is the PRECONDITION for wiring those overrides: `reconcileMatches` takes the version
-   * id as an explicit argument alongside the config, so whatever the engine is handed is what gets
-   * recorded, and #260 cannot wire overrides without provenance following automatically.
+   * This field was the PRECONDITION for that wiring: `reconcileMatches` takes the version id as an
+   * explicit argument alongside the config, so whatever the engine is handed is what gets recorded,
+   * and #260 could not wire overrides without provenance following automatically.
    *
    * Deliberately NOT a field on `MatchingConfig`: that type's keys are its tunable thresholds, and
    * every `keyof MatchingConfig` consumer would then treat this as one -- `ruleCatalog`'s metric
@@ -624,6 +624,14 @@ export interface ReconciliationInput {
   sourceFiles: SourceFile[];
   rawRows: RawTransactionRow[];
   config: ReconciliationConfig;
+  /**
+   * The published matching-config version whose overrides produced `config`, when the run resolved
+   * one. Recorded on every `MatchResult` so a disposition can be traced back to the approved
+   * version that shaped it (#276 added the field; #260 wired the overrides that make it non-null).
+   * Undefined when the run used engine defaults or a caller-supplied override with no version
+   * behind it.
+   */
+  matchingConfigVersionId?: string;
   accountIdentifier?: string;
   periodLabel?: string;
   reconciliationFrequency?: ReconciliationFrequency;

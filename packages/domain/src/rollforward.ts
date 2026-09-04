@@ -166,8 +166,8 @@ export type CarryForwardDecision =
  * design/matching/engine/PR-D-Gating-Change-Document.pdf), gating PR D's carry-forward-into-matching mechanism.
  * Deliberately NOT read from `reconciliation_matching_config_version.variance_overrides`: that
  * column is `Partial<Record<keyof MatchingConfig, number>>`, every `MatchingConfig` field is
- * numeric, and the whole versioning stack isn't wired to the engine yet
- * (`OVERRIDES_APPLIED_TO_ENGINE = false`) -- a value stored there would be silently ignored.
+ * numeric, so a boolean has no home there. (The versioning stack IS wired to the engine since
+ * #260, but that changes nothing here: carry-forward enablement is not a tunable threshold.)
  * Enablement is a rollout property (closer to a subscription flag than a tuned threshold), read
  * directly from `reconciliation_organization.carry_forward_enabled` instead.
  *
