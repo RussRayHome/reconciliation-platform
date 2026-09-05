@@ -7,6 +7,7 @@ import {
   fuzzyContainmentSimilarity,
   describeTokenSimilarity,
   trigramSimilarity,
+  patternContainmentSimilarity,
 } from './similarity';
 
 describe('Similarity Utilities - Edge Cases', () => {
@@ -323,5 +324,52 @@ describe('trigramSimilarity (Issue #310)', () => {
     expect(blended.dice).toBe(0);
     expect(blended.trigram).toBeGreaterThan(0.6);
     expect(blended.best).toBe(blended.trigram);
+  });
+});
+
+describe('patternContainmentSimilarity (Issue #313)', () => {
+  const norm = (value: string): string[] =>
+    value.toUpperCase().split(/[\s*#.]+/).filter(Boolean);
+
+  it('returns 0 when either side is empty', () => {
+    expect(patternContainmentSimilarity([], norm('AMZN MKTP US'))).toBe(0);
+    expect(patternContainmentSimilarity(norm('AMZN'), [])).toBe(0);
+  });
+
+  it('scores a fully contained pattern at 1', () => {
+    expect(patternContainmentSimilarity(norm('AMZN'), norm('AMZN MKTP US'))).toBe(1);
+    expect(patternContainmentSimilarity(norm('AMZN MKTP'), norm('AMZN MKTP US*2H4KJ'))).toBe(1);
+  });
+
+  it('scores the descriptor variant symmetric Dice misses', () => {
+    // The case from Issue #313: Dice scores this 0.40 and misses the engine's 0.5 alias
+    // threshold; trigram scores 0.45 and also misses. Containment clears it.
+    const pattern = norm('AMZN MKTP');
+    const descriptor = norm('AMZN MKTPLACE PMTS');
+    expect(tokenSimilarity(descriptor, pattern)).toBeCloseTo(0.4, 5);
+    expect(trigramSimilarity(descriptor, pattern)).toBeLessThan(0.5);
+    expect(patternContainmentSimilarity(pattern, descriptor)).toBe(0.5);
+  });
+
+  it('is directional, unlike fuzzyContainmentSimilarity', () => {
+    // fuzzyContainmentSimilarity divides by whichever side is SHORTER, so when the pattern is the
+    // longer of the two it answers a different question. This is the reason for a separate
+    // function rather than reusing that one at the alias lookup.
+    const longPattern = norm('AMZN MKTP US PRIME');
+    const shortText = norm('AMZN');
+
+    expect(fuzzyContainmentSimilarity(longPattern, shortText)).toBe(1);
+    expect(patternContainmentSimilarity(longPattern, shortText)).toBe(0.25);
+  });
+
+  it('tolerates the same spelling variance as fuzzyContainmentSimilarity', () => {
+    // isFuzzyTokenMatch is shared, so a one-edit difference on a long-enough token still counts.
+    expect(patternContainmentSimilarity(['VERIZON'], ['VERIZONN', 'WIRELESS'])).toBe(1);
+    // ...and tokens under the 3-character floor must still match exactly.
+    expect(patternContainmentSimilarity(['CA'], ['GA', 'MARKET'])).toBe(0);
+  });
+
+  it('ignores duplicate tokens on both sides', () => {
+    expect(patternContainmentSimilarity(['AMZN', 'AMZN'], ['AMZN', 'AMZN', 'US'])).toBe(1);
   });
 });
