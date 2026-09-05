@@ -1855,3 +1855,172 @@ export const recordLoginEvent = async (
   }
   return mapLoginEvent(row);
 };
+
+/** Input for {@link proposePayeeAlias}. `approvalRequestId` is caller-supplied (like
+ * `CreateApprovalRequestInput.id`) so the API can log it before the write. */
+export interface ProposePayeeAliasInput {
+  accountIdentifier?: string;
+  bankPattern: string;
+  canonicalPayeeName: string;
+  normalizedTokens: string[];
+  sourceDirection?: 'bank_to_gl' | 'bidirectional';
+  matchConfidence?: number;
+  submittedBy: string;
+  approvalRequestId: string;
+}
+
+/** Issue #311 (PR B): records a payee alias learned from a reviewer's confirmed probable match as a
+ * PROPOSAL -- the alias row is inserted with `is_active = false` and a generic approval request
+ * (`subject_type = 'payeeAlias'`) opens against it in the same transaction, so the alias either
+ * exists inactive-with-a-gate or not at all. Two separate store calls would leave an inert,
+ * ungated row behind if the second failed. Approval flips `is_active` via {@link updatePayeeAlias}. */
+export const proposePayeeAlias = async (
+  pool: Pool,
+  organizationId: string,
+  input: ProposePayeeAliasInput,
+): Promise<{ alias: PayeeAlias; approvalRequest: ApprovalRequestRecord }> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const aliasResult = await client.query<PayeeAliasRow>(
+      `INSERT INTO reconciliation_payee_alias
+         (organization_id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, false)
+       RETURNING id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active`,
+      [
+        organizationId,
+        input.accountIdentifier ?? null,
+        input.bankPattern,
+        input.canonicalPayeeName,
+        input.normalizedTokens,
+        input.sourceDirection ?? 'bank_to_gl',
+        input.matchConfidence ?? 1,
+      ],
+    );
+    const aliasRow = aliasResult.rows[0];
+    if (!aliasRow) {
+      throw new Error('proposePayeeAlias: alias INSERT returned no row');
+    }
+    const requestResult = await client.query<ApprovalRequestRow>(
+      `INSERT INTO reconciliation_approval_request (id, organization_id, subject_type, subject_id, submitted_by)
+       VALUES ($1, $2, 'payeeAlias', $3, $4)
+       RETURNING id, subject_type, subject_id, status, submitted_by, decided_by, rationale, requested_at, decided_at`,
+      [input.approvalRequestId, organizationId, aliasRow.id, input.submittedBy],
+    );
+    const requestRow = requestResult.rows[0];
+    if (!requestRow) {
+      throw new Error('proposePayeeAlias: approval request INSERT returned no row');
+    }
+    return { alias: mapPayeeAlias(aliasRow), approvalRequest: mapApprovalRequest(requestRow) };
+  });
+};
+
+/** Loads one alias by id within the organization, active or not -- the approvals inbox needs to
+ * title a pending proposal, and a pending proposal is by definition inactive. */
+export const findPayeeAliasById = async (
+  pool: Pool,
+  organizationId: string,
+  id: string,
+): Promise<PayeeAlias | undefined> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<PayeeAliasRow>(
+      `SELECT id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active
+         FROM reconciliation_payee_alias
+        WHERE organization_id = $1 AND id = $2`,
+      [organizationId, id],
+    );
+    const row = result.rows[0];
+    return row ? mapPayeeAlias(row) : undefined;
+  });
+};
+
+/** The text fields of persisted normalized transactions, keyed for the alias proposal in #311. */
+export interface CanonicalTransactionText {
+  id: string;
+  source: string;
+  description?: string;
+  merchantName?: string;
+  payeeName?: string;
+  normalizedComparisonTokens: string[];
+}
+
+/** Reads the persisted text of specific normalized transactions of a run. The run REPORT the API
+ * hands around carries only transaction ids on a match (sanitizeRun strips
+ * normalizedTransactions), and an API instance deciding a review may not be the one that ran the
+ * job, so the in-memory repository cannot be relied on -- this is the durable source. */
+export const loadCanonicalTransactionsByIds = async (
+  pool: Pool,
+  organizationId: string,
+  runId: string,
+  ids: string[],
+): Promise<CanonicalTransactionText[]> => {
+  if (ids.length === 0) {
+    return [];
+  }
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<{
+      id: string;
+      source_system: string;
+      description: string | null;
+      merchant_name: string | null;
+      payee_name: string | null;
+      normalized_comparison_tokens: string[] | null;
+    }>(
+      `SELECT id, source_system, description, merchant_name, payee_name, normalized_comparison_tokens
+         FROM reconciliation_canonical_row
+        WHERE organization_id = $1 AND job_id = $2 AND id = ANY($3::uuid[])`,
+      [organizationId, runId, ids],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      source: row.source_system,
+      description: row.description ?? undefined,
+      merchantName: row.merchant_name ?? undefined,
+      payeeName: row.payee_name ?? undefined,
+      normalizedComparisonTokens: row.normalized_comparison_tokens ?? [],
+    }));
+  });
+};
+
+/** Case-insensitive lookup of an alias by its (bankPattern, canonicalPayeeName) pair, active or
+ * not. `loadPayeeAliases` deliberately hides inactive rows from the engine, but a proposal must
+ * not be re-raised while an identical one is still pending -- or after it was rejected. */
+export const findPayeeAliasByPattern = async (
+  pool: Pool,
+  organizationId: string,
+  bankPattern: string,
+  canonicalPayeeName: string,
+): Promise<PayeeAlias | undefined> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<PayeeAliasRow>(
+      `SELECT id, account_identifier, bank_pattern, canonical_payee_name, normalized_tokens, source_direction, match_confidence, is_active
+         FROM reconciliation_payee_alias
+        WHERE organization_id = $1
+          AND lower(bank_pattern) = lower($2)
+          AND lower(canonical_payee_name) = lower($3)
+        ORDER BY is_active DESC
+        LIMIT 1`,
+      [organizationId, bankPattern, canonicalPayeeName],
+    );
+    const row = result.rows[0];
+    return row ? mapPayeeAlias(row) : undefined;
+  });
+};
+
+/** Issue #311 (PR B): the approval side of {@link proposePayeeAlias} -- flips a proposed alias to
+ * `is_active = true` so `loadPayeeAliases` (and therefore the engine) starts seeing it. Mirror of
+ * `deactivatePayeeAlias`; `updatePayeeAlias` deliberately cannot touch `is_active`, because the
+ * generic PUT must not be a back door around the approval gate. Returns `true` when a row changed. */
+export const activatePayeeAlias = async (
+  pool: Pool,
+  organizationId: string,
+  id: string,
+): Promise<boolean> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query(
+      `UPDATE reconciliation_payee_alias
+          SET is_active = TRUE, updated_at = NOW()
+        WHERE organization_id = $1 AND id = $2 AND is_active = FALSE`,
+      [organizationId, id],
+    );
+    return (result.rowCount ?? 0) > 0;
+  });
+};

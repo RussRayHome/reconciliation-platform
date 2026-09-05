@@ -233,6 +233,10 @@ export const approvableTypes = [
   'varianceThreshold',
   'exceptionResolution',
   'reportDistribution',
+  // #311: a payee alias proposed from a reviewer's confirmed probable match. Inserted inactive and
+  // activated on approval; rides the 'matchingRule' rail submenu (it IS matching configuration),
+  // so approvalGroupKeys below is deliberately unchanged -- same arrangement as varianceThreshold.
+  'payeeAlias',
 ] as const;
 /** Union of valid approvable types. */
 export type ApprovableType = (typeof approvableTypes)[number];

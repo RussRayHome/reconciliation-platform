@@ -1494,7 +1494,7 @@ SELECT is(
      FROM pg_constraint con
     WHERE con.conrelid = 'public.reconciliation_approval_request'::regclass AND con.contype IN ('c', 'u', 'x')),
   $chk$reconciliation_approval_request_status_check => CHECK ((status = ANY (ARRAY['PENDING'::text, 'APPROVED'::text, 'REJECTED'::text, 'OVERRIDDEN'::text])))
-reconciliation_approval_request_subject_type_check => CHECK ((subject_type = ANY (ARRAY['mappingProfile'::text, 'matchingRule'::text, 'varianceThreshold'::text, 'exceptionResolution'::text, 'reportDistribution'::text])))$chk$,
+reconciliation_approval_request_subject_type_check => CHECK ((subject_type = ANY (ARRAY['mappingProfile'::text, 'matchingRule'::text, 'varianceThreshold'::text, 'exceptionResolution'::text, 'reportDistribution'::text, 'payeeAlias'::text])))$chk$,
   'reconciliation_approval_request check/unique/exclusion constraints'
 );
 SELECT is(

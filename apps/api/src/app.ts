@@ -24,7 +24,9 @@ import {
   createMappingProfile,
   createMappingProfileVersion,
   createMatchingConfigVersionDraft,
+  activatePayeeAlias,
   createPayeeAlias,
+  findPayeeAliasById,
   deactivatePayeeAlias,
   findMappingProfile,
   getApprovalRequestCounts,
@@ -163,6 +165,7 @@ import cors from 'cors';
 import { executeReconciliationFromNormalized } from './services/reconciliationService';
 import type { QueueProgressMessage, QueueStepReporter } from './services/queueProgress';
 import { defaultReconciliationConfig } from '@recon/config';
+import { proposeAliasFromConfirmedMatch } from './services/payeeAliasProposalService';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
@@ -2938,6 +2941,31 @@ export const createApp = (
       if (lifecycleStore) {
         await lifecycleStore.persistReviewerDecision(request.auth!.organizationId, savedDecision);
       }
+      // #311: a confirmed probable match is a reviewer saying "this descriptor IS this payee" --
+      // propose it as an alias behind the maker-checker gate. Best effort by design: the decision
+      // above is already saved and is the reviewer's deliverable; the alias is a learning side
+      // effect, so its failure is logged, never surfaced as a failed decision.
+      if (pool && targetType === 'ProbableMatch' && outcome === 'ApprovedMatch') {
+        const match = run.probableMatches.find((item) => item.id === targetId);
+        if (match) {
+          try {
+            const proposal = await proposeAliasFromConfirmedMatch({
+              pool,
+              organizationId: request.auth!.organizationId,
+              runId: run.id,
+              match,
+              submittedBy: request.auth!.username,
+              inMemoryTransactions: repository.findById(run.id)?.normalizedTransactions,
+            });
+            request.log.info({ action: 'payeeAlias.proposal', runId: run.id, targetId, ...proposal });
+          } catch (proposalError) {
+            request.log.warn(
+              { action: 'payeeAlias.proposal.failed', runId: run.id, targetId, err: proposalError },
+              'payee alias proposal failed; reviewer decision was saved',
+            );
+          }
+        }
+      }
       response.status(201).json(savedDecision);
     } catch (error) {
       next(error);
@@ -4284,6 +4312,7 @@ export const createApp = (
     'varianceThreshold',
     'exceptionResolution',
     'reportDistribution',
+    'payeeAlias',
   ];
 
   const ageHoursSince = (isoTimestamp: string): number =>
@@ -4329,6 +4358,13 @@ export const createApp = (
   ): Promise<ApprovalRow> => {
     let title = record.subjectId;
     let meta: string | undefined;
+    if (record.subjectType === 'payeeAlias') {
+      const alias = await findPayeeAliasById(pool!, organizationId, record.subjectId);
+      if (alias) {
+        title = `"${alias.bankPattern}" \u2192 ${alias.canonicalPayeeName}`;
+        meta = 'Payee alias learned from a confirmed match';
+      }
+    }
     if (record.subjectType === 'matchingRule' || record.subjectType === 'varianceThreshold') {
       const versions = await listMatchingConfigVersions(pool!, organizationId);
       const version = versions.find((candidate) => candidate.id === record.subjectId);
@@ -4446,6 +4482,7 @@ export const createApp = (
         getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
           'matchingRule',
           'varianceThreshold',
+          'payeeAlias',
         ]),
         getApprovalRequestCounts(pool!, organizationId, username, canApprove, [
           'exceptionResolution',
@@ -4557,6 +4594,22 @@ export const createApp = (
         await publishMatchingConfigVersion(pool!, organizationId, record.subjectId, {
           publishedBy: username,
         });
+      }
+      if (bodyResult.data.status === 'APPROVED' && type === 'payeeAlias') {
+        // #311: the proposal row already exists inactive; approval is what lets the engine see it.
+        const [record] = await listApprovalRequests(pool!, organizationId, {
+          subjectType: type,
+          status: 'PENDING',
+        }).then((records) => records.filter((candidate) => candidate.id === request.params.id));
+        if (!record) {
+          response.status(404).json({ message: 'Approval request not found.' });
+          return;
+        }
+        const activated = await activatePayeeAlias(pool!, organizationId, record.subjectId);
+        if (!activated) {
+          response.status(409).json({ message: 'Proposed payee alias is missing or already active.' });
+          return;
+        }
       }
 
       const decided = await recordApprovalRequestDecision(pool!, organizationId, {
