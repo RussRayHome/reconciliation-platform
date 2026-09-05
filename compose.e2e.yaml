@@ -18,6 +18,12 @@ services:
     volumes:
       # Live bind mount so edited spec files run immediately and --update-snapshots writes the new
       # baselines straight back to the host's git-tracked snapshot directory.
+      #
+      # This mount is what makes the container's uid load-bearing: it replaces the image's own
+      # /app (owned by pwuser) with the host checkout, so writes back into test-results/ and
+      # blob-report/ succeed only because pwuser (uid 1001) matches GitHub's `runner` user (also
+      # 1001). See docker/e2e-visual.Dockerfile's USER comment for the measurements and the fix if
+      # that ever stops holding -- the escape hatch is a `user:` key on this service.
       - .:/app
       # Anonymous volume shadows the bind mount at node_modules specifically, so the container
       # keeps the Linux binaries npm ci installed at build time instead of inheriting the host's

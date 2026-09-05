@@ -26,13 +26,18 @@ on:
     # delay plus the full ~30-minute worst-case run (E2E timing out at its 20-minute cap) should
     # still finish well before a normal morning check-in, not run into it.
     #
-    # Weekly (Mondays), not nightly, since 2026-09-02. At ~51.6 billable minutes per run, 27
-    # nightly runs cost ~$8.36/month against a bill that was already ~$87. The dashboard is the
-    # only consumer of this schedule and does not need daily freshness; a weekly heartbeat keeps
-    # it current enough to be worth reading and still surfaces a systematically broken job, which
-    # a dispatch-only workflow would not (it only ever runs when someone already suspects a
-    # problem).
-    - cron: '17 7 * * 1'
+    # NIGHTLY again as of 2026-09-05, reversing the 2026-09-02 move to weekly (Mondays).
+    #
+    # The weekly change was a cost measure: at ~51.6 billable minutes per run, nightly costs
+    # ~$8.36/month. That trade is worth revisiting because the far larger line item it was grouped
+    # with has since been removed -- WS3 deleted the push-to-dev trigger (5,861 billable minutes,
+    # ~$35.17/month), which is roughly four times what this schedule costs. With that gone, daily
+    # dashboard freshness is affordable again.
+    #
+    # Freshness is the point: a weekly heartbeat means a systematically broken job can sit
+    # undetected for up to seven days, and the dashboard is read far more often than that. Nightly
+    # bounds that exposure to one day.
+    - cron: '17 7 * * *'
   workflow_dispatch: {} # manual trigger from GitHub's UI, for testing this workflow itself
   #
   # WS3, 2026-09-03: the push-to-dev trigger is GONE. It was the single largest line item on the
