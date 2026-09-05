@@ -150,6 +150,46 @@ describe('alias endpoints', () => {
     pool = createFakeAliasPool([seededAlias]);
   });
 
+  describe('POST /api/aliases (Issue #311)', () => {
+    it('derives normalizedTokens from bankPattern when the caller omits them', async () => {
+      // Before #311 an omitted list was stored as [] and the engine skipped the alias forever.
+      const response = await authedApp(appWithPool(createFakeAliasPool()))
+        .post('/api/aliases')
+        .send({ bankPattern: 'AMZN Mktp US*', canonicalPayeeName: 'Amazon' })
+        .expect(201);
+      expect(response.body.normalizedTokens).toEqual(['AMZN', 'MKTP', 'US']);
+    });
+
+    it('keeps caller-supplied tokens verbatim', async () => {
+      const response = await authedApp(appWithPool(createFakeAliasPool()))
+        .post('/api/aliases')
+        .send({ bankPattern: 'AMZN Mktp', canonicalPayeeName: 'Amazon', normalizedTokens: ['AMZN'] })
+        .expect(201);
+      expect(response.body.normalizedTokens).toEqual(['AMZN']);
+    });
+  });
+
+  describe('PUT /api/aliases/:id (Issue #311)', () => {
+    it('re-derives tokens when bankPattern changes and no tokens are supplied', async () => {
+      const response = await authedApp(appWithPool(pool))
+        .put(`/api/aliases/${seededAlias.id}`)
+        .send({ bankPattern: 'DOORDASH' })
+        .expect(200);
+      expect(response.body.normalizedTokens).toEqual(['DOORDASH']);
+    });
+
+    it('leaves tokens untouched when only an unrelated field changes', async () => {
+      // Before #311 the schema turned an omitted list into [] and the update wrote it, so renaming
+      // the payee silently emptied the alias's tokens and the engine stopped matching it.
+      const response = await authedApp(appWithPool(pool))
+        .put(`/api/aliases/${seededAlias.id}`)
+        .send({ canonicalPayeeName: 'Square Payments' })
+        .expect(200);
+      expect(response.body.normalizedTokens).toEqual(seededAlias.normalized_tokens);
+      expect(response.body.canonicalPayeeName).toBe('Square Payments');
+    });
+  });
+
   describe('GET /api/aliases', () => {
     it('returns an empty array when no aliases exist', async () => {
       const response = await authedApp(appWithPool(createFakeAliasPool())).get('/api/aliases');
@@ -236,7 +276,9 @@ describe('alias endpoints', () => {
 
       expect(response.status).toBe(201);
       expect(response.body).toMatchObject({
-        normalizedTokens: [],
+        // Issue #311: omitted tokens are derived from bankPattern, no longer stored as [] (which
+        // the engine skipped, so the alias could never match).
+        normalizedTokens: ['AMZN', 'MKTP'],
         sourceDirection: 'bank_to_gl',
         matchConfidence: 1,
       });

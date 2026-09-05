@@ -4,6 +4,7 @@ import {
   createAllExceptionsGlWorkbook,
   createSampleBankWorkbook,
   createSampleGlWorkbook,
+  createWorkbookFromRows,
 } from '@recon/test-fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -1677,5 +1678,54 @@ describe('login/logout audit trail (ISSUE-050.2)', () => {
 
     const logLine = capture.lines().find((line) => line.action === 'auth.logout');
     expect(logLine).toMatchObject({ username: 'rray', organizationId: 'org-1' });
+  });
+});
+
+// Issue #311 (PR A): the built-in default aliases reach the engine through the service layer, so a
+// bare createApp() -- no pool, therefore no organization aliases -- still bridges SQ -> Square.
+// The run report carries 1:1 matches only as summary counts (groupedMatchResults is the
+// many-to-one bucket), so the observable difference is where the pair lands: auto-matched with
+// the alias, queued as a probable match without it. The inverse run is what makes this specific.
+describe('default payee aliases reach a run (Issue #311)', () => {
+  const spreadsheetMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const bankRows = [
+    ['Date', 'Description', 'Sequence Number', 'Check Number', 'Debit', 'Credit', 'Balance'],
+    ['2025-01-05', 'SQ *COFFEE SHOP 4471', '1', '', '42.50', '', '9957.50'],
+  ];
+  const glRows = [
+    ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'],
+    ['2025-01-05', 'Expense', '', 'Square', 'Coffee', '-42.50'],
+  ];
+  const runIt = async () => {
+    const [bankBuffer, glBuffer] = await Promise.all([
+      createWorkbookFromRows(bankRows),
+      createWorkbookFromRows(glRows),
+    ]);
+    const response = await authedApp(createApp())
+      .post('/api/reconciliation/run')
+      .attach('bankFile', bankBuffer, { filename: 'bank.xlsx', contentType: spreadsheetMime })
+      .attach('glFile', glBuffer, { filename: 'gl.xlsx', contentType: spreadsheetMime })
+      .expect(201);
+    return response.body as {
+      summary: { exactMatches: number; probableMatches: number; unresolvedExposure: number };
+    };
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('matches an abbreviated bank descriptor to the GL payee via a default alias', async () => {
+    const { summary } = await runIt();
+    expect(summary, JSON.stringify(summary)).toMatchObject({ exactMatches: 1, probableMatches: 0 });
+    expect(summary.unresolvedExposure).toBe(0);
+  });
+
+  it('does not use defaults when ENABLE_DEFAULT_PAYEE_ALIASES=false', async () => {
+    vi.stubEnv('ENABLE_DEFAULT_PAYEE_ALIASES', 'false');
+    const { summary } = await runIt();
+    // Same pair, no alias: amount and date still agree, so it is queued for review instead.
+    expect(summary, JSON.stringify(summary)).toMatchObject({ exactMatches: 0, probableMatches: 1 });
+    expect(summary.unresolvedExposure).toBe(42.5);
   });
 });

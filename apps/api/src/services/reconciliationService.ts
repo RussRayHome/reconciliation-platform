@@ -3,6 +3,7 @@ import {
   buildSummaryMetrics,
   classifyExceptions,
   exportWorkbook,
+  buildDefaultPayeeAliases,
   reconcileMatches,
   seedCarriedForwardTransactions,
   type CandidateOutcomeObserver,
@@ -76,6 +77,10 @@ interface RunReconciliationPipelineInput {
    * the env var's own documented default), so a caller with no opinion about carry-forward --
    * most tests -- doesn't need to pass it. */
   carryForwardEnvEnabled?: boolean;
+  /** Issue #311: merge the built-in default payee aliases behind the organization's own rows.
+   *  Default true; ENABLE_DEFAULT_PAYEE_ALIASES=false is the off switch for a tenant whose
+   *  descriptors collide with a default. Organization rows always precede defaults. */
+  useDefaultPayeeAliases?: boolean;
   aliases: PayeeAlias[];
   t0: number;
   log: pino.Logger;
@@ -131,6 +136,7 @@ const runReconciliationPipeline = async ({
   reconciliationRunId,
   openItemStore,
   carryForwardEnvEnabled = true,
+  useDefaultPayeeAliases = true,
   aliases,
   t0,
   log,
@@ -349,11 +355,19 @@ const runReconciliationPipeline = async ({
       }
     }
 
+    // Issue #311: an organization's own aliases first, then the built-in defaults, tokenised with
+    // this run's normalization. Order matters -- the lookup keeps list order on an exact tie, so an
+    // authored row beats a default of equal score; the defaults' lower confidence settles the rest.
+    // The engine itself stays a pure function of its inputs; this policy lives here on purpose.
+    const effectiveAliases = useDefaultPayeeAliases
+      ? [...aliases, ...buildDefaultPayeeAliases(config.textNormalization)]
+      : aliases;
+
     const matchStart = Date.now();
     matching = reconcileMatches(
       normalizedTransactions,
       config.matching,
-      aliases,
+      effectiveAliases,
       buildCandidateOutcomeObserver(log),
       // Issue #260/#276: the ACTIVE version whose overrides produced `config.matching`, so every
       // MatchResult records the version that actually shaped it. Undefined when the run used engine
@@ -696,6 +710,8 @@ export interface ExecuteReconciliationFromNormalizedInput {
   openItemStore?: PostgresOpenItemStore;
   /** See `RunReconciliationPipelineInput.carryForwardEnvEnabled`'s doc comment. */
   carryForwardEnvEnabled?: boolean;
+  /** See `RunReconciliationPipelineInput.useDefaultPayeeAliases`'s doc comment. */
+  useDefaultPayeeAliases?: boolean;
   aliases?: PayeeAlias[];
   /** See `RunReconciliationPipelineInput.onStep`'s doc comment. */
   onStep?: QueueStepReporter;
@@ -740,6 +756,7 @@ export const executeReconciliationFromNormalized = async ({
   reconciliationRunId,
   openItemStore,
   carryForwardEnvEnabled,
+  useDefaultPayeeAliases,
   aliases = [],
   onStep,
   varianceOverrides,
@@ -807,6 +824,7 @@ export const executeReconciliationFromNormalized = async ({
     reconciliationRunId,
     openItemStore,
     carryForwardEnvEnabled,
+    useDefaultPayeeAliases,
     aliases,
     t0,
     log,
