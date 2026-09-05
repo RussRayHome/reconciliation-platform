@@ -180,6 +180,7 @@ export function ExceptionTriage({
 
   const selectedIndex = filtered.findIndex((display) => display.item.id === selectedId);
   const selectedDisplay = selectedIndex >= 0 ? filtered[selectedIndex] : undefined;
+  const decidedCount = filtered.filter((display) => decisionByTargetId[display.item.id]).length;
 
   const focusRow = (id: string): void => {
     globalThis.requestAnimationFrame?.(() => {
@@ -215,7 +216,7 @@ export function ExceptionTriage({
       return;
     }
 
-    if (key === 'arrowdown' || key === 'j') {
+    if (key === 'arrowdown') {
       event.preventDefault();
       selectByIndex(selectedIndex < 0 ? 0 : Math.min(selectedIndex + 1, filtered.length - 1), {
         openDrawer: false,
@@ -224,7 +225,7 @@ export function ExceptionTriage({
       return;
     }
 
-    if (key === 'arrowup' || key === 'k') {
+    if (key === 'arrowup') {
       event.preventDefault();
       selectByIndex(selectedIndex <= 0 ? 0 : selectedIndex - 1, {
         openDrawer: false,
@@ -386,10 +387,22 @@ export function ExceptionTriage({
       />
 
       <div className="exception-triage__list-pane">
-        <p className="exception-triage__shortcut-legend">
-          Shortcuts: <kbd>J</kbd>/<kbd>K</kbd> navigate · <kbd>A</kbd> accept · <kbd>R</kbd> reject
-          · <kbd>N</kbd> needs research
-        </p>
+        <div className="exception-triage__list-header">
+          <p className="exception-triage__shortcut-legend">
+            Shortcuts: <kbd>↑</kbd>/<kbd>↓</kbd> navigate · <kbd>A</kbd> accept · <kbd>R</kbd>{' '}
+            reject · <kbd>N</kbd> needs research · <kbd>U</kbd> undo
+          </p>
+          {/* Position is shown, not announced: the rows are a listbox, so a screen reader already
+              reports "N of M" on selection -- a live region here would double-announce it. */}
+          {filtered.length > 0 ? (
+            <p className="exception-triage__position">
+              {selectedIndex >= 0
+                ? `${selectedIndex + 1} of ${filtered.length}`
+                : `${filtered.length} shown`}{' '}
+              · {decidedCount} decided
+            </p>
+          ) : null}
+        </div>
         {filtered.length === 0 ? (
           <div className="empty-state-card table-empty-state" role="status" aria-live="polite">
             <span className="eyebrow">No matching exceptions</span>
