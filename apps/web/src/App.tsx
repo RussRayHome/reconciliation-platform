@@ -898,9 +898,16 @@ function ReconciliationApp({
   const fetchedReportMatchingJobIdRef = useRef<string | null>(null);
   const succeededMatchingJobId =
     durableRunPhase.kind === 'succeeded' ? durableRunPhase.matchingJobId : null;
-  const hasReportRun = Boolean(reportRun);
+  // Issue #293: the guard asks whether the report currently held is for THIS succeeded run -- not
+  // whether any report is held at all. On the queued path `run` is undefined, so `reportRun` falls
+  // through to `persistedRun`, the PREVIOUS run's report; a `Boolean(reportRun)` guard then read
+  // as "already have it" and the new run's report was never fetched, leaving the screen on the
+  // stale one until a manual reload. #268 covered the no-report-held case; this is the companion
+  // where a stale one is held. The sync path is unaffected either way: its live `run` carries the
+  // new id, so this is true and no redundant fetch is scheduled.
+  const heldReportIsForSucceededRun = reportRun?.id === succeededMatchingJobId;
   useEffect(() => {
-    if (!succeededMatchingJobId || hasReportRun) {
+    if (!succeededMatchingJobId || heldReportIsForSucceededRun) {
       return undefined;
     }
 
@@ -942,7 +949,7 @@ function ReconciliationApp({
     return () => {
       cancelled = true;
     };
-  }, [succeededMatchingJobId, hasReportRun]);
+  }, [succeededMatchingJobId, heldReportIsForSucceededRun]);
   // Issue #154 (live status push, Pub/Sub not polling): the last statusMessage received over the
   // run's live NDJSON stream, replacing the generic progress-step label with real step-by-step
   // text while a run is actually in flight. Reset (not just left stale) whenever the phase leaves
