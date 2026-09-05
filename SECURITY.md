@@ -15,10 +15,9 @@ Report privately through one of these channels:
 1. **GitHub private vulnerability reporting** (preferred) — from this
    repository, go to the **Security** tab and choose **Report a vulnerability**.
    This creates a private advisory visible only to maintainers.
-2. **Email** — `security@kinneysoftware.com`
+2. **Email** — `russray2008@gmail.com`
 
-> Replace the address above with a monitored mailbox before publishing this
-> file, and enable private vulnerability reporting under
+> Enable private vulnerability reporting under
 > *Settings → Advanced Security → Private vulnerability reporting* so the
 > first channel actually works.
 
