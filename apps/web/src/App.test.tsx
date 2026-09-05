@@ -2100,6 +2100,117 @@ describe('App', () => {
     }
   });
 
+  // Issue #293: the companion to the #268 test above, which starts with NO report held -- so a
+  // `Boolean(reportRun)` guard was false there and the fetch went ahead. Here a previous run's
+  // report is already held (persisted from an earlier session), the ordinary shape after the first
+  // run of any session. That made the old guard true, the second run's report was never fetched,
+  // and the screen sat on the stale one until a manual reload.
+  //
+  // Asserts on the rendered source-file names, which come from `reportRun.sourceFiles` and so
+  // differ between the two runs -- the one rendered field that says WHICH report is held.
+  // 'Reconciliation complete' (what #268 asserts) is true for both runs and would pass against the
+  // bug. The precondition is asserted explicitly too, so the test proves the stale report really
+  // was held before the second run rather than assuming hydration set it up.
+  it('replaces a stale held report when a later queued run succeeds, without a reload (Issue #293)', async () => {
+    vi.useFakeTimers();
+    try {
+      // Run 1's report sits in storage from an earlier session, and the server agrees it is the
+      // current latest run -- so #154's hydration keeps it rather than evicting it. Pre-set the
+      // report mock to the same run so a hydration re-fetch, if any, is a no-op rather than a fall
+      // through to the real fetch (which the spy below would reject).
+      const previousRun = createRunResponse();
+      globalThis.localStorage.setItem(
+        'reconciliation-platform:latest-report-run',
+        JSON.stringify({ version: 4, run: previousRun }),
+      );
+      mockedApiState.latestImportRunResponse = createImportRunSummary({
+        status: 'RECONCILED',
+        matchingJobId: previousRun.id,
+      });
+      mockedApiState.matchingRunReportResponse = previousRun;
+
+      installFakeImportRunXhr();
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = requestUrl(input);
+        if (url === `/api/imports/runs/${IMPORT_RUN_ID}/submit`) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ importJobId: 'import-job-2', status: 'queued' }), {
+              status: 202,
+            }),
+          );
+        }
+        throw new Error(`unexpected fetch call to ${url}`);
+      });
+
+      setAuthenticatedUser('rray');
+      renderApp();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // Precondition: run 1's report is genuinely held and showing. getAll, not get -- the joined
+      // names render on more than one surface (RunBar and the summary page this landed on).
+      expect(screen.getAllByText(/bank\.xlsx \+ gl\.xlsx/).length).toBeGreaterThan(0);
+
+      // A fresh landing with a succeeded run resolves "/" to the run summary (N4), so get back to
+      // the upload screen the way a user would before starting the next run.
+      fireEvent.click(screen.getByRole('link', { name: 'Bank Statements' }));
+      fillUploadInputs();
+      fireEvent.click(screen.getByRole('button', { name: 'Start new run' }));
+
+      mockedApiState.latestImportRunResponse = createImportRunSummary({
+        validationJob: {
+          id: 'validation-job-2',
+          status: 'QUEUED',
+          errorSummary: null,
+          queuedAt: '2026-09-05T00:00:00.000Z',
+          finishedAt: null,
+        },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      // Run 2 finishes under a DIFFERENT matching job id, with a report that is distinguishable
+      // from run 1's by its file names.
+      const secondRun = {
+        ...createRunResponse(),
+        id: 'run-2',
+        sourceFiles: [
+          { id: '3', source: 'bank', fileName: 'second-bank.xlsx' },
+          { id: '4', source: 'gl', fileName: 'second-gl.xlsx' },
+        ],
+      };
+      mockedApiState.latestImportRunResponse = createImportRunSummary({
+        status: 'RECONCILED',
+        matchingJobId: secondRun.id,
+        validationJob: {
+          id: 'validation-job-2',
+          status: 'SUCCEEDED',
+          errorSummary: null,
+          queuedAt: '2026-09-05T00:00:00.000Z',
+          finishedAt: '2026-09-05T00:00:03.000Z',
+        },
+      });
+      mockedApiState.matchingRunReportResponse = secondRun;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      // Second flush, same reason as #268: the poll tick only updates the durable phase; the
+      // report fetch is a separate effect that cannot be scheduled until that render lands.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getAllByText(/second-bank\.xlsx \+ second-gl\.xlsx/).length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // R2 V2: the run step can now terminate -- these five cover the acceptance criteria directly.
   // All mount the durable phase straight from `mockedApiState.latestImportRunResponse` (no live
   // submission needed) since the step-chip status is derived from the same phase either way.
