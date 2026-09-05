@@ -1,16 +1,7 @@
 import './styles/index.css';
 import '@recon/ui/styles.css';
 
-import {
-  type ChangeEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type Dispatch,
-  type ReactNode,
-  type SetStateAction,
-} from 'react';
+import { type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BrowserRouter,
   Link,
@@ -992,6 +983,11 @@ function ReconciliationApp({
     persistSliderDefaultOverrides(varianceDefaultOverrides);
   }, [varianceDefaultOverrides]);
 
+  // The rail's "Pending approvals" badge is App state. It refetches on every route change and,
+  // via onApprovalStateChange handed to the inbox, after every approval decision -- before that
+  // nonce existed, approving a run on /approvals left the badge on the old count until the user
+  // navigated somewhere else, because location.pathname was the effect's only trigger.
+  const [approvalCountsRefreshNonce, setApprovalCountsRefreshNonce] = useState(0);
   useEffect(() => {
     let cancelled = false;
     void getApprovalCountsRequest()
@@ -1003,11 +999,10 @@ function ReconciliationApp({
       .catch(() => {
         // Non-fatal: the rail badges just stay hidden until the next successful fetch.
       });
-
     return () => {
       cancelled = true;
     };
-  }, [location.pathname]);
+  }, [location.pathname, approvalCountsRefreshNonce]);
 
   const isOnRulesRoute = location.pathname === routePaths.mappingRules;
 
@@ -1838,7 +1833,11 @@ function ReconciliationApp({
               <Route
                 path={routePaths.approvals}
                 element={
-                  <PendingApprovalsInbox canApprove={rolePermissions.canApprove} isAdmin={isAdmin} />
+                  <PendingApprovalsInbox
+                    canApprove={rolePermissions.canApprove}
+                    isAdmin={isAdmin}
+                    onApprovalStateChange={() => setApprovalCountsRefreshNonce((nonce) => nonce + 1)}
+                  />
                 }
               />
               {/* N1: the five old per-type routes stay declared for one release as redirects to

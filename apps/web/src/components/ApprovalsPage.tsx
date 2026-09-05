@@ -109,7 +109,14 @@ const approveLabel = (row: ApprovalRow): string => {
 export function PendingApprovalsInbox({
   canApprove,
   isAdmin,
-}: Readonly<{ canApprove: boolean; isAdmin: boolean }>) {
+  onApprovalStateChange,
+}: Readonly<{
+  canApprove: boolean;
+  isAdmin: boolean;
+  /** Called after any decision/claim/withdraw succeeds, so the owner of the rail badge counts
+   * (App) can refetch them -- the inbox only knows how to reload its own rows. */
+  onApprovalStateChange?: () => void;
+}>) {
   const [rowsByGroup, setRowsByGroup] = useState<Record<string, ApprovalRow[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -151,7 +158,10 @@ export function PendingApprovalsInbox({
     };
   }, [refreshToken]);
 
-  const refresh = (): void => setRefreshToken((token) => token + 1);
+  const refresh = (): void => {
+    setRefreshToken((token) => token + 1);
+    onApprovalStateChange?.();
+  };
   const allRows = Object.values(rowsByGroup).flat();
 
   const handleDecision = (row: ApprovalRow, status: 'APPROVED' | 'REJECTED'): void => {

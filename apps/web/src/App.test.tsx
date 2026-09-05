@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import type { RuleCatalogResponse, RuleVersionsResponse, UserRole } from '@recon/domain';
+import type {
+  ApprovalCountsByGroup,
+  ApprovalRow,
+  RuleCatalogResponse,
+  RuleVersionsResponse,
+  UserRole,
+} from '@recon/domain';
 import type * as ApiModule from './lib/api';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -28,6 +34,9 @@ const mockedApiState = vi.hoisted<{
   defaultRuleVersionsResponse: RuleVersionsResponse;
   rulesCatalogResponse: RuleCatalogResponse;
   mappingProfileNames: string[];
+  // Backs getApprovalCountsRequest / getApprovalsRequest for the NavRail badge + inbox tests.
+  approvalCounts: ApprovalCountsByGroup;
+  approvalRows: ApprovalRow[];
 }>(() => {
   // Default GET /api/rules/versions fixture: an already-published ACTIVE version with
   // overridesAppliedToEngine true, i.e. "Phase 0 engine wiring has shipped" -- most existing
@@ -118,6 +127,8 @@ const mockedApiState = vi.hoisted<{
     defaultRuleVersionsResponse,
     rulesCatalogResponse,
     mappingProfileNames: ['Chase Operating', 'WF Payroll'],
+    approvalCounts: { import: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, mappingProfile: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, matchingRule: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, exceptionResolution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, reportDistribution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 } },
+    approvalRows: [],
   };
 });
 
@@ -182,19 +193,15 @@ vi.mock('./lib/api', async () => {
     // Mocked unconditionally for the same reason as getRulesCatalogRequest above: NavRail's
     // per-submenu Approvals badges fetch on every mount/route change, so an unmocked call here
     // would fall through to the real `fetch` and disrupt other tests' call-order-sensitive spies.
-    getApprovalCountsRequest: vi.fn(() => {
-      const emptyCounts = { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 };
-      return Promise.resolve({
-        import: emptyCounts,
-        mappingProfile: emptyCounts,
-        matchingRule: emptyCounts,
-        exceptionResolution: emptyCounts,
-        reportDistribution: emptyCounts,
-      });
-    }),
+    getApprovalCountsRequest: vi.fn(() => Promise.resolve(mockedApiState.approvalCounts)),
     // ApprovalsPage fetches its table on mount; unmocked, that would fall through to the real
     // `fetch` and disrupt other tests' call-order-sensitive fetch spies.
-    getApprovalsRequest: vi.fn(() => Promise.resolve([])),
+    getApprovalsRequest: vi.fn((type: string) =>
+      Promise.resolve(mockedApiState.approvalRows.filter((row) => row.type === type)),
+    ),
+    decideApprovalRequest: vi.fn(() => Promise.resolve(undefined)),
+    claimApprovalRequest: vi.fn(() => Promise.resolve(undefined)),
+    withdrawImportRunRequest: vi.fn(() => Promise.resolve(undefined)),
   };
 });
 
@@ -701,6 +708,14 @@ afterEach(() => {
   mockedApiState.latestImportRunError = null;
   mockedApiState.latestImportRunPromise = null;
   mockedApiState.matchingRunReportResponse = null;
+  mockedApiState.approvalCounts = {
+    import: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+    mappingProfile: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+    matchingRule: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+    exceptionResolution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+    reportDistribution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+  };
+  mockedApiState.approvalRows = [];
   mockedApiState.ruleVersionsResponse = mockedApiState.defaultRuleVersionsResponse;
   globalThis.history.replaceState({}, '', '/');
 });
@@ -3531,5 +3546,40 @@ describe('App', () => {
     renderApp();
 
     expect(screen.queryByRole('link', { name: 'Run Book' })).toBeNull();
+  });
+});
+
+// The rail badge is App state refetched on route change; before onApprovalStateChange existed,
+// approving on /approvals left it stale until the user navigated away.
+describe('NavRail Pending approvals badge after a decision', () => {
+  const zero = { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 };
+  const pendingRun: ApprovalRow = {
+    id: 'run-approval-1',
+    type: 'reconciliationRun',
+    title: 'Operating account · Aug 2026',
+    submitter: 'bray',
+    approver: 'rray',
+    ageHours: 3,
+    state: 'PENDING',
+  };
+
+  it('refetches the counts when a reconciliation run is approved, without a route change', async () => {
+    setAuthenticatedUser('rray');
+    mockedApiState.approvalCounts = { ...mockedApiState.approvalCounts, import: { ...zero, pending: 1 } };
+    mockedApiState.approvalRows = [pendingRun];
+    globalThis.history.pushState({}, '', '/approvals');
+    renderApp();
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    const railLink = screen.getByRole('link', { name: /Pending approvals/ });
+    await waitFor(() => expect(railLink.querySelector('.nav-rail__badge')).toHaveTextContent('1'));
+
+    // The decision succeeds server-side; the next counts fetch reports nothing pending.
+    mockedApiState.approvalCounts = { ...mockedApiState.approvalCounts, import: zero };
+    mockedApiState.approvalRows = [];
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(railLink.querySelector('.nav-rail__badge')).toBeNull());
+    expect(globalThis.location.pathname).toBe('/approvals');
   });
 });
