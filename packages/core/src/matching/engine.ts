@@ -12,6 +12,7 @@ import {
   currencyEquals,
   dateDifferenceDays,
   describeTokenSimilarity,
+  patternContainmentSimilarity,
   tokenSimilarity,
 } from './similarity';
 import {
@@ -63,21 +64,51 @@ const ALIAS_PATTERN_MATCH_THRESHOLD = 0.5;
  * `normalizedTokens` against the bank's `normalizedComparisonTokens`.
  * Returns the alias and the canonical payee tokens when the pattern similarity
  * meets `ALIAS_PATTERN_MATCH_THRESHOLD`; otherwise returns null.
+ *
+ * Scored as the better of symmetric Dice and directional containment (Issue #313). Dice alone makes
+ * an alias cover one literal descriptor rather than its merchant's family: pattern `AMZN MKTP`
+ * scores 0.80 against `AMZN Mktp US` but 0.40 against `AMZN MKTPLACE PMTS`, missing the 0.5
+ * threshold on a descriptor a human reads as the same merchant. Trigram does not rescue that case
+ * either (0.45) -- the problem is that Dice is symmetric, not which distance is used.
+ *
+ * Taking the BETTER of the two is strictly widening: every pattern that matched before still
+ * matches, at the same or a higher score, so this cannot silently un-match anything already relied
+ * upon.
+ *
+ * Ties break toward the MORE SPECIFIC pattern (more tokens). Containment saturates at 1.0 far more
+ * readily than Dice, and the previous strict `>` meant the winner was whichever alias the store
+ * returned first -- making engine output depend on row order. Preferring more tokens also handles
+ * the over-broad pattern sensibly: a one-token `ACH` loses to `AMZN MKTP` when both contain-match,
+ * instead of winning on arrival order. A genuinely generic single-token pattern is still broad;
+ * that is a pattern-authoring problem, and a stoplist for it is deliberately out of scope here.
  */
 const findMatchingAlias = (
   bankTokens: string[],
   aliases: PayeeAlias[],
 ): { alias: PayeeAlias; canonicalTokens: string[] } | null => {
   let bestAlias: PayeeAlias | null = null;
-  let bestSimilarity = ALIAS_PATTERN_MATCH_THRESHOLD - Number.EPSILON;
+  let bestSimilarity = 0;
 
   for (const alias of aliases) {
     if (!alias.isActive || alias.normalizedTokens.length === 0) {
       continue;
     }
 
-    const similarity = tokenSimilarity(bankTokens, alias.normalizedTokens);
-    if (similarity > bestSimilarity) {
+    const similarity = Math.max(
+      tokenSimilarity(bankTokens, alias.normalizedTokens),
+      patternContainmentSimilarity(alias.normalizedTokens, bankTokens),
+    );
+    if (similarity < ALIAS_PATTERN_MATCH_THRESHOLD) {
+      continue;
+    }
+
+    const isBetter =
+      bestAlias === null ||
+      similarity > bestSimilarity ||
+      (similarity === bestSimilarity &&
+        alias.normalizedTokens.length > bestAlias.normalizedTokens.length);
+
+    if (isBetter) {
       bestSimilarity = similarity;
       bestAlias = alias;
     }

@@ -172,6 +172,38 @@ export const fuzzyContainmentSimilarity = (left: string[], right: string[]): num
 };
 
 /**
+ * Directional containment: what fraction of `pattern` is present in `text`.
+ *
+ * Issue #313. `fuzzyContainmentSimilarity` above picks its denominator by LENGTH -- whichever array
+ * is shorter -- which is the right question when comparing two descriptors of equal standing. A
+ * payee-alias lookup is not that comparison: the pattern and the descriptor have different roles,
+ * and the only question worth asking is whether the pattern appears in the descriptor. When an
+ * alias pattern happens to be the longer of the two, length-based selection silently inverts it.
+ *
+ * A symmetric metric is the wrong shape here for a second reason: Dice penalises the pattern for
+ * tokens the descriptor carries that the pattern never meant to cover -- `PMTS`, `US`, an auth
+ * code. So `AMZN MKTP` scores 0.40 against `AMZN MKTPLACE PMTS` and misses the alias threshold,
+ * while containment scores it 0.50 and hits.
+ *
+ * Tokens are compared with `isFuzzyTokenMatch`, the same predicate `fuzzyContainmentSimilarity`
+ * uses, so spelling variance is tolerated identically by both.
+ */
+export const patternContainmentSimilarity = (pattern: string[], text: string[]): number => {
+  if (!pattern.length || !text.length) {
+    return 0;
+  }
+
+  const patternUnique = [...new Set(pattern)];
+  const textUnique = [...new Set(text)];
+
+  const matched = patternUnique.filter((patternToken) =>
+    textUnique.some((textToken) => isFuzzyTokenMatch(patternToken, textToken)),
+  ).length;
+
+  return matched / patternUnique.length;
+};
+
+/**
  * Trigram (3-gram) Jaccard similarity -- the same algorithm PostgreSQL's `pg_trgm` uses, so a
  * future move of this comparison into SQL would agree with it rather than quietly re-scoring.
  *

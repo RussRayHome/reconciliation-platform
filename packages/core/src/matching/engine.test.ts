@@ -815,6 +815,104 @@ describe('reconcileMatches', () => {
     expect(result.unmatchedGlTransactionIds.size).toBe(0);
   });
 
+  it('matches a descriptor variant of the same merchant that symmetric Dice missed (#313)', () => {
+    // Same alias as the test above, against a different real Amazon descriptor. Dice scores this
+    // pairing 0.40 -- under ALIAS_PATTERN_MATCH_THRESHOLD -- so before #313 the alias did not fire
+    // and this pair went unmatched, even though the alias was written for exactly this merchant.
+    const alias: PayeeAlias = {
+      id: crypto.randomUUID(),
+      bankPattern: 'AMZN MKTP',
+      canonicalPayeeName: 'Amazon',
+      normalizedTokens: ['AMZN', 'MKTP'],
+      sourceDirection: 'bank_to_gl',
+      matchConfidence: 1.0,
+      isActive: true,
+    };
+
+    const bank = buildTransaction({
+      id: 'bank-amazon-variant',
+      source: 'bank',
+      lineNumber: 1,
+      transactionDate: '2025-03-11',
+      description: 'AMZN MKTPLACE PMTS',
+      normalizedComparisonTokens: ['AMZN', 'MKTPLACE', 'PMTS'],
+      amount: -22.5,
+    });
+    const gl = buildTransaction({
+      id: 'gl-amazon-variant',
+      source: 'gl',
+      lineNumber: 2,
+      transactionDate: '2025-03-11',
+      description: 'Amazon',
+      normalizedComparisonTokens: ['AMAZON'],
+      amount: -22.5,
+    });
+
+    const result = reconcileMatches([bank, gl], defaultReconciliationConfig.matching, [alias]);
+
+    expect(result.matchResults).toHaveLength(1);
+    expect(result.matchResults[0]?.ruleName).toBe('Historical Pattern Match');
+    expect(result.unmatchedBankTransactionIds.size).toBe(0);
+    expect(result.unmatchedGlTransactionIds.size).toBe(0);
+  });
+
+  it('prefers the more specific alias on a tie, whichever order they arrive in (#313)', () => {
+    // Containment saturates at 1.0 for both of these, so without the specificity tie-break the
+    // winner would be whichever alias the store happened to return first -- and the two aliases
+    // resolve to DIFFERENT canonical payees, so order would decide whether the pair matches at all.
+    const broad: PayeeAlias = {
+      id: crypto.randomUUID(),
+      bankPattern: 'AMZN',
+      canonicalPayeeName: 'Staples',
+      normalizedTokens: ['AMZN'],
+      sourceDirection: 'bank_to_gl',
+      matchConfidence: 1.0,
+      isActive: true,
+    };
+    const specific: PayeeAlias = {
+      id: crypto.randomUUID(),
+      bankPattern: 'AMZN MKTP',
+      canonicalPayeeName: 'Amazon',
+      normalizedTokens: ['AMZN', 'MKTP'],
+      sourceDirection: 'bank_to_gl',
+      matchConfidence: 1.0,
+      isActive: true,
+    };
+
+    const build = () => [
+      buildTransaction({
+        id: 'bank-amazon-tie',
+        source: 'bank',
+        lineNumber: 1,
+        transactionDate: '2025-03-12',
+        description: 'AMZN MKTP US',
+        normalizedComparisonTokens: ['AMZN', 'MKTP', 'US'],
+        amount: -31.4,
+      }),
+      buildTransaction({
+        id: 'gl-amazon-tie',
+        source: 'gl',
+        lineNumber: 2,
+        transactionDate: '2025-03-12',
+        description: 'Amazon',
+        normalizedComparisonTokens: ['AMAZON'],
+        amount: -31.4,
+      }),
+    ];
+
+    for (const aliases of [
+      [broad, specific],
+      [specific, broad],
+    ]) {
+      const result = reconcileMatches(build(), defaultReconciliationConfig.matching, aliases);
+
+      // 'Staples' would not resemble the GL's 'AMAZON', so a broad-alias win shows up as no match.
+      expect(result.matchResults).toHaveLength(1);
+      expect(result.matchResults[0]?.ruleName).toBe('Historical Pattern Match');
+      expect(result.unmatchedBankTransactionIds.size).toBe(0);
+    }
+  });
+
   it('classifies a wire where bank received less than GL recorded as Wire Correspondent Fee Deduction', () => {
     const bank = buildTransaction({
       id: 'bank-wire',
