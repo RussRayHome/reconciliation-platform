@@ -3751,15 +3751,16 @@ export const createApp = (
     }
   });
 
-  // Unreconciled Item Roll-Forward PR E.4. Mechanism only -- see writeOffOpenItemBodySchema and
-  // PostgresOpenItemStore.writeOffOpenItem's own doc comments for why there is no automatic
-  // amount/age approval gate here yet.
+  // Unreconciled Item Roll-Forward PR E.4, with Issue #283's approval controls.
+  //
+  // No `canApprove` gate here, deliberately, and this is a widening: write-off authority is banded
+  // by amount (writeOffApprovalBands in @recon/domain), and the lowest band is the analyst tier,
+  // for whom `canApprove` is false. Gating on `canApprove` first would 403 exactly the roles the
+  // lowest band exists to admit. Authority is instead decided in
+  // PostgresOpenItemStore.writeOffOpenItem against the item's own amount and the actor's role as
+  // stored, which is also what makes the control hold for callers that never reach this route.
   app.post('/api/imports/open-items/:id/write-off', async (request, response, next) => {
     if (!(await requireDatabase(response, 'IMPORT_OPEN_ITEM_WRITE_OFF'))) return;
-    if (!rolePermissionsByRole[request.auth!.role].canApprove) {
-      response.status(403).json({ message: 'Only an approver may write off an open item.' });
-      return;
-    }
 
     try {
       const bodyResult = writeOffOpenItemBodySchema.safeParse(request.body ?? {});
@@ -3787,6 +3788,21 @@ export const createApp = (
         response
           .status(409)
           .json({ message: `Open item cannot be written off from status ${result.status}; it is not OPEN.` });
+        return;
+      }
+      if (result.outcome === 'insufficient_authority') {
+        response.status(403).json({
+          message: `A write-off of this amount requires ${result.requiredRoleLabel} authority or above.`,
+        });
+        return;
+      }
+      // 409 rather than 403, matching how the run-approval segregation constraint is already
+      // surfaced above: the actor's role is sufficient, it is this particular pairing that is not.
+      if (result.outcome === 'segregation_of_duty') {
+        response.status(409).json({
+          message:
+            'The submitter of the run that opened this item cannot also write it off.',
+        });
         return;
       }
 

@@ -70,3 +70,26 @@ CVE-2026-54291 exp:2026-11-01
 # Postgres over Docker's private internal network, never anything public. Revisit in 90 days --
 # a newer Liquibase minor/patch release may resolve the Pro-license issue without the CVE.
 CVE-2025-49146 exp:2026-11-11
+
+# ── apps/web image (nginxinc/nginx-unprivileged:mainline-alpine) ────────────────────────────
+# libuuid (util-linux), found 2026-09-05 by the same scan against the built web image. The
+# advisories name 2.42.3-r0 as the fix, but the Alpine branch this base image pins still publishes
+# only 2.42.1-r0 -- confirmed by querying the base image's own index (`apk list libuuid` inside
+# nginxinc/nginx-unprivileged:mainline-alpine returns 2.42.1-r0 as both installed AND latest).
+#
+# So there is no build-side change that resolves these. apps/web/Dockerfile already runs
+# `apk upgrade --no-cache` for exactly this case; it has nothing to upgrade to. `--ignore-unfixed`
+# does not filter them either, because the advisory names a fixed version -- one this base image
+# cannot reach. The fix arrives when nginx-unprivileged rebuilds on a newer Alpine.
+#
+# Deliberately a SHORT window rather than the 2026-11-01 used above: this is expected to resolve
+# upstream within weeks, and it should be rechecked then rather than folded into that later batch.
+# To recheck: rerun the docker-validate scan, or `apk list libuuid` in the base image -- once it
+# offers 2.42.3-r0, delete this whole section rather than extending the date.
+CVE-2026-53612 exp:2026-10-03
+CVE-2026-53613 exp:2026-10-03
+CVE-2026-53614 exp:2026-10-03
+CVE-2026-76642 exp:2026-10-03
+CVE-2026-78408 exp:2026-10-03
+CVE-2026-78409 exp:2026-10-03
+CVE-2026-78410 exp:2026-10-03

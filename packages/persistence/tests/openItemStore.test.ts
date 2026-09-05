@@ -105,6 +105,15 @@ describe('PostgresOpenItemStore', () => {
          ON CONFLICT DO NOTHING`,
         [defaultOrganizationId],
       );
+      // Issue #283: write-off authority is banded by amount, and `controller` sits in the lowest
+      // band. A second approver one band up is what makes the band boundary observable rather
+      // than just asserted from below.
+      await pool.query(
+        `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
+         VALUES ('write-off-cfo', 'Cleo', 'Officer', 'hash', 'cfo', $1)
+         ON CONFLICT DO NOTHING`,
+        [defaultOrganizationId],
+      );
     } catch (error) {
       startupError = error instanceof Error ? error : new Error(String(error));
       console.warn(`PostgreSQL integration setup failed: ${startupError.message}`);
@@ -995,14 +1004,24 @@ describe('PostgresOpenItemStore', () => {
         status: string;
         disposition_code: string;
         disposition_note: string;
+        written_off_by: string | null;
       }>(
-        'SELECT status, disposition_code, disposition_note FROM reconciliation_open_item WHERE id = $1',
+        `SELECT status, disposition_code, disposition_note, written_off_by
+           FROM reconciliation_open_item WHERE id = $1`,
         [openItemId],
+      );
+      // written_off_by is the column changeset 0075's segregation trigger reads; a write-off that
+      // does not record its approver would satisfy every other assertion here while leaving the
+      // control with nothing to compare against.
+      const approverId = await pool.query<{ id: string }>(
+        'SELECT id FROM reconciliation_user WHERE user_name = $1 AND organization_id = $2',
+        ['close-approver', defaultOrganizationId],
       );
       expect(row.rows[0]).toEqual({
         status: 'WRITTEN_OFF',
         disposition_code: 'STALE_UNCLAIMED',
         disposition_note: 'Escheatment review pending',
+        written_off_by: approverId.rows[0]!.id,
       });
 
       const events = await pool.query<{ event_type: string; from_status: string; to_status: string }>(
@@ -1014,6 +1033,141 @@ describe('PostgresOpenItemStore', () => {
         from_status: 'OPEN',
         to_status: 'WRITTEN_OFF',
       });
+    });
+  });
+
+  describe('writeOffOpenItem approval controls (Issue #283)', () => {
+    /** Projects one candidate and returns its open item id. */
+    const openItemFor = async (
+      account: string,
+      overrides: Parameters<typeof buildCandidate>[0] = {},
+      reconciliationRunId?: string,
+    ): Promise<string> => {
+      const store = new PostgresOpenItemStore(runtimePool);
+      await store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        ...(reconciliationRunId ? { reconciliationRunId } : {}),
+        candidates: [
+          buildCandidate({
+            accountIdentifier: account,
+            naturalKey: `check:${account}:9000`,
+            checkNumber: '9000',
+            ...overrides,
+          }),
+        ],
+      });
+      const row = await pool.query<{ id: string }>(
+        `SELECT oi.id FROM reconciliation_open_item oi
+           JOIN reconciliation_account a ON a.id = oi.account_id
+          WHERE a.account_identifier = $1`,
+        [account],
+      );
+      return row.rows[0]!.id;
+    };
+
+    it('rejects an amount above the actor\'s band, naming the authority required', async () => {
+      if (startupError) throw startupError;
+
+      // -25,000 is deliberately NEGATIVE and deliberately just over the first threshold. Open-item
+      // amounts are signed (a credit is negative), so a band check comparing the raw value would
+      // find -25000 <= 20000 and wave a $25k write-off through at analyst authority. Banding on
+      // the absolute value is what makes this fail.
+      const openItemId = await openItemFor('WRITEOFF-BAND-OVER', { amount: -25000 });
+      const store = new PostgresOpenItemStore(runtimePool);
+
+      expect(
+        await store.writeOffOpenItem(defaultOrganizationId, {
+          openItemId,
+          actorUsername: 'close-approver',
+          dispositionCode: 'STALE_UNCLAIMED',
+        }),
+      ).toEqual({
+        outcome: 'insufficient_authority',
+        amount: -25000,
+        requiredRoleLabel: 'CFO',
+      });
+
+      // The rejection must not have partially applied.
+      const row = await pool.query<{ status: string; written_off_by: string | null }>(
+        'SELECT status, written_off_by FROM reconciliation_open_item WHERE id = $1',
+        [openItemId],
+      );
+      expect(row.rows[0]).toEqual({ status: 'OPEN', written_off_by: null });
+    });
+
+    it('admits the same amount for an actor one band up', async () => {
+      if (startupError) throw startupError;
+
+      const openItemId = await openItemFor('WRITEOFF-BAND-CFO', { amount: -25000 });
+      const store = new PostgresOpenItemStore(runtimePool);
+
+      expect(
+        await store.writeOffOpenItem(defaultOrganizationId, {
+          openItemId,
+          actorUsername: 'write-off-cfo',
+          dispositionCode: 'STALE_UNCLAIMED',
+        }),
+      ).toEqual({ outcome: 'written_off' });
+    });
+
+    it('exactly the threshold stays in the lower band', async () => {
+      if (startupError) throw startupError;
+
+      // The bands are documented as inclusive of their upper bound; this pins that boundary so a
+      // later change from <= to < is a failing test rather than a silent authority change.
+      const openItemId = await openItemFor('WRITEOFF-BAND-EXACT', { amount: -20000 });
+      const store = new PostgresOpenItemStore(runtimePool);
+
+      expect(
+        await store.writeOffOpenItem(defaultOrganizationId, {
+          openItemId,
+          actorUsername: 'close-approver',
+          dispositionCode: 'STALE_UNCLAIMED',
+        }),
+      ).toEqual({ outcome: 'written_off' });
+    });
+
+    it('rejects a write-off by the submitter of the run that opened the item', async () => {
+      if (startupError) throw startupError;
+
+      // The realistic self-review path: the person who submitted the run that surfaced an
+      // exception then writing that exception off. Enforced by changeset 0075's trigger, so this
+      // holds for any write path, not only this store method.
+      const runId = await insertRun({ status: 'DRAFT', submittedByUsername: 'write-off-cfo' });
+      const openItemId = await openItemFor('WRITEOFF-SOD-SELF', {}, runId);
+      const store = new PostgresOpenItemStore(runtimePool);
+
+      expect(
+        await store.writeOffOpenItem(defaultOrganizationId, {
+          openItemId,
+          actorUsername: 'write-off-cfo',
+          dispositionCode: 'STALE_UNCLAIMED',
+        }),
+      ).toEqual({ outcome: 'segregation_of_duty' });
+
+      const row = await pool.query<{ status: string; written_off_by: string | null }>(
+        'SELECT status, written_off_by FROM reconciliation_open_item WHERE id = $1',
+        [openItemId],
+      );
+      expect(row.rows[0]).toEqual({ status: 'OPEN', written_off_by: null });
+    });
+
+    it('allows a write-off by someone other than the opening run\'s submitter', async () => {
+      if (startupError) throw startupError;
+
+      // Same shape as the test above with only the actor changed, so a trigger that rejected
+      // every write-off rather than only self-review would fail here.
+      const runId = await insertRun({ status: 'DRAFT', submittedByUsername: 'close-submitter' });
+      const openItemId = await openItemFor('WRITEOFF-SOD-OTHER', {}, runId);
+      const store = new PostgresOpenItemStore(runtimePool);
+
+      expect(
+        await store.writeOffOpenItem(defaultOrganizationId, {
+          openItemId,
+          actorUsername: 'close-approver',
+          dispositionCode: 'STALE_UNCLAIMED',
+        }),
+      ).toEqual({ outcome: 'written_off' });
     });
   });
 
