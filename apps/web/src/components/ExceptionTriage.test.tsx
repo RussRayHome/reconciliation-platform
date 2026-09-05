@@ -151,7 +151,7 @@ describe('ExceptionTriage', () => {
     const selectedRow = screen.getByRole('option', { selected: true });
     selectedRow.focus();
 
-    fireEvent.keyDown(selectedRow, { key: 'j' });
+    fireEvent.keyDown(selectedRow, { key: 'ArrowDown' });
 
     const nextRow = screen.getByRole('option', { selected: true });
     fireEvent.keyDown(nextRow, { key: 'a' });
@@ -179,9 +179,9 @@ describe('ExceptionTriage', () => {
 
     const firstRow = screen.getByRole('option', { selected: true });
     firstRow.focus();
-    fireEvent.keyDown(firstRow, { key: 'j' });
+    fireEvent.keyDown(firstRow, { key: 'ArrowDown' });
     const secondRow = screen.getByRole('option', { selected: true });
-    fireEvent.keyDown(secondRow, { key: 'k' });
+    fireEvent.keyDown(secondRow, { key: 'ArrowUp' });
 
     expect(screen.getByLabelText('Reviewer note')).toHaveValue('Investigate wire ref');
   });
@@ -200,6 +200,48 @@ describe('ExceptionTriage', () => {
     renderTriage();
 
     expect(screen.getByText(/Shortcuts:/i)).toBeInTheDocument();
+    // R3 X3: arrows replaced J/K, and U (long implemented) is finally documented.
+    const legend = screen.getByText(/Shortcuts:/i);
+    expect(legend).toHaveTextContent('↑');
+    expect(legend).toHaveTextContent('↓');
+    expect(legend).toHaveTextContent('undo');
+    expect(legend.textContent).not.toMatch(/\bJ\b\/\bK\b/);
+  });
+
+  it('ignores the retired J and K shortcuts', () => {
+    renderTriage();
+
+    const selectedRow = screen.getByRole('option', { selected: true });
+    selectedRow.focus();
+
+    fireEvent.keyDown(selectedRow, { key: 'j' });
+    expect(screen.getByRole('option', { selected: true })).toBe(selectedRow);
+
+    fireEvent.keyDown(selectedRow, { key: 'k' });
+    expect(screen.getByRole('option', { selected: true })).toBe(selectedRow);
+  });
+
+  it('reports the selected position and how many visible rows are decided', () => {
+    const decision: ReviewerDecision = {
+      id: 'decision-1',
+      runId: 'run-1',
+      targetType: 'ExceptionItem',
+      targetId: 'exception-1',
+      outcome: 'ConfirmedException',
+      createdAt: '2026-03-31T00:00:00.000Z',
+      updatedAt: '2026-03-31T00:00:00.000Z',
+    };
+    renderTriage({ decisionByTargetId: { 'exception-1': decision } });
+
+    // Three fixture rows, one of them already decided.
+    expect(screen.getByText(/1 of 3/)).toBeInTheDocument();
+    expect(screen.getByText(/1 decided/)).toBeInTheDocument();
+
+    const selectedRow = screen.getByRole('option', { selected: true });
+    selectedRow.focus();
+    fireEvent.keyDown(selectedRow, { key: 'ArrowDown' });
+
+    expect(screen.getByText(/2 of 3/)).toBeInTheDocument();
   });
 
   it('does not trigger decision shortcuts while typing in the note field', async () => {

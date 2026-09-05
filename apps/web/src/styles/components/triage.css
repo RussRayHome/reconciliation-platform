@@ -192,8 +192,25 @@
     --exception-row-grid: 12px minmax(0, 1.5fr) 84px 90px minmax(0, 1.4fr) minmax(0, 1fr) 78px;
   }
 
-  .exception-triage__shortcut-legend {
+  .exception-triage__list-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
     margin: 0 0 0.5rem;
+  }
+
+  .exception-triage__position {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--muted);
+    /* Digits must not reflow the counter as the selection moves down the list. */
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .exception-triage__shortcut-legend {
+    margin: 0;
     font-size: 0.78rem;
     color: var(--muted);
     display: flex;
