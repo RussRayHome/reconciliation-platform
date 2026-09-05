@@ -111,10 +111,27 @@ export default defineConfig({
       },
       {
         test: {
+          // Issue #209: testTimeout above the 5000ms default, for the same reason the infra project
+          // below raised its own. These files run full Express apps in parallel worker processes, and
+          // under combined load the timing-sensitive ones inflate past the cap while still being
+          // correct -- they pass 100% of the time in isolation, across the whole history of #209.
+          //
+          // Measured 2026-09-05 on a loaded machine (5 of 6 full-suite runs flaked that day):
+          //   auth-endpoints / session-logging / cors  ->  5035 / 5256 / 5645 ms   (FAIL at 5000)
+          //   sentry-middleware                         ->  4788 ms                (212 ms from failing)
+          //   the same 3 files idle, all 21 tests       ->  8 s total, ~0.4 s each
+          //   openapi.test.ts, concurrently             ->  19.3 s  (the heaviest single test; a
+          //                                                 contention SOURCE for its siblings)
+          // A 12x inflation under load, from tests that are not hanging -- just slow. 30000 gives
+          // ~5x headroom over the worst observed and matches infra's value. A genuinely hung test
+          // now takes 30 s to report instead of 5 s; the CI `test` job's 30-minute budget absorbs
+          // that comfortably. This does not touch #192's separate correlation-id short-circuit
+          // class, which is rare, happens even serially, and is still uncaptured.
           name: 'integration',
           environment: 'node',
           include: ['apps/api/tests/**/*.test.ts'],
           setupFiles: ['apps/api/tests/testHelpers/integrationSetup.ts'],
+          testTimeout: 30000,
         },
       },
       {
