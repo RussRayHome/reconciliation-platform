@@ -67,6 +67,7 @@ import {
   MAX_BANK_ACCOUNTS,
   MIN_BANK_ACCOUNTS,
   mergeBankFiles,
+  buildComparisonTokens,
   toNormalizedTransactions,
   toRawTransactionRows,
   validateFile,
@@ -750,6 +751,7 @@ export const runReconciliationWorkflow = async (input: {
       onStep: input.onStep,
       varianceOverrides: effectiveOverrides,
       matchingConfigVersionId: activeVersionId,
+      ...readPipelineEnvFlags(),
     });
 
     input.repository.save(run);
@@ -889,9 +891,7 @@ const triggerMatchingForImportRun = async (input: {
     declaredAnchorDate: input.declaredAnchorDate,
     reconciliationRunId: input.reconciliationRunId,
     openItemStore: input.pool ? new PostgresOpenItemStore(input.pool) : undefined,
-    // Default on -- the env var is purely an ops kill switch; the real per-organization control
-    // is reconciliation_organization.carry_forward_enabled (PR C.5).
-    carryForwardEnvEnabled: parseBooleanFlag(process.env.ENABLE_CARRY_FORWARD) !== false,
+    ...readPipelineEnvFlags(),
   });
 
   input.repository.save(run);
@@ -1148,6 +1148,18 @@ const parseBooleanFlag = (value: string | undefined): boolean | null => {
 
   return null;
 };
+
+/** Env kill switches for the matching pipeline, read per run so a test or an operator can flip
+ * them without a restart. Both default on: the real per-organization control for carry-forward is
+ * reconciliation_organization.carry_forward_enabled (PR C.5), and the default payee aliases (#311)
+ * are meant to be on unless a tenant's descriptors collide with a seed. One helper for both call
+ * sites -- runReconciliationWorkflow (the sync route and worker.ts) and triggerMatchingForImportRun
+ * (imports) -- because until #311 only the import path passed these, which made
+ * ENABLE_CARRY_FORWARD=false a silent no-op on every ordinary run. */
+const readPipelineEnvFlags = () => ({
+  carryForwardEnvEnabled: parseBooleanFlag(process.env.ENABLE_CARRY_FORWARD) !== false,
+  useDefaultPayeeAliases: parseBooleanFlag(process.env.ENABLE_DEFAULT_PAYEE_ALIASES) !== false,
+});
 
 // ZAP finding #161: `cors()` with no options reflects `*` for every request. Real deployments
 // (dev/stage/prod Docker) never need this at all -- the browser only ever talks to the web
@@ -3961,8 +3973,20 @@ export const createApp = (
 
       // organizationId comes from the authenticated principal, never the request body -- a
       // client-supplied tenant would let one customer write rows into another's data.
+      // Issue #311: an alias whose tokens were omitted used to be stored with `[]`, which the
+      // engine silently skips (findMatchingAlias ignores empty-token aliases) -- a row that looked
+      // saved and never matched anything. Derive the tokens the way the engine would, from the
+      // pattern itself, unless the caller supplied its own.
+      const normalizedTokens =
+        bodyResult.data.normalizedTokens.length > 0
+          ? bodyResult.data.normalizedTokens
+          : buildComparisonTokens(
+              [bodyResult.data.bankPattern],
+              defaultReconciliationConfig.textNormalization,
+            );
       const input: CreatePayeeAliasInput = {
         ...bodyResult.data,
+        normalizedTokens,
         organizationId: request.auth!.organizationId,
       };
       const alias = await createPayeeAlias(pool!, input);
@@ -3981,11 +4005,28 @@ export const createApp = (
         return;
       }
 
+      // Issue #311: a PUT must never leave an alias with empty tokens (the engine skips those).
+      // If the caller changes bankPattern without supplying tokens, re-derive them from the new
+      // pattern; if it supplies none and changes nothing that affects them, leave tokens untouched
+      // rather than overwriting them with [].
+      const { normalizedTokens: requestedTokens, ...rest } = bodyResult.data;
+      const patch =
+        requestedTokens !== undefined && requestedTokens.length > 0
+          ? { ...rest, normalizedTokens: requestedTokens }
+          : rest.bankPattern !== undefined
+            ? {
+                ...rest,
+                normalizedTokens: buildComparisonTokens(
+                  [rest.bankPattern],
+                  defaultReconciliationConfig.textNormalization,
+                ),
+              }
+            : rest;
       const alias = await updatePayeeAlias(
         pool!,
         request.auth!.organizationId,
         request.params.id,
-        bodyResult.data,
+        patch,
       );
 
       if (!alias) {

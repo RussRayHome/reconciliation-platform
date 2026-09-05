@@ -577,9 +577,17 @@ const rankCandidates = (
         sameAmount &&
         (dateDifference ?? Number.POSITIVE_INFINITY) <= config.timingDifferenceDays
       ) {
-        const aliasSimilarity = tokenSimilarity(
-          aliasHit.canonicalTokens,
-          glTransaction.normalizedComparisonTokens,
+        // Mirror of #313 on the GL side (#311): a GL row's comparison text is Name + Memo, so a
+        // one-word canonical payee ("Square") scores only 2/(1+2) against [COFFEE, SQUARE] by
+        // overlap and the alias never fires on real GL exports. Containment asks the right
+        // question -- is the canonical payee present -- and it stays safe because this branch is
+        // already gated on sameAmount and the timing window above.
+        const aliasSimilarity = Math.max(
+          tokenSimilarity(aliasHit.canonicalTokens, glTransaction.normalizedComparisonTokens),
+          patternContainmentSimilarity(
+            aliasHit.canonicalTokens,
+            glTransaction.normalizedComparisonTokens,
+          ),
         );
         const effectiveSimilarity = aliasSimilarity * aliasHit.alias.matchConfidence;
 
