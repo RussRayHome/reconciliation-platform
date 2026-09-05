@@ -61,6 +61,14 @@ export const authHeader = (
  * where a pool-less app has no reachable path to a 400 at all. Ephemeral-port/TIME_WAIT reuse and
  * socket pooling were both tested and refuted (supertest never pools: superagent sets
  * `agent: false`), so the body and header count below are the remaining discriminators.
+ *
+ * RESOLVED 2026-09-05: the mechanism was none of the three short-circuits below. It was
+ * address-family misdelivery -- supertest binds dual-stack `[::]` and connects to `127.0.0.1`; on
+ * macOS an IPv4-specific listener from another process may share the port and receives the
+ * request. Captured as a bare 404 with three headers that pino-http proved no Express app ever
+ * saw. integrationSetup.ts now makes supertest connect in the server's own family ([::1] to a
+ * dual-stack server), which removes the path. This check stays as the detector: if it ever fires
+ * again with a ~3-header response, that family match has regressed.
  */
 const withCorrelationIdCheck = (method: string, test: request.Test): request.Test => {
   const correlationId = randomUUID();
@@ -81,10 +89,12 @@ const withCorrelationIdCheck = (method: string, test: request.Test): request.Tes
     if (echoed === undefined) {
       throw new Error(
         'No x-correlation-id on the response, so it never reached the middleware at app.ts:1731. ' +
-          'This is a short-circuit ABOVE that line, not transport mis-attribution. Distinguish by ' +
-          'the body below: rate limiter (429, JSON body), express.json rejecting a malformed body ' +
-          "(400, JSON body), or Node's HTTP parser rejecting the request bytes (400, EMPTY body, " +
-          `zero headers). ${describeResponse(response)}. See Issue #192.`,
+          'Either a short-circuit above that line -- rate limiter (429, JSON body), express.json ' +
+          "rejecting a malformed body (400, JSON body), Node's HTTP parser rejecting the request " +
+          'bytes (400, EMPTY body, zero headers) -- or, the case actually observed on 2026-09-05, a ' +
+          'response from a DIFFERENT listener that shared the port (a bare 404 with ~3 headers). ' +
+          'integrationSetup.ts matches the client to the server address family to prevent that; ' +
+          `a ~3-header response here means that match regressed. ${describeResponse(response)}. See Issue #192.`,
       );
     }
 
