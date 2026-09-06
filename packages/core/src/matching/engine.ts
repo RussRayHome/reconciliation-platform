@@ -231,7 +231,8 @@ const isDistinctiveAmountPair = (
   }
 
   return (
-    (bankAmountFrequency.get(bankTransaction.amount) ?? 0) <= config.distinctiveAmountMaxOccurrences &&
+    (bankAmountFrequency.get(bankTransaction.amount) ?? 0) <=
+      config.distinctiveAmountMaxOccurrences &&
     (glAmountFrequency.get(bankTransaction.amount) ?? 0) <= config.distinctiveAmountMaxOccurrences
   );
 };
@@ -430,6 +431,28 @@ const rankCandidates = (
     }
   }
 
+  /**
+   * Issue #333. `sourceDirection` was declared, persisted and API-validated but read nowhere --
+   * setting `'bidirectional'` changed no behaviour at all. It means the alias may also resolve the
+   * GL side, so a payee abbreviated in the BOOKS ("AMZN Mktp US" against a bank statement that
+   * spells "AMAZON MKTPLACE PMTS") reaches the same canonical payee the bank side already does.
+   *
+   * Only `'bidirectional'` rows qualify; `'bank_to_gl'` stays one-way. Every default seed in
+   * `defaultPayeeAliases.ts` is `'bank_to_gl'`, so this map is empty and this whole feature is
+   * inert until an organization authors a bidirectional row -- which is why no answer-key fixture
+   * outcome moves.
+   */
+  const bidirectionalAliases = aliases.filter((alias) => alias.sourceDirection === 'bidirectional');
+  const glAliasHits = new Map<string, ReturnType<typeof findMatchingAlias>>();
+  if (bidirectionalAliases.length > 0) {
+    for (const glTransaction of glTransactions) {
+      glAliasHits.set(
+        glTransaction.id,
+        findMatchingAlias(glTransaction.normalizedComparisonTokens, bidirectionalAliases),
+      );
+    }
+  }
+
   for (const bankTransaction of bankTransactions) {
     for (const glTransaction of glTransactions) {
       if (bankTransaction.amount === null || glTransaction.amount === null) {
@@ -582,14 +605,29 @@ const rankCandidates = (
         // overlap and the alias never fires on real GL exports. Containment asks the right
         // question -- is the canonical payee present -- and it stays safe because this branch is
         // already gated on sameAmount and the timing window above.
-        const aliasSimilarity = Math.max(
-          tokenSimilarity(aliasHit.canonicalTokens, glTransaction.normalizedComparisonTokens),
-          patternContainmentSimilarity(
-            aliasHit.canonicalTokens,
-            glTransaction.normalizedComparisonTokens,
-          ),
-        );
-        const effectiveSimilarity = aliasSimilarity * aliasHit.alias.matchConfidence;
+        const scoreCanonicalAgainst = (glTokens: string[]): number =>
+          Math.max(
+            tokenSimilarity(aliasHit.canonicalTokens, glTokens),
+            patternContainmentSimilarity(aliasHit.canonicalTokens, glTokens),
+          );
+
+        const directSimilarity =
+          scoreCanonicalAgainst(glTransaction.normalizedComparisonTokens) *
+          aliasHit.alias.matchConfidence;
+
+        // #333: when a bidirectional alias also resolves this GL row, compare canonical to
+        // canonical. Confidence is the WEAKER of the two rows -- the match now rests on both being
+        // right, so carrying the bank alias's confidence alone would overstate it. Taken as a max
+        // against the direct score, so resolving the GL side can only ever raise the result: a
+        // table with no bidirectional rows scores exactly as it did before.
+        const glAliasHit = glAliasHits.get(glTransaction.id) ?? null;
+        const bidirectionalSimilarity = glAliasHit
+          ? scoreCanonicalAgainst(glAliasHit.canonicalTokens) *
+            Math.min(aliasHit.alias.matchConfidence, glAliasHit.alias.matchConfidence)
+          : 0;
+
+        const effectiveSimilarity = Math.max(directSimilarity, bidirectionalSimilarity);
+        const resolvedGlSide = glAliasHit !== null && bidirectionalSimilarity > directSimilarity;
 
         if (effectiveSimilarity >= config.textSimilarityThreshold) {
           const withinPrimaryWindow =
@@ -603,6 +641,11 @@ const rankCandidates = (
               withinPrimaryWindow ? 'Exact' : 'DateVariance',
               [
                 `Bank description matched learned alias "${aliasHit.alias.bankPattern}" → "${aliasHit.alias.canonicalPayeeName}".`,
+                ...(resolvedGlSide && glAliasHit
+                  ? [
+                      `GL description also matched bidirectional alias "${glAliasHit.alias.bankPattern}" → "${glAliasHit.alias.canonicalPayeeName}"; both sides resolved to the same canonical payee.`,
+                    ]
+                  : []),
                 `Alias confidence ${(aliasHit.alias.matchConfidence * 100).toFixed(0)}%; effective similarity ${(effectiveSimilarity * 100).toFixed(0)}%.`,
                 `Amounts agree within the configured tolerance of ${config.amountTolerance}.`,
               ],
@@ -748,7 +791,10 @@ const rankCandidates = (
         (isWireLikeTransaction(bankTransaction) || isWireLikeTransaction(glTransaction))
       ) {
         const feeDeducted = Math.abs(bankTransaction.amount - glTransaction.amount);
-        const wireLarger = Math.max(Math.abs(bankTransaction.amount), Math.abs(glTransaction.amount));
+        const wireLarger = Math.max(
+          Math.abs(bankTransaction.amount),
+          Math.abs(glTransaction.amount),
+        );
         const wireDiffPct = wireLarger > 0 ? feeDeducted / wireLarger : 0;
         if (wireDiffPct <= WIRE_FEE_MAX_PCT) {
           candidates.push(
@@ -797,7 +843,8 @@ const rankCandidates = (
           creditCardDiffPct >= CREDIT_CARD_FEE_MIN_PCT &&
           creditCardDiffPct <= config.creditCardFeeTolerance
         ) {
-          const feeNettedFromReceipt = Math.abs(bankTransaction.amount) < Math.abs(glTransaction.amount);
+          const feeNettedFromReceipt =
+            Math.abs(bankTransaction.amount) < Math.abs(glTransaction.amount);
           candidates.push(
             buildCandidate(
               bankTransaction,
@@ -1040,10 +1087,7 @@ export const assertClearedPartition = (
 export type CandidateOutcomeObserver = (
   candidate: MatchCandidate,
   disposition:
-    | 'SkippedAlreadyMatched'
-    | 'SkippedAlreadyReviewed'
-    | 'AmbiguousReview'
-    | MatchDisposition,
+    'SkippedAlreadyMatched' | 'SkippedAlreadyReviewed' | 'AmbiguousReview' | MatchDisposition,
 ) => void;
 
 export const reconcileMatches = (
@@ -1145,8 +1189,7 @@ export const reconcileMatches = (
     // GL entries carry the SAME strong reference and the SAME amount, the reference has stopped
     // discriminating between them. The thing that made the match trustworthy is the thing that is
     // now ambiguous.
-    const topScoreIsTied =
-      siblingCandidates.filter((item) => item.score === topScore).length > 1;
+    const topScoreIsTied = siblingCandidates.filter((item) => item.score === topScore).length > 1;
 
     if (
       config.textSimilarityThreshold > 0.12 &&
