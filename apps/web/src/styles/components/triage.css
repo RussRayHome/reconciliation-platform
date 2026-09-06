@@ -694,18 +694,45 @@
     gap: 0.4rem;
   }
 
-  .exception-decision-button {
+  .exception-decision-button,
+  .exception-facets__save-row button {
     padding: 0.4rem 0.7rem;
     border-radius: 8px;
     border: 1px solid var(--line);
-    background: var(--bg-secondary);
+    /* R3 X5: pressable depth. Light mode flattens these tokens to none/flat (tokens.css). */
+    background: var(--gradient-control);
+    box-shadow: var(--shadow-control);
     cursor: pointer;
     font-weight: 600;
+    transition:
+      transform 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .exception-decision-button:hover,
+  .exception-facets__save-row button:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-control-hover);
+  }
+
+  .exception-decision-button:active,
+  .exception-facets__save-row button:active {
+    transform: translateY(1px);
+    box-shadow: var(--shadow-control-active);
+  }
+
+  .exception-decision-button:disabled {
+    transform: none;
+    box-shadow: var(--shadow-control);
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   .exception-decision-button--active {
     border-color: var(--accent-soft-border);
-    background: var(--accent-soft);
+    /* Keeps the tint while retaining the pressed-surface depth. */
+    background:
+      linear-gradient(180deg, var(--accent-soft), rgba(0, 0, 0, 0.25)), var(--bg-secondary);
     color: var(--accent);
   }
 

@@ -65,6 +65,16 @@
     --nav-item: 34px;
     /* Elevation: flat (hairline), raised, glass (floating layers only) */
     --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.32);
+    /* Control depth (R3 X5): pressable surfaces -- decision buttons, Save view, the density
+       thumb. Distinct from --shadow-raised, which is for panels/floating layers. */
+    --shadow-control:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 1px 2px rgba(0, 0, 0, 0.5),
+      0 3px 8px rgba(0, 0, 0, 0.35);
+    --shadow-control-hover:
+      0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 2px 4px rgba(0, 0, 0, 0.5),
+      0 6px 14px rgba(0, 0, 0, 0.4);
+    --shadow-control-active: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 1px rgba(0, 0, 0, 0.5);
+    --gradient-control: linear-gradient(180deg, var(--bg-raised), #12161d);
     --shadow-popover: var(--shadow-raised);
     --shadow-sm: none;
     --shadow: none;
@@ -127,6 +137,10 @@
       --severity-medium-soft: rgba(146, 96, 10, 0.1);
       --severity-medium-soft-border: rgba(146, 96, 10, 0.3);
       --shadow-raised: none;
+      --shadow-control: none;
+      --shadow-control-hover: none;
+      --shadow-control-active: none;
+      --gradient-control: var(--bg-raised);
       --shadow-popover: none;
       --shadow-md: none;
       --shadow-lg: none;
