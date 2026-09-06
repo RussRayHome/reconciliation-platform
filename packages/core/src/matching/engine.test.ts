@@ -141,7 +141,8 @@ describe('reconcileMatches', () => {
       source: 'bank',
       lineNumber: 13,
       transactionDate: '2025-01-02',
-      description: 'ACH CORP DEBIT SIGONFILE BKMCAPITAL-927DE Premier Electrical StaCUSTOMER ID 5V32QH',
+      description:
+        'ACH CORP DEBIT SIGONFILE BKMCAPITAL-927DE Premier Electrical StaCUSTOMER ID 5V32QH',
       normalizedComparisonTokens: ['ach', 'corp', 'debit', 'sigonfile', 'bkmcapital', '927de'],
       amount: -1675,
     });
@@ -185,10 +186,21 @@ describe('reconcileMatches', () => {
       source: 'bank',
       lineNumber: 176,
       transactionDate: '2025-01-13',
-      description: 'ACH CORP DEBIT EDD EFTPMT EMPLOYMENT DEVEL PREMIER ELECTRICAL STACUSTOMER ID 1994514272',
+      description:
+        'ACH CORP DEBIT EDD EFTPMT EMPLOYMENT DEVEL PREMIER ELECTRICAL STACUSTOMER ID 1994514272',
       normalizedComparisonTokens: [
-        'ach', 'corp', 'debit', 'edd', 'eftpmt', 'employment', 'devel', 'premier', 'electrical',
-        'stacustomer', 'id', '1994514272',
+        'ach',
+        'corp',
+        'debit',
+        'edd',
+        'eftpmt',
+        'employment',
+        'devel',
+        'premier',
+        'electrical',
+        'stacustomer',
+        'id',
+        '1994514272',
       ],
       amount: -99.56,
     });
@@ -224,10 +236,23 @@ describe('reconcileMatches', () => {
       source: 'bank',
       lineNumber: 178,
       transactionDate: '2025-01-13',
-      description: 'ACH CORP DEBIT GA TX PYMT GEORGIA ITS TAX PREMIER ELECTRICAL STACUSTOMER ID 1434650704',
+      description:
+        'ACH CORP DEBIT GA TX PYMT GEORGIA ITS TAX PREMIER ELECTRICAL STACUSTOMER ID 1434650704',
       normalizedComparisonTokens: [
-        'ach', 'corp', 'debit', 'ga', 'tx', 'pymt', 'georgia', 'its', 'tax', 'premier',
-        'electrical', 'stacustomer', 'id', '1434650704',
+        'ach',
+        'corp',
+        'debit',
+        'ga',
+        'tx',
+        'pymt',
+        'georgia',
+        'its',
+        'tax',
+        'premier',
+        'electrical',
+        'stacustomer',
+        'id',
+        '1434650704',
       ],
       amount: -2516.43,
     });
@@ -282,9 +307,9 @@ describe('reconcileMatches', () => {
 
     const result = reconcileMatches([bank, glOne, glTwo], defaultReconciliationConfig.matching);
 
-    expect(result.matchResults.some((match) => match.exceptionCategory === 'WeakDescriptionMatch')).toBe(
-      false,
-    );
+    expect(
+      result.matchResults.some((match) => match.exceptionCategory === 'WeakDescriptionMatch'),
+    ).toBe(false);
     expect(result.unmatchedBankTransactionIds.has('bank-ambiguous-amount')).toBe(true);
   });
 
@@ -300,7 +325,17 @@ describe('reconcileMatches', () => {
       lineNumber: 1,
       transactionDate: '2025-01-14',
       description: 'ACH CORP DEBIT SOME UNRELATED PROCESSOR TEXT REF 55112',
-      normalizedComparisonTokens: ['ach', 'corp', 'debit', 'some', 'unrelated', 'processor', 'text', 'ref', '55112'],
+      normalizedComparisonTokens: [
+        'ach',
+        'corp',
+        'debit',
+        'some',
+        'unrelated',
+        'processor',
+        'text',
+        'ref',
+        '55112',
+      ],
       amount: -7777.12,
     });
     const gl = buildTransaction({
@@ -813,6 +848,106 @@ describe('reconcileMatches', () => {
     expect(result.matchResults[0]?.disposition).toBe('ExactMatch');
     expect(result.unmatchedBankTransactionIds.size).toBe(0);
     expect(result.unmatchedGlTransactionIds.size).toBe(0);
+  });
+
+  describe('bidirectional aliases (#333)', () => {
+    /** The abbreviation sits on the BOOK side, not the bank side -- the direction the engine could
+     * not resolve. `sourceDirection` was declared, stored and API-validated but read nowhere, so
+     * setting 'bidirectional' changed nothing at all. These pin that it now does, and that
+     * 'bank_to_gl' still does not.
+     *
+     * Two aliases, as the shipped defaults are: 'AMAZON' catches the spelled-out bank descriptor,
+     * 'AMZN' the abbreviation the books use. Both name the same canonical payee. A bank-side hit
+     * is required to enter the branch at all -- the GL-side resolution augments it rather than
+     * standing alone. */
+    const bankSideAlias = (): PayeeAlias => ({
+      id: crypto.randomUUID(),
+      bankPattern: 'AMAZON',
+      canonicalPayeeName: 'Amazon',
+      normalizedTokens: ['AMAZON'],
+      sourceDirection: 'bank_to_gl',
+      matchConfidence: 1.0,
+      isActive: true,
+    });
+
+    const glSideAlias = (
+      sourceDirection: PayeeAlias['sourceDirection'],
+      matchConfidence = 1.0,
+    ): PayeeAlias => ({
+      id: crypto.randomUUID(),
+      bankPattern: 'AMZN',
+      canonicalPayeeName: 'Amazon',
+      normalizedTokens: ['AMZN'],
+      sourceDirection,
+      matchConfidence,
+      isActive: true,
+    });
+
+    /** Bank spells the payee out; the books abbreviate it. The two share no token. */
+    const spelledBankAbbreviatedGl = (): NormalizedTransaction[] => [
+      buildTransaction({
+        id: 'bank-amazon',
+        source: 'bank',
+        lineNumber: 1,
+        transactionDate: '2025-03-10',
+        description: 'AMAZON MKTPLACE PMTS',
+        normalizedComparisonTokens: ['AMAZON', 'MKTPLACE', 'PMTS'],
+        amount: -49.99,
+      }),
+      buildTransaction({
+        id: 'gl-amazon',
+        source: 'gl',
+        lineNumber: 2,
+        transactionDate: '2025-03-10',
+        description: 'AMZN Mktp US',
+        normalizedComparisonTokens: ['AMZN', 'MKTP', 'US'],
+        amount: -49.99,
+      }),
+    ];
+
+    const historicalPatternMatches = (aliases: PayeeAlias[]) =>
+      reconcileMatches(
+        spelledBankAbbreviatedGl(),
+        defaultReconciliationConfig.matching,
+        aliases,
+      ).matchResults.filter((match) => match.ruleName === 'Historical Pattern Match');
+
+    it('resolves the GL side too, clearing a pair that shares no token', () => {
+      const matches = historicalPatternMatches([bankSideAlias(), glSideAlias('bidirectional')]);
+
+      expect(matches).toHaveLength(1);
+      expect(matches[0]?.disposition).toBe('ExactMatch');
+    });
+
+    it('leaves the same pair unresolved when that alias is bank_to_gl', () => {
+      // The control. Identical rows and aliases; only `sourceDirection` differs, so any difference
+      // in outcome is attributable to that field and nothing else.
+      expect(historicalPatternMatches([bankSideAlias(), glSideAlias('bank_to_gl')])).toHaveLength(
+        0,
+      );
+    });
+
+    it('records the GL-side resolution in the evidence', () => {
+      const matches = historicalPatternMatches([bankSideAlias(), glSideAlias('bidirectional')]);
+
+      expect(matches[0]?.evidence.join(' ')).toContain(
+        'both sides resolved to the same canonical payee',
+      );
+    });
+
+    it('scores on the weaker of the two confidences, not the bank side alone', () => {
+      // Bank alias 1.0, GL alias 0.6. Both sides resolve to ['AMAZON'], so the canonical-to-
+      // canonical similarity is 1.0. Carrying only the bank confidence would score 1.0 and clear;
+      // the honest bound is 0.6, under the 0.7 threshold, so it must not clear.
+      expect(
+        historicalPatternMatches([bankSideAlias(), glSideAlias('bidirectional', 0.6)]),
+      ).toHaveLength(0);
+    });
+
+    it('is inert for a table with no bidirectional rows', () => {
+      // Every shipped default seed is bank_to_gl, which is why no answer-key fixture outcome moves.
+      expect(historicalPatternMatches([bankSideAlias()])).toHaveLength(0);
+    });
   });
 
   it('matches a descriptor variant of the same merchant that symmetric Dice missed (#313)', () => {
@@ -1330,7 +1465,10 @@ describe('reconcileMatches', () => {
         amount: -500,
       });
 
-      const result = reconcileMatches([tooFarBank, carriedGl], defaultReconciliationConfig.matching);
+      const result = reconcileMatches(
+        [tooFarBank, carriedGl],
+        defaultReconciliationConfig.matching,
+      );
 
       expect(result.matchResults).toHaveLength(0);
       expect(result.unmatchedGlTransactionIds.has('gl-carried-too-old')).toBe(true);
@@ -1365,7 +1503,10 @@ describe('reconcileMatches', () => {
         carriedFromOpenItemId: 'open-item-3',
       });
 
-      const result = reconcileMatches([freshOne, freshTwo, carried], defaultReconciliationConfig.matching);
+      const result = reconcileMatches(
+        [freshOne, freshTwo, carried],
+        defaultReconciliationConfig.matching,
+      );
 
       // The two fresh, identically-shaped GL rows are still flagged as duplicates of each other.
       expect(result.duplicateTransactionIds.has('gl-fresh-2')).toBe(true);
