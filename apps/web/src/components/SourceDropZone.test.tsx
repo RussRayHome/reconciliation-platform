@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import { type Dispatch, type SetStateAction, useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { CanonicalField } from '@recon/domain';
@@ -115,14 +115,19 @@ describe('SourceDropZone (mode="bank-gl")', () => {
     await user.click(screen.getByRole('button', { name: 'Add another bank statement' }));
 
     expect(screen.getByLabelText('Bank workbook (Account 4)')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add another bank statement' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Add another bank statement' }),
+    ).not.toBeInTheDocument();
   });
 
   it('a manual override via a specific slot input still fills that exact slot', async () => {
     const user = userEvent.setup();
     render(<BankGlHarness />);
 
-    await user.upload(screen.getByLabelText('Bank workbook (Account 2)'), makeFile('2222_override.csv'));
+    await user.upload(
+      screen.getByLabelText('Bank workbook (Account 2)'),
+      makeFile('2222_override.csv'),
+    );
 
     const slotTwo = screen.getByLabelText('Bank workbook (Account 2)').closest('.source-slot');
     expect(slotTwo).toHaveTextContent('2222_override.csv');
@@ -299,11 +304,70 @@ describe('SourceDropZone (mode="billing")', () => {
 
   it('a remove button clears a slot without dropping below the minimum', async () => {
     const user = userEvent.setup();
-    render(<ApHarness initialApFiles={[makeFile('E100_ap-export.csv'), makeFile('E200_ap-export.csv')]} />);
+    render(
+      <ApHarness
+        initialApFiles={[makeFile('E100_ap-export.csv'), makeFile('E200_ap-export.csv')]}
+      />,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Remove AP/Billing workbook (Entity 2)' }));
 
     expect(screen.queryByLabelText('AP/Billing workbook (Entity 2)')).not.toBeInTheDocument();
     expect(screen.getByLabelText('AP/Billing workbook (Entity 1)')).toBeInTheDocument();
+  });
+});
+
+describe('per-slot file input ignores an empty change event (Issue #291)', () => {
+  /** A `change` carrying no files used to pass `null` through to `onBankFileChange`, which took its
+   * `file === null` branch and emptied the slot -- silently, with no rejection recorded and nothing
+   * rendered but "No file selected". #291 reports exactly that shape, and the silence is what made
+   * it undiagnosable for weeks. These pin that the handler now ignores it. */
+
+  it('keeps a file already in the slot when a change event carries no files', async () => {
+    const user = userEvent.setup();
+    render(<BankGlHarness />);
+
+    await user.upload(
+      screen.getByLabelText('Bank workbook (Account 1)'),
+      makeFile('1111_bank.csv'),
+    );
+    expect(screen.getByText('1111_bank.csv')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account 1)'), { target: { files: [] } });
+
+    expect(screen.getByText('1111_bank.csv')).toBeInTheDocument();
+  });
+
+  it('leaves an empty slot alone rather than re-emptying it', () => {
+    render(<BankGlHarness />);
+    const slot = screen.getByLabelText('Bank workbook (Account 1)').closest('.source-slot');
+
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account 1)'), { target: { files: [] } });
+
+    expect(slot).toHaveTextContent('No file selected');
+  });
+
+  it('warns when it ignores one, so the next occurrence leaves a trace', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    render(<BankGlHarness />);
+
+    fireEvent.change(screen.getByLabelText('Bank workbook (Account 1)'), { target: { files: [] } });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain('bank-workbook-input');
+    expect(warn.mock.calls[0]?.[0]).toContain('#291');
+    warn.mockRestore();
+  });
+
+  it('still accepts a real file, so the guard has not broken the normal path', async () => {
+    const user = userEvent.setup();
+    render(<BankGlHarness />);
+
+    await user.upload(
+      screen.getByLabelText('Bank workbook (Account 2)'),
+      makeFile('2222_bank.csv'),
+    );
+
+    expect(screen.getByText('2222_bank.csv')).toBeInTheDocument();
   });
 });

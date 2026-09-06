@@ -319,7 +319,9 @@ function BankGlDropZone({
             inputId={bankInputId(index)}
             file={file}
             onChange={(nextFile) => onBankFileChange(index, nextFile)}
-            onRemove={bankFiles.length > MIN_BANK_ACCOUNTS ? () => onRemoveBankSlot(index) : undefined}
+            onRemove={
+              bankFiles.length > MIN_BANK_ACCOUNTS ? () => onRemoveBankSlot(index) : undefined
+            }
             canonicalFields={canonicalFields}
           />
         ))}
@@ -355,8 +357,8 @@ function BankGlDropZone({
       ) : null}
 
       <p className="source-dropzone__note">
-        Bank workbooks fill the first empty slot in drop order (adding a new slot automatically,
-        up to {MAX_BANK_ACCOUNTS} accounts), and GL is detected from its file name; use the slot
+        Bank workbooks fill the first empty slot in drop order (adding a new slot automatically, up
+        to {MAX_BANK_ACCOUNTS} accounts), and GL is detected from its file name; use the slot
         pickers to override. Each bank file name must start with its account number (or last 4
         digits) followed by "-" or "_", e.g. "4321_bank-export.csv". Row counts, date range, and
         excluded rows are calculated when the reconciliation runs.
@@ -487,7 +489,9 @@ function ApDropZone({
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
       >
-        <span className="source-dropzone__prompt">Drag your AP/Billing subledger export here, or browse</span>
+        <span className="source-dropzone__prompt">
+          Drag your AP/Billing subledger export here, or browse
+        </span>
         <span className="source-dropzone__hint">.csv · .xlsx — max 50 MB per file</span>
         <span className="source-dropzone__browse-button">Choose files</span>
         <input
@@ -542,9 +546,9 @@ function ApDropZone({
       <p className="source-dropzone__note">
         AP/Billing workbooks fill the first empty slot in drop order (adding a new slot
         automatically, up to {MAX_AP_ENTITIES} entities); use the slot pickers to override. Each
-        file name must start with its entity id followed by "-" or "_", e.g.
-        "E100_ap-export.csv". Invoices and payments are separated downstream by Doc Type. Row
-        counts, date range, and excluded rows are calculated when the reconciliation runs.
+        file name must start with its entity id followed by "-" or "_", e.g. "E100_ap-export.csv".
+        Invoices and payments are separated downstream by Doc Type. Row counts, date range, and
+        excluded rows are calculated when the reconciliation runs.
       </p>
     </div>
   );
@@ -590,7 +594,27 @@ function SourceSlot({
         id={inputId}
         type="file"
         accept=".csv,.xlsx"
-        onChange={(event) => onChange(event.target.files?.[0] ?? null)}
+        onChange={(event) => {
+          const selected = event.target.files?.[0] ?? null;
+          if (selected === null) {
+            // Issue #291. A `change` carrying no files is not a user clearing this slot: there is
+            // no clear affordance (Remove deletes the whole slot), and cancelling the picker fires
+            // no event at all. Passing the `null` through took `onBankFileChange`'s
+            // `file === null` branch, which emptied the slot and returned -- no rejection
+            // recorded, nothing rendered but "No file selected", indistinguishable from the file
+            // never having been offered. Both multi-file inputs above already ignore this case
+            // (`if (event.target.files?.length)`); this makes the per-slot input agree with them.
+            //
+            // Not a proven fix for #291 -- the mechanism there is still unknown and it no longer
+            // reproduces. This removes the one path in this component that can lose a file
+            // without leaving a trace, and warns if it is ever taken.
+            console.warn(
+              `Ignored a file input change carrying no files (slot "${inputId}"). See issue #291.`,
+            );
+            return;
+          }
+          onChange(selected);
+        }}
       />
       {file ? (
         <div className="source-slot__file">
