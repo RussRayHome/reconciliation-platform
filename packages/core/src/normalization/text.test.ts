@@ -119,3 +119,41 @@ describe('buildComparisonTokens', () => {
     expect(buildComparisonTokens(['Acme', 'ACME'], config)).toEqual(['ACME']);
   });
 });
+
+// Issue #310: `punctuationPattern` turns every non-alphanumeric into a space, so a hyphen inside a
+// word split it in two. A hyphen between letters is a spelling variant of one word; a hyphen next to
+// digits separates parts that mean something on their own.
+describe('intra-word hyphens (Issue #310)', () => {
+  // Matches the shipped defaults (config/default-config.ts) without importing @recon/config, which
+  // this file deliberately avoids depending on.
+  const config: TextNormalizationConfig = {
+    uppercase: true,
+    stripPunctuation: true,
+    collapseWhitespace: true,
+    removeStopWords: true,
+    stopWords: ['THE', 'AND', 'INC', 'LLC', 'PAYMENT', 'PURCHASE', 'ACH'],
+  };
+  const tokens = (value: string): string[] => buildComparisonTokens([value], config);
+
+  it('joins a hyphen between two letters, so WAL-MART matches WALMART', () => {
+    expect(tokens('WAL-MART #1234')).toEqual(['1234', 'WALMART']);
+    expect(tokens('E-COMMERCE FEE')).toEqual(['ECOMMERCE', 'FEE']);
+  });
+
+  it('still splits a hyphen next to digits, so INV-993 keeps its invoice number', () => {
+    // Regression guard: joining this into INV993 destroyed the shared 993 token that links bank
+    // "WIRE VENDOR ALPHA INV-993" to GL "Invoice 993 payment", and the pair's AmountMismatch
+    // exception disappeared. The whole unit suite caught it.
+    expect(tokens('WIRE VENDOR ALPHA INV-993')).toContain('993');
+    expect(tokens('WIRE VENDOR ALPHA INV-993')).toContain('INV');
+    expect(tokens('WIRE VENDOR ALPHA INV-993')).not.toContain('INV993');
+  });
+
+  it('leaves dates alone — digits on both sides is not a spelling variant', () => {
+    expect(tokens('PAYMENT 2025-03-04')).toEqual(['03', '04', '2025']);
+  });
+
+  it('leaves a spaced separator hyphen alone', () => {
+    expect(tokens('ACME - INVOICE 4471')).toEqual(['4471', 'ACME', 'INVOICE']);
+  });
+});
