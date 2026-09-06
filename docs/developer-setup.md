@@ -123,7 +123,8 @@ Docker" below) -- for local pre-PR checks, run `test:e2e:functional` and
 - `lint`: static quality and style checks.
 - `typecheck`: TypeScript type safety across workspaces.
 - `build`: production bundle/compile verification.
-- `coverage`: combined coverage for unit + integration suites.
+- `coverage`: combined coverage for unit + integration suites. Requires Docker -- see
+  "`coverage` requires Docker, and what to do when it isn't available" below.
 - `security:scan`: npm audit with high-severity threshold.
 
 ### The `visual` project requires Docker
@@ -150,6 +151,40 @@ image diff like any other baseline update, just without needing Docker on your o
 refuses to run against `dev` directly.
 
 The `functional` project is unaffected and always runs directly on the host.
+
+### `coverage` requires Docker, and what to do when it isn't available
+
+`npm run coverage` includes the `unit-data` project, whose `globalSetup` starts PostgreSQL through
+Testcontainers. That needs a working Docker daemon.
+
+When Docker is unavailable, wedged, or the machine is too loaded to start a container, use the
+Docker-free variant:
+
+```bash
+npm run coverage:docker-fallback    # same run, minus the unit-data project
+```
+
+It passes all four coverage thresholds and finishes faster, at a small cost in reported coverage:
+
+| metric     | `coverage` | `coverage:docker-fallback` | threshold |
+| ---------- | ---------- | -------------------------- | --------- |
+| statements | 90.46%     | 88.13%                     | 75%       |
+| branches   | 82.86%     | 79.89%                     | 75%       |
+| functions  | 88.82%     | 85.83%                     | 75%       |
+| lines      | 90.78%     | 88.42%                     | 75%       |
+
+(measured 2026-09-06; 326 s versus 217 s. `packages/persistence/src` stays in the denominator
+either way -- the `integration` project still covers it to 72%, which is why dropping `unit-data`
+costs ~3 points rather than ~13.)
+
+Use the fallback for a quick local signal. It is **not** a substitute for `coverage` in release
+verification, because it does not exercise the schema/migration suite at all.
+
+If the Testcontainers bring-up stalls rather than failing, it is bounded (issue #285): after
+`RECON_TESTCONTAINERS_TIMEOUT_MS`, default 300 s, `globalSetup` aborts with recovery instructions
+instead of hanging silently. The usual cause is machine saturation, not Docker; check for a
+`testcontainers-ryuk-*` container stuck in `Created` and `docker rm -f` it. Do not run `coverage`
+concurrently with another test invocation.
 
 ## 6. Docker deployment runbook
 

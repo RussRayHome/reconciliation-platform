@@ -35,6 +35,87 @@ const MAINTENANCE_DATABASE = 'postgres';
 const TEMPLATE_DATABASE = 'recon_template';
 
 /**
+ * Issue #285. Nothing on this path bounds itself:
+ *
+ *  - vitest awaits `globalSetup` with no timeout at all -- the project's `testTimeout` /
+ *    `hookTimeout` (180 s) govern tests and hooks, not global setup;
+ *  - testcontainers' reaper acquires its lock with `retries: { forever: true }`
+ *    (`testcontainers/build/common/file-lock.js`);
+ *  - the ryuk reaper's own `container.start()` carries no `withStartupTimeout`, and the 60 s
+ *    default in `wait-strategy.js` governs readiness polling, not the Docker start call.
+ *
+ * A saturated machine can therefore stall the run silently and indefinitely, which looks
+ * identical to a slow one. This bounds it and fails loudly instead.
+ *
+ * Exported for `globalSetupTimeout.test.ts`. The env override also exercises the guard end to
+ * end: `RECON_TESTCONTAINERS_TIMEOUT_MS=1 npx vitest run --project unit-data`.
+ */
+export const BRING_UP_TIMEOUT_MS = Number(process.env.RECON_TESTCONTAINERS_TIMEOUT_MS ?? 300_000);
+
+/** Built here so the test asserts on the same string the operator reads. */
+export const bringUpTimeoutMessage = (ms: number): string =>
+  [
+    `testcontainers bring-up did not complete within ${ms} ms (issue #285).`,
+    'This is almost always machine saturation, not a Docker fault.',
+    '',
+    'Recover:',
+    '  1. docker ps -a --filter name=testcontainers-ryuk   # look for one stuck in "Created"',
+    '  2. docker rm -f <that container>',
+    '  3. retry unloaded, and not concurrently with another test run',
+    '',
+    'To skip the Docker-backed project entirely: npm run coverage:docker-fallback',
+    'To raise this bound: RECON_TESTCONTAINERS_TIMEOUT_MS=<ms>',
+  ].join('\n');
+
+/**
+ * Rejects if `operation` has not settled within `ms`. Always clears its timer.
+ *
+ * `onAbandoned` exists because losing the race does not cancel the work: `.start()` is still in
+ * flight, and Docker will happily finish creating the container seconds later with nobody left
+ * holding it. The `catch` below cannot clean that up -- `container` is still `undefined` there,
+ * because the assignment never happened. Verified by forcing the bound to 1 ms, which leaked a
+ * running `postgres:16.14` until this callback was added.
+ */
+export const withBringUpTimeout = async <T>(
+  operation: Promise<T>,
+  ms: number,
+  onAbandoned?: (value: T) => unknown,
+): Promise<T> => {
+  let abandoned = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  // Side-channel, deliberately not part of the race. The rejection handler is what stops a
+  // post-timeout failure from surfacing as an unhandled rejection once the race has moved on.
+  void operation.then(
+    async (value) => {
+      if (abandoned) {
+        try {
+          await onAbandoned?.(value);
+        } catch {
+          // Best effort: the run is already failing, and a cleanup error would mask its cause.
+        }
+      }
+    },
+    () => undefined,
+  );
+
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          abandoned = true;
+          reject(new Error(bringUpTimeoutMessage(ms)));
+        }, ms);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/**
  * Starts one PostgreSQL container for the whole run, installs pgTap into it, and migrates a
  * single `recon_template` database with Liquibase. Individual test files then clone that template
  * with `CREATE DATABASE ... TEMPLATE`, which PostgreSQL implements as a file copy — milliseconds,
@@ -47,18 +128,22 @@ export default async function setup(project: TestProject): Promise<() => Promise
   let container: StartedTestContainer | undefined;
 
   try {
-    container = await new GenericContainer(POSTGRES_IMAGE)
-      .withEnvironment({
-        POSTGRES_DB: MAINTENANCE_DATABASE,
-        POSTGRES_USER: CREDENTIALS.user,
-        POSTGRES_PASSWORD: CREDENTIALS.password,
-      })
-      // pg_stat_statements has to be preloaded at server start; the migration suite asserts it
-      // records query stats. Running as root is required for the pgTap apt-get install below.
-      .withCommand(['postgres', '-c', 'shared_preload_libraries=pg_stat_statements'])
-      .withUser('root')
-      .withExposedPorts(5432)
-      .start();
+    container = await withBringUpTimeout(
+      new GenericContainer(POSTGRES_IMAGE)
+        .withEnvironment({
+          POSTGRES_DB: MAINTENANCE_DATABASE,
+          POSTGRES_USER: CREDENTIALS.user,
+          POSTGRES_PASSWORD: CREDENTIALS.password,
+        })
+        // pg_stat_statements has to be preloaded at server start; the migration suite asserts it
+        // records query stats. Running as root is required for the pgTap apt-get install below.
+        .withCommand(['postgres', '-c', 'shared_preload_libraries=pg_stat_statements'])
+        .withUser('root')
+        .withExposedPorts(5432)
+        .start(),
+      BRING_UP_TIMEOUT_MS,
+      (late) => late.stop(),
+    );
 
     const pgtapInstall = await container.exec([
       'bash',
