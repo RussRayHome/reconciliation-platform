@@ -40,6 +40,16 @@ export const formatCurrencyWhole = (value: number | null | undefined): string =>
 /** Formats an optional ISO/date string for display, falling back to "N/A". */
 export const formatDate = (value: string | null | undefined): string => value?.trim() || 'N/A';
 
+/**
+ * Formats an ISO timestamp as its calendar day, "2025-11-01", passing non-ISO strings through.
+ *
+ * Deliberately ISO rather than reusing `formatShortDate` ("4 Aug 2026"): the triage row renders
+ * dates in a fixed-width mono column beside the amount and file/line cells, where a constant width
+ * and text-sortable ordering matter more than prose readability.
+ */
+export const formatIsoDay = (value: string | null | undefined): string =>
+  value?.trim() ? value.trim().slice(0, 10) : 'N/A';
+
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
   month: 'short',

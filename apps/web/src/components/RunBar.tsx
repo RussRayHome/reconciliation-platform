@@ -6,6 +6,7 @@ import {
   type ProgressStepStatus,
 } from './AppWorkspacePanels';
 import type { Density } from '../hooks/useDensity';
+import { useDismissableDetails } from '../hooks/useDismissableDetails';
 
 type RunStatusTone = 'idle' | 'queued' | 'running' | 'complete' | 'error';
 
@@ -117,6 +118,11 @@ export function RunBar({
 
   const announcement = resolveRunBarAnnouncement(isComplete, statusTone, exceptionCount);
 
+  // R3 X6: <details> has no dismissal of its own, so both run-bar popovers close on an outside
+  // press or Escape.
+  const overflowRef = useDismissableDetails();
+  const profileRef = useDismissableDetails();
+
   return (
     <header className="run-bar" aria-label="Reconciliation run status">
       <div className="run-bar__identity">
@@ -140,9 +146,9 @@ export function RunBar({
         ) : null}
         {reviewProgressLabel ? <RunBarField label="Resolved" value={reviewProgressLabel} /> : null}
 
-        <details className="run-bar__overflow">
+        <details className="run-bar__overflow" ref={overflowRef}>
           <summary className="run-bar__overflow-trigger" aria-label="Run details">
-            Details
+            Run info
           </summary>
           <div className="run-bar__overflow-menu">
             <RunBarField label="Account" value={accountDisplay} />
@@ -161,26 +167,37 @@ export function RunBar({
           </div>
         </details>
 
-        <div className="density-toggle" role="group" aria-label="Display density">
+        {/* R3 X5: a recessed track with one sliding thumb, so it reads as a single control rather
+            than two independent buttons. radio/radiogroup is the accurate role for a
+            mutually-exclusive choice; aria-pressed described a pair of toggles. */}
+        <div
+          className="density-toggle"
+          role="radiogroup"
+          aria-label="Display density"
+          data-density={density}
+        >
+          <span className="density-toggle__thumb" aria-hidden="true" />
           <button
             type="button"
+            role="radio"
             className="density-toggle__option"
-            aria-pressed={density === 'comfortable'}
+            aria-checked={density === 'comfortable'}
             onClick={() => onChangeDensity('comfortable')}
           >
             Comfortable
           </button>
           <button
             type="button"
+            role="radio"
             className="density-toggle__option"
-            aria-pressed={density === 'compact'}
+            aria-checked={density === 'compact'}
             onClick={() => onChangeDensity('compact')}
           >
             Compact
           </button>
         </div>
 
-        <details className="run-bar__profile">
+        <details className="run-bar__profile" ref={profileRef}>
           <summary className="run-bar__profile-trigger" aria-label="User profile menu">
             User: {profileLabel}
           </summary>

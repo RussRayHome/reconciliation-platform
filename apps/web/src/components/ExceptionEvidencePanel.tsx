@@ -84,25 +84,61 @@ export function ExceptionEvidencePanel({
       aria-label={`Exception detail for ${display.categoryLabel}`}
     >
       <header className="exception-detail__header">
-        <div>
-          <Pill tone={toneBySeverity[item.severity]}>{item.severity}</Pill>
-          <h3>{display.categoryLabel}</h3>
-          <p className="exception-detail__reason">{item.ruleTrace?.reason ?? item.errorMessage}</p>
+        <div className="exception-detail__identity">
+          <div>
+            <Pill tone={toneBySeverity[item.severity]}>{item.severity}</Pill>
+            <h3>{display.categoryLabel}</h3>
+            <p className="exception-detail__reason">
+              {item.ruleTrace?.reason ?? item.errorMessage}
+            </p>
+          </div>
+          <div className="exception-detail__meta">
+            <span className="exception-detail__amount">{display.amountLabel}</span>
+            <span className="exception-detail__fileline">{display.fileLineLabel}</span>
+            {onToggleStar ? (
+              <button
+                type="button"
+                className={isStarred ? 'watchlist-star watchlist-star--active' : 'watchlist-star'}
+                aria-pressed={isStarred}
+                aria-label={isStarred ? 'Remove from watchlist' : 'Add to watchlist'}
+                onClick={onToggleStar}
+              >
+                {isStarred ? '\u2605' : '\u2606'}
+              </button>
+            ) : null}
+          </div>
         </div>
-        <div className="exception-detail__meta">
-          <span className="exception-detail__amount">{display.amountLabel}</span>
-          <span className="exception-detail__fileline">{display.fileLineLabel}</span>
-          {onToggleStar ? (
-            <button
-              type="button"
-              className={isStarred ? 'watchlist-star watchlist-star--active' : 'watchlist-star'}
-              aria-pressed={isStarred}
-              aria-label={isStarred ? 'Remove from watchlist' : 'Add to watchlist'}
-              onClick={onToggleStar}
-            >
-              {isStarred ? '\u2605' : '\u2606'}
-            </button>
+        {/* R3 X2: the controls moves into the sticky header so deciding never requires
+            scrolling the panel. The fieldset + its "Decision outcome" legend move INTACT --
+            ExceptionTriage.test.tsx asserts getByRole("group", {name}) on them. */}
+        <div className="exception-detail__decision-bar">
+          {lastChange ? (
+            <p className="exception-decision-undo" role="status">
+              {lastChange.label} ·{' '}
+              <button type="button" className="exception-detail__action-copy" onClick={onUndo}>
+                Undo (U)
+              </button>
+            </p>
           ) : null}
+          <fieldset className="exception-decision-buttons">
+            <legend className="visually-hidden">Decision outcome</legend>
+            {decisionActions.map(({ action, label, key }) => (
+              <button
+                key={action}
+                type="button"
+                className={
+                  activeAction === action
+                    ? 'exception-decision-button exception-decision-button--active'
+                    : 'exception-decision-button'
+                }
+                aria-pressed={activeAction === action}
+                disabled={isPending}
+                onClick={() => applyDecision(action)}
+              >
+                {label} <kbd>{key}</kbd>
+              </button>
+            ))}
+          </fieldset>
         </div>
         {isDrawer && onClose ? (
           <button
@@ -115,140 +151,119 @@ export function ExceptionEvidencePanel({
         ) : null}
       </header>
 
-      {delta.amountLabel || delta.dateLabel ? (
-        <p className="exception-detail__delta">
-          {delta.amountLabel ? (
-            <span className="exception-detail__delta-item">{delta.amountLabel}</span>
+      <div className="exception-detail__body">
+        <div className="exception-detail__evidence-col">
+          {delta.amountLabel || delta.dateLabel ? (
+            <p className="exception-detail__delta">
+              {delta.amountLabel ? (
+                <span className="exception-detail__delta-item">{delta.amountLabel}</span>
+              ) : null}
+              {delta.dateLabel ? (
+                <span className="exception-detail__delta-item">{delta.dateLabel}</span>
+              ) : null}
+            </p>
           ) : null}
-          {delta.dateLabel ? (
-            <span className="exception-detail__delta-item">{delta.dateLabel}</span>
+
+          <div className="exception-detail__compare">
+            <ComparisonColumn title="Bank" source="bank" lines={sides.bank} />
+            <ComparisonColumn title="GL" source="gl" lines={sides.gl} />
+          </div>
+
+          {lineage.length > 0 ? (
+            <div className="exception-detail__lineage" aria-label="Rule lineage">
+              <h4>Rule lineage</h4>
+              <ol className="exception-lineage-trail">
+                {lineage.map((step) => (
+                  <li key={`${step.label}-${step.ruleName}`} data-final={step.label === 'Final'}>
+                    <span className="exception-lineage-trail__label">{step.label}</span>
+                    <span>{step.ruleName}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
           ) : null}
-        </p>
-      ) : null}
 
-      <div className="exception-detail__compare">
-        <ComparisonColumn title="Bank" lines={sides.bank} />
-        <ComparisonColumn title="GL" lines={sides.gl} />
-      </div>
+          {evidence.length > 0 ? (
+            <div className="exception-detail__evidence">
+              <h4>Evidence</h4>
+              <ul>
+                {evidence.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
-      {lineage.length > 0 ? (
-        <div className="exception-detail__lineage" aria-label="Rule lineage">
-          <h4>Rule lineage</h4>
-          <ol className="exception-lineage-trail">
-            {lineage.map((step) => (
-              <li key={`${step.label}-${step.ruleName}`} data-final={step.label === 'Final'}>
-                <span className="exception-lineage-trail__label">{step.label}</span>
-                <span>{step.ruleName}</span>
-              </li>
-            ))}
-          </ol>
+          {item.normalizedComparisonTokens.length > 0 ? (
+            <details className="exception-detail__tokens">
+              <summary>Matching detail</summary>
+              <p className="exception-detail__token-list">
+                {item.normalizedComparisonTokens.join(', ')}
+              </p>
+            </details>
+          ) : null}
         </div>
-      ) : null}
 
-      {evidence.length > 0 ? (
-        <div className="exception-detail__evidence">
-          <h4>Evidence</h4>
-          <ul>
-            {evidence.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {item.recommendedNextActions.length > 0 ? (
-        <div className="exception-detail__actions">
-          <h4>Recommended next actions</h4>
-          <ul className="exception-detail__action-list">
-            {item.recommendedNextActions.map((action) => (
-              <li key={action} className="exception-detail__action-item">
-                <span>{action}</span>
+        <div className="exception-detail__action-col">
+          {item.recommendedNextActions.length > 0 ? (
+            <div className="exception-detail__actions">
+              <h4>Recommended next actions</h4>
+              <ul className="exception-detail__action-list">
+                {item.recommendedNextActions.map((action) => (
+                  <li key={action} className="exception-detail__action-item">
+                    <span>{action}</span>
+                    <button
+                      type="button"
+                      className="exception-detail__action-copy"
+                      onClick={() => appendNote(action)}
+                    >
+                      Copy to note
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {item.recommendedNextActions.length > 1 ? (
                 <button
                   type="button"
                   className="exception-detail__action-copy"
-                  onClick={() => appendNote(action)}
+                  onClick={() => appendNote(item.recommendedNextActions.join('\n'))}
                 >
-                  Copy to note
+                  Copy all to note
                 </button>
-              </li>
-            ))}
-          </ul>
-          {item.recommendedNextActions.length > 1 ? (
-            <button
-              type="button"
-              className="exception-detail__action-copy"
-              onClick={() => appendNote(item.recommendedNextActions.join('\n'))}
-            >
-              Copy all to note
-            </button>
+              ) : null}
+            </div>
           ) : null}
+
+          <div className="exception-detail__decision" aria-label="Reviewer decision">
+            <h4>Reviewer decision</h4>
+            <label className="visually-hidden" htmlFor={`exception-note-${item.id}`}>
+              Reviewer note
+            </label>
+            <textarea
+              id={`exception-note-${item.id}`}
+              className="exception-decision-note"
+              value={note}
+              placeholder="Add an optional note for this decision"
+              onChange={(event) => onNoteDraftChange(event.target.value)}
+              onBlur={() => {
+                if (activeAction && note !== savedNote) {
+                  onDecide(activeAction, note);
+                }
+              }}
+            />
+            {isNoteUnsaved ? (
+              <p className="exception-decision-hint" role="status">
+                Unsaved note — choose an outcome to save it.
+              </p>
+            ) : null}
+            {isPending ? <p className="exception-decision-status">Saving decision…</p> : null}
+            {error ? (
+              <p className="error-banner" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </div>
         </div>
-      ) : null}
-
-      {item.normalizedComparisonTokens.length > 0 ? (
-        <details className="exception-detail__tokens">
-          <summary>Matching detail</summary>
-          <p className="exception-detail__token-list">
-            {item.normalizedComparisonTokens.join(', ')}
-          </p>
-        </details>
-      ) : null}
-
-      <div className="exception-detail__decision" aria-label="Reviewer decision">
-        <h4>Reviewer decision</h4>
-        {lastChange ? (
-          <p className="exception-decision-undo" role="status">
-            {lastChange.label} ·{' '}
-            <button type="button" className="exception-detail__action-copy" onClick={onUndo}>
-              Undo (U)
-            </button>
-          </p>
-        ) : null}
-        <fieldset className="exception-decision-buttons">
-          <legend className="visually-hidden">Decision outcome</legend>
-          {decisionActions.map(({ action, label, key }) => (
-            <button
-              key={action}
-              type="button"
-              className={
-                activeAction === action
-                  ? 'exception-decision-button exception-decision-button--active'
-                  : 'exception-decision-button'
-              }
-              aria-pressed={activeAction === action}
-              disabled={isPending}
-              onClick={() => applyDecision(action)}
-            >
-              {label} <kbd>{key}</kbd>
-            </button>
-          ))}
-        </fieldset>
-        <label className="visually-hidden" htmlFor={`exception-note-${item.id}`}>
-          Reviewer note
-        </label>
-        <textarea
-          id={`exception-note-${item.id}`}
-          className="exception-decision-note"
-          value={note}
-          placeholder="Add an optional note for this decision"
-          onChange={(event) => onNoteDraftChange(event.target.value)}
-          onBlur={() => {
-            if (activeAction && note !== savedNote) {
-              onDecide(activeAction, note);
-            }
-          }}
-        />
-        {isNoteUnsaved ? (
-          <p className="exception-decision-hint" role="status">
-            Unsaved note — choose an outcome to save it.
-          </p>
-        ) : null}
-        {isPending ? <p className="exception-decision-status">Saving decision…</p> : null}
-        {error ? (
-          <p className="error-banner" role="alert">
-            {error}
-          </p>
-        ) : null}
       </div>
     </section>
   );
@@ -256,13 +271,17 @@ export function ExceptionEvidencePanel({
 
 function ComparisonColumn({
   title,
+  source,
   lines,
 }: Readonly<{
   title: string;
+  /** Drives the card's coloured edge marker (--bank / --gl), the same convention the rail and
+   * schedule use. An explicit prop rather than :first-child so the marker survives reordering. */
+  source: 'bank' | 'gl';
   lines: ComparisonLine[];
 }>) {
   return (
-    <div className="exception-compare-column">
+    <div className="exception-compare-column" data-source={source}>
       <h4>{title}</h4>
       {lines.length === 0 ? (
         <p className="exception-compare-column__empty">No {title} line</p>

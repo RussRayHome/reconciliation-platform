@@ -348,3 +348,63 @@ describe('ExceptionTriage', () => {
     expect(screen.getByText('Accepted')).toBeInTheDocument();
   });
 });
+
+// R3 X4: resolveCounterpartLabel collapses four situations into one string. The row renders the
+// discriminated cell instead, so a coloured BANK/GL tag can only appear where a source truly exists.
+describe('counterpart cell (Issue #329, X4)', () => {
+  const sourceTagsIn = (cell: Element | null | undefined): number =>
+    cell?.querySelectorAll('.exception-row__source').length ?? 0;
+
+  it('never paints a source tag in front of "No counterpart"', () => {
+    renderTriage();
+
+    const cells = Array.from(document.querySelectorAll('.exception-row__counterpart'));
+    const noneCells = cells.filter((cell) => cell.textContent?.includes('No counterpart'));
+
+    // The fixture must actually exercise this branch, or the assertion below proves nothing.
+    expect(noneCells.length).toBeGreaterThan(0);
+    for (const cell of noneCells) {
+      expect(sourceTagsIn(cell)).toBe(0);
+    }
+  });
+
+  it('tags a single counterpart with its source and keeps the full label as the title', () => {
+    // The shared fixture has no single-counterpart-with-source row, so supply one rather than
+    // weaken the assertion into something that would pass vacuously.
+    renderTriage({
+      exceptions: [
+        makeException({
+          id: 'exception-single',
+          category: 'AmountMismatch',
+          severity: 'High',
+          amount: 42.5,
+          lineNumber: 2,
+          ruleTrace: {
+            ruleId: 'amount-date-match',
+            ruleName: 'Amount + Date Match',
+            reason: 'Single counterpart',
+            evidence: [],
+            counterparts: [{ source: 'gl', spreadsheetFileName: 'gl.xlsx', lineNumber: 7 }],
+          },
+        }),
+      ],
+    });
+
+    const cell = document.querySelector('.exception-row__counterpart');
+    expect(sourceTagsIn(cell)).toBe(1);
+    expect(cell?.querySelector('.exception-row__source')?.getAttribute('data-source')).toBe('gl');
+    expect(cell).toHaveTextContent('gl.xlsx / 7');
+    expect(cell?.getAttribute('title')).toContain('gl.xlsx');
+  });
+});
+
+// R3 X2: the decision controls move into the sticky header so deciding never requires scrolling.
+describe('decision controls live in the panel header (Issue #329, X2)', () => {
+  it('renders the Decision outcome fieldset inside .exception-detail__header', () => {
+    renderTriage();
+
+    const group = screen.getByRole('group', { name: 'Decision outcome' });
+    expect(group.closest('.exception-detail__header')).not.toBeNull();
+    expect(group.closest('.exception-detail__body')).toBeNull();
+  });
+});

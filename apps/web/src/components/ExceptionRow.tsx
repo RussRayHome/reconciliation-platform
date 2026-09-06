@@ -1,3 +1,5 @@
+import type { SourceSystem } from '@recon/domain';
+import type { CounterpartCell } from '../lib/exceptionTriage';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
@@ -74,7 +76,7 @@ export function ExceptionRow({
       <span className="exception-row__date">{display.dateLabel}</span>
       <span className="exception-row__amount">{display.amountLabel}</span>
       <span className="exception-row__counterpart" title={display.counterpartLabel}>
-        {display.counterpartLabel}
+        <CounterpartCellView cell={display.counterpartCell} />
       </span>
       <span className="exception-row__fileline" title={display.fileLineLabel}>
         {display.fileLineLabel}
@@ -90,5 +92,43 @@ export function ExceptionRow({
         />
       )}
     </button>
+  );
+}
+
+const sourceTagLabel = (source: SourceSystem): string => (source === 'gl' ? 'GL' : 'BANK');
+
+/** Renders the counterpart cell per its shape, so a coloured source tag only ever appears where
+ * there genuinely is a source — never in front of "No counterpart" or a bare reference. */
+function CounterpartCellView({ cell }: Readonly<{ cell: CounterpartCell }>) {
+  if (cell.kind === 'none') {
+    return <span className="exception-row__counterpart--none">No counterpart</span>;
+  }
+
+  if (cell.kind === 'reference') {
+    return <>{cell.text}</>;
+  }
+
+  if (cell.kind === 'single') {
+    return (
+      <>
+        {cell.source ? (
+          <span className="exception-row__source" data-source={cell.source}>
+            {sourceTagLabel(cell.source)}
+          </span>
+        ) : null}{' '}
+        {cell.file}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {cell.sources.map((source) => (
+        <span key={source} className="exception-row__source" data-source={source}>
+          {sourceTagLabel(source)}
+        </span>
+      ))}{' '}
+      {cell.count} counterparts
+    </>
   );
 }

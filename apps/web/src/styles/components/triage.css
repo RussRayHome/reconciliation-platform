@@ -1,14 +1,25 @@
 @layer components {
   /* Exception triage master–detail */
 
+  /* R3 X1: the evidence panel moves BELOW the list instead of taking a third column, so the list
+     gets the full remaining width. At 1280-1440px the old 220px | 1.1fr | 1.3fr split left the list
+     ~35% of the viewport and every column ellipsized. */
   .exception-triage {
     display: grid;
-    grid-template-columns: 220px minmax(0, 1.1fr) minmax(0, 1.3fr);
-    gap: 1rem;
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-areas:
+      'facets list'
+      'facets detail';
+    gap: var(--grid-gap) 1.25rem;
     align-items: start;
   }
 
   .exception-facets {
+    grid-area: facets;
+    /* Spans both rows, so the facets stay put while the detail panel below the list scrolls.
+       var(--grid-gap) is 16px (tokens.css:58) -- there is no --space-* scale in this codebase. */
+    position: sticky;
+    top: var(--grid-gap);
     display: grid;
     gap: 0.85rem;
     align-content: start;
@@ -187,9 +198,14 @@
   }
 
   .exception-triage__list-pane {
+    grid-area: list;
     min-width: 0;
+    /* Single knob for the list viewport so density can tune it without touching the rule below. */
+    --exception-list-max: 560px;
     /* Single source of truth for the row grid so the header and rows can never drift. */
-    --exception-row-grid: 12px minmax(0, 1.5fr) 84px 90px minmax(0, 1.4fr) minmax(0, 1fr) 78px;
+    /* X4: 104px fits YYYY-MM-DD at 0.82rem, 110px fits ($12,345.67) in mono, and the last column
+       grows for the Research pill. The old widths ellipsized every text column at 1280px. */
+    --exception-row-grid: 12px minmax(0, 1.6fr) 104px 110px minmax(0, 1.4fr) minmax(0, 1.5fr) 96px;
   }
 
   .exception-triage__list-header {
@@ -230,7 +246,7 @@
 
   .exception-triage__list {
     position: relative;
-    max-height: 560px;
+    max-height: var(--exception-list-max, 560px);
     overflow: auto;
     border: 1px solid var(--line);
     border-radius: 12px;
@@ -310,6 +326,9 @@
 
   .exception-row--selected {
     background: var(--bg-raised);
+    /* Edge marker; padding compensates so the row's text does not shift on selection. */
+    border-left: 3px solid var(--accent);
+    padding-left: calc(0.65rem - 3px);
   }
 
   .exception-row__severity {
@@ -336,6 +355,24 @@
   }
 
   .exception-row__category,
+  .exception-row__source {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+  }
+
+  .exception-row__source[data-source='bank'] {
+    color: var(--bank);
+  }
+
+  .exception-row__source[data-source='gl'] {
+    color: var(--gl);
+  }
+
+  .exception-row__counterpart--none {
+    color: var(--muted);
+  }
+
   .exception-row__counterpart,
   .exception-row__fileline {
     overflow: hidden;
@@ -383,11 +420,14 @@
   }
 
   .exception-detail {
+    grid-area: detail;
     border: 1px solid var(--line);
     border-radius: 12px;
-    padding: 1rem;
+    /* Padding moved to __header / __body so the sticky header spans the panel edge to edge and
+       its background fully covers content scrolling underneath it. */
+    padding: 0;
     display: grid;
-    gap: 1rem;
+    gap: 0;
     align-content: start;
   }
 
@@ -400,9 +440,60 @@
     background: var(--bg-secondary);
   }
 
+  /* R3 X2: identity on the left, decision controls on the right, stuck to the top of the panel so
+     a reviewer can decide from any scroll position. In the drawer variant the sticky context is the
+     drawer itself (position: fixed; overflow: auto), so this works on mobile unchanged. */
   .exception-detail__header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem 2rem;
+    align-items: start;
+    padding: var(--module-padding);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--line);
+    border-radius: 12px 12px 0 0;
+  }
+
+  .exception-detail__identity {
     display: grid;
     gap: 0.4rem;
+    min-width: 0;
+  }
+
+  .exception-detail__decision-bar {
+    display: grid;
+    gap: 0.4rem;
+    align-content: start;
+    justify-items: end;
+  }
+
+  .exception-detail__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 1.25rem;
+    padding: var(--module-padding);
+  }
+
+  .exception-detail__evidence-col,
+  .exception-detail__action-col {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+    min-width: 0;
+  }
+
+  /* Same edge-marker convention as the rail and schedule. */
+  .exception-compare-column[data-source='bank'] {
+    border-left: 3px solid var(--bank);
+    padding-left: 0.6rem;
+  }
+
+  .exception-compare-column[data-source='gl'] {
+    border-left: 3px solid var(--gl);
+    padding-left: 0.6rem;
   }
 
   .exception-detail__header h3 {
@@ -539,9 +630,12 @@
   }
 
   .exception-detail__action-item {
-    display: flex;
+    /* Grid, not flex: "Copy to note" was being clipped at the panel edge because the text could
+       shrink the button below its content width. `auto` pins the button, minmax(0,1fr) lets the
+       text wrap instead. */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
     gap: 0.6rem;
     font-size: 0.88rem;
   }
@@ -600,18 +694,45 @@
     gap: 0.4rem;
   }
 
-  .exception-decision-button {
+  .exception-decision-button,
+  .exception-facets__save-row button {
     padding: 0.4rem 0.7rem;
     border-radius: 8px;
     border: 1px solid var(--line);
-    background: var(--bg-secondary);
+    /* R3 X5: pressable depth. Light mode flattens these tokens to none/flat (tokens.css). */
+    background: var(--gradient-control);
+    box-shadow: var(--shadow-control);
     cursor: pointer;
     font-weight: 600;
+    transition:
+      transform 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .exception-decision-button:hover,
+  .exception-facets__save-row button:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-control-hover);
+  }
+
+  .exception-decision-button:active,
+  .exception-facets__save-row button:active {
+    transform: translateY(1px);
+    box-shadow: var(--shadow-control-active);
+  }
+
+  .exception-decision-button:disabled {
+    transform: none;
+    box-shadow: var(--shadow-control);
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   .exception-decision-button--active {
     border-color: var(--accent-soft-border);
-    background: var(--accent-soft);
+    /* Keeps the tint while retaining the pressed-surface depth. */
+    background:
+      linear-gradient(180deg, var(--accent-soft), rgba(0, 0, 0, 0.25)), var(--bg-secondary);
     color: var(--accent);
   }
 
@@ -639,10 +760,21 @@
   }
 
   @media (max-width: 960px) {
+    /* 'detail' is deliberately absent: below 961px the panel renders as .exception-detail--drawer
+       (position: fixed) via matchMedia in ExceptionTriage.tsx:85, so it positions itself and a grid
+       area for it would be inert at best. */
     .exception-triage {
       grid-template-columns: 1fr;
+      grid-template-areas:
+        'facets'
+        'list';
     }
 
+    .exception-facets {
+      position: static;
+    }
+
+    .exception-detail__body,
     .exception-detail__compare {
       grid-template-columns: 1fr;
     }

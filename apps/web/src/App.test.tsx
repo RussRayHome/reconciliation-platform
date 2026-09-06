@@ -127,7 +127,13 @@ const mockedApiState = vi.hoisted<{
     defaultRuleVersionsResponse,
     rulesCatalogResponse,
     mappingProfileNames: ['Chase Operating', 'WF Payroll'],
-    approvalCounts: { import: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, mappingProfile: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, matchingRule: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, exceptionResolution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 }, reportDistribution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 } },
+    approvalCounts: {
+      import: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+      mappingProfile: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+      matchingRule: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+      exceptionResolution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+      reportDistribution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
+    },
     approvalRows: [],
   };
 });
@@ -187,9 +193,7 @@ vi.mock('./lib/api', async () => {
         >,
       ),
     ),
-    getMappingProfilesRequest: vi.fn(() =>
-      Promise.resolve(mockedApiState.mappingProfileNames),
-    ),
+    getMappingProfilesRequest: vi.fn(() => Promise.resolve(mockedApiState.mappingProfileNames)),
     // Mocked unconditionally for the same reason as getRulesCatalogRequest above: NavRail's
     // per-submenu Approvals badges fetch on every mount/route change, so an unmocked call here
     // would fall through to the real `fetch` and disrupt other tests' call-order-sensitive spies.
@@ -597,7 +601,9 @@ class FakeImportRunXhr {
   }
 
   emitProgress(loaded: number, total: number): void {
-    this.upload.dispatchEvent(Object.assign(new Event('progress'), { lengthComputable: true, loaded, total }));
+    this.upload.dispatchEvent(
+      Object.assign(new Event('progress'), { lengthComputable: true, loaded, total }),
+    );
   }
 
   respond(status: number, body: unknown): void {
@@ -614,9 +620,11 @@ class FakeImportRunXhr {
 /** Installs `FakeImportRunXhr` as `globalThis.XMLHttpRequest`, resetting its captured instances
  * and auto-respond behavior. Restored automatically by the shared `vi.unstubAllGlobals()` in
  * `afterEach`. */
-const installFakeImportRunXhr = (
-  { autoRespond = true, status = 201, body = null }: { autoRespond?: boolean; status?: number; body?: unknown } = {},
-): typeof FakeImportRunXhr => {
+const installFakeImportRunXhr = ({
+  autoRespond = true,
+  status = 201,
+  body = null,
+}: { autoRespond?: boolean; status?: number; body?: unknown } = {}): typeof FakeImportRunXhr => {
   FakeImportRunXhr.instances = [];
   FakeImportRunXhr.autoRespond = autoRespond;
   FakeImportRunXhr.autoRespondStatus = status;
@@ -999,9 +1007,7 @@ describe('App', () => {
       'aria-current',
       'page',
     );
-    expect(screen.getByRole('link', { name: 'File-based' })).not.toHaveAttribute(
-      'aria-current',
-    );
+    expect(screen.getByRole('link', { name: 'File-based' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: /Exceptions/i })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: /Reports/i })).not.toHaveAttribute('aria-current');
     expect(screen.getByText('Import source files')).toBeInTheDocument();
@@ -1057,7 +1063,15 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('link', { name: /Exceptions/i }));
 
     expect(screen.getByPlaceholderText(/Search file, message, or tokens/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/GL gl.xlsx \/ 4 \| GL gl.xlsx \/ 5/i).length).toBeGreaterThan(0);
+    // R3 X4: a multi-counterpart row no longer renders the ' | '-joined string inline. It shows one
+    // coloured source tag per distinct source plus a count, and keeps the full joined text as the
+    // cell's title so it stays searchable/hoverable.
+    const counterpartCell = screen
+      .getAllByTitle(/GL gl.xlsx \/ 4 \| GL gl.xlsx \/ 5/i)
+      .find((element) => element.classList.contains('exception-row__counterpart'));
+    expect(counterpartCell).toBeDefined();
+    expect(counterpartCell).toHaveTextContent('2 counterparts');
+    expect(counterpartCell?.querySelectorAll('.exception-row__source').length).toBe(1);
 
     fireEvent.click(screen.getByRole('link', { name: /Reports/i }));
 
@@ -1379,8 +1393,7 @@ describe('App', () => {
         const hasText = (node: Element | null) =>
           Boolean(node?.textContent?.includes('threaded into the reconciliation pipeline'));
         return (
-          hasText(element) &&
-          Array.from(element?.children ?? []).every((child) => !hasText(child))
+          hasText(element) && Array.from(element?.children ?? []).every((child) => !hasText(child))
         );
       }),
     ).toBeInTheDocument();
@@ -1445,9 +1458,7 @@ describe('App', () => {
     // The rule whose metric was actually overridden shows the publish date -- formatted via the
     // same helper the component uses, so this assertion doesn't hardcode a timezone-dependent
     // calendar day for a UTC-midnight timestamp.
-    expect(
-      screen.getByText(formatCompactDate('2026-08-04T00:00:00.000Z')),
-    ).toBeInTheDocument();
+    expect(screen.getByText(formatCompactDate('2026-08-04T00:00:00.000Z'))).toBeInTheDocument();
     // ...while rules untouched by that override, and fixed rules, show an explicit "—".
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
@@ -2022,7 +2033,9 @@ describe('App', () => {
       expect(screen.getAllByText('Queued').length).toBeGreaterThan(0);
 
       // The backend has since finished -- the next poll tick should pick this up without a reload.
-      mockedApiState.latestImportRunResponse = createImportRunSummary({ status: 'VALIDATION_FAILED' });
+      mockedApiState.latestImportRunResponse = createImportRunSummary({
+        status: 'VALIDATION_FAILED',
+      });
 
       // The interval callback itself calls an async `getLatestImportRunRequest`, not a bare
       // synchronous timer body -- `advanceTimersByTimeAsync` (not the sync `advanceTimersByTime`)
@@ -2539,9 +2552,7 @@ describe('App', () => {
     renderApp();
 
     // A required slot is empty (nothing staged yet).
-    expect(
-      screen.getByText('Add every bank workbook and the GL workbook.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Add every bank workbook and the GL workbook.')).toBeInTheDocument();
 
     fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
@@ -2549,9 +2560,7 @@ describe('App', () => {
     });
 
     // Run label empty.
-    expect(
-      screen.getByText('Give the run a label — it names every export.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Give the run a label — it names every export.')).toBeInTheDocument();
 
     cleanup();
     mockedApiState.latestImportRunResponse = createImportRunSummary({
@@ -2655,7 +2664,9 @@ describe('App', () => {
 
     expect(screen.queryByText('Queued for validation')).not.toBeInTheDocument();
     expect(screen.queryByText(/Reconciliation failed for/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Validating files, then matching.', { exact: false })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Validating files, then matching.', { exact: false }),
+    ).not.toBeInTheDocument();
   });
 
   it('surfaces a plain message when the failed run reports no invalid files (defensive fallback)', async () => {
@@ -2729,8 +2740,7 @@ describe('App', () => {
         );
       }
       if (
-        url ===
-        `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
+        url === `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
       ) {
         return Promise.resolve(
           new Response(
@@ -2750,7 +2760,12 @@ describe('App', () => {
                 { gate: 'CELL_VALUES', state: 'NOT_RUN' },
               ],
               headerComparison: [
-                { position: 1, expected: 'transaction_date', found: 'transaction_date', matches: true },
+                {
+                  position: 1,
+                  expected: 'transaction_date',
+                  found: 'transaction_date',
+                  matches: true,
+                },
                 { position: 2, expected: 'currency_code', found: null, matches: false },
               ],
               issues: [
@@ -2828,8 +2843,7 @@ describe('App', () => {
         );
       }
       if (
-        url ===
-        `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
+        url === `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
       ) {
         return Promise.resolve(
           new Response(
@@ -2929,8 +2943,7 @@ describe('App', () => {
         );
       }
       if (
-        url ===
-        `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
+        url === `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/failure-detail`
       ) {
         return Promise.resolve(
           new Response(
@@ -2966,9 +2979,7 @@ describe('App', () => {
           ),
         );
       }
-      if (
-        url === `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/rows`
-      ) {
+      if (url === `/api/imports/runs/${IMPORT_RUN_ID}/files/${failedFile.importFileId}/rows`) {
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -3012,7 +3023,10 @@ describe('App', () => {
               status: 'completed',
               passed: true,
               matchingJobId: MATCHING_JOB_ID,
-              run: createImportRunSummary({ status: 'PENDING_APPROVAL', files: [validFile, failedFile] }),
+              run: createImportRunSummary({
+                status: 'PENDING_APPROVAL',
+                files: [validFile, failedFile],
+              }),
             }),
             { status: 200 },
           ),
@@ -3124,7 +3138,9 @@ describe('App', () => {
     expect(screen.getByLabelText('Bank workbook (Account 4)')).toBeInTheDocument();
 
     // Capped at 4 -- the Add control disappears once the 4th slot exists.
-    expect(screen.queryByRole('button', { name: 'Add another bank statement' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Add another bank statement' }),
+    ).not.toBeInTheDocument();
   });
 
   it('#153: a per-slot Remove control appears down to the minimum 1 slot, and removes a slot', () => {
@@ -3132,7 +3148,9 @@ describe('App', () => {
     renderApp();
 
     // Remove is available on the default 2-slot layout...
-    expect(screen.getByRole('button', { name: 'Remove Bank workbook (Account 2)' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Remove Bank workbook (Account 2)' }),
+    ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Bank workbook (Account 2)'), {
       target: { files: [new File(['bank-2'], '2222_bank.csv')] },
@@ -3144,7 +3162,9 @@ describe('App', () => {
     expect(screen.queryByLabelText('Bank workbook (Account 2)')).not.toBeInTheDocument();
     expect(screen.queryByText('2222_bank.csv')).not.toBeInTheDocument();
     // ...but disappears once only the minimum 1 slot remains.
-    expect(screen.queryByRole('button', { name: 'Remove Bank workbook (Account 1)' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Remove Bank workbook (Account 1)' }),
+    ).not.toBeInTheDocument();
   });
 
   it('#153: submits with just 1 bank file (the minimum)', async () => {
@@ -3565,7 +3585,10 @@ describe('NavRail Pending approvals badge after a decision', () => {
 
   it('refetches the counts when a reconciliation run is approved, without a route change', async () => {
     setAuthenticatedUser('rray');
-    mockedApiState.approvalCounts = { ...mockedApiState.approvalCounts, import: { ...zero, pending: 1 } };
+    mockedApiState.approvalCounts = {
+      ...mockedApiState.approvalCounts,
+      import: { ...zero, pending: 1 },
+    };
     mockedApiState.approvalRows = [pendingRun];
     globalThis.history.pushState({}, '', '/approvals');
     renderApp();

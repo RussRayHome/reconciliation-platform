@@ -1,6 +1,11 @@
-import { errorCategoryDisplayNames, type ExceptionItem } from '@recon/domain';
+import {
+  errorCategoryDisplayNames,
+  type CounterpartTrace,
+  type ExceptionItem,
+  type SourceSystem,
+} from '@recon/domain';
 
-import { formatCurrency, formatDate } from './format';
+import { formatCurrency, formatDate, formatIsoDay } from './format';
 
 /** Uppercased display label for a transaction source; the GL source is displayed as "GL", not "GL". */
 const toSourceLabel = (source: string): string => (source === 'gl' ? 'GL' : source.toUpperCase());
@@ -33,6 +38,8 @@ export type ExceptionDisplay = {
   dateLabel: string;
   amountLabel: string;
   counterpartLabel: string;
+  /** Structured form of `counterpartLabel`; the string stays for the title tooltip and sorting. */
+  counterpartCell: CounterpartCell;
   fileLineLabel: string;
   amountBand: string;
 };
@@ -117,6 +124,49 @@ const amountBandLabel = (value: string): string =>
     ? 'No amount'
     : (amountBands.find((band) => band.value === value)?.label ?? value);
 
+/**
+ * The counterpart cell's shape, so the row can render a coloured source tag only when there is
+ * exactly one counterpart with a known source. `resolveCounterpartLabel` collapses four different
+ * situations into one string; painting "BANK" in front of every one of them would put a source tag
+ * in front of the literal text "No counterpart".
+ */
+export type CounterpartCell =
+  | { kind: 'none' }
+  | { kind: 'reference'; text: string }
+  | { kind: 'single'; source?: SourceSystem; file: string }
+  | { kind: 'multi'; count: number; sources: SourceSystem[] };
+
+const counterpartsOf = (item: ExceptionItem): CounterpartTrace[] =>
+  item.ruleTrace?.counterparts?.length || !item.ruleTrace?.counterpart
+    ? (item.ruleTrace?.counterparts ?? [])
+    : [item.ruleTrace.counterpart];
+
+const resolveCounterpartCell = (item: ExceptionItem): CounterpartCell => {
+  const counterparts = counterpartsOf(item);
+
+  if (counterparts.length === 0) {
+    return item.likelyMatchingReference
+      ? { kind: 'reference', text: item.likelyMatchingReference }
+      : { kind: 'none' };
+  }
+
+  if (counterparts.length === 1) {
+    const only = counterparts[0]!;
+    return only.spreadsheetFileName
+      ? {
+          kind: 'single',
+          source: only.source,
+          file: `${only.spreadsheetFileName} / ${only.lineNumber ?? 'N/A'}`,
+        }
+      : { kind: 'reference', text: only.transactionId ?? 'N/A' };
+  }
+
+  const sources = [
+    ...new Set(counterparts.map((counterpart) => counterpart.source).filter(Boolean)),
+  ] as SourceSystem[];
+  return { kind: 'multi', count: counterparts.length, sources };
+};
+
 const resolveCounterpartLabel = (item: ExceptionItem): string => {
   const counterparts =
     item.ruleTrace?.counterparts?.length || !item.ruleTrace?.counterpart
@@ -141,9 +191,10 @@ export const toExceptionDisplay = (item: ExceptionItem): ExceptionDisplay => ({
   categoryLabel: errorCategoryDisplayNames[item.category] ?? item.category,
   ruleLabel: item.ruleTrace?.ruleName ?? 'Derived classification',
   sourceLabel: toSourceLabel(item.source),
-  dateLabel: formatDate(item.transactionDate),
+  dateLabel: formatIsoDay(item.transactionDate),
   amountLabel: formatCurrency(item.amount),
   counterpartLabel: resolveCounterpartLabel(item),
+  counterpartCell: resolveCounterpartCell(item),
   fileLineLabel: `${item.spreadsheetFileName} / ${item.lineNumber}`,
   amountBand: resolveAmountBand(item.amount),
 });
@@ -265,7 +316,7 @@ export const buildComparisonSides = (
     fileName: item.spreadsheetFileName,
     lineNumber: item.lineNumber,
     amountLabel: formatCurrency(item.amount),
-    dateLabel: formatDate(item.transactionDate),
+    dateLabel: formatIsoDay(item.transactionDate),
     isPrimary: true,
   };
 
@@ -281,7 +332,7 @@ export const buildComparisonSides = (
         fileName: counterpart.spreadsheetFileName ?? counterpart.transactionId ?? 'N/A',
         lineNumber: counterpart.lineNumber,
         amountLabel: formatCurrency(counterpart.amount ?? null),
-        dateLabel: formatDate(counterpart.transactionDate ?? null),
+        dateLabel: formatIsoDay(counterpart.transactionDate ?? null),
         isPrimary: false,
       },
     }),
