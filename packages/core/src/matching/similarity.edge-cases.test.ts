@@ -410,4 +410,32 @@ describe('spacing variants (Issue #310)', () => {
     expect(tokenSimilarity(['574', 'OIL', 'SHELL'], ['574', 'CHEVRON'])).toBeCloseTo(0.4, 2);
     expect(tokenSimilarity(['ACME', 'OFFICE', 'SUPPLY'], ['PAYROLL'])).toBe(0);
   });
+
+  it('backtracks when one token is a strict prefix of another', () => {
+    // Taking the first part that fits strands the remainder: PARK matches the front of
+    // PARKINGPARK, leaves INGPARK, and PARKING cannot cover it. The walk has to reconsider and
+    // take PARKING first. ['ART','DEPART'] above passes either way because the shorter part
+    // happens to come first there, so it does not pin this behaviour.
+    expect(isSpacingVariant(['PARKINGPARK'], ['PARK', 'PARKING'])).toBe(true);
+    expect(isSpacingVariant(['PARK', 'PARKING'], ['PARKINGPARK'])).toBe(true);
+    expect(tokenSimilarity(['PARKINGPARK'], ['PARK', 'PARKING'])).toBe(1);
+    // Three parts, and the only valid tiling needs the longest taken first.
+    expect(isSpacingVariant(['SHELLOILSHELLGAS'], ['GAS', 'SHELL', 'SHELLOIL'])).toBe(true);
+  });
+
+  it('still rejects a near-miss that only backtracking could be fooled by', () => {
+    // Same prefix shape as above, but the characters do not tile: every branch is explored and
+    // every branch dies, so the answer stays false rather than becoming true by trying harder.
+    expect(isSpacingVariant(['PARKINGPARX'], ['PARK', 'PARKING'])).toBe(false);
+    expect(isSpacingVariant(['PARKINGPARK'], ['PARQ', 'PARKING'])).toBe(false);
+  });
+
+  it('caps the part count so backtracking cannot blow up on a pathological row', () => {
+    // Nine 3-character parts against a 27-character token: refused on the guard, not explored.
+    const parts = ['AAA', 'AAB', 'AAC', 'AAD', 'AAE', 'AAF', 'AAG', 'AAH', 'AAI'];
+    expect(isSpacingVariant([parts.join('')], parts)).toBe(false);
+    // Eight is still inside the cap and resolves normally.
+    const eight = parts.slice(0, 8);
+    expect(isSpacingVariant([eight.join('')], eight)).toBe(true);
+  });
 });
