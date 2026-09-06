@@ -29,6 +29,9 @@
     --severity-medium: #c99a2e;
     /* Bank-side series color (Create Mapping canvas) — a status-neutral hue, not semantic like the others. */
     --bank: #6fa8ff;
+    /* GL counterpart to --bank. Brass reads on the dark ground; the light block below
+       needs its own value -- #dcc58f on light --bg-raised #efece5 is ~1.4:1, invisible. */
+    --gl: #dcc58f;
     --bank-hover: #8fbcff;
     /* AP/Billing source hue (R1: AP inclusion & shared aging) — same status-neutral role as --bank,
        one per source type. */
@@ -107,6 +110,7 @@
       --severity-high: #c2410c;
       --severity-medium: #92600a;
       --bank: #1d4ed8;
+      --gl: #7a5a12;
       --bank-hover: #1e40af;
       --ap: #92702c;
       --ap-hover: #7a5b1f;
