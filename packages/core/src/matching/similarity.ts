@@ -51,6 +51,91 @@ export const dateDifferenceDays = (
   return Math.round(Math.abs(leftDate.valueOf() - rightDate.valueOf()) / dayMs);
 };
 
+const CONCATENATION_MIN_JOINED_LENGTH = 6;
+const CONCATENATION_MIN_PART_LENGTH = 3;
+/**
+ * Backtracking is exponential in the worst case where the old greedy walk was linear, so the part
+ * count is capped. Nine parts of the 3-character minimum need a 27-character single token whose
+ * length matches exactly -- not a real descriptor, and the cap keeps a pathological row from
+ * costing anything measurable in a 6.6k x 6.6k pair loop.
+ */
+const CONCATENATION_MAX_PARTS = 8;
+const alphabeticOnly = /^[A-Z]+$/;
+
+/**
+ * True when one side is a single token that is exactly the other side's tokens run together --
+ * "OfficeDepot" against "Office Depot" (Issue #310).
+ *
+ * Normalization cannot fix this: splitting a run-together word needs a dictionary. Comparing joined
+ * forms cannot either, because tokens are sorted and the original order is gone
+ * ("DEPOTOFFICE" !== "OFFICEDEPOT"). So it is decided per pair -- but cheaply, which is what makes it
+ * viable where a trigram swap was not (21x Dice, ~220 s at 6.6k x 6.6k):
+ *
+ *  1. shape check: exactly one token on one side, two or more on the other;
+ *  2. arithmetic gate: the single token's length equals the sum of the others' lengths. Integer
+ *     work, no allocation, and it rejects almost everything -- on realistic descriptors the shape
+ *     check alone passes ~70% of pairs while this leaves ~4%;
+ *  3. only then, verify by consuming the joined token from the front, backtracking when a part that
+ *     fits turns out to strand the rest. Length agreement is a coincidence detector, not a decision:
+ *     "OFFICEDEPOT" also tiles by length against ["1234","WALMART"] and ["574","OIL","SHELL"], and
+ *     both die on the first character here.
+ *
+ * Letters only, deliberately. Reference tokens are numeric, and ["12","34"] would otherwise tile
+ * "1234" and declare two unrelated check numbers identical.
+ */
+const isConcatenationOf = (joined: string, parts: string[]): boolean => {
+  if (
+    joined.length < CONCATENATION_MIN_JOINED_LENGTH ||
+    parts.length < 2 ||
+    parts.length > CONCATENATION_MAX_PARTS ||
+    !alphabeticOnly.test(joined)
+  ) {
+    return false;
+  }
+
+  let total = 0;
+  for (const part of parts) {
+    if (part.length < CONCATENATION_MIN_PART_LENGTH || !alphabeticOnly.test(part)) {
+      return false;
+    }
+    total += part.length;
+  }
+  if (total !== joined.length) {
+    return false;
+  }
+
+  // Try every unused part at each position and backtrack on a dead end. Taking the first part that
+  // fits is NOT enough: against "ABCDEFABC" the parts ["ABC", "ABCDEF"] tile exactly, but a greedy
+  // walk consumes ABC, strands DEFABC, and reports no match. Any token that is a strict prefix of
+  // another token on the same side hits this. `startsWith(part, offset)` compares in place, so the
+  // walk allocates nothing beyond the `used` flags.
+  const used = new Array<boolean>(parts.length).fill(false);
+  const consume = (offset: number): boolean => {
+    // Part lengths already sum to joined.length, so arriving at the end means every part was used.
+    if (offset === joined.length) {
+      return true;
+    }
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index]!;
+      if (used[index] || !joined.startsWith(part, offset)) {
+        continue;
+      }
+      used[index] = true;
+      if (consume(offset + part.length)) {
+        return true;
+      }
+      used[index] = false;
+    }
+    return false;
+  };
+  return consume(0);
+};
+
+/** Exported for tests: the two sides are the same text, differing only in word spacing. */
+export const isSpacingVariant = (left: string[], right: string[]): boolean =>
+  (left.length === 1 && isConcatenationOf(left[0]!, right)) ||
+  (right.length === 1 && isConcatenationOf(right[0]!, left));
+
 /**
  * Computes Sørensen–Dice similarity over two token sets, returning a score in [0, 1].
  * A score of 1.0 means the sets are identical; 0.0 means no tokens in common.
@@ -59,6 +144,11 @@ export const dateDifferenceDays = (
 export const tokenSimilarity = (left: string[], right: string[]): number => {
   if (!left.length || !right.length) {
     return 0;
+  }
+
+  // "OfficeDepot" and "Office Depot" are the same text; Dice sees zero shared tokens (#310).
+  if (isSpacingVariant(left, right)) {
+    return 1;
   }
 
   const leftSet = new Set(left);

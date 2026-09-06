@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  tokenSimilarity,
   currencyEquals,
   dateDifferenceDays,
-  overlapCoefficient,
-  fuzzyContainmentSimilarity,
   describeTokenSimilarity,
-  trigramSimilarity,
+  fuzzyContainmentSimilarity,
+  isSpacingVariant,
+  overlapCoefficient,
   patternContainmentSimilarity,
+  tokenSimilarity,
+  trigramSimilarity,
 } from './similarity';
 
 describe('Similarity Utilities - Edge Cases', () => {
@@ -329,7 +330,10 @@ describe('trigramSimilarity (Issue #310)', () => {
 
 describe('patternContainmentSimilarity (Issue #313)', () => {
   const norm = (value: string): string[] =>
-    value.toUpperCase().split(/[\s*#.]+/).filter(Boolean);
+    value
+      .toUpperCase()
+      .split(/[\s*#.]+/)
+      .filter(Boolean);
 
   it('returns 0 when either side is empty', () => {
     expect(patternContainmentSimilarity([], norm('AMZN MKTP US'))).toBe(0);
@@ -371,5 +375,67 @@ describe('patternContainmentSimilarity (Issue #313)', () => {
 
   it('ignores duplicate tokens on both sides', () => {
     expect(patternContainmentSimilarity(['AMZN', 'AMZN'], ['AMZN', 'AMZN', 'US'])).toBe(1);
+  });
+});
+
+// Issue #310 item A2. "OfficeDepot" and "Office Depot" are the same text, but Dice sees zero shared
+// tokens. Normalization cannot split a run-together word without a dictionary, and comparing joined
+// forms cannot work either because tokens are sorted, so the original order is gone.
+describe('spacing variants (Issue #310)', () => {
+  it('scores a run-together word as identical to its spaced form', () => {
+    expect(tokenSimilarity(['DEPOT', 'OFFICE'], ['OFFICEDEPOT'])).toBe(1);
+    expect(tokenSimilarity(['OFFICEDEPOT'], ['DEPOT', 'OFFICE'])).toBe(1);
+    expect(isSpacingVariant(['ART', 'DEPART'], ['ARTDEPART'])).toBe(true);
+  });
+
+  it('rejects a length coincidence — the arithmetic gate is a filter, not a decision', () => {
+    // Both of these tile OFFICEDEPOT's 11 characters exactly and are unrelated to it. They were
+    // found by probing realistic descriptors, not invented.
+    expect(isSpacingVariant(['OFFICEDEPOT'], ['1234', 'WALMART'])).toBe(false);
+    expect(isSpacingVariant(['OFFICEDEPOT'], ['574', 'OIL', 'SHELL'])).toBe(false);
+  });
+
+  it('never applies to numeric tokens, so check numbers cannot collide', () => {
+    // Without the letters-only guard this would call two unrelated references identical.
+    expect(isSpacingVariant(['1234'], ['12', '34'])).toBe(false);
+    expect(tokenSimilarity(['1234'], ['12', '34'])).toBe(0);
+  });
+
+  it('ignores fragments too short to be a real word split', () => {
+    expect(isSpacingVariant(['ABCDEF'], ['AB', 'CD', 'EF'])).toBe(false);
+    expect(isSpacingVariant(['ABCDE'], ['ABC', 'DE'])).toBe(false);
+  });
+
+  it('leaves ordinary pairs to Dice', () => {
+    expect(tokenSimilarity(['574', 'OIL', 'SHELL'], ['574', 'CHEVRON'])).toBeCloseTo(0.4, 2);
+    expect(tokenSimilarity(['ACME', 'OFFICE', 'SUPPLY'], ['PAYROLL'])).toBe(0);
+  });
+
+  it('backtracks when one token is a strict prefix of another', () => {
+    // Taking the first part that fits strands the remainder: PARK matches the front of
+    // PARKINGPARK, leaves INGPARK, and PARKING cannot cover it. The walk has to reconsider and
+    // take PARKING first. ['ART','DEPART'] above passes either way because the shorter part
+    // happens to come first there, so it does not pin this behaviour.
+    expect(isSpacingVariant(['PARKINGPARK'], ['PARK', 'PARKING'])).toBe(true);
+    expect(isSpacingVariant(['PARK', 'PARKING'], ['PARKINGPARK'])).toBe(true);
+    expect(tokenSimilarity(['PARKINGPARK'], ['PARK', 'PARKING'])).toBe(1);
+    // Three parts, and the only valid tiling needs the longest taken first.
+    expect(isSpacingVariant(['SHELLOILSHELLGAS'], ['GAS', 'SHELL', 'SHELLOIL'])).toBe(true);
+  });
+
+  it('still rejects a near-miss that only backtracking could be fooled by', () => {
+    // Same prefix shape as above, but the characters do not tile: every branch is explored and
+    // every branch dies, so the answer stays false rather than becoming true by trying harder.
+    expect(isSpacingVariant(['PARKINGPARX'], ['PARK', 'PARKING'])).toBe(false);
+    expect(isSpacingVariant(['PARKINGPARK'], ['PARQ', 'PARKING'])).toBe(false);
+  });
+
+  it('caps the part count so backtracking cannot blow up on a pathological row', () => {
+    // Nine 3-character parts against a 27-character token: refused on the guard, not explored.
+    const parts = ['AAA', 'AAB', 'AAC', 'AAD', 'AAE', 'AAF', 'AAG', 'AAH', 'AAI'];
+    expect(isSpacingVariant([parts.join('')], parts)).toBe(false);
+    // Eight is still inside the cap and resolves normally.
+    const eight = parts.slice(0, 8);
+    expect(isSpacingVariant([eight.join('')], eight)).toBe(true);
   });
 });
