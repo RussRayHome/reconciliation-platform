@@ -25,6 +25,20 @@ export const BANKING_HEADERS = [
 /** Expected GL-file header names, in required order (transaction-csv-spec.md §3). */
 export const GL_HEADERS = ['Date', 'Type', 'Num', 'Name', 'Memo', 'Amount'] as const;
 
+/** The account-identity column `mergeBankFiles` writes onto every merged bank row (A-D1, Issue
+ * #338). Carries the confirmed `reconciliation_account.id` UUID -- it is not a second account
+ * identifier, and it is never something an operator fills in by hand. */
+export const INTERFACE_ID_HEADER = 'Interface ID';
+
+/**
+ * Headers of the MERGED bank dataset, as distinct from {@link BANKING_HEADERS}, which stays the
+ * contract for a raw per-account upload and for the downloadable template. Only the merged file
+ * reaches `validateFile` (raw files are structurally checked inside `mergeBankFiles` and never
+ * validated on their own), so recognising `Interface ID` here -- rather than adding it to
+ * `BANKING_HEADERS` -- keeps it out of the template without it being warned as an unknown column.
+ */
+export const MERGED_BANKING_HEADERS = [...BANKING_HEADERS, INTERFACE_ID_HEADER] as const;
+
 /** Required (non-optional) banking columns. Debit/Credit are jointly required (one of the two,
  * per row -- enforced by BANK_NO_AMOUNT/BANK_BOTH_AMOUNTS in Step 3, not the structural gate). */
 export const REQUIRED_BANKING_HEADERS: readonly string[] = ['Date', 'Description', 'Sequence Number'];
@@ -70,6 +84,8 @@ export interface RawBankingRow {
   Debit?: string;
   Credit?: string;
   Balance?: string;
+  /** Present only on a merged bank dataset -- see {@link INTERFACE_ID_HEADER}. */
+  'Interface ID'?: string;
 }
 
 /** Raw GL row as read from either parser. */
@@ -110,9 +126,16 @@ export interface NormalizedRecord {
    * (transaction-csv-spec.md §5), so GL's recordId is a file-scoped position marker, not a
    * user-provided value. */
   recordId: string;
-  /** Not sourced from a CSV column for either format -- see transaction-csv-spec.md §2/§3. Left
-   * undefined here; populated by the caller from run/file context once that context exists
-   * (Issue #141's filename-derived account number for Bank). */
+  /**
+   * The confirmed `reconciliation_account.id` UUID this row belongs to (A-D1, Issue #338/#342).
+   * Bank rows carry it in the merged dataset's {@link INTERFACE_ID_HEADER} column, written by
+   * `mergeBankFiles` from the account the operator explicitly assigned the statement to. Still
+   * optional: GL and Billing have no account column of their own (transaction-csv-spec.md §3),
+   * and a bank file validated outside the merge path has no assignment context.
+   *
+   * Deliberately NOT derived from the filename or the last four digits -- neither establishes
+   * identity, and neither is unique even within one organization.
+   */
   account?: string;
   /** ISO 8601 date used for matching. */
   date: string;

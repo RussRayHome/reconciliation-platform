@@ -9,9 +9,9 @@ import {
 } from './rowValidators';
 import { checkColumnOrder, checkHeaderPresent } from './structuralGates';
 import {
-  BANKING_HEADERS,
   BILLING_HEADERS,
   GL_HEADERS,
+  MERGED_BANKING_HEADERS,
   REQUIRED_BANKING_HEADERS,
   REQUIRED_BILLING_HEADERS,
   REQUIRED_GL_HEADERS,
@@ -43,7 +43,10 @@ const HEADERS_BY_FILE_TYPE: Record<
   ValidateFileInput['fileType'],
   { allKnownHeaders: readonly string[]; requiredHeaders: readonly string[] }
 > = {
-  BANK: { allKnownHeaders: BANKING_HEADERS, requiredHeaders: REQUIRED_BANKING_HEADERS },
+  // MERGED_BANKING_HEADERS, not BANKING_HEADERS: the only bank file that reaches validateFile is
+  // the merged dataset, which carries the Interface ID account column (A-D1). Raw per-account
+  // uploads are structurally checked inside mergeBankFiles against BANKING_HEADERS instead.
+  BANK: { allKnownHeaders: MERGED_BANKING_HEADERS, requiredHeaders: REQUIRED_BANKING_HEADERS },
   GL: { allKnownHeaders: GL_HEADERS, requiredHeaders: REQUIRED_GL_HEADERS },
   BILLING: { allKnownHeaders: BILLING_HEADERS, requiredHeaders: REQUIRED_BILLING_HEADERS },
 };

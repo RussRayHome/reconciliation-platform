@@ -4,6 +4,7 @@ import type {
   ApprovalCountsByGroup,
   ApprovalRow,
   RuleCatalogResponse,
+  ReconciliationAccount,
   RuleVersionsResponse,
   UserRole,
 } from '@recon/domain';
@@ -37,6 +38,8 @@ const mockedApiState = vi.hoisted<{
   // Backs getApprovalCountsRequest / getApprovalsRequest for the NavRail badge + inbox tests.
   approvalCounts: ApprovalCountsByGroup;
   approvalRows: ApprovalRow[];
+  // A-D1 (Issue #338): the registered bank accounts a statement may be assigned to.
+  accounts: ReconciliationAccount[];
 }>(() => {
   // Default GET /api/rules/versions fixture: an already-published ACTIVE version with
   // overridesAppliedToEngine true, i.e. "Phase 0 engine wiring has shipped" -- most existing
@@ -135,6 +138,21 @@ const mockedApiState = vi.hoisted<{
       reportDistribution: { pending: 0, approved: 0, rejected: 0, mySubmissions: 0 },
     },
     approvalRows: [],
+    // One registered account per last-four the bank fixtures use, so a conventionally-named file
+    // resolves to exactly one candidate and the assignment control pre-selects it.
+    accounts: ['1111', '2222', '3333', '4444', '5555'].map((lastFour, index) => ({
+      id: `${lastFour}${lastFour}${lastFour}${lastFour}-1111-4111-8111-11111111111${index}`,
+      organizationId: 'test-org',
+      accountIdentifier: lastFour,
+      displayName: `Account ${lastFour}`,
+      institutionName: 'Test Bank',
+      lastFour,
+      currencyCode: 'USD',
+      glCashAccountCode: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })),
   };
 });
 
@@ -194,6 +212,13 @@ vi.mock('./lib/api', async () => {
       ),
     ),
     getMappingProfilesRequest: vi.fn(() => Promise.resolve(mockedApiState.mappingProfileNames)),
+    // A-D1 (Issue #338): the bank account registry the assignment control reads. Mocked
+    // unconditionally, like the other mount-time fetches above, so it never falls through to the
+    // per-test `fetch` spies and disturbs their call-order assertions. The fixture accounts' last
+    // four digits match the bank filenames `fillUploadInputs` uses, so each staged statement gets
+    // its one unambiguous suggestion and the existing submission tests need no further setup --
+    // exactly the flow a real operator sees when their files are named conventionally.
+    listAccountsRequest: vi.fn(() => Promise.resolve(mockedApiState.accounts)),
     // Mocked unconditionally for the same reason as getRulesCatalogRequest above: NavRail's
     // per-submenu Approvals badges fetch on every mount/route change, so an unmocked call here
     // would fall through to the real `fetch` and disrupt other tests' call-order-sensitive spies.
@@ -685,10 +710,20 @@ const renderApp = () =>
  * assert on specific bytes/names/counts. #153: two slots exist on mount (matching the prior fixed
  * layout); a target count above 2 clicks "Add another bank statement" to grow, below 2 clicks the
  * 2nd slot's Remove control to shrink. */
-const fillUploadInputs = ({
+/**
+ * Stages the run's files and waits for each bank statement's account assignment to settle.
+ *
+ * Async since A-D1 (Issue #338): a run cannot be submitted until every statement is assigned to a
+ * registered account, and the registry is fetched, so the assignment is not available on the same
+ * tick the files are staged. The fixture accounts' last four digits match these filenames, so each
+ * slot resolves to exactly one candidate and is pre-selected -- what an operator sees when their
+ * files are named conventionally. A test covering an unassigned or ambiguous statement stages its
+ * files directly instead of going through this helper.
+ */
+const fillUploadInputs = async ({
   bankFiles = [new File(['bank-a'], '1111_bank.xlsx'), new File(['bank-b'], '2222_bank.xlsx')],
   glFile = new File(['gl'], 'gl.xlsx'),
-}: { bankFiles?: File[]; glFile?: File } = {}): void => {
+}: { bankFiles?: File[]; glFile?: File } = {}): Promise<void> => {
   if (bankFiles.length === 1) {
     fireEvent.click(screen.getByRole('button', { name: 'Remove Bank workbook (Account 2)' }));
   } else {
@@ -704,6 +739,27 @@ const fillUploadInputs = ({
   fireEvent.change(screen.getByLabelText('GL workbook'), {
     target: { files: [glFile] },
   });
+
+  // Flush the account registry fetch's promise chain and the render it triggers, so each staged
+  // statement carries its pre-selected assignment before the caller asserts anything.
+  //
+  // Deliberately `act` rather than `waitFor`: three of the tests below install fake timers before
+  // staging files, and `waitFor` polls on a timer, so it would hang there for the full test
+  // timeout. Promise resolution is a microtask, which fake timers do not intercept. Two passes
+  // because the hook's chain is `then -> setState -> effect -> setState`, and the second setState
+  // is scheduled during the first flush.
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  const selects = screen.getAllByLabelText('Bank account');
+  expect(selects).toHaveLength(bankFiles.length);
+  for (const select of selects) {
+    expect(select).not.toHaveValue('');
+  }
 };
 
 afterEach(() => {
@@ -1041,7 +1097,7 @@ describe('App', () => {
 
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1578,14 +1634,14 @@ describe('App', () => {
   // percentage-implies-precision mechanic V3 deletes (`overallProgressPercent`, and the element
   // itself, no longer exist). Rewritten to assert the run step's own status instead: `ready` once
   // everything is staged (before Submit run is ever clicked), still `pending` beforehand.
-  it('shows the run step as ready once files are staged, pending before', () => {
+  it('shows the run step as ready once files are staged, pending before', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
     expect(screen.getByText('Process Progress')).toBeInTheDocument();
     expect(runStepChip().getByText('Pending')).toBeInTheDocument();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     expect(runStepChip().getByText('Ready')).toBeInTheDocument();
   });
@@ -1621,7 +1677,7 @@ describe('App', () => {
 
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
     });
@@ -1647,7 +1703,7 @@ describe('App', () => {
 
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1672,7 +1728,7 @@ describe('App', () => {
 
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1704,7 +1760,7 @@ describe('App', () => {
 
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -1739,7 +1795,7 @@ describe('App', () => {
       type: 'application/octet-stream',
     });
 
-    fillUploadInputs({ bankFiles: [bankFileA, bankFileB], glFile });
+    await fillUploadInputs({ bankFiles: [bankFileA, bankFileB], glFile });
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
     });
@@ -1777,7 +1833,7 @@ describe('App', () => {
 
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
       target: { value: 'March' },
     });
@@ -1802,7 +1858,7 @@ describe('App', () => {
 
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: 'Custom Monthly Label' },
     });
@@ -1851,7 +1907,7 @@ describe('App', () => {
     expect(labelInput).toHaveValue(`Monthly Recon for ${month} ${currentYear}`);
   });
 
-  it('assigns bank and GL files from the merged drop zone by file name', () => {
+  it('assigns bank and GL files from the merged drop zone by file name', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
@@ -1868,16 +1924,21 @@ describe('App', () => {
     // R2 V4.3: `aria-disabled`, not the native `disabled` attribute, so a screen reader can still
     // reach the reason via `aria-describedby` on a disabled button -- `toBeDisabled()` checks the
     // native attribute, which this button no longer has at all.
-    expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
-      'aria-disabled',
-      'false',
-    );
+    // Awaited since A-D1 (Issue #338): the account registry is fetched, so each statement's
+    // assignment -- and with it the last reason Submit is disabled -- settles a tick after the
+    // files are staged.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+        'aria-disabled',
+        'false',
+      );
+    });
     expect(screen.getAllByText('1111_bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gl.xlsx').length).toBeGreaterThan(0);
   });
 
-  it('accepts CSV workbooks alongside XLSX in the merged drop zone', () => {
+  it('accepts CSV workbooks alongside XLSX in the merged drop zone', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
@@ -1894,10 +1955,15 @@ describe('App', () => {
     // R2 V4.3: `aria-disabled`, not the native `disabled` attribute, so a screen reader can still
     // reach the reason via `aria-describedby` on a disabled button -- `toBeDisabled()` checks the
     // native attribute, which this button no longer has at all.
-    expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
-      'aria-disabled',
-      'false',
-    );
+    // Awaited since A-D1 (Issue #338): the account registry is fetched, so each statement's
+    // assignment -- and with it the last reason Submit is disabled -- settles a tick after the
+    // files are staged.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+        'aria-disabled',
+        'false',
+      );
+    });
     expect(screen.getAllByText('1111_bank.csv').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.csv').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gl.csv').length).toBeGreaterThan(0);
@@ -1966,7 +2032,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2009,7 +2075,7 @@ describe('App', () => {
       setAuthenticatedUser('rray');
       renderApp();
 
-      fillUploadInputs();
+      await fillUploadInputs();
 
       fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2079,7 +2145,7 @@ describe('App', () => {
       setAuthenticatedUser('rray');
       renderApp();
 
-      fillUploadInputs();
+      await fillUploadInputs();
 
       fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2185,7 +2251,7 @@ describe('App', () => {
       // A fresh landing with a succeeded run resolves "/" to the run summary (N4), so get back to
       // the upload screen the way a user would before starting the next run.
       fireEvent.click(screen.getByRole('link', { name: 'Bank Statements' }));
-      fillUploadInputs();
+      await fillUploadInputs();
       fireEvent.click(screen.getByRole('button', { name: 'Start new run' }));
 
       mockedApiState.latestImportRunResponse = createImportRunSummary({
@@ -2380,14 +2446,14 @@ describe('App', () => {
     expect(detailPanel).toHaveAttribute('open');
   });
 
-  it('states the step counter for each phase', () => {
+  it('states the step counter for each phase', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
     // Nothing staged yet -- 0 complete steps.
     expect(screen.getByText('step 0 of 4')).toBeInTheDocument();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     // Upload + configure complete, run step reads Ready (not yet current) -- step 2 of 4.
     expect(screen.getByText('step 2 of 4')).toBeInTheDocument();
@@ -2419,7 +2485,7 @@ describe('App', () => {
     });
     setAuthenticatedUser('rray');
     renderApp();
-    fillUploadInputs();
+    await fillUploadInputs();
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Run in progress' })).toHaveAttribute(
@@ -2433,7 +2499,7 @@ describe('App', () => {
     mockedApiState.latestImportRunResponse = createImportRunSummary({ status: 'VALIDATING' });
     setAuthenticatedUser('rray');
     renderApp();
-    fillUploadInputs();
+    await fillUploadInputs();
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Run in progress' })).toHaveAttribute(
@@ -2449,7 +2515,7 @@ describe('App', () => {
     });
     setAuthenticatedUser('rray');
     renderApp();
-    fillUploadInputs();
+    await fillUploadInputs();
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Retry run' })).toHaveAttribute(
@@ -2466,7 +2532,7 @@ describe('App', () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
     renderApp();
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2490,7 +2556,7 @@ describe('App', () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
     renderApp();
-    fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
+    await fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2554,7 +2620,7 @@ describe('App', () => {
     // A required slot is empty (nothing staged yet).
     expect(screen.getByText('Add every bank workbook and the GL workbook.')).toBeInTheDocument();
 
-    fillUploadInputs();
+    await fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: '   ' },
     });
@@ -2574,7 +2640,7 @@ describe('App', () => {
     });
     setAuthenticatedUser('rray');
     renderApp();
-    fillUploadInputs();
+    await fillUploadInputs();
 
     // Run already underway.
     await waitFor(() => {
@@ -2590,7 +2656,7 @@ describe('App', () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
     renderApp();
-    fillUploadInputs();
+    await fillUploadInputs();
 
     // The same element reference, clicked twice back to back -- whatever label it happens to
     // show at the moment of the second click (the async create-run XHR may not have resolved
@@ -2692,7 +2758,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2790,7 +2856,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -2885,7 +2951,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -3041,7 +3107,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -3104,7 +3170,10 @@ describe('App', () => {
     );
   });
 
-  it('rejects a bank file whose name has no leading account-number prefix, at selection', () => {
+  it('accepts a bank file whose name has no leading account-number prefix (A-D1)', () => {
+    // The inverse of the old contract. A-D1 (Issue #338) made the account an explicit per-slot
+    // choice, so a filename can no longer reject an upload -- the statement is staged, and it is
+    // the missing assignment (not the name) that holds submission back.
     setAuthenticatedUser('rray');
     renderApp();
 
@@ -3112,13 +3181,9 @@ describe('App', () => {
       target: { files: [new File(['bank'], 'checking-account.csv')] },
     });
 
-    const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent('UPLOAD_BANK_FILENAME_INVALID');
-    expect(alert).toHaveTextContent(
-      'Bank file names must start with the account number (or its last 4 digits) followed by "-" or "_", e.g. "4321_bank-export.csv".',
-    );
-    // Rejected -- never assigned into the slot, so all remaining slots (2 bank + GL) stay empty.
-    expect(screen.getAllByText('No file selected')).toHaveLength(3);
+    expect(screen.queryByText('UPLOAD_BANK_FILENAME_INVALID')).not.toBeInTheDocument();
+    // Staged into slot 1, so only the other two slots (1 bank + GL) are still empty.
+    expect(screen.getAllByText('No file selected')).toHaveLength(2);
   });
 
   it('#153: starts with two bank slots, and "Add another bank statement" adds slots up to 4', () => {
@@ -3172,7 +3237,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
+    await fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
 
     // R2 V4.3: `aria-disabled`, not the native `disabled` attribute, so a screen reader can still
     // reach the reason via `aria-describedby` on a disabled button -- `toBeDisabled()` checks the
@@ -3195,7 +3260,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs({
+    await fillUploadInputs({
       bankFiles: [
         new File(['bank-1'], '1111_bank.xlsx'),
         new File(['bank-2'], '2222_bank.xlsx'),
@@ -3220,11 +3285,11 @@ describe('App', () => {
     expect(formData.getAll('bankFiles')).toHaveLength(4);
   });
 
-  it('#153: rejects a 5th bank-shaped file dropped once all 4 slots are filled', () => {
+  it('#153: rejects a 5th bank-shaped file dropped once all 4 slots are filled', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs({
+    await fillUploadInputs({
       bankFiles: [
         new File(['bank-1'], '1111_bank.xlsx'),
         new File(['bank-2'], '2222_bank.xlsx'),
@@ -3255,7 +3320,7 @@ describe('App', () => {
     const glFile = new File(['gl'], 'gl.csv');
     Object.defineProperty(glFile, 'size', { value: 6_000_000 });
 
-    fillUploadInputs({ bankFiles: [bankFileA, bankFileB], glFile });
+    await fillUploadInputs({ bankFiles: [bankFileA, bankFileB], glFile });
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -3299,7 +3364,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -3368,7 +3433,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
@@ -3380,11 +3445,11 @@ describe('App', () => {
     expect(screen.getByText('Prior-period comparison')).toBeInTheDocument();
   });
 
-  it('disables submit when reconciliation label is blank', () => {
+  it('disables submit when reconciliation label is blank', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fillUploadInputs();
+    await fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
       target: { value: '   ' },
     });

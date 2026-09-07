@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type { CanonicalField } from '@recon/domain';
+import type { CanonicalField, ReconciliationAccount } from '@recon/domain';
 
 import { MAX_AP_ENTITIES, MAX_BANK_ACCOUNTS, SourceDropZone } from './SourceDropZone';
 
@@ -25,11 +25,18 @@ afterEach(cleanup);
 function BankGlHarness({
   initialBankFiles = [null, null],
   canonicalFields = [],
+  accounts = [],
 }: {
   initialBankFiles?: (File | null)[];
   canonicalFields?: CanonicalField[];
+  /** A-D1 (Issue #338): the registry the per-slot assignment control offers. Empty by default --
+   * the slot-filling behaviour these tests cover is independent of it. */
+  accounts?: ReconciliationAccount[];
 }) {
   const [bankFiles, setBankFiles] = useState<(File | null)[]>(initialBankFiles);
+  const [bankAccountIds, setBankAccountIds] = useState<(string | null)[]>(
+    initialBankFiles.map(() => null),
+  );
   const [glFile, setGlFile] = useState<File | null>(null);
   return (
     <SourceDropZone
@@ -38,6 +45,9 @@ function BankGlHarness({
       glFile={glFile}
       setBankFiles={setBankFiles as Dispatch<SetStateAction<(File | null)[]>>}
       setGlFile={setGlFile}
+      accounts={accounts}
+      bankAccountIds={bankAccountIds}
+      setBankAccountIds={setBankAccountIds}
       canonicalFields={canonicalFields}
     />
   );
@@ -89,13 +99,108 @@ describe('SourceDropZone (mode="bank-gl")', () => {
     expect(glSlot).toHaveTextContent('gl-export.csv');
   });
 
-  it('rejects a bank file whose name does not start with an account number', async () => {
+  it('accepts a bank file whose name does not start with an account number (A-D1)', async () => {
+    // Previously rejected outright: the filename was the only thing saying which account a
+    // statement belonged to, so a name without one could not be merged. A-D1 (Issue #338) moved
+    // that to an explicit per-slot assignment, leaving the name with no authority at all.
     const user = userEvent.setup();
     render(<BankGlHarness />);
 
     await user.upload(screen.getByLabelText('Source workbooks'), makeFile('bank-export.csv'));
 
-    expect(screen.getByText('UPLOAD_BANK_FILENAME_INVALID')).toBeInTheDocument();
+    expect(screen.queryByText('UPLOAD_BANK_FILENAME_INVALID')).not.toBeInTheDocument();
+    const bankSlot = screen.getByLabelText('Bank workbook (Account 1)').closest('.source-slot');
+    expect(bankSlot).toHaveTextContent('bank-export.csv');
+  });
+
+  it('offers an account assignment control for a staged bank file, defaulting to no selection', async () => {
+    const user = userEvent.setup();
+    render(
+      <BankGlHarness
+        accounts={[
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            organizationId: 'org-1',
+            accountIdentifier: '4321',
+            displayName: 'Operating',
+            institutionName: 'Truist',
+            lastFour: '4321',
+            currencyCode: 'USD',
+            glCashAccountCode: null,
+            isActive: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await user.upload(screen.getByLabelText('Source workbooks'), makeFile('9999_bank.csv'));
+
+    // The label is what the operator picks by; the account's UUID never appears (A-D1).
+    const select = screen.getByLabelText('Bank account');
+    expect(select).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Operating — ending in 4321' })).toBeInTheDocument();
+    // 9999 matches nothing, so nothing is pre-selected -- a filename never picks on its own.
+    expect(select).toHaveValue('');
+  });
+
+  it('pre-selects the one account a filename unambiguously points at', async () => {
+    const user = userEvent.setup();
+    render(
+      <BankGlHarness
+        accounts={[
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            organizationId: 'org-1',
+            accountIdentifier: '4321',
+            displayName: 'Operating',
+            institutionName: 'Truist',
+            lastFour: '4321',
+            currencyCode: 'USD',
+            glCashAccountCode: null,
+            isActive: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await user.upload(screen.getByLabelText('Source workbooks'), makeFile('4321_bank.csv'));
+
+    expect(screen.getByLabelText('Bank account')).toHaveValue(
+      '11111111-1111-4111-8111-111111111111',
+    );
+  });
+
+  it('does not pre-select when two accounts share the filename\'s last four (A-D1)', async () => {
+    const base = {
+      organizationId: 'org-1',
+      displayName: null,
+      institutionName: null,
+      lastFour: '4321',
+      currencyCode: 'USD',
+      glCashAccountCode: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const user = userEvent.setup();
+    render(
+      <BankGlHarness
+        accounts={[
+          { ...base, id: '11111111-1111-4111-8111-111111111111', accountIdentifier: '1114321' },
+          { ...base, id: '22222222-2222-4222-8222-222222222222', accountIdentifier: '2224321' },
+        ]}
+      />,
+    );
+
+    await user.upload(screen.getByLabelText('Source workbooks'), makeFile('4321_bank.csv'));
+
+    // "Never choose the first match automatically" -- the operator is told to pick instead.
+    expect(screen.getByLabelText('Bank account')).toHaveValue('');
+    expect(screen.getByText(/More than one account ends in 4321/)).toBeInTheDocument();
   });
 
   it('rejects an oversized file', async () => {

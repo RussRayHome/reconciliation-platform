@@ -37,6 +37,7 @@
 @import './components/developer.css';
 @import './components/access-denied.css';
 @import './components/account.css';
+@import './components/bank-accounts.css';
 @import './components/mapping.css';
 @import './components/approvals.css';
 /* Cross-component responsive/reduced-motion overrides — must stay last:

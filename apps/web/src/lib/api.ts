@@ -1,4 +1,5 @@
 import type {
+  AccountAssignmentConflict,
   ApprovableType,
   ApprovalCountsByGroup,
   ApprovalRow,
@@ -10,12 +11,15 @@ import type {
   MappingProfileSavePayload,
   MappingProfileSaveResult,
   MatchingConfigVersion,
+  ReconciliationAccount,
   ReconciliationRunReport,
+  RegisterReconciliationAccountInput,
   ReviewerDecision,
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
   RuleCatalogResponse,
   RuleVersionsResponse,
+  UpdateReconciliationAccountInput,
   UserRole,
 } from '@recon/domain';
 import { clearAuthToken, getAuthToken, setAuthToken } from './authToken';
@@ -114,6 +118,10 @@ export class ApiError extends Error {
   readonly httpStatus: number;
   /** Whether retrying the same request could plausibly succeed. */
   readonly retryable: boolean;
+  /** A-D1 (Issue #338): on a 409 from `POST /api/imports/runs`, the per-file assignment
+   * disagreements the operator must confirm or correct. Present only for that case -- everywhere
+   * else this stays undefined, and a caller that ignores it loses nothing. */
+  readonly conflicts?: AccountAssignmentConflict[];
 
   /**
    * @param message Authored, user-facing text from the response body.
@@ -123,7 +131,12 @@ export class ApiError extends Error {
   constructor(
     message: string,
     httpStatus: number,
-    options: { code?: ErrorCode; reference?: string; retryable?: boolean } = {},
+    options: {
+      code?: ErrorCode;
+      reference?: string;
+      retryable?: boolean;
+      conflicts?: AccountAssignmentConflict[];
+    } = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -131,6 +144,7 @@ export class ApiError extends Error {
     this.code = options.code;
     this.reference = options.reference;
     this.retryable = options.retryable ?? false;
+    this.conflicts = options.conflicts;
   }
 }
 
@@ -141,11 +155,13 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
       code?: ErrorCode;
       reference?: string;
       retryable?: boolean;
+      conflicts?: AccountAssignmentConflict[];
     };
     throw new ApiError(payload.message ?? 'Request failed.', response.status, {
       code: payload.code,
       reference: payload.reference,
       retryable: payload.retryable,
+      conflicts: payload.conflicts,
     });
   }
 
@@ -454,16 +470,73 @@ export const listOpenItemsScheduleRequest = async (filters: {
   return items;
 };
 
+// ── Bank account registry (A-D1, Issue #338) ──────────────────────────────────────────────────
+// A statement can only be assigned to an account registered here. The UI shows friendly labels
+// (`formatAccountLabel`) and keeps the account UUID internal, exactly as A-D1 requires.
+
+export const listAccountsRequest = async (
+  options: { includeInactive?: boolean } = {},
+): Promise<ReconciliationAccount[]> => {
+  const query = options.includeInactive ? '?includeInactive=true' : '';
+  const response = await apiFetch(`/api/accounts${query}`);
+  const { accounts } = await parseResponse<{ accounts: ReconciliationAccount[] }>(response);
+  return accounts;
+};
+
+export const registerAccountRequest = async (
+  input: RegisterReconciliationAccountInput,
+): Promise<ReconciliationAccount> => {
+  const response = await apiFetch('/api/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return parseResponse<ReconciliationAccount>(response);
+};
+
+export const updateAccountRequest = async (
+  accountId: string,
+  input: UpdateReconciliationAccountInput,
+): Promise<ReconciliationAccount> => {
+  const response = await apiFetch(`/api/accounts/${accountId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return parseResponse<ReconciliationAccount>(response);
+};
+
+/** Accounts a filename could refer to. Returns every match -- the caller pre-selects only when
+ * there is exactly one, because A-D1 forbids choosing the first of several automatically. */
+export const suggestAccountsRequest = async (
+  filename: string,
+): Promise<{ filenameLastFour: string | null; candidates: ReconciliationAccount[] }> => {
+  const response = await apiFetch(`/api/accounts/suggest?filename=${encodeURIComponent(filename)}`);
+  return parseResponse<{ filenameLastFour: string | null; candidates: ReconciliationAccount[] }>(
+    response,
+  );
+};
+
 /** Payload for `POST /api/imports/runs`, matching `importRunBodySchema`. `bankFiles` is 1-4 bank
  * account uploads (Issue #153) sent as one repeated `bankFiles` form field, not per-slot names. */
 export interface CreateImportRunPayload {
   bankFiles: File[];
   glFile: File;
+  /** One assignment per entry of `bankFiles`, in the same order (A-D1, Issue #338). The server
+   * rejects a set whose length does not match, so the two are always built together. */
+  bankAccountAssignments: BankAccountAssignment[];
   label: string;
   accountIdentifier?: string;
   frequency: 'MONTHLY' | 'ANNUAL';
   periodYear: number;
   periodMonth?: number;
+}
+
+/** The operator's explicit choice of account for one uploaded statement. `confirmed` acknowledges
+ * a reported filename disagreement; it is never set without the operator acting on the prompt. */
+export interface BankAccountAssignment {
+  accountId: string;
+  confirmed?: boolean;
 }
 
 /** Bytes sent so far vs. the total request body size, reported while the combined bank + GL
@@ -489,6 +562,7 @@ export interface CreateImportRunOptions {
 export const createImportRunRequest = ({
   bankFiles,
   glFile,
+  bankAccountAssignments,
   label,
   accountIdentifier,
   frequency,
@@ -500,6 +574,8 @@ export const createImportRunRequest = ({
   const formData = new FormData();
   bankFiles.forEach((bankFile) => formData.append('bankFiles', bankFile));
   formData.append('glFile', glFile);
+  // Multipart carries strings only, so the assignment set travels as JSON alongside the files.
+  formData.append('bankAccountAssignments', JSON.stringify(bankAccountAssignments));
   formData.append('label', label);
   if (accountIdentifier) {
     formData.append('accountIdentifier', accountIdentifier);
@@ -563,12 +639,14 @@ export const createImportRunRequest = ({
       let code: ErrorCode | undefined;
       let reference: string | undefined;
       let retryable: boolean | undefined;
+      let conflicts: AccountAssignmentConflict[] | undefined;
       try {
         const body = JSON.parse(xhr.responseText) as {
           message?: string;
           code?: ErrorCode;
           reference?: string;
           retryable?: boolean;
+          conflicts?: AccountAssignmentConflict[];
         };
         if (body.message) {
           message = body.message;
@@ -576,10 +654,11 @@ export const createImportRunRequest = ({
         code = body.code;
         reference = body.reference;
         retryable = body.retryable;
+        conflicts = body.conflicts;
       } catch {
         // Body wasn't JSON -- keep the status-based fallback message.
       }
-      reject(new ApiError(message, xhr.status, { code, reference, retryable }));
+      reject(new ApiError(message, xhr.status, { code, reference, retryable, conflicts }));
     });
 
     xhr.addEventListener('error', () => {

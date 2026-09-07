@@ -178,9 +178,92 @@ export const reconciliationRunBodySchema = z.object({
  * label/frequency/periodYear columns (changeset 0042), so a silently-dropped field would either
  * fail the insert with a raw DB error or persist a run the analyst didn't actually ask for. Fields
  * arrive as multipart/form-data strings (multer), hence the z.coerce on the numeric ones. */
+/**
+ * POST /api/accounts -- registering a bank account (A-D1, Issue #338). `accountIdentifier` is the
+ * account number as the organization records it; `lastFour` is derived from it server-side and is
+ * deliberately not accepted from the client, so the display tail can never disagree with the
+ * identifier it is supposed to summarize.
+ */
+export const registerAccountBodySchema = z.object({
+  accountIdentifier: requiredTrimmedString('An account number is required.'),
+  displayName: z.string().trim().max(120, 'displayName must be 120 characters or fewer.').optional(),
+  institutionName: z
+    .string()
+    .trim()
+    .max(120, 'institutionName must be 120 characters or fewer.')
+    .optional(),
+  currencyCode: z
+    .string()
+    .trim()
+    .length(3, 'currencyCode must be a 3-letter ISO code.')
+    .optional(),
+  glCashAccountCode: z
+    .string()
+    .trim()
+    .max(64, 'glCashAccountCode must be 64 characters or fewer.')
+    .optional(),
+});
+
+/** PATCH /api/accounts/:id. `accountIdentifier` is absent on purpose -- editing it would silently
+ * re-point every statement already assigned to the account (see UpdateReconciliationAccountInput). */
+export const updateAccountBodySchema = z
+  .object({
+    displayName: z.string().trim().max(120, 'displayName must be 120 characters or fewer.').optional(),
+    institutionName: z
+      .string()
+      .trim()
+      .max(120, 'institutionName must be 120 characters or fewer.')
+      .optional(),
+    currencyCode: z.string().trim().length(3, 'currencyCode must be a 3-letter ISO code.').optional(),
+    glCashAccountCode: z
+      .string()
+      .trim()
+      .max(64, 'glCashAccountCode must be 64 characters or fewer.')
+      .optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((body) => Object.values(body).some((value) => value !== undefined), {
+    message: 'At least one field must be supplied.',
+  });
+
+/**
+ * The per-file account assignment accompanying a bank upload (A-D1 step 2). Sent as a JSON string
+ * in the multipart body because the rest of the payload is files -- one entry per `bankFiles`
+ * upload, in the same order, so a file and its assignment cannot drift apart.
+ *
+ * `confirmed` is the operator's acknowledgement of a filename or last-four disagreement. It is
+ * accepted only as an explicit `true`: A-D1 requires that a disagreement be confirmed or the file
+ * reassigned, and a defaulted value would let a conflict pass silently.
+ */
+export const bankAccountAssignmentSchema = z.object({
+  accountId: z.string().uuid('accountId must be a valid account id.'),
+  confirmed: z.boolean().optional(),
+});
+
+export const bankAccountAssignmentsSchema = z
+  .array(bankAccountAssignmentSchema)
+  .min(1, 'Each bank file must be assigned to a registered account.');
+
 export const importRunBodySchema = z.object({
   label: requiredTrimmedString('label is required.'),
   accountIdentifier: z.string().optional().catch(undefined),
+  /** JSON-encoded {@link bankAccountAssignmentsSchema}. Multipart bodies carry only strings, so
+   * this is decoded rather than received as structured JSON; a malformed string is reported as a
+   * validation error rather than being silently treated as "no assignments supplied". */
+  bankAccountAssignments: z
+    .string()
+    .transform((value, ctx) => {
+      try {
+        return bankAccountAssignmentsSchema.parse(JSON.parse(value));
+      } catch {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'bankAccountAssignments must be a JSON array of account assignments.',
+        });
+        return z.NEVER;
+      }
+    })
+    .optional(),
   frequency: z.enum(['MONTHLY', 'ANNUAL'], {
     message: 'frequency must be MONTHLY or ANNUAL.',
   }),

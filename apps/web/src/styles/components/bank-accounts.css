@@ -1,0 +1,72 @@
+@layer components {
+  /* A-D1 (Issue #338): the bank account registry screen. Deliberately label-first -- the account's
+     UUID is its identity but never appears here, so every column reads as something an operator
+     would recognize on a statement. */
+  .bank-accounts__form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+    align-items: end;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .bank-accounts__field {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .bank-accounts__field label {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .bank-accounts__field input {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-primary);
+  }
+
+  .bank-accounts__hint {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .bank-accounts__error {
+    margin: 0;
+    grid-column: 1 / -1;
+    font-size: 0.8rem;
+    color: var(--severity-high);
+  }
+
+  .bank-accounts__empty {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .bank-accounts__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  .bank-accounts__table th,
+  .bank-accounts__table td {
+    padding: 0.5rem 0.6rem;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .bank-accounts__table thead th {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+}

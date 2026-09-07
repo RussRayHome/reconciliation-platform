@@ -33,28 +33,39 @@ describes, fix that by making the human-readable template the one real schema.
 
 Headers, in required order: `Date, Description, Sequence Number, Check Number, Reference, Debit, Credit, Balance`
 
+The **merged** bank dataset carries one further column the raw upload template does not:
+`Interface ID`. It is written by the merge step, never by the uploader, and is listed in the table
+below for completeness.
+
 | Column | Required | Maps to | Notes |
 | --- | --- | --- | --- |
 | `Date` | Yes | `date` | ISO-8601. |
 | `Description` | Yes | `description` | Also the source of `merchantName`/`payeeName` text for matching — no separate merchant column exists; the Matching Engine unions description/merchant/payee for text similarity and never requires merchant standalone. |
-| `Sequence Number` | Yes | `recordId` | Per-file transaction identity. Must be unique within its own file (`BANK_SEQUENCE_DUPLICATE` if not). For a two-account run, every value File Validation actually sees already carries Issue #141's account-derived composite prefix (`<last-4-of-account>-<sequence>`, e.g. `4321-000512`) — that prefixing happens in the merge step (`mergeBankFiles`) *before* File Validation runs, so this column's contract here is unchanged; File Validation is never aware two source files existed. |
+| `Sequence Number` | Yes | `recordId` | Per-file transaction identity. Must be unique within its own file (`BANK_SEQUENCE_DUPLICATE` if not). For a multi-account run, every value File Validation actually sees already carries a composite prefix — `<account-uuid>-<sequence>` since A-D1 (Issue #338), previously the account's last four digits. The prefix changed because two registered accounts may legitimately share a last four, which made the old prefix collide and reported two genuinely distinct rows as duplicates. Prefixing happens in the merge step (`mergeBankFiles`) *before* File Validation runs, so this column's contract here is unchanged; File Validation is never aware several source files existed. |
 | `Check Number` | No | `checkNumber` | |
 | `Reference` | No | `referenceNumber` | Newly added — the old template had no column mapping to `referenceNumber` at all, so `ReferenceNumberMismatch` and the top-priority "Reference + Amount Match" rule could never fire against a real uploaded file. |
 | `Debit` | One of Debit/Credit required per row | — | |
 | `Credit` | One of Debit/Credit required per row | — | |
 | `Balance` | No | `runningBalance` | Used only for the file-level running-balance continuity check. |
+| `Interface ID` | Merged dataset only | `account` | The `reconciliation_account.id` UUID of the account the statement was explicitly assigned to (A-D1, Issue #338). Written onto every row by `mergeBankFiles`; absent from the raw per-account upload template, and never filled in by hand. |
 
 **Derivations** (not columns, computed during validation):
 - `signedAmount = credit column populated ? +credit : -debit`.
 - `transactionType = signedAmount > 0 ? 'credit' : 'debit'` — positive amounts are credits,
   negative are debits. No `Type` column exists for Bank; this is inferred entirely from which of
   Debit/Credit is populated.
-- `account`: not a CSV column, and not a File Validation concept at all. Per ADR-0003, each raw
-  bank file's account number is parsed from its **filename** (last four digits) by the merge step
-  (`mergeBankFiles`, upstream of File Validation) solely to build the composite `Sequence Number`
-  prefix described above — the account identifier itself never becomes a row field or reaches
-  `NormalizedRecord`. By the time File Validation runs, the two accounts' rows are already
-  concatenated into one file with no per-row account marker beyond that prefix.
+- `account`: sourced from the merged dataset's `Interface ID` column, which carries the
+  `reconciliation_account.id` of the account the operator explicitly assigned the statement to
+  before upload (A-D1, Issue #338). It reaches `NormalizedRecord.account` and from there
+  `canonical_record.account` and `NormalizedTransaction.accountIdentifier`.
+
+  This reverses the previous behaviour, which is worth stating plainly because a good deal of the
+  system was built around it: each raw bank file's account used to be parsed from its **filename**
+  (last four digits) purely to build the `Sequence Number` prefix, and the account itself never
+  became a row field. Because nothing populated `account`, `NormalizedTransaction.accountIdentifier`
+  was `undefined` on every transaction, and everything keyed to it — run-account linking, open-item
+  carry-forward, per-account tie-out — was inert. A filename may still *suggest* an account during
+  upload, but it cannot establish identity, override an assignment, or select configuration.
 
 ## §3. GL file schema
 

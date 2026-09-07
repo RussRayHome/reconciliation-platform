@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { UseMutationResult } from '@tanstack/react-query';
 
-import type { ErrorCode } from '@recon/domain';
+import type { AccountAssignmentConflict, ErrorCode } from '@recon/domain';
 
 import { ApiError } from '../lib/api';
 import {
@@ -22,6 +22,11 @@ export type ImportUploadTransferState =
   | { kind: 'idle' }
   | { kind: 'uploading'; loadedBytes: number }
   | { kind: 'network-failed'; stalledBytes: number }
+  /** A-D1 (Issue #338): one or more statements disagree with the account they were assigned to.
+   * Its own state rather than a `failed` variant because it is not a failure to retry -- the
+   * operator either confirms the assignment as-is or picks a different account, and only they can
+   * decide which. Retrying the identical request would be rejected identically. */
+  | { kind: 'assignment-conflict'; conflicts: AccountAssignmentConflict[] }
   | { kind: 'failed'; message: string; code?: ErrorCode; reference?: string; retryable: boolean };
 
 const NETWORK_ERROR_MESSAGE = 'Network error while uploading source files.';
@@ -71,6 +76,15 @@ export const useImportUploadTransfer = (
                 kind: 'network-failed',
                 stalledBytes: previous.kind === 'uploading' ? previous.loadedBytes : 0,
               }));
+              reconciliation.reset();
+              return;
+            }
+
+            // A-D1 conflicts come back as a 409 carrying every disagreement. Surfaced for
+            // confirm-or-reassign rather than absorbed into the generic failure banner, which
+            // would leave the operator with no way to act on it.
+            if (error instanceof ApiError && error.httpStatus === 409 && error.conflicts?.length) {
+              setTransfer({ kind: 'assignment-conflict', conflicts: error.conflicts });
               reconciliation.reset();
               return;
             }

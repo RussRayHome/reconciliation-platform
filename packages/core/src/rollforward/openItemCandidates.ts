@@ -26,9 +26,9 @@ export interface BuildOpenItemCandidatesResult {
  * Reduces this run's carry-eligible exceptions (per `isCarryEligible`, `@recon/domain`'s
  * `CARRY_ELIGIBLE_CATEGORIES`) into `OpenItemCandidate`s -- everything PR C.4's persistence-layer
  * projection (`PostgresOpenItemStore.projectOpenItems`) needs *except* the resolved
- * `reconciliation_account.id`, which is a database lookup this pure function has no way to do.
- * `accountIdentifier` stays raw free text here; the persistence layer resolves (find-or-creates)
- * the real account row.
+ * `reconciliation_account.id`. Since A-D1 (Issue #338) that id is exactly what
+ * `NormalizedTransaction.accountIdentifier` carries, so the candidate needs no further resolution
+ * -- the persistence layer only asserts the account is one this organization registered.
  *
  * One candidate per carry-eligible exception, keyed to its first related transaction --
  * `relatedTransactionIds` is expected to carry exactly one id for every category this function
@@ -72,11 +72,10 @@ export const buildOpenItemCandidates = (
       continue;
     }
 
-    // Natural key is scoped per real bank account (§3.3), not per raw accountIdentifier text --
-    // using accountIdentifier here (rather than a resolved account UUID, which this pure function
-    // has no way to obtain) is safe because it's the same raw identifier the persistence layer
-    // will resolve to the exact same reconciliation_account row before enforcing the partial
-    // unique index; the key only needs to be *stable*, not already-final.
+    // Natural key is scoped per real bank account (§3.3). Since A-D1, accountIdentifier already is
+    // the registered reconciliation_account.id, so the key is scoped to the account itself rather
+    // than to text that merely stands for it -- two accounts sharing a last four can no longer
+    // collide into one natural key.
     const { key, tier } = deriveNaturalKey(transaction, transaction.accountIdentifier);
 
     candidates.push({

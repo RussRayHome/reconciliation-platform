@@ -357,6 +357,8 @@ const latestFakeXhr = (): FakeXhr => {
 
 const createImportRunPayload = () => ({
   bankFiles: [new File(['bank-bytes'], 'bank.xlsx')],
+  // A-D1 (Issue #338): one explicit account assignment per bank file.
+  bankAccountAssignments: [{ accountId: '11111111-1111-4111-8111-111111111111' }],
   glFile: new File(['gl-bytes'], 'gl.xlsx'),
   label: 'Stall watchdog test',
   frequency: 'MONTHLY' as const,

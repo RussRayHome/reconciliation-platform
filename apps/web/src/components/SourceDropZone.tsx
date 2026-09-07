@@ -1,7 +1,17 @@
-import { type Dispatch, type DragEvent, type SetStateAction, useState } from 'react';
+import {
+  useEffect,
+  useState,
+  type Dispatch,
+  type DragEvent,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 
-import { parseApEntityIdFromFilename, parseBankAccountLast4FromFilename } from '@recon/domain';
-import type { CanonicalField } from '@recon/domain';
+import { parseApEntityIdFromFilename } from '@recon/domain';
+import type { CanonicalField, ReconciliationAccount } from '@recon/domain';
+
+import { suggestAccountIdForFilename } from '../lib/bankAccountSuggestion';
+import { BankAccountAssignment } from './BankAccountAssignment';
 
 import { useHeaderPreviewWarning } from '../hooks/useHeaderPreviewWarning';
 import { formatFileSize } from '../lib/formatFileSize';
@@ -43,15 +53,11 @@ const detectRejection = (file: File): RejectedUploadCode | null => {
   return null;
 };
 
-/** ADR-0003 (Issue #141): a bank file's account is parsed from its ORIGINAL FILENAME, not its
- * content, so this is the same client-side pre-check the server runs authoritatively in
- * `mergeBankFiles` -- catching a misnamed file here saves a full round-trip, but the server call
- * remains the actual enforcement boundary. */
-const detectBankAccountRejection = (file: File): RejectedUploadCode | null =>
-  parseBankAccountLast4FromFilename(file.name) === null ? 'UPLOAD_BANK_FILENAME_INVALID' : null;
-
-/** R1 WP4: same filename-derived pre-check for AP/Billing, mirroring the bank account convention
- * (see `detectBankAccountRejection`'s own doc comment). */
+/** A-D1 (Issue #338) removed the bank equivalent of this check. A bank file used to be rejected
+ * outright unless its name began with an account number, because the name was the only thing that
+ * said which account the statement belonged to. The account is now chosen explicitly per slot, so
+ * a filename carries no authority and any name is acceptable -- it only feeds the suggestion and
+ * the disagreement warning in `BankAccountAssignment`. AP/Billing keeps its own convention. */
 const detectApEntityRejection = (file: File): RejectedUploadCode | null =>
   parseApEntityIdFromFilename(file.name) === null ? 'UPLOAD_AP_FILENAME_INVALID' : null;
 
@@ -86,6 +92,15 @@ type SourceDropZoneProps = (
       glFile: File | null;
       setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
       setGlFile: Dispatch<SetStateAction<File | null>>;
+      /** A-D1 (Issue #338): the organization's registered accounts, and the explicit per-slot
+       * assignment each staged statement carries. Positional -- `bankAccountIds[i]` belongs to
+       * `bankFiles[i]` -- so adding or removing a slot must move both together. */
+      accounts: readonly ReconciliationAccount[];
+      bankAccountIds: (string | null)[];
+      setBankAccountIds: Dispatch<SetStateAction<(string | null)[]>>;
+      /** The registry could not be read. Distinct from an empty registry: one is a failure to
+       * report, the other is a prompt to register the first account. */
+      accountsUnavailable?: boolean;
     }
   | {
       mode: 'billing';
@@ -119,6 +134,10 @@ export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
       glFile={props.glFile}
       setBankFiles={props.setBankFiles}
       setGlFile={props.setGlFile}
+      accounts={props.accounts}
+      bankAccountIds={props.bankAccountIds}
+      setBankAccountIds={props.setBankAccountIds}
+      accountsUnavailable={props.accountsUnavailable}
       canonicalFields={props.canonicalFields}
     />
   );
@@ -136,12 +155,20 @@ function BankGlDropZone({
   glFile,
   setBankFiles,
   setGlFile,
+  accounts,
+  bankAccountIds,
+  setBankAccountIds,
+  accountsUnavailable = false,
   canonicalFields,
 }: Readonly<{
   bankFiles: (File | null)[];
   glFile: File | null;
   setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
   setGlFile: Dispatch<SetStateAction<File | null>>;
+  accounts: readonly ReconciliationAccount[];
+  bankAccountIds: (string | null)[];
+  setBankAccountIds: Dispatch<SetStateAction<(string | null)[]>>;
+  accountsUnavailable?: boolean;
   canonicalFields: CanonicalField[];
 }>) {
   const [isDragging, setIsDragging] = useState(false);
@@ -188,11 +215,6 @@ function BankGlDropZone({
       const detected = detectSource(file.name);
 
       if (detected === 'bank') {
-        const accountRejection = detectBankAccountRejection(file);
-        if (accountRejection) {
-          rejectFile(file, accountRejection);
-          continue;
-        }
         if (!assignBankSlot(file)) {
           rejectFile(file, 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED');
         }
@@ -213,6 +235,8 @@ function BankGlDropZone({
     }
 
     setBankFiles(nextBankFiles);
+    // No suggestion pass here -- the effect above picks the new files up on the next render, and
+    // covers the case where the registry has not loaded yet as well.
     if (nextGlFile !== glFile) {
       setGlFile(nextGlFile);
     }
@@ -243,21 +267,59 @@ function BankGlDropZone({
       return;
     }
 
-    const accountRejection = detectBankAccountRejection(file);
-    if (accountRejection) {
-      rejectFile(file, accountRejection);
-      return;
-    }
-
     setBankFiles((prev) => prev.map((slotFile, i) => (i === index ? file : slotFile)));
+  };
+
+  /**
+   * Pre-selects an account for any staged file whose name points at exactly one (A-D1 forbids
+   * picking the first of several).
+   *
+   * Reactive rather than fired at drop time, because the registry loads asynchronously: a file
+   * staged before the accounts arrive would otherwise get no suggestion at all and never get one
+   * afterwards. Depending on `accounts` means the suggestion appears as soon as there is something
+   * to suggest from, whichever order the two happen in.
+   *
+   * Only ever fills an empty slot. An operator's explicit choice is never overwritten -- including
+   * by a re-render, a slot reorder, or the registry reloading.
+   */
+  useEffect(() => {
+    setBankAccountIds((prev) => {
+      const next = [...prev];
+      while (next.length < bankFiles.length) next.push(null);
+      next.length = bankFiles.length;
+
+      let changed = next.length !== prev.length;
+      for (let index = 0; index < bankFiles.length; index += 1) {
+        const file = bankFiles[index];
+        if (!file || next[index] !== null) continue;
+        const suggested = suggestAccountIdForFilename(file.name, accounts);
+        if (suggested !== null) {
+          next[index] = suggested;
+          changed = true;
+        }
+      }
+      // Returning `prev` unchanged keeps this from scheduling a render on every accounts/file
+      // update, which would re-run the effect and loop.
+      return changed ? next : prev;
+    });
+  }, [bankFiles, accounts, setBankAccountIds]);
+
+  const onAssignmentChange = (index: number, accountId: string | null): void => {
+    setBankAccountIds((prev) => prev.map((current, i) => (i === index ? accountId : current)));
   };
 
   const onAddBankSlot = (): void => {
     setBankFiles((prev) => (prev.length < MAX_BANK_ACCOUNTS ? [...prev, null] : prev));
+    // Growth is also handled by the effect above, but doing it here keeps the two arrays the same
+    // length within a single render rather than for one frame's difference.
+    setBankAccountIds((prev) => (prev.length < MAX_BANK_ACCOUNTS ? [...prev, null] : prev));
   };
 
   const onRemoveBankSlot = (index: number): void => {
     setBankFiles((prev) =>
+      prev.length > MIN_BANK_ACCOUNTS ? prev.filter((_, i) => i !== index) : prev,
+    );
+    setBankAccountIds((prev) =>
       prev.length > MIN_BANK_ACCOUNTS ? prev.filter((_, i) => i !== index) : prev,
     );
   };
@@ -323,6 +385,16 @@ function BankGlDropZone({
               bankFiles.length > MIN_BANK_ACCOUNTS ? () => onRemoveBankSlot(index) : undefined
             }
             canonicalFields={canonicalFields}
+            footer={
+              <BankAccountAssignment
+                file={file}
+                accounts={accounts}
+                accountId={bankAccountIds[index] ?? null}
+                onChange={(accountId) => onAssignmentChange(index, accountId)}
+                controlId={`${bankInputId(index)}-account`}
+                accountsUnavailable={accountsUnavailable}
+              />
+            }
           />
         ))}
         <SourceSlot
@@ -562,6 +634,7 @@ function SourceSlot({
   onChange,
   onRemove,
   canonicalFields,
+  footer,
 }: Readonly<{
   kind: SourceKind;
   label: string;
@@ -570,6 +643,9 @@ function SourceSlot({
   onChange: (file: File | null) => void;
   onRemove?: () => void;
   canonicalFields: CanonicalField[];
+  /** Rendered below the slot's own contents. Bank slots pass their account-assignment control
+   * here so the choice sits with the file it belongs to; GL and AP slots pass nothing. */
+  footer?: ReactNode;
 }>) {
   const detected = kind === 'billing' ? null : file ? detectSource(file.name) : null;
   const isOverride = kind !== 'billing' && Boolean(file) && detected !== null && detected !== kind;
@@ -638,6 +714,7 @@ function SourceSlot({
           check happens then.
         </p>
       ) : null}
+      {footer}
     </div>
   );
 }

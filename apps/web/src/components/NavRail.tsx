@@ -231,6 +231,14 @@ export function NavRail({
               and is promoted to a plain top-level item here rather than losing its only rail entry
               point. */}
           <NavItemLink
+            to={routePaths.bankAccounts}
+            label="Bank Accounts"
+            icon="setup"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
+
+          <NavItemLink
             to={routePaths.mappingCreate}
             label="Create Mapping"
             icon="setup"

@@ -38,6 +38,8 @@ import {
   listMappingProfileVersions,
   listMatchingConfigVersions,
   loadPayeeAliases,
+  DuplicateReconciliationAccountError,
+  PostgresAccountStore,
   PostgresBlobStorage,
   PostgresImportRunStore,
   PostgresImportValidationStore,
@@ -47,6 +49,7 @@ import {
   recordApprovalRequestDecision,
   recordLoginEvent,
   retireMappingProfile,
+  UnknownReconciliationAccountError,
   updatePayeeAlias,
   type ApprovalRequestRecord,
   type CreateImportRunFileInput,
@@ -64,7 +67,6 @@ import {
 } from '@recon/persistence';
 import {
   BankFileCountError,
-  BankFilenameAccountParseError,
   BankFileStructuralError,
   MAX_BANK_ACCOUNTS,
   MIN_BANK_ACCOUNTS,
@@ -147,6 +149,7 @@ import {
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
   publishMatchingConfigVersionBodySchema,
+  registerAccountBodySchema,
   reconciliationRunBodySchema,
   respondWithValidationError,
   reviewerDecisionBodySchema,
@@ -156,10 +159,17 @@ import {
   runRecordsQuerySchema,
   saveMappingProfileBodySchema,
   signupBodySchema,
+  updateAccountBodySchema,
   updateAliasBodySchema,
   writeOffOpenItemBodySchema,
 } from './validation';
 
+import {
+  BankAccountAssignmentConflictError,
+  BankAccountAssignmentError,
+  resolveBankAccountAssignments,
+  suggestAccountsForFilename,
+} from './services/accountAssignmentService';
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
 import { executeReconciliationFromNormalized } from './services/reconciliationService';
@@ -3067,6 +3077,103 @@ export const createApp = (
     return true;
   };
 
+  // ── Bank account registry (A-D1, Issue #338) ────────────────────────────────────────────────────
+  // A statement can only be assigned to an account that already exists here. Registration is
+  // deliberate and explicit: nothing in the import path creates an account as a side effect of a
+  // filename any more, which is what made last-four digits behave like an identity.
+  app.get('/api/accounts', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
+    try {
+      const accountStore = new PostgresAccountStore(pool!);
+      // Reading is open to every role with application access -- an approver needs account labels
+      // to interpret a run even though they may not register one.
+      const includeInactive = request.query.includeInactive === 'true';
+      const accounts = await accountStore.listAccounts(request.auth!.organizationId, {
+        includeInactive,
+      });
+      response.json({ accounts });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Assignment suggestions for an upload. Returns every active account sharing the filename's last
+  // four -- all of them, never just the first (A-D1). The client pre-selects only on exactly one
+  // candidate; two candidates mean the operator must choose.
+  app.get('/api/accounts/suggest', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
+    const filename = request.query.filename;
+    if (typeof filename !== 'string' || filename.trim().length === 0) {
+      response.status(400).json({ message: 'filename is required.' });
+      return;
+    }
+    try {
+      const suggestion = await suggestAccountsForFilename({
+        accountStore: new PostgresAccountStore(pool!),
+        organizationId: request.auth!.organizationId,
+        originalFilename: filename,
+      });
+      response.json(suggestion);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/accounts', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
+    if (!rolePermissionsByRole[request.auth!.role].canManageAccounts) {
+      response.status(403).json({ message: 'You may not register bank accounts.' });
+      return;
+    }
+    const bodyResult = registerAccountBodySchema.safeParse(request.body ?? {});
+    if (!bodyResult.success) {
+      respondWithValidationError(response, bodyResult.error);
+      return;
+    }
+    try {
+      const accountStore = new PostgresAccountStore(pool!);
+      const account = await accountStore.registerAccount(
+        request.auth!.organizationId,
+        bodyResult.data,
+      );
+      response.status(201).json(account);
+    } catch (error) {
+      if (error instanceof DuplicateReconciliationAccountError) {
+        response.status(409).json({ message: error.message });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  app.patch('/api/accounts/:id', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
+    if (!rolePermissionsByRole[request.auth!.role].canManageAccounts) {
+      response.status(403).json({ message: 'You may not modify bank accounts.' });
+      return;
+    }
+    const bodyResult = updateAccountBodySchema.safeParse(request.body ?? {});
+    if (!bodyResult.success) {
+      respondWithValidationError(response, bodyResult.error);
+      return;
+    }
+    try {
+      const accountStore = new PostgresAccountStore(pool!);
+      const account = await accountStore.updateAccount(
+        request.auth!.organizationId,
+        request.params.id,
+        bodyResult.data,
+      );
+      response.json(account);
+    } catch (error) {
+      if (error instanceof UnknownReconciliationAccountError) {
+        response.status(404).json({ message: error.message });
+        return;
+      }
+      next(error);
+    }
+  });
+
   // ── File Imports & Validation: create/read a reconciliation_run + its Bank/GL source files ──────
   // No routes here touch validation_issue/canonical_record yet -- this is purely T5(persistence)'s
   // create/read surface (DRAFT status only). Submitting a run for validation is Phase 6, not built.
@@ -3131,11 +3238,35 @@ export const createApp = (
           return;
         }
 
+        // A-D1 (Issue #338): the run declares which registered account each statement belongs to.
+        // One assignment per bank file, positionally paired with the uploads so a file and its
+        // account cannot drift apart. Absent or short assignment sets are rejected outright rather
+        // than falling back to the filename -- the filename is no longer an identity anywhere.
+        const assignments = bodyResult.data.bankAccountAssignments;
+        if (!assignments || assignments.length !== files.bankFiles.length) {
+          response.status(400).json({
+            message: `bankAccountAssignments must hold exactly one entry per bank file (${files.bankFiles.length} expected).`,
+          });
+          return;
+        }
+
+        const accountStore = new PostgresAccountStore(pool!);
+        const resolvedAssignments = await resolveBankAccountAssignments({
+          accountStore,
+          organizationId: request.auth!.organizationId,
+          requests: files.bankFiles.map((file, index) => ({
+            originalFilename: file.originalname,
+            accountId: assignments[index]!.accountId,
+            confirmed: assignments[index]!.confirmed,
+          })),
+        });
+
         const merged = await mergeBankFiles(
-          files.bankFiles.map((file) => ({
+          files.bankFiles.map((file, index) => ({
             bytes: file.buffer,
             fileFormat: resolveSourceFormat(file.originalname) === 'csv' ? 'CSV' : 'XLSX',
             originalFilename: file.originalname,
+            accountId: resolvedAssignments[index]!.account.id,
           })),
         );
 
@@ -3148,9 +3279,10 @@ export const createApp = (
           periodYear: bodyResult.data.periodYear,
           periodMonth: bodyResult.data.periodMonth,
           files: [
-            ...files.bankFiles.map((file, index) =>
-              toImportRunFile(`BANK_ACCOUNT_${index + 1}`, 'BANK', file),
-            ),
+            ...files.bankFiles.map((file, index) => ({
+              ...toImportRunFile(`BANK_ACCOUNT_${index + 1}`, 'BANK', file),
+              accountId: resolvedAssignments[index]!.account.id,
+            })),
             {
               role: 'BANK_MERGED',
               sourceType: 'BANK',
@@ -3164,9 +3296,19 @@ export const createApp = (
 
         response.status(201).json(summary);
       } catch (error) {
-        // Filename-parsing failure is an upload-level problem, not File Validation content
-        // problem -- never routed through validation_issue/rule_version.
-        if (error instanceof BankFilenameAccountParseError) {
+        // A-D1 assignment failures are upload-level problems, never File Validation content
+        // problems -- so they are not routed through validation_issue/rule_version. A conflict is
+        // 409 and carries every disagreement so the client can offer confirm-or-reassign per file;
+        // it is deliberately not auto-resolved here.
+        if (error instanceof BankAccountAssignmentConflictError) {
+          response.status(409).json({ message: error.message, conflicts: error.conflicts });
+          return;
+        }
+        if (error instanceof UnknownReconciliationAccountError) {
+          response.status(404).json({ message: error.message });
+          return;
+        }
+        if (error instanceof BankAccountAssignmentError) {
           response.status(400).json({ message: error.message });
           return;
         }

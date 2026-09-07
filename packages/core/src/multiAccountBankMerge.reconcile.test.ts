@@ -28,6 +28,10 @@ import { runReconciliation } from './reconcile';
  * different accounts -- each bank row still finds its own account's GL counterpart by amount,
  * not some other account's same-day lookalike.
  */
+/** Stand-ins for `reconciliation_account.id`, assigned per statement before upload (A-D1). */
+const ACCOUNT_A = '11111111-1111-4111-8111-111111111111';
+const ACCOUNT_B = '22222222-2222-4222-8222-222222222222';
+
 describe('multi-account bank merge -> matching engine (Issue #141)', () => {
   it('matches every bank row to its own account GL line, including the same-day PAYROLL/INTEREST pairs, with no unmatched rows', async () => {
     const [bankBufferA, bankBufferB, glBuffer] = await Promise.all([
@@ -37,8 +41,18 @@ describe('multi-account bank merge -> matching engine (Issue #141)', () => {
     ]);
 
     const merged = await mergeBankFiles([
-      { bytes: bankBufferA, fileFormat: 'XLSX', originalFilename: '1234_bank-export.xlsx' },
-      { bytes: bankBufferB, fileFormat: 'XLSX', originalFilename: '5678_bank-export.xlsx' },
+      {
+        bytes: bankBufferA,
+        fileFormat: 'XLSX',
+        originalFilename: '1234_bank-export.xlsx',
+        accountId: ACCOUNT_A,
+      },
+      {
+        bytes: bankBufferB,
+        fileFormat: 'XLSX',
+        originalFilename: '5678_bank-export.xlsx',
+        accountId: ACCOUNT_B,
+      },
     ]);
 
     const [bankOutcome, glOutcome] = await Promise.all([

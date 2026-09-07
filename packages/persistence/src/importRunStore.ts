@@ -23,6 +23,14 @@ export interface CreateImportRunFileInput {
   originalFilename: string;
   fileFormat: 'CSV' | 'XLSX';
   bytes: Buffer;
+  /**
+   * The `reconciliation_account.id` this statement was explicitly assigned to (A-D1, Issue #338),
+   * recorded on the `run_source_file` link so the assignment stays auditable next to the original
+   * filename it may have disagreed with. Set on the raw `BANK_ACCOUNT_n` uploads, which are the
+   * per-account statements; absent on `GL` and on `BANK_MERGED`, which spans every account in the
+   * run and is attributed per row by the merged dataset's own Interface ID column instead.
+   */
+  accountId?: string;
 }
 
 export interface CreateImportRunInput {
@@ -216,9 +224,17 @@ export class PostgresImportRunStore {
         const file = files[index]!;
         const inputFile = input.files[index]!;
         await client.query(
-          `INSERT INTO run_source_file (id, organization_id, reconciliation_run_id, import_file_id, role)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [randomUUID(), input.organizationId, runId, file.importFileId, inputFile.role],
+          `INSERT INTO run_source_file
+             (id, organization_id, reconciliation_run_id, import_file_id, role, account_id)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            randomUUID(),
+            input.organizationId,
+            runId,
+            file.importFileId,
+            inputFile.role,
+            inputFile.accountId ?? null,
+          ],
         );
       }
 

@@ -87,8 +87,9 @@ const ASSUMED_CURRENCY_CODE = 'USD';
 const toCanonicalRecordInput = (record: NormalizedRecord): CanonicalRecordInput => ({
   sourceType: record.sourceSystem,
   recordId: record.recordId,
-  // Neither template carries an account column (docs/transaction-csv-spec.md §2/§3) -- account
-  // context is sourced from the bank file's filename once Issue #141's parsing lands, not here.
+  // Bank rows carry the confirmed reconciliation_account.id in the merged dataset's Interface ID
+  // column (A-D1, Issue #338), which validateBankingRows reads into `account`. GL rows still have
+  // no account column of their own (docs/transaction-csv-spec.md §3) and keep the empty string.
   account: record.account ?? '',
   date: record.date,
   currencyCode: ASSUMED_CURRENCY_CODE,

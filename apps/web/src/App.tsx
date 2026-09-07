@@ -19,6 +19,7 @@ import {
   type CanonicalField,
   type EntityVerificationStatus,
   type IdentityVerificationStatus,
+  type ReconciliationAccount,
   type ReviewerDecision,
   type RolePermissions,
   type RuleCatalogResponse,
@@ -78,10 +79,12 @@ import {
   useImportUploadTransfer,
   type ImportUploadTransferState,
 } from './hooks/useImportUploadTransfer';
+import { useReconciliationAccounts } from './hooks/useReconciliationAccounts';
 import { useImportPartialAccept } from './hooks/useImportPartialAccept';
 import { buildTransferCardProps } from './lib/importUploadProgress';
 import { ImportUploadCard } from './components/ImportUploadCard';
 import { ImportValidationFailureView } from './components/ImportValidationFailure';
+import { BankAccountsScreen } from './components/BankAccountsScreen';
 import {
   BANK_TEMPLATE_URL,
   BANK_TEMPLATE_XLSX_URL,
@@ -452,6 +455,7 @@ type SubmitButtonState = {
 
 const resolveSubmitButtonState = (
   isUploadStepComplete: boolean,
+  isAssignmentComplete: boolean,
   isLabelMissing: boolean,
   uploadTransferKind: ImportUploadTransferState['kind'],
   uploadPercent: number | null,
@@ -486,6 +490,16 @@ const resolveSubmitButtonState = (
       disabled: true,
       label: phaseLabel,
       reason: 'Add every bank workbook and the GL workbook.',
+    };
+  }
+
+  // After the files are present but before anything else: an unassigned statement is a missing
+  // input, not a configuration problem, so it reads in the same breath as the upload check above.
+  if (!isAssignmentComplete) {
+    return {
+      disabled: true,
+      label: phaseLabel,
+      reason: 'Assign every bank statement to a registered account.',
     };
   }
 
@@ -758,6 +772,10 @@ function ReconciliationApp({
   // prior fixed layout); "Add another" appends a slot (capped at MAX_BANK_ACCOUNTS), a per-slot
   // remove control removes one (floored at MIN_BANK_ACCOUNTS).
   const [bankFiles, setBankFiles] = useState<(File | null)[]>([null, null]);
+  // A-D1 (Issue #338): the account each bank slot's statement is explicitly assigned to. Same
+  // length and index as `bankFiles` -- SourceDropZone maintains both together when a slot is added
+  // or removed, so `bankAccountIds[i]` always belongs to `bankFiles[i]`.
+  const [bankAccountIds, setBankAccountIds] = useState<(string | null)[]>([null, null]);
   const [glFile, setGlFile] = useState<File | null>(null);
   // R1 WP2/WP4: 1-4 AP/Billing entity ledgers per run, same cardinality/slot-growth shape as
   // bankFiles above (MIN/MAX_AP_ENTITIES). Starts at one empty slot -- unlike bank's two, since a
@@ -801,6 +819,9 @@ function ReconciliationApp({
   const reconciliation = useImportRunSubmit();
   const uploadTransfer = useImportUploadTransfer(reconciliation);
   const partialAccept = useImportPartialAccept();
+  // A-D1 (Issue #338): active accounts only. A deactivated account cannot receive a statement, so
+  // offering one in the assignment control would only produce a rejection at submit.
+  const accounts = useReconciliationAccounts();
   // R2 V1: `reconciliation.data` is now `{kind:'queued', run} | {kind:'succeeded', report}` --
   // unwrap to the exact `ReconciliationRunResponse | undefined` every existing consumer of `run`/
   // `reportRun` below already expects, so this is the only place that needs to know about the new
@@ -1348,6 +1369,12 @@ function ReconciliationApp({
   const isUploadStepComplete = Boolean(
     bankFiles.length >= MIN_BANK_ACCOUNTS && bankFiles.every(Boolean) && glFile,
   );
+  // A-D1: a statement with no account assigned cannot be merged, so the run cannot be submitted.
+  // Checked per staged file rather than over the whole array so an empty trailing slot -- which
+  // `isUploadStepComplete` already rejects -- doesn't produce a second, redundant reason.
+  const isAssignmentComplete = bankFiles.every(
+    (file, index) => !file || Boolean(bankAccountIds[index]),
+  );
   const isConfigurationStepComplete = isUploadStepComplete && !isLabelMissing;
   const isRunStepComplete = Boolean(run);
   const isExportStepComplete = hasDownloadedWorkbook || hasExportedJson;
@@ -1363,6 +1390,7 @@ function ReconciliationApp({
       : null;
   const submitState = resolveSubmitButtonState(
     isUploadStepComplete,
+    isAssignmentComplete,
     isLabelMissing,
     uploadTransfer.transfer.kind,
     uploadPercent,
@@ -1535,12 +1563,29 @@ function ReconciliationApp({
     if (bankFiles.length === 0 || bankFiles.some((file) => !file) || !glFile) {
       return;
     }
+    if (bankAccountIds.some((accountId, index) => bankFiles[index] && !accountId)) {
+      return;
+    }
     const confirmedBankFiles = bankFiles as File[];
+
+    // A-D1: a statement whose filename the server already flagged is resubmitted with an explicit
+    // confirmation, and only that one. `confirmed` is never set pre-emptively -- doing so would
+    // acknowledge a disagreement the operator has not been shown.
+    const confirmedFilenames = new Set(
+      uploadTransfer.transfer.kind === 'assignment-conflict'
+        ? uploadTransfer.transfer.conflicts.map((conflict) => conflict.originalFilename)
+        : [],
+    );
+    const bankAccountAssignments = confirmedBankFiles.map((file, index) => ({
+      accountId: bankAccountIds[index]!,
+      confirmed: confirmedFilenames.has(file.name) || undefined,
+    }));
 
     setRunStartedAtMs(Date.now());
     setNowMs(Date.now());
     uploadTransfer.start({
       bankFiles: confirmedBankFiles,
+      bankAccountAssignments,
       glFile,
       label: trimmedPeriodLabel,
       accountIdentifier: accountIdentifier || undefined,
@@ -1627,6 +1672,10 @@ function ReconciliationApp({
                     activeSourceType="bank"
                     annualYear={annualYear}
                     bankFiles={bankFiles}
+                    bankAccountIds={bankAccountIds}
+                    setBankAccountIds={setBankAccountIds}
+                    accounts={accounts.accounts}
+                    accountsUnavailable={accounts.error !== null}
                     glFile={glFile}
                     apFiles={apFiles}
                     submitState={submitState}
@@ -1672,6 +1721,10 @@ function ReconciliationApp({
                     activeSourceType="billing"
                     annualYear={annualYear}
                     bankFiles={bankFiles}
+                    bankAccountIds={bankAccountIds}
+                    setBankAccountIds={setBankAccountIds}
+                    accounts={accounts.accounts}
+                    accountsUnavailable={accounts.error !== null}
                     glFile={glFile}
                     apFiles={apFiles}
                     submitState={submitState}
@@ -1765,6 +1818,14 @@ function ReconciliationApp({
                   <ComingSoonPage
                     title="Mapping Profiles"
                     description="Browsing and managing saved mapping profiles is coming soon."
+                  />
+                }
+              />
+              <Route
+                path={routePaths.bankAccounts}
+                element={
+                  <BankAccountsScreen
+                    canManage={rolePermissions.canManageAccounts}
                   />
                 }
               />
@@ -2054,6 +2115,10 @@ function SourceUploadSection({
   latestImportRunId,
   onDismissDurableRun,
   onRefreshDurableRun,
+  bankAccountIds,
+  setBankAccountIds,
+  accounts,
+  accountsUnavailable,
 }: Readonly<{
   /** Which Import Files tab is active, driven by the matched route (R1 WP2/WP3) -- not local
    * component state, mirroring how the Reconciliation section's File-based/Rules-based split
@@ -2062,6 +2127,12 @@ function SourceUploadSection({
   accountIdentifier: string;
   annualYear: string;
   bankFiles: (File | null)[];
+  /** A-D1 (Issue #338): the registry the assignment control offers, and the per-slot choice made
+   * against it. Positional with `bankFiles`. */
+  bankAccountIds: (string | null)[];
+  setBankAccountIds: Dispatch<SetStateAction<(string | null)[]>>;
+  accounts: ReconciliationAccount[];
+  accountsUnavailable: boolean;
   glFile: File | null;
   apFiles: (File | null)[];
   submitState: SubmitButtonState;
@@ -2201,13 +2272,22 @@ function SourceUploadSection({
               id="import-panel-bank"
               aria-labelledby="import-tab-bank"
             >
-              {uploadTransfer.transfer.kind === 'idle' ? (
+              {/* An assignment conflict keeps the drop zone mounted rather than swapping in
+                  progress cards: the banner below tells the operator to change the assignment, so
+                  the slot controls have to still be there to change it in. Nothing was uploaded --
+                  the run was rejected before creation -- so there is no progress to show. */}
+              {uploadTransfer.transfer.kind === 'idle' ||
+              uploadTransfer.transfer.kind === 'assignment-conflict' ? (
                 <SourceDropZone
                   mode="bank-gl"
                   bankFiles={bankFiles}
                   glFile={glFile}
                   setBankFiles={setBankFiles}
                   setGlFile={setGlFile}
+                  accounts={accounts}
+                  bankAccountIds={bankAccountIds}
+                  setBankAccountIds={setBankAccountIds}
+                  accountsUnavailable={accountsUnavailable}
                   canonicalFields={canonicalFields}
                 />
               ) : (
@@ -2358,6 +2438,25 @@ function SourceUploadSection({
               }}
               partialAccept={partialAccept}
             />
+          ) : uploadTransfer.transfer.kind === 'assignment-conflict' ? (
+            // A-D1 (Issue #338): a filename disagrees with the account it was assigned to. Neither
+            // side is presumed right, so the operator gets both facts and two ways out -- confirm
+            // the assignment as it stands, or change it in the slot above and submit again. The
+            // banner deliberately offers no "use the filename's account instead" shortcut: that
+            // would be the filename establishing identity through the back door.
+            <div className="error-banner import-screen__status" role="alert">
+              <p className="import-screen__status-message">
+                Check these statement assignments before the run is created.
+              </p>
+              <ul className="import-screen__status-list">
+                {uploadTransfer.transfer.conflicts.map((conflict) => (
+                  <li key={conflict.originalFilename}>{conflict.message}</li>
+                ))}
+              </ul>
+              <button type="button" className="secondary-button" onClick={handleSubmit}>
+                Confirm assignments and submit
+              </button>
+            </div>
           ) : uploadTransfer.transfer.kind === 'failed' ? (
             // error-handling-build-plan.md EH4: the typed failure -- e.g. a 503 because no
             // database is configured (issue #187) -- carries an authored message plus whatever

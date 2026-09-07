@@ -1,37 +1,25 @@
-import { parseBankAccountLast4FromFilename } from '@recon/domain';
-
 import { isBlank } from './primitives';
 import { CsvParser } from './parsers/csvParser';
 import { writeCsvBuffer } from './parsers/csvWriter';
 import type { FileParser, ParsedFile } from './parsers/fileParser';
 import { XlsxParser } from './parsers/xlsxParser';
 import { checkColumnOrder, checkHeaderPresent } from './structuralGates';
-import { BANKING_HEADERS, REQUIRED_BANKING_HEADERS, type ValidationIssue } from './types';
+import {
+  BANKING_HEADERS,
+  INTERFACE_ID_HEADER,
+  MERGED_BANKING_HEADERS,
+  REQUIRED_BANKING_HEADERS,
+  type ValidationIssue,
+} from './types';
 
 /** #153: an import run supports 1-4 bank accounts. */
 export const MIN_BANK_ACCOUNTS = 1;
 export const MAX_BANK_ACCOUNTS = 4;
 
-/** Raised when a raw bank file's name doesn't start with `<digits><-|_>` (ADR-0003 §3) -- an
- * upload-level filename problem, never a File Validation content issue, so this is never routed
- * through the `validation_issue`/rule-version DB system. */
-export class BankFilenameAccountParseError extends Error {
-  /** @param originalFilename The uploaded bank file's own filename, named back in the message so
-   * the offending file is identifiable when two bank files are uploaded in the same request. */
-  constructor(public readonly originalFilename: string) {
-    super(
-      `Bank file "${originalFilename}" must start with the account number (or its last 4 digits) ` +
-        `followed by "-" or "_", e.g. "4321_bank-export.csv".`,
-    );
-    this.name = 'BankFilenameAccountParseError';
-  }
-}
-
 /** Raised when `mergeBankFiles` is called with fewer than 1 or more than
  * {@link MAX_BANK_ACCOUNTS} raw files -- a caller-contract violation (the HTTP layer's own multer
  * config and upload-count check should normally prevent this from ever reaching here), not a
- * per-file content problem, so it's a distinct error from {@link BankFilenameAccountParseError}/
- * {@link BankFileStructuralError} below. */
+ * per-file content problem, so it's a distinct error from {@link BankFileStructuralError} below. */
 export class BankFileCountError extends Error {
   /** @param fileCount The number of raw bank files actually passed, named back in the message so
    * the caller can see what was rejected. */
@@ -70,6 +58,14 @@ export interface RawBankFileInput {
   bytes: Buffer;
   fileFormat: 'CSV' | 'XLSX';
   originalFilename: string;
+  /**
+   * The `reconciliation_account.id` the operator explicitly assigned this statement to (A-D1,
+   * Issue #338). Required: the merge no longer derives an account from the filename, so a caller
+   * that cannot supply a confirmed assignment has nothing to merge. Resolving and confirming the
+   * assignment -- including any filename disagreement -- happens at the API boundary, where the
+   * account registry is reachable; by the time a file arrives here the choice is already settled.
+   */
+  accountId: string;
 }
 
 export interface MergedBankFile {
@@ -83,31 +79,45 @@ const BALANCE_HEADER = 'Balance';
 const parserFor = (fileFormat: 'CSV' | 'XLSX'): FileParser =>
   fileFormat === 'CSV' ? new CsvParser() : new XlsxParser();
 
-/** Prefixes the Sequence Number (per-account disambiguation) and drops the Balance column. Each
- * account's Balance is its own independent running ledger -- concatenating two accounts' balances
- * end-to-end has no coherent single-ledger story and would trip BANK_BALANCE_CONTINUITY at every
- * account boundary on every real merged run, not just a contrived edge case (the file-level
- * continuity check has no concept of "two accounts" to reset at). Blanking it here makes
- * `validateFile`'s continuity check skip entirely for the merged file (it only runs when every row
- * has a value) rather than produce a false positive at the seam. */
-const prepareRowsForMerge = (parsed: ParsedFile, last4: string): Record<string, string>[] =>
+/**
+ * Stamps the confirmed account id onto every row, prefixes the Sequence Number for per-account
+ * disambiguation, and drops the Balance column.
+ *
+ * The Sequence Number prefix is the account UUID, not the last four digits it used to be: A-D1
+ * states two registered accounts may legitimately share their last four, which would have made the
+ * prefix collide and two genuinely distinct rows read as a BANK_SEQUENCE_DUPLICATE. The UUID
+ * cannot collide, and because it is the same UUID on every statement for that account, a
+ * re-imported statement still produces the same `recordId` it did last period.
+ *
+ * Balance is still dropped here. Each account's Balance is its own independent running ledger --
+ * concatenating two accounts' balances end-to-end has no coherent single-ledger story and would
+ * trip BANK_BALANCE_CONTINUITY at every account boundary (the file-level continuity check has no
+ * concept of "two accounts" to reset at). Blanking it makes `validateFile`'s continuity check skip
+ * entirely for the merged file rather than produce a false positive at the seam. A-D4 (Issue #341)
+ * has since ruled that this must become account-partitioned validation rather than a skip -- that
+ * is Issue #345's change, and it needs the account identity this function now supplies.
+ */
+const prepareRowsForMerge = (parsed: ParsedFile, accountId: string): Record<string, string>[] =>
   parsed.rows.map((row) => {
     const rest: Record<string, string> = { ...row };
     delete rest[BALANCE_HEADER];
+    rest[INTERFACE_ID_HEADER] = accountId;
     const sequenceNumber = rest[SEQUENCE_NUMBER_HEADER];
     if (isBlank(sequenceNumber)) {
       return rest;
     }
-    return { ...rest, [SEQUENCE_NUMBER_HEADER]: `${last4}-${sequenceNumber}` };
+    return { ...rest, [SEQUENCE_NUMBER_HEADER]: `${accountId}-${sequenceNumber}` };
   });
 
 /**
  * Merges 1-4 per-account raw bank files into one unified bank dataset, upstream of and invisible
  * to File Validation (ADR-0003, Issue #141; widened from exactly 2 to 1-4 by Issue #153). Each
- * file's account number is parsed from its ORIGINAL FILENAME (not its content) via
- * `@recon/domain`'s `parseBankAccountLast4FromFilename`; every non-blank Sequence Number is
- * prefixed `<last4>-<sequence>` to disambiguate the accounts' otherwise-independent sequence
- * numbering once combined. Reuses (does not reimplement) File Validation's own Step 1/Step 2
+ * file arrives with the `reconciliation_account.id` its statement was explicitly assigned to
+ * (A-D1, Issue #338) -- the merge stamps that id onto every row's `Interface ID` column and
+ * prefixes every non-blank Sequence Number `<accountId>-<sequence>` to disambiguate the accounts'
+ * otherwise-independent sequence numbering once combined. It no longer reads the filename at all:
+ * a filename may suggest an account to the operator, but it cannot establish identity.
+ * Reuses (does not reimplement) File Validation's own Step 1/Step 2
  * structural gate functions against each raw file individually before merging -- this is not
  * "duplicating the pipeline's validation logic" (the ADR's own boundary), it's calling the same
  * functions `fileValidationEngine.ts` calls, just per-file instead of per-merged-output, so a
@@ -129,11 +139,6 @@ export const mergeBankFiles = async (
 
   const prefixedRows = await Promise.all(
     files.map(async (file) => {
-      const last4 = parseBankAccountLast4FromFilename(file.originalFilename);
-      if (last4 === null) {
-        throw new BankFilenameAccountParseError(file.originalFilename);
-      }
-
       const parsed = await parserFor(file.fileFormat).parse(file.bytes);
       const structuralIssues = [
         ...checkHeaderPresent(parsed.headers, BANKING_HEADERS),
@@ -143,10 +148,10 @@ export const mergeBankFiles = async (
         throw new BankFileStructuralError(file.originalFilename, structuralIssues);
       }
 
-      return prepareRowsForMerge(parsed, last4);
+      return prepareRowsForMerge(parsed, file.accountId);
     }),
   );
 
   const mergedRows = prefixedRows.flat();
-  return { bytes: writeCsvBuffer([...BANKING_HEADERS], mergedRows), fileFormat: 'CSV' };
+  return { bytes: writeCsvBuffer([...MERGED_BANKING_HEADERS], mergedRows), fileFormat: 'CSV' };
 };

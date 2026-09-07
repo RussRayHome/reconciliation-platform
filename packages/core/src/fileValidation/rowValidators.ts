@@ -1,6 +1,7 @@
 import { isBlank, isIsoDate, parseAmount, todayIso } from './primitives';
 import {
   DEFAULT_VALIDATION_OPTIONS,
+  INTERFACE_ID_HEADER,
   type NormalizedRecord,
   type RawApBillingRow,
   type RawBankingRow,
@@ -123,6 +124,11 @@ export const validateBankingRows = (
     normalized.push({
       sourceSystem: 'BANK',
       recordId: isBlank(sequenceNumber) ? `row-${rowNumber}` : sequenceNumber,
+      // A-D1 (Issue #338/#342): the confirmed reconciliation_account.id, written onto every row by
+      // mergeBankFiles from the account the operator assigned this statement to. Left undefined
+      // for a bank file validated outside the merge path -- there is no assignment context there,
+      // and inventing one from the filename is precisely what A-D1 forbids.
+      account: isBlank(row[INTERFACE_ID_HEADER]) ? undefined : row[INTERFACE_ID_HEADER],
       date: isIsoDate(row.Date) ? row.Date : today,
       signedAmount: signed,
       direction: signed >= 0 ? 'INFLOW' : 'OUTFLOW',
