@@ -53,6 +53,11 @@ const TEST_ACCOUNTS = [
   'SCHEDULE-2',
   'WRITEOFF-OPEN-1',
   'WRITEOFF-NOT-OPEN-1',
+  'WRITEOFF-BAND-OVER',
+  'WRITEOFF-BAND-CFO',
+  'WRITEOFF-BAND-EXACT',
+  'WRITEOFF-SOD-SELF',
+  'WRITEOFF-SOD-OTHER',
 ] as const;
 
 const registerTestAccounts = async (): Promise<void> => {
@@ -516,7 +521,9 @@ describe('PostgresOpenItemStore', () => {
     expect(events.rows[1]).toMatchObject({ from_status: 'OPEN', to_status: 'CLEARED' });
 
     // No longer OPEN -- must not come back from loadOpenItems.
-    expect(await store.loadOpenItems(defaultOrganizationId, ['OPEN-ITEM-STORE-CLEAR-1'])).toEqual([]);
+    expect(
+      await store.loadOpenItems(defaultOrganizationId, [accountId('OPEN-ITEM-STORE-CLEAR-1')]),
+    ).toEqual([]);
   });
 
   it('clearOpenItems is idempotent: clearing an already-CLEARED item is a harmless no-op', async () => {
@@ -833,7 +840,11 @@ describe('PostgresOpenItemStore', () => {
       // abs()-ed like SummaryMetrics.rollForward's UI-facing exposure figures -- a genuine dollar
       // rollforward, not an exposure count. The candidate's amount is -125.5.
       expect(result.snapshots[0]).toMatchObject({
-        accountIdentifier: accountId('CLOSE-SNAPSHOT-1'),
+        // A snapshot carries both: `accountId` is the identity, `accountIdentifier` the human
+        // label it is displayed under. A-D1 makes the id authoritative; it does not make the
+        // label go away.
+        accountId: accountId('CLOSE-SNAPSHOT-1'),
+        accountIdentifier: 'CLOSE-SNAPSHOT-1',
         openingCount: 0,
         openingAmount: 0,
         newCount: 1,
@@ -1127,9 +1138,12 @@ describe('PostgresOpenItemStore', () => {
   });
 
   describe('writeOffOpenItem approval controls (Issue #283)', () => {
-    /** Projects one candidate and returns its open item id. */
+    /** Projects one candidate and returns its open item id. `account` is the friendly test
+     * identifier; the candidate and the lookup both address the registered account by its
+     * `reconciliation_account.id`, since A-D1 (Issue #338) made the id the only thing that
+     * resolves an account. */
     const openItemFor = async (
-      account: string,
+      account: (typeof TEST_ACCOUNTS)[number],
       overrides: Parameters<typeof buildCandidate>[0] = {},
       reconciliationRunId?: string,
     ): Promise<string> => {
@@ -1139,7 +1153,7 @@ describe('PostgresOpenItemStore', () => {
         ...(reconciliationRunId ? { reconciliationRunId } : {}),
         candidates: [
           buildCandidate({
-            accountIdentifier: account,
+            accountIdentifier: accountId(account),
             naturalKey: `check:${account}:9000`,
             checkNumber: '9000',
             ...overrides,
@@ -1147,10 +1161,8 @@ describe('PostgresOpenItemStore', () => {
         ],
       });
       const row = await pool.query<{ id: string }>(
-        `SELECT oi.id FROM reconciliation_open_item oi
-           JOIN reconciliation_account a ON a.id = oi.account_id
-          WHERE a.account_identifier = $1`,
-        [account],
+        `SELECT id FROM reconciliation_open_item WHERE account_id = $1`,
+        [accountId(account)],
       );
       return row.rows[0]!.id;
     };
@@ -1286,7 +1298,8 @@ describe('PostgresOpenItemStore', () => {
       if (startupError) throw startupError;
 
       const store = new PostgresOpenItemStore(runtimePool);
-      const account = accountId('ROLLFORWARD-DETAIL-1');
+      const accountLabel = 'ROLLFORWARD-DETAIL-1';
+      const account = accountId(accountLabel);
 
       // February closes first, with its own item still open at close -- gives that item a real
       // "opening" pedigree for March. Periods must close in chronological order: an item left
@@ -1341,9 +1354,7 @@ describe('PostgresOpenItemStore', () => {
       });
 
       const priorItemRow = await pool.query<{ id: string }>(
-        `SELECT oi.id FROM reconciliation_open_item oi
-           JOIN reconciliation_account a ON a.id = oi.account_id
-          WHERE a.account_identifier = $1 AND oi.natural_key = $2`,
+        `SELECT id FROM reconciliation_open_item WHERE account_id = $1 AND natural_key = $2`,
         [account, `check:${account}:9002`],
       );
       await store.clearOpenItems(defaultOrganizationId, {
@@ -1360,7 +1371,8 @@ describe('PostgresOpenItemStore', () => {
       const result = await store.getRunRollforward(defaultOrganizationId, runId);
       expect(result?.snapshots).toHaveLength(1);
       expect(result?.snapshots[0]).toMatchObject({
-        accountIdentifier: account,
+        accountId: account,
+        accountIdentifier: accountLabel,
         newCount: 1,
         newAmount: -50,
         clearedCount: 1,
@@ -1389,13 +1401,17 @@ describe('PostgresOpenItemStore', () => {
         ],
       });
 
+      // `listOpenItemsSchedule` is the UI-facing read: it both filters and returns on the human
+      // `reconciliation_account.account_identifier`, not the account id -- unlike `loadOpenItems`,
+      // whose output is seeded back into matching. `GET /api/reconciliation/open-items` passes the
+      // run's displayed account label straight through, so this is the contract that route needs.
       const items = await store.listOpenItemsSchedule(defaultOrganizationId, {
-        accountIdentifier: accountId('SCHEDULE-1'),
+        accountIdentifier: 'SCHEDULE-1',
       });
 
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
-        accountIdentifier: accountId('SCHEDULE-1'),
+        accountIdentifier: 'SCHEDULE-1',
         status: 'OPEN',
         naturalKey: 'check:SCHEDULE-1:1001',
         amount: -300,
@@ -1429,11 +1445,11 @@ describe('PostgresOpenItemStore', () => {
       });
 
       const openOnly = await store.listOpenItemsSchedule(defaultOrganizationId, {
-        accountIdentifier: accountId('SCHEDULE-2'),
+        accountIdentifier: 'SCHEDULE-2',
         status: 'OPEN',
       });
       const clearedOnly = await store.listOpenItemsSchedule(defaultOrganizationId, {
-        accountIdentifier: accountId('SCHEDULE-2'),
+        accountIdentifier: 'SCHEDULE-2',
         status: 'CLEARED',
       });
 

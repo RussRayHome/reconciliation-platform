@@ -6,7 +6,7 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(2357);
+SELECT plan(2367);
 
 SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
@@ -1161,7 +1161,7 @@ SELECT is(
   'mapping_rule_version row-level security policies'
 );
 SELECT triggers_are('public', 'mapping_rule_version', ARRAY[]::name[], 'mapping_rule_version has exactly the expected triggers');
-SELECT columns_are('public', 'reconciliation_account', ARRAY['id', 'organization_id', 'account_identifier', 'institution_name', 'display_name', 'currency_code', 'is_active', 'created_at', 'updated_at']::name[], 'reconciliation_account has exactly the expected columns');
+SELECT columns_are('public', 'reconciliation_account', ARRAY['id', 'organization_id', 'account_identifier', 'institution_name', 'display_name', 'currency_code', 'is_active', 'created_at', 'updated_at', 'last_four', 'gl_cash_account_code']::name[], 'reconciliation_account has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_account', ARRAY['id']::name[], 'reconciliation_account primary key');
 SELECT indexes_are('public', 'reconciliation_account', ARRAY['reconciliation_account_org_identifier_key', 'reconciliation_account_organization_idx', 'reconciliation_account_pkey']::name[], 'reconciliation_account has exactly the expected indexes');
 SELECT is(
@@ -1249,6 +1249,24 @@ SELECT is(
     WHERE d.adrelid = 'public.reconciliation_account'::regclass AND a.attname = 'updated_at'),
   $dflt$now()$dflt$,
   'reconciliation_account.updated_at default'
+);
+SELECT col_type_is('public', 'reconciliation_account', 'last_four', 'text', 'reconciliation_account.last_four is text');
+SELECT col_is_null('public', 'reconciliation_account', 'last_four', 'reconciliation_account.last_four is nullable');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_account'::regclass AND a.attname = 'last_four'),
+  NULL,
+  'reconciliation_account.last_four default'
+);
+SELECT col_type_is('public', 'reconciliation_account', 'gl_cash_account_code', 'text', 'reconciliation_account.gl_cash_account_code is text');
+SELECT col_is_null('public', 'reconciliation_account', 'gl_cash_account_code', 'reconciliation_account.gl_cash_account_code is nullable');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_account'::regclass AND a.attname = 'gl_cash_account_code'),
+  NULL,
+  'reconciliation_account.gl_cash_account_code default'
 );
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
@@ -6993,9 +7011,9 @@ SELECT is(
   $trig$CREATE TRIGGER trg_reconciliation_user_password_changed BEFORE UPDATE ON public.reconciliation_user FOR EACH ROW EXECUTE FUNCTION set_reconciliation_user_last_changed()$trig$,
   'reconciliation_user.trg_reconciliation_user_password_changed definition'
 );
-SELECT columns_are('public', 'run_source_file', ARRAY['id', 'organization_id', 'reconciliation_run_id', 'import_file_id', 'role', 'created_at']::name[], 'run_source_file has exactly the expected columns');
+SELECT columns_are('public', 'run_source_file', ARRAY['id', 'organization_id', 'reconciliation_run_id', 'import_file_id', 'role', 'created_at', 'account_id']::name[], 'run_source_file has exactly the expected columns');
 SELECT col_is_pk('public', 'run_source_file', ARRAY['id']::name[], 'run_source_file primary key');
-SELECT indexes_are('public', 'run_source_file', ARRAY['run_source_file_import_file_idx', 'run_source_file_organization_idx', 'run_source_file_pkey', 'run_source_file_reconciliation_run_idx', 'run_source_file_run_import_file_key']::name[], 'run_source_file has exactly the expected indexes');
+SELECT indexes_are('public', 'run_source_file', ARRAY['run_source_file_account_idx', 'run_source_file_import_file_idx', 'run_source_file_organization_idx', 'run_source_file_pkey', 'run_source_file_reconciliation_run_idx', 'run_source_file_run_import_file_key']::name[], 'run_source_file has exactly the expected indexes');
 SELECT is(
   (SELECT relrowsecurity FROM pg_class WHERE relname = 'run_source_file' AND relnamespace = 'public'::regnamespace),
   true,
@@ -7054,6 +7072,15 @@ SELECT is(
     WHERE d.adrelid = 'public.run_source_file'::regclass AND a.attname = 'created_at'),
   $dflt$now()$dflt$,
   'run_source_file.created_at default'
+);
+SELECT col_type_is('public', 'run_source_file', 'account_id', 'uuid', 'run_source_file.account_id is uuid');
+SELECT col_is_null('public', 'run_source_file', 'account_id', 'run_source_file.account_id is nullable');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.run_source_file'::regclass AND a.attname = 'account_id'),
+  NULL,
+  'run_source_file.account_id default'
 );
 SELECT is(
   (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
@@ -7451,6 +7478,7 @@ SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['promoted_by']
 SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['raw_row_id']::name[], 'public', 'reconciliation_raw_row', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['source_file_id']::name[], 'public', 'reconciliation_source_file', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_user', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'run_source_file', ARRAY['account_id']::name[], 'public', 'reconciliation_account', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['import_file_id']::name[], 'public', 'import_file', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['reconciliation_run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);
