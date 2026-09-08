@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup, submitRunButton } from '../auth';
+import { assignBankAccounts, ensureBankAccountsRegistered } from '../reconciliationHelpers';
 import { resetRunsForWorker } from '../runState';
 import {
   bankHeaderOnlyFileValidationRows,
@@ -44,6 +45,11 @@ async function setWorkbookFiles(page: Page, bankBuffer: Buffer, glBuffer: Buffer
     mimeType: XLSX_MIME,
     buffer: glBuffer,
   });
+
+  // A-D1 (Issue #338): staged files alone leave submit disabled -- each bank statement must also be
+  // assigned to a registered account. The accounts themselves are registered by
+  // `ensureBankAccountsRegistered` before `openSetup`, since registering navigates away.
+  await assignBankAccounts(page);
 }
 
 // ─── Screen 02: upload transfer states ───────────────────────────────────────
@@ -75,6 +81,7 @@ test.describe('upload transfer', () => {
       await route.continue();
     });
 
+    await ensureBankAccountsRegistered(page);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
     await submitRunButton(page).click();
@@ -107,6 +114,7 @@ test.describe('partial import', () => {
       createSampleGlFileValidationWorkbook(),
     ]);
 
+    await ensureBankAccountsRegistered(page);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
     await submitRunButton(page).click();

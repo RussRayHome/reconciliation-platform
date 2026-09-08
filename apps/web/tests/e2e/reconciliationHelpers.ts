@@ -2,21 +2,73 @@ import { createWorkbookFromRows } from '@recon/test-fixtures';
 import type { Page } from '@playwright/test';
 
 import { expect } from './fixtures';
-import { openSetup, submitRunButton } from './auth';
+import { bankAccountSelect, openSetup, registerBankAccount, submitRunButton } from './auth';
 import { bankHeaderOnlyFileValidationRows } from './fileValidationWorkbooks';
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/**
+ * The two bank accounts every reconciliation scenario uses (A-D1, Issue #338).
+ *
+ * Their numbers match the `1111_`/`2222_` filenames `setWorkbookFiles` uploads on purpose: a
+ * statement whose filename disagrees with its assigned account is a real, separate product
+ * behaviour -- it demands an explicit confirmation before the merge -- and no scenario here is
+ * about that path.
+ *
+ * `label` is what the assignment control displays, per `formatAccountLabel`: `name — ending in
+ * <last four>`, where the last four is derived server-side from the account number.
+ */
+export const TEST_BANK_ACCOUNTS = [
+  { accountNumber: '1111', name: 'Operating A', label: 'Operating A — ending in 1111' },
+  { accountNumber: '2222', name: 'Operating B', label: 'Operating B — ending in 2222' },
+] as const;
+
+/**
+ * Registers the scenario accounts if they are not already there.
+ *
+ * Since A-D1 a statement can only be reconciled once it is assigned to a REGISTERED account, and
+ * every E2E worker organization starts empty -- changeset 0059's backfill derives accounts from
+ * pre-existing runs, so a fresh database seeds none. Without this the submit button is disabled
+ * forever and every later assertion fails for reasons that look nothing like the real cause.
+ *
+ * Call it BEFORE `openSetup`: it navigates to `/accounts`, which would discard staged uploads.
+ */
+export async function ensureBankAccountsRegistered(page: Page): Promise<void> {
+  for (const account of TEST_BANK_ACCOUNTS) {
+    await registerBankAccount(page, account);
+  }
+}
+
+/** Assigns each staged bank statement to its account, in slot order. */
+export async function assignBankAccounts(page: Page): Promise<void> {
+  for (const [slot, account] of TEST_BANK_ACCOUNTS.entries()) {
+    await bankAccountSelect(page, slot).selectOption({ label: account.label });
+  }
+}
 
 /** Account B's own bank workbook is a required upload slot (Issue #141); an empty (header-only)
  * file merges cleanly and contributes zero extra bank rows, so it never perturbs the row
  * counts/exception categories these scenarios assert on. Bank filenames must start with the
  * account number (or its last 4 digits) followed by "-"/"_" per ADR-0003's filename convention. */
-export async function setWorkbookFiles(page: Page, bankBuffer: Buffer, glBuffer: Buffer): Promise<void> {
+export async function setWorkbookFiles(
+  page: Page,
+  bankBuffer: Buffer,
+  glBuffer: Buffer,
+  options: { assignAccounts?: boolean } = {},
+): Promise<void> {
   const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
 
   await attachAndVerify(page, 'bank-workbook-input', '1111_bank.xlsx', bankBuffer);
   await attachAndVerify(page, 'bank-workbook-b-input', '2222_bank.xlsx', bankAccountBBuffer);
   await attachAndVerify(page, 'gl-workbook-input', 'gl.xlsx', glBuffer);
+
+  // A-D1: staged files alone no longer make the form submittable -- each statement must also be
+  // assigned to a registered account. Assigning here keeps "the form is filled in" a single step
+  // for the scenarios that only care about the outcome. Pass `assignAccounts: false` to stop short
+  // and assert the unassigned state itself.
+  if (options.assignAccounts !== false) {
+    await assignBankAccounts(page);
+  }
 }
 
 /**
@@ -73,6 +125,8 @@ export async function runReconciliation(
 ): Promise<void> {
   const { accountId = 'OPERATING-001', frequency = 'Monthly', month = 'March', label } = options;
 
+  // Before openSetup, not after: registering navigates to /accounts, which would discard uploads.
+  await ensureBankAccountsRegistered(page);
   await openSetup(page);
   await setWorkbookFiles(page, bankBuffer, glBuffer);
   await page.getByPlaceholder('OPERATING-001').fill(accountId);

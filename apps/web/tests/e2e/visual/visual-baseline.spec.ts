@@ -10,6 +10,7 @@ import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
 import { openSetup, submitRunButton } from '../auth';
+import { assignBankAccounts, ensureBankAccountsRegistered } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -240,6 +241,9 @@ const runReconciliation = async (page: Page): Promise<void> => {
 
   const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
 
+  // A-D1 (Issue #338): a statement is only reconcilable once assigned to a registered account, and
+  // an E2E organization starts with none. Before openSetup, since registering navigates away.
+  await ensureBankAccountsRegistered(page);
   await openSetup(page);
 
   await page.locator('#bank-workbook-input').setInputFiles({
@@ -257,6 +261,7 @@ const runReconciliation = async (page: Page): Promise<void> => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: glBuffer,
   });
+  await assignBankAccounts(page);
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');
   await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);

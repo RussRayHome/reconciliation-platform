@@ -184,6 +184,13 @@ export const registerBankAccount = async (
   await page.goto('/accounts');
   await expect(page.getByRole('heading', { name: 'Bank accounts' })).toBeVisible();
 
+  // Wait for the LIST to settle, not just the heading. The heading is the SectionCard title and
+  // renders immediately, while the accounts themselves are fetched -- so checking for an existing
+  // row too early reports "absent" for an account that is merely still loading, and the
+  // registration below is then rejected as a duplicate. Exactly one of the empty-state paragraph
+  // or the table renders once the fetch resolves, so waiting for either is deterministic.
+  await expect(page.locator('.bank-accounts__empty, .bank-accounts__table')).toBeVisible();
+
   // `rowheader`, not `cell`: the account label sits in a `<th scope="row">` (BankAccountsScreen),
   // which maps to role `rowheader`.
   const row = page.getByRole('rowheader', { name: account.name, exact: false });

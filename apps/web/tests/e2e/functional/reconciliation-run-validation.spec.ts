@@ -1,7 +1,13 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import { FORM_VALIDATION_CREDENTIAL, loginToApplication, openSetup, submitRunButton } from '../auth';
+import {
+  FORM_VALIDATION_CREDENTIAL,
+  bankAccountSelect,
+  loginToApplication,
+  openSetup,
+  submitRunButton,
+} from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createAllExceptionsBankFileValidationWorkbook,
@@ -9,7 +15,16 @@ import {
   createSampleBankFileValidationWorkbook,
   createSampleGlFileValidationWorkbook,
 } from '../fileValidationWorkbooks';
-import { XLSX_MIME, exceptionSummaryCell, openExceptions, runReconciliation, setWorkbookFiles } from '../reconciliationHelpers';
+import {
+  TEST_BANK_ACCOUNTS,
+  XLSX_MIME,
+  assignBankAccounts,
+  ensureBankAccountsRegistered,
+  exceptionSummaryCell,
+  openExceptions,
+  runReconciliation,
+  setWorkbookFiles,
+} from '../reconciliationHelpers';
 import { resetRunsForWorker } from '../runState';
 
 test.describe('form validation', () => {
@@ -54,8 +69,57 @@ test.describe('form validation', () => {
       createSampleBankFileValidationWorkbook(),
       createSampleGlFileValidationWorkbook(),
     ]);
+    await ensureBankAccountsRegistered(page);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
+    await expect(submitRunButton(page)).toBeEnabled();
+  });
+
+  // A-D1 (Issue #338) added a precondition this suite had no coverage for: files alone are not
+  // enough, every bank statement must also be assigned to a registered account.
+  //
+  // Reaching the unassigned state takes a filename that matches nothing. `suggestAccountIdForFilename`
+  // pre-selects whenever EXACTLY ONE active account's last four matches the filename, so the usual
+  // `1111_`/`2222_` fixtures assign themselves the moment they are staged -- the disabled state is
+  // unreachable with them, which is why this uploads a 9999_ statement no registered account claims.
+  // (An ambiguous filename -- two accounts sharing a last four -- is the other no-suggestion case,
+  // and is deliberately A-D1's "never choose the first match automatically".)
+  test('submit button stays disabled while a statement no account claims is unassigned', async ({
+    page,
+  }) => {
+    const [bankBuffer, glBuffer, bankAccountBBuffer] = await Promise.all([
+      createSampleBankFileValidationWorkbook(),
+      createSampleGlFileValidationWorkbook(),
+      createWorkbookFromRows(bankHeaderOnlyFileValidationRows),
+    ]);
+    await ensureBankAccountsRegistered(page);
+    await openSetup(page);
+
+    // 9999 matches no registered account, so this slot gets no suggestion and stays unassigned.
+    await page.locator('#bank-workbook-input').setInputFiles({
+      name: '9999_bank.xlsx',
+      mimeType: XLSX_MIME,
+      buffer: bankBuffer,
+    });
+    // 2222 does match, and is pre-selected on staging -- so slot A is the only thing missing.
+    await page.locator('#bank-workbook-b-input').setInputFiles({
+      name: '2222_bank.xlsx',
+      mimeType: XLSX_MIME,
+      buffer: bankAccountBBuffer,
+    });
+    await page.locator('#gl-workbook-input').setInputFiles({
+      name: 'gl.xlsx',
+      mimeType: XLSX_MIME,
+      buffer: glBuffer,
+    });
+
+    await expect(submitRunButton(page)).toBeDisabled();
+
+    // Assigning it by hand is what releases the run. The filename still disagrees with the chosen
+    // account, which surfaces its own confirmation notice -- that does not block submission, and
+    // this test stops before submitting either way (see this describe's pristine-org note above).
+    await bankAccountSelect(page, 0).selectOption({ label: TEST_BANK_ACCOUNTS[0].label });
+
     await expect(submitRunButton(page)).toBeEnabled();
   });
 
@@ -66,6 +130,7 @@ test.describe('form validation', () => {
       createSampleBankFileValidationWorkbook(),
       createSampleGlFileValidationWorkbook(),
     ]);
+    await ensureBankAccountsRegistered(page);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
     await page.getByLabel('Reconciliation label').fill('');
@@ -96,6 +161,7 @@ test.describe('structural validation', () => {
       createSampleBankFileValidationWorkbook(),
       createWorkbookFromRows(bankHeaderOnlyFileValidationRows),
     ]);
+    await ensureBankAccountsRegistered(page);
     await openSetup(page);
     await page.locator('#bank-workbook-input').setInputFiles({
       name: '1111_bank.xlsx',
@@ -112,6 +178,9 @@ test.describe('structural validation', () => {
       mimeType: 'text/csv',
       buffer: fakeBuffer,
     });
+    // The GL file is the one under test here; the bank statements still need their A-D1
+    // assignments or submit never enables and the structural error never gets a chance to appear.
+    await assignBankAccounts(page);
     await submitRunButton(page).click();
     await expect(page.getByText('STRUCT_HEADER_MISSING')).toBeVisible({ timeout: 30_000 });
   });

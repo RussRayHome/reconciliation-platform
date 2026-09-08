@@ -1,13 +1,8 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import {
-  bankAccountSelect,
-  loginToApplication,
-  openSetup,
-  registerBankAccount,
-  submitRunButton,
-} from '../auth';
+import { loginToApplication, openSetup, submitRunButton } from '../auth';
+import { assignBankAccounts, ensureBankAccountsRegistered } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -35,8 +30,7 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   // account, and a fresh database has none. The account numbers deliberately end in the same four
   // digits as the filenames uploaded below -- a mismatch is a real, separate product behaviour
   // (it demands an explicit confirmation before the merge), and this test is not about that path.
-  await registerBankAccount(page, { accountNumber: '1111', name: 'Operating A' });
-  await registerBankAccount(page, { accountNumber: '2222', name: 'Operating B' });
+  await ensureBankAccountsRegistered(page);
 
   await openSetup(page);
 
@@ -60,8 +54,7 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   // Assign each uploaded statement to its account. Until both are assigned the submit button stays
   // disabled ("Assign every bank statement to a registered account"), which is what makes this
   // step load-bearing rather than decorative.
-  await bankAccountSelect(page, 0).selectOption({ label: 'Operating A — ending in 1111' });
-  await bankAccountSelect(page, 1).selectOption({ label: 'Operating B — ending in 2222' });
+  await assignBankAccounts(page);
 
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');
