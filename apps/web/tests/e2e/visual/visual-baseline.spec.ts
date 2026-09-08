@@ -10,7 +10,7 @@ import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
 import { openSetup, submitRunButton } from '../auth';
-import { assignBankAccounts, ensureBankAccountsRegistered } from '../reconciliationHelpers';
+import { assignBankAccounts } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -116,6 +116,44 @@ const mockReconciliationRun = async (page: Page): Promise<void> => {
   await page.route(`**/api/reconciliation/${MOCK_MATCHING_JOB_ID}`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body }),
   );
+
+  // A-D1 (Issue #338): the upload screen reads the account registry to populate each statement's
+  // assignment control, and a statement cannot be submitted unassigned. MOCKED rather than
+  // registered for real, unlike the functional lane -- this lane has no backing services (the
+  // real endpoint answers 503 here), and its whole premise is that every test is self-contained.
+  //
+  // The last four match the `1111_`/`2222_` filenames staged below, so
+  // `suggestAccountIdForFilename` pre-selects each one on staging: exactly one active account
+  // matches, which is the condition it requires. That keeps these captures free of an
+  // assignment-mismatch notice that would otherwise change what is screenshotted.
+  await page.route('**/api/accounts*', (route) => {
+    if (route.request().method() !== 'GET') {
+      return route.continue();
+    }
+    const account = (id: string, name: string, lastFour: string) => ({
+      id,
+      organizationId: 'e2e-mock-org',
+      accountIdentifier: lastFour,
+      displayName: name,
+      institutionName: 'Truist',
+      lastFour,
+      currencyCode: 'USD',
+      glCashAccountCode: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        accounts: [
+          account('e2e-mock-account-a', 'Operating A', '1111'),
+          account('e2e-mock-account-b', 'Operating B', '2222'),
+        ],
+      }),
+    });
+  });
 };
 
 // Shared by both page-level and region-scoped (locator) captures -- fullPage is a page-only
@@ -241,9 +279,6 @@ const runReconciliation = async (page: Page): Promise<void> => {
 
   const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
 
-  // A-D1 (Issue #338): a statement is only reconcilable once assigned to a registered account, and
-  // an E2E organization starts with none. Before openSetup, since registering navigates away.
-  await ensureBankAccountsRegistered(page);
   await openSetup(page);
 
   await page.locator('#bank-workbook-input').setInputFiles({
