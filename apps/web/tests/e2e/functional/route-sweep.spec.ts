@@ -22,6 +22,10 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   exceptions: { heading: 'Review' },
   export: { heading: 'Export' },
   openItemsSchedule: { heading: 'Open Items Schedule' },
+  // A-D1 (Issue #338): the bank account registry. Registered unconditionally -- unlike
+  // documentationRunBook/approvalsPolicy, permission is a `canManage` prop on the screen, not a
+  // guard on the <Route> -- so the generic loop's "renders and stays put" assumption holds.
+  bankAccounts: { heading: 'Bank accounts' },
   mappingProfiles: { heading: 'Mapping Profiles' },
   // Branches on the logged-in account's verification state (App.tsx ~1279): CreateMappingScreen
   // once fully verified, otherwise MappingVerificationRequiredNotice. Both are a correct render

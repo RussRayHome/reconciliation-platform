@@ -1,7 +1,13 @@
 import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
-import { loginToApplication, openSetup, submitRunButton } from '../auth';
+import {
+  bankAccountSelect,
+  loginToApplication,
+  openSetup,
+  registerBankAccount,
+  submitRunButton,
+} from '../auth';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -24,6 +30,14 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   ]);
 
   await loginToApplication(page);
+
+  // A-D1 (Issue #338): a statement can only be reconciled once it is assigned to a REGISTERED
+  // account, and a fresh database has none. The account numbers deliberately end in the same four
+  // digits as the filenames uploaded below -- a mismatch is a real, separate product behaviour
+  // (it demands an explicit confirmation before the merge), and this test is not about that path.
+  await registerBankAccount(page, { accountNumber: '1111', name: 'Operating A' });
+  await registerBankAccount(page, { accountNumber: '2222', name: 'Operating B' });
+
   await openSetup(page);
 
   const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
@@ -43,6 +57,12 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: glBuffer,
   });
+  // Assign each uploaded statement to its account. Until both are assigned the submit button stays
+  // disabled ("Assign every bank statement to a registered account"), which is what makes this
+  // step load-bearing rather than decorative.
+  await bankAccountSelect(page, 0).selectOption({ label: 'Operating A — ending in 1111' });
+  await bankAccountSelect(page, 1).selectOption({ label: 'Operating B — ending in 2222' });
+
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');
   await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
