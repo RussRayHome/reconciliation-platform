@@ -10,7 +10,7 @@ import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
 import { openSetup, submitRunButton } from '../auth';
-import { assignBankAccounts } from '../reconciliationHelpers';
+import { assignBankAccounts, selectSourceTab } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -291,15 +291,19 @@ const runReconciliation = async (page: Page): Promise<void> => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankAccountBBuffer,
   });
+  // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
+  await selectSourceTab(page, 'General ledger');
   await page.locator('#gl-workbook-input').setInputFiles({
     name: 'gl.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: glBuffer,
   });
+  // Back to the bank tab: the per-slot account pickers live with the statements they assign.
+  await selectSourceTab(page, 'Bank statements');
   await assignBankAccounts(page);
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
-  await page.getByLabel('Monthly reconciliation month').selectOption('March');
-  await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
+  await page.getByLabel('Month').selectOption('March');
+  await page.getByLabel('Run label').fill(`Monthly Recon for March ${currentYear}`);
   await submitRunButton(page).click();
   await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible({ timeout: 30_000 });
   // R2 V3: the Run Bar's percentage meter (and `.run-bar__meter-percent`, this wait's original
@@ -361,8 +365,8 @@ for (const width of widths) {
         {
           ...screenshotOptions,
           mask: [
-            page.getByLabel('Reconciliation frequency'),
-            page.getByLabel('Monthly reconciliation month'),
+            page.getByLabel('Frequency'),
+            page.getByLabel('Month'),
           ],
         },
       );

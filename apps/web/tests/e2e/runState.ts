@@ -10,7 +10,7 @@ import { Client } from 'pg';
  * does noticeably more work (it fetches the latest run, then that run's full report).
  *
  * Empirically that extra in-flight work is what makes a programmatic `setInputFiles` on the first
- * bank slot go missing under parallel load -- traced directly: the slot reads "No file selected"
+ * bank slot go missing under parallel load -- traced directly: the slot showed its empty prompt
  * immediately after the upload call returns, so the file is never assigned rather than assigned
  * and cleared. The tests then cannot submit, and previously waited out a full timeout on a Review
  * stage assertion that had nothing to do with the real fault.

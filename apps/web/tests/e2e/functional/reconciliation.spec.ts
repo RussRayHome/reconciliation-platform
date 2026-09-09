@@ -2,7 +2,7 @@ import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup, submitRunButton } from '../auth';
-import { assignBankAccounts, ensureBankAccountsRegistered } from '../reconciliationHelpers';
+import { assignBankAccounts, ensureBankAccountsRegistered, selectSourceTab } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -46,6 +46,8 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankAccountBBuffer,
   });
+  // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
+  await selectSourceTab(page, 'General ledger');
   await page.locator('#gl-workbook-input').setInputFiles({
     name: 'gl.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -54,11 +56,13 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   // Assign each uploaded statement to its account. Until both are assigned the submit button stays
   // disabled ("Assign every bank statement to a registered account"), which is what makes this
   // step load-bearing rather than decorative.
+  // Back to the bank tab: the per-slot account pickers live with the statements they assign.
+  await selectSourceTab(page, 'Bank statements');
   await assignBankAccounts(page);
 
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
-  await page.getByLabel('Monthly reconciliation month').selectOption('March');
-  await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
+  await page.getByLabel('Month').selectOption('March');
+  await page.getByLabel('Run label').fill(`Monthly Recon for March ${currentYear}`);
   await submitRunButton(page).click();
 
   // Completing a run lands on the Review stage, Summary view.

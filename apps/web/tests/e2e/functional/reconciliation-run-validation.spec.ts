@@ -15,16 +15,7 @@ import {
   createSampleBankFileValidationWorkbook,
   createSampleGlFileValidationWorkbook,
 } from '../fileValidationWorkbooks';
-import {
-  TEST_BANK_ACCOUNTS,
-  XLSX_MIME,
-  assignBankAccounts,
-  ensureBankAccountsRegistered,
-  exceptionSummaryCell,
-  openExceptions,
-  runReconciliation,
-  setWorkbookFiles,
-} from '../reconciliationHelpers';
+import { TEST_BANK_ACCOUNTS, XLSX_MIME, assignBankAccounts, ensureBankAccountsRegistered, exceptionSummaryCell, openExceptions, runReconciliation, selectSourceTab, setWorkbookFiles } from '../reconciliationHelpers';
 import { resetRunsForWorker } from '../runState';
 
 test.describe('form validation', () => {
@@ -107,7 +98,9 @@ test.describe('form validation', () => {
       mimeType: XLSX_MIME,
       buffer: bankAccountBBuffer,
     });
-    await page.locator('#gl-workbook-input').setInputFiles({
+    // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
+  await selectSourceTab(page, 'General ledger');
+  await page.locator('#gl-workbook-input').setInputFiles({
       name: 'gl.xlsx',
       mimeType: XLSX_MIME,
       buffer: glBuffer,
@@ -133,7 +126,7 @@ test.describe('form validation', () => {
     await ensureBankAccountsRegistered(page);
     await openSetup(page);
     await setWorkbookFiles(page, bankBuffer, glBuffer);
-    await page.getByLabel('Reconciliation label').fill('');
+    await page.getByLabel('Run label').fill('');
     await expect(submitRunButton(page)).toBeDisabled();
   });
 
@@ -173,14 +166,18 @@ test.describe('structural validation', () => {
       mimeType: XLSX_MIME,
       buffer: bankAccountBBuffer,
     });
-    await page.locator('#gl-workbook-input').setInputFiles({
+    // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
+  await selectSourceTab(page, 'General ledger');
+  await page.locator('#gl-workbook-input').setInputFiles({
       name: 'transactions.csv',
       mimeType: 'text/csv',
       buffer: fakeBuffer,
     });
     // The GL file is the one under test here; the bank statements still need their A-D1
     // assignments or submit never enables and the structural error never gets a chance to appear.
-    await assignBankAccounts(page);
+    // Back to the bank tab: the per-slot account pickers live with the statements they assign.
+  await selectSourceTab(page, 'Bank statements');
+  await assignBankAccounts(page);
     await submitRunButton(page).click();
     await expect(page.getByText('STRUCT_HEADER_MISSING')).toBeVisible({ timeout: 30_000 });
   });
@@ -194,13 +191,13 @@ test.describe('annual reconciliation frequency', () => {
 
   test('switching to Annual hides the month picker and shows the year picker', async ({ page }) => {
     await openSetup(page);
-    await expect(page.getByLabel('Monthly reconciliation month')).toBeVisible();
+    await expect(page.getByLabel('Month')).toBeVisible();
     await expect(page.locator('#annual-reconciliation-year-select')).not.toBeVisible();
 
     await page.locator('#reconciliation-frequency-select').selectOption('Annual');
 
     await expect(page.locator('#annual-reconciliation-year-select')).toBeVisible();
-    await expect(page.getByLabel('Monthly reconciliation month')).not.toBeVisible();
+    await expect(page.getByLabel('Month')).not.toBeVisible();
   });
 
   test('annual reconciliation run completes and shows results', async ({ page }) => {

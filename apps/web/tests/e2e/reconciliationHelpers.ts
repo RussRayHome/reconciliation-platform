@@ -40,6 +40,22 @@ export async function ensureBankAccountsRegistered(page: Page): Promise<void> {
 }
 
 /** Assigns each staged bank statement to its account, in slot order. */
+/**
+ * Switches the New run screen's source tab (UI-2, #401). Bank and GL are separate tabs now, so
+ * anything staging a GL workbook has to be on the GL tab first -- the slot simply is not in the
+ * DOM otherwise, which surfaces as a `setInputFiles` timeout on `#gl-workbook-input` rather than
+ * anything that names the tab.
+ *
+ * Matched on the tab's accessible name rather than an id: `RovingTabList` derives tab ids from a
+ * prefix the caller passes, so a name match is the stable half of that contract.
+ */
+export async function selectSourceTab(
+  page: Page,
+  tab: 'Bank statements' | 'General ledger' | 'AP / Payments' | 'AR / Invoices' | 'Payroll',
+): Promise<void> {
+  await page.getByRole('tab', { name: new RegExp(`^${tab}`) }).click();
+}
+
 export async function assignBankAccounts(page: Page): Promise<void> {
   for (const [slot, account] of TEST_BANK_ACCOUNTS.entries()) {
     await bankAccountSelect(page, slot).selectOption({ label: account.label });
@@ -60,7 +76,11 @@ export async function setWorkbookFiles(
 
   await attachAndVerify(page, 'bank-workbook-input', '1111_bank.xlsx', bankBuffer);
   await attachAndVerify(page, 'bank-workbook-b-input', '2222_bank.xlsx', bankAccountBBuffer);
+  // UI-2 gave GL its own tab; its slot is not in the DOM until that tab is active, and the bank
+  // tab is where the per-slot account pickers live, so this returns before assigning.
+  await selectSourceTab(page, 'General ledger');
   await attachAndVerify(page, 'gl-workbook-input', 'gl.xlsx', glBuffer);
+  await selectSourceTab(page, 'Bank statements');
 
   // A-D1: staged files alone no longer make the form submittable -- each statement must also be
   // assigned to a registered account. Assigning here keeps "the form is filled in" a single step
@@ -75,7 +95,7 @@ export async function setWorkbookFiles(
  * Attaches one workbook and confirms the slot actually took it, retrying once if not.
  *
  * Issue #291: under parallel load a `setInputFiles` call occasionally returns without the app
- * recording the file -- traced directly, the slot still reads "No file selected" immediately
+ * recording the file -- traced directly, the slot still showed its empty prompt immediately
  * afterwards, so it is never assigned rather than assigned and cleared. The submit button then
  * stays correctly disabled and every later assertion in the test fails for reasons that look
  * nothing like the real cause.
@@ -134,11 +154,11 @@ export async function runReconciliation(
   if (frequency === 'Annual') {
     await page.locator('#reconciliation-frequency-select').selectOption('Annual');
   } else {
-    await page.getByLabel('Monthly reconciliation month').selectOption(month);
+    await page.getByLabel('Month').selectOption(month);
   }
 
   if (label !== undefined) {
-    await page.getByLabel('Reconciliation label').fill(label);
+    await page.getByLabel('Run label').fill(label);
   }
 
   await submitRunButton(page).click();
