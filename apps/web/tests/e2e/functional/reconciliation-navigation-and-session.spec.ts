@@ -38,7 +38,7 @@ test.describe('stage navigation', () => {
       createSampleGlFileValidationWorkbook(),
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
-    await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Summary' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -51,7 +51,7 @@ test.describe('stage navigation', () => {
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Summary' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -77,7 +77,7 @@ test.describe('stage navigation', () => {
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
-    await page.getByRole('link', { name: 'Reports' }).click();
+    await page.getByRole('link', { name: 'Reports & export' }).click();
     // Download workbook is a button, not a link -- see AppWorkspacePanels.tsx's own comment: a
     // plain <a href> can't carry the bearer token now that this route requires auth, so it
     // fetches the bytes and triggers the save via a blob URL instead of top-level navigation.
@@ -138,7 +138,7 @@ test.describe('edge cases', () => {
       createWorkbookFromRows(missingFromGlBankFileValidationRows),
       createWorkbookFromRows(missingFromGlGlFileValidationRows),
     ]);
-    await page.getByRole('link', { name: 'Bank Statements' }).click();
+    await page.getByRole('link', { name: 'New run' }).click();
     await setWorkbookFiles(page, bank2, gl2);
     await page.getByLabel('Reconciliation label').fill('Second Run April');
     await submitRunButton(page).click();
@@ -151,10 +151,10 @@ test.describe('edge cases', () => {
     page,
   }) => {
     await openSetup(page);
-    await page.getByRole('link', { name: 'Bank Statements' }).focus();
-    await page.getByRole('link', { name: 'File-based' }).focus();
+    await page.getByRole('link', { name: 'New run' }).focus();
+    await page.getByRole('link', { name: 'Summary' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('link', { name: 'File-based' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Summary' })).toHaveAttribute(
       'aria-current',
       'page',
     );

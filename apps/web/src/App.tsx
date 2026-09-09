@@ -723,7 +723,6 @@ function App() {
         rolePermissions={rolePermissions}
         isAdmin={activeUser.role === 'admin' || activeUser.role === 'superuser'}
         roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
-        controls={controls}
         username={activeUser.username}
         profileLabel={displayName.length > 0 ? displayName : activeUser.username}
         roleLabel={roleDisplayLabels[activeUser.role]}
@@ -741,7 +740,6 @@ function ReconciliationApp({
   rolePermissions,
   isAdmin,
   roleDefaultTab,
-  controls,
   username,
   profileLabel,
   roleLabel,
@@ -754,7 +752,6 @@ function ReconciliationApp({
   rolePermissions: RolePermissions;
   isAdmin: boolean;
   roleDefaultTab: AppTab;
-  controls: ReactNode;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -1656,8 +1653,6 @@ function ReconciliationApp({
           rulesUsedCount={rulesUsedCount}
           reviewProgressLabel={reviewProgressLabel}
           progressSteps={progressSteps}
-          profile={controls}
-          profileLabel={profileLabel}
           onToggleNav={() => setIsMobileNavOpen((open) => !open)}
           density={density}
           onChangeDensity={setDensity}

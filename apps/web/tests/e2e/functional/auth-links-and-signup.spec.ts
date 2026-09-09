@@ -145,7 +145,7 @@ test.describe('successful signup', () => {
     // App.tsx routes an authenticated-but-unverified session into the workspace, gated
     // separately per-feature (e.g. Create Mapping) by isFullyVerified.
     await page.getByRole('button', { name: 'Skip and enter the app' }).click();
-    await expect(page.getByRole('link', { name: 'Bank Statements' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'New run' })).toBeVisible();
 
     // Lands on Review, not on Import Files. SignupScreen.tsx defaults the role select to
     // 'financial-analyst', which resolveRoleLandingTab() maps to the 'review' tab, so App.tsx's

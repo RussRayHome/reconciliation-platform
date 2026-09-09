@@ -858,7 +858,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
     });
   });
 
@@ -885,7 +885,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
     });
     expect(globalThis.location.pathname).toBe('/');
   });
@@ -1059,11 +1059,11 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'Bank Statements' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'New run' })).toHaveAttribute(
       'aria-current',
       'page',
     );
-    expect(screen.getByRole('link', { name: 'File-based' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Summary' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: /Exceptions/i })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: /Reports/i })).not.toHaveAttribute('aria-current');
     expect(screen.getByText('Import source files')).toBeInTheDocument();
@@ -1076,9 +1076,9 @@ describe('App', () => {
 
     renderApp();
 
-    await user.click(screen.getByRole('link', { name: 'File-based' }));
+    await user.click(screen.getByRole('link', { name: 'Summary' }));
 
-    expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -1106,7 +1106,7 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Review' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -1157,7 +1157,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Summary' }));
 
     return waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -1185,7 +1185,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Summary' }));
 
     await waitFor(() => {
       expect(screen.getByText('No review output yet')).toBeInTheDocument();
@@ -1218,7 +1218,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Summary' }));
 
     await waitFor(() => {
       expect(screen.getAllByText('Total reviewed').length).toBeGreaterThan(0);
@@ -1237,7 +1237,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Summary' }));
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading review output');
 
@@ -1256,7 +1256,7 @@ describe('App', () => {
 
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Summary' }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Backend unavailable.');
@@ -1392,7 +1392,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Summary' }));
 
     // The deferred is deliberately left unresolved for the rest of this test -- the cached run
     // must still be showing while the durable fetch is pending, not blanked pre-emptively.
@@ -1596,9 +1596,9 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.click(screen.getByRole('link', { name: 'File-based' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Summary' }));
 
-    expect(screen.getByRole('link', { name: 'File-based' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Summary' })).toBeInTheDocument();
     expect(screen.getByText('Loading review output')).toBeInTheDocument();
   });
 
@@ -2250,7 +2250,7 @@ describe('App', () => {
 
       // A fresh landing with a succeeded run resolves "/" to the run summary (N4), so get back to
       // the upload screen the way a user would before starting the next run.
-      fireEvent.click(screen.getByRole('link', { name: 'Bank Statements' }));
+      fireEvent.click(screen.getByRole('link', { name: 'New run' }));
       await fillUploadInputs();
       fireEvent.click(screen.getByRole('button', { name: 'Start new run' }));
 
@@ -3397,7 +3397,7 @@ describe('App', () => {
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -3410,16 +3410,16 @@ describe('App', () => {
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'File-based' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute(
         'aria-current',
         'page',
       );
     });
 
-    await user.click(screen.getByRole('link', { name: 'Bank Statements' }));
+    await user.click(screen.getByRole('link', { name: 'New run' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'Bank Statements' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'New run' })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -3468,7 +3468,7 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
   });
 
@@ -3497,7 +3497,7 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'Bank Statements' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
@@ -3587,7 +3587,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'Rules-based' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Probable matches' })).toHaveAttribute(
       'href',
       '/probable-matches',
     );
@@ -3600,7 +3600,8 @@ describe('App', () => {
     expect(screen.queryByRole('link', { name: 'Exception Resolutions' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Report Distribution' })).toBeNull();
 
-    const link = screen.getByText('Pending approvals').closest('a');
+    // 'Pending' is also a run-step chip status, so query the rail entry by role rather than text.
+    const link = screen.getByRole('link', { name: 'Pending' });
     expect(link).toHaveAttribute('href', '/approvals');
 
     fireEvent.click(link!);
@@ -3659,7 +3660,7 @@ describe('NavRail Pending approvals badge after a decision', () => {
     renderApp();
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
-    const railLink = screen.getByRole('link', { name: /Pending approvals/ });
+    const railLink = screen.getByRole('link', { name: /Pending/ });
     await waitFor(() => expect(railLink.querySelector('.nav-rail__badge')).toHaveTextContent('1'));
 
     // The decision succeeds server-side; the next counts fetch reports nothing pending.
