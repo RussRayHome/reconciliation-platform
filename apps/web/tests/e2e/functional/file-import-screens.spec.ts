@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup, submitRunButton } from '../auth';
-import { assignBankAccounts, ensureBankAccountsRegistered, selectSourceTab } from '../reconciliationHelpers';
+import { assignBankAccounts, ensureBankAccountsRegistered, selectSourceTab, stageGlWorkbook } from '../reconciliationHelpers';
 import { resetRunsForWorker } from '../runState';
 import {
   bankHeaderOnlyFileValidationRows,
@@ -40,13 +40,7 @@ async function setWorkbookFiles(page: Page, bankBuffer: Buffer, glBuffer: Buffer
     mimeType: XLSX_MIME,
     buffer: bankAccountBBuffer,
   });
-  // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
-  await selectSourceTab(page, 'General ledger');
-  await page.locator('#gl-workbook-input').setInputFiles({
-    name: 'gl.xlsx',
-    mimeType: XLSX_MIME,
-    buffer: glBuffer,
-  });
+  await stageGlWorkbook(page, 'gl.xlsx', glBuffer);
 
   // A-D1 (Issue #338): staged files alone leave submit disabled -- each bank statement must also be
   // assigned to a registered account. The accounts themselves are registered by

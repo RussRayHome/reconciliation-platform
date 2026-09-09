@@ -15,7 +15,7 @@ import {
   createSampleBankFileValidationWorkbook,
   createSampleGlFileValidationWorkbook,
 } from '../fileValidationWorkbooks';
-import { TEST_BANK_ACCOUNTS, XLSX_MIME, assignBankAccounts, ensureBankAccountsRegistered, exceptionSummaryCell, openExceptions, runReconciliation, selectSourceTab, setWorkbookFiles } from '../reconciliationHelpers';
+import { TEST_BANK_ACCOUNTS, XLSX_MIME, assignBankAccounts, ensureBankAccountsRegistered, exceptionSummaryCell, openExceptions, runReconciliation, selectSourceTab, setWorkbookFiles, stageGlWorkbook } from '../reconciliationHelpers';
 import { resetRunsForWorker } from '../runState';
 
 test.describe('form validation', () => {
@@ -98,13 +98,7 @@ test.describe('form validation', () => {
       mimeType: XLSX_MIME,
       buffer: bankAccountBBuffer,
     });
-    // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
-  await selectSourceTab(page, 'General ledger');
-  await page.locator('#gl-workbook-input').setInputFiles({
-      name: 'gl.xlsx',
-      mimeType: XLSX_MIME,
-      buffer: glBuffer,
-    });
+  await stageGlWorkbook(page, 'gl.xlsx', glBuffer);
 
     await expect(submitRunButton(page)).toBeDisabled();
 
@@ -166,13 +160,7 @@ test.describe('structural validation', () => {
       mimeType: XLSX_MIME,
       buffer: bankAccountBBuffer,
     });
-    // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
-  await selectSourceTab(page, 'General ledger');
-  await page.locator('#gl-workbook-input').setInputFiles({
-      name: 'transactions.csv',
-      mimeType: 'text/csv',
-      buffer: fakeBuffer,
-    });
+  await stageGlWorkbook(page, 'transactions.csv', fakeBuffer);
     // The GL file is the one under test here; the bank statements still need their A-D1
     // assignments or submit never enables and the structural error never gets a chance to appear.
     // Back to the bank tab: the per-slot account pickers live with the statements they assign.

@@ -2,7 +2,7 @@ import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup, submitRunButton } from '../auth';
-import { assignBankAccounts, ensureBankAccountsRegistered, selectSourceTab } from '../reconciliationHelpers';
+import { assignBankAccounts, ensureBankAccountsRegistered, selectSourceTab, stageGlWorkbook } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -46,13 +46,7 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankAccountBBuffer,
   });
-  // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
-  await selectSourceTab(page, 'General ledger');
-  await page.locator('#gl-workbook-input').setInputFiles({
-    name: 'gl.xlsx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer: glBuffer,
-  });
+  await stageGlWorkbook(page, 'gl.xlsx', glBuffer);
   // Assign each uploaded statement to its account. Until both are assigned the submit button stays
   // disabled ("Assign every bank statement to a registered account"), which is what makes this
   // step load-bearing rather than decorative.

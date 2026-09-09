@@ -42,10 +42,15 @@
     font-weight: 600;
   }
 
+  /* One full-width row per slot, stacked (README 1a). This was `repeat(auto-fit, minmax(220px,
+     1fr))`, which tiled slots two-across -- correct for the tall card a slot used to be, wrong for
+     the 48px row it is now: at ~220px the row's fixed columns consume the whole track, the
+     flexible column collapses to zero, and `.source-slot__name` (overflow:hidden) becomes a
+     zero-width box. That renders as an invisible file name, which is how the e2e upload helper
+     saw a staged file as never attached. */
   .source-dropzone__slots {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   /* [SCREEN] 1a — the compact slot. The file line is a fixed-height row; anything that belongs to
@@ -58,9 +63,13 @@
     border: 0;
   }
 
+  /* Four children -- tag, prompt, hint, actions -- so four columns. An earlier three-column
+     template pushed `actions` into an implicit row and squeezed the flexible column, which can
+     collapse a text cell to zero width; Playwright reports a zero-width element as not visible,
+     so the e2e upload helper saw the file name as absent. Column count must match child count. */
   .source-slot__row {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) auto;
+    grid-template-columns: 96px minmax(120px, auto) minmax(0, 1fr) auto;
     align-items: center;
     gap: 14px;
     min-height: 48px;
@@ -73,8 +82,11 @@
 
   /* Filled: the dashed prompt row becomes a stored row -- name, size, and the one word that says
      the file is held. Solid border, because a dashed edge reads as "still waiting for something". */
+  /* Five children when filled -- tag, name, size, "Stored", actions. The spec's four-column
+     filled row omits Browse/remove; they are kept because a stored file must stay replaceable and
+     removable, so the row carries one more column than the drawing. */
   .source-slot--filled .source-slot__row {
-    grid-template-columns: 84px minmax(0, 1fr) 90px auto;
+    grid-template-columns: 96px minmax(0, 1fr) 90px auto auto;
     border-style: solid;
     border-color: var(--line);
     border-left-color: var(--source-slot-hue, var(--line-strong));

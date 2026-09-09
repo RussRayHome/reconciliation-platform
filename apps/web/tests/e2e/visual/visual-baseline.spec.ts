@@ -10,7 +10,7 @@ import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
 import { openSetup, submitRunButton } from '../auth';
-import { assignBankAccounts, selectSourceTab } from '../reconciliationHelpers';
+import { assignBankAccounts, selectSourceTab, stageGlWorkbook } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -291,15 +291,7 @@ const runReconciliation = async (page: Page): Promise<void> => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankAccountBBuffer,
   });
-  // UI-2 moved the GL slot to its own tab; it is not in the DOM until the tab is active.
-  await selectSourceTab(page, 'General ledger');
-  await page.locator('#gl-workbook-input').setInputFiles({
-    name: 'gl.xlsx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer: glBuffer,
-  });
-  // Back to the bank tab: the per-slot account pickers live with the statements they assign.
-  await selectSourceTab(page, 'Bank statements');
+  await stageGlWorkbook(page, 'gl.xlsx', glBuffer);
   await assignBankAccounts(page);
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Month').selectOption('March');
