@@ -33,6 +33,12 @@ const RLS_EXCLUDED_TABLES: Record<string, ReadonlySet<string>> = {
     // reconciliation_login_event's own RLS exclusion by comparison -- no query of
     // reconciliation_user happens in this file.
     'packages/persistence/src/readModelStore.ts',
+    // PostgresSavedViewStore: resolveUserId is the same narrow shape as the import-validation
+    // store's -- a single-row lookup filtered on user_name AND organization_id together, used to
+    // attribute a saved view to its author and to check ownership before an edit. The list query
+    // joins reconciliation_user only to return the owner's *username* instead of the internal id,
+    // and is already constrained to one organization. Never a list or filter across users.
+    'packages/persistence/src/savedViewStore.ts',
     // PostgresImportValidationStore: resolveUserId (used by submitRun/claimRunApproval/
     // recordRunApprovalDecision) is a single-row lookup filtered on user_name AND organization_id
     // together, narrower than the login lookup above, never a list/filter across users.
@@ -53,6 +59,12 @@ const RLS_EXCLUDED_TABLES: Record<string, ReadonlySet<string>> = {
     // recordLoginEvent: a single INSERT per authentication event, never a SELECT/list. See its
     // own doc comment.
     'packages/persistence/src/readModelStore.ts',
+    // PostgresSavedViewStore: resolveUserId is the same narrow shape as the import-validation
+    // store's -- a single-row lookup filtered on user_name AND organization_id together, used to
+    // attribute a saved view to its author and to check ownership before an edit. The list query
+    // joins reconciliation_user only to return the owner's *username* instead of the internal id,
+    // and is already constrained to one organization. Never a list or filter across users.
+    'packages/persistence/src/savedViewStore.ts',
     // auditLoginEvent's own doc comment names the table while explaining that it persists there
     // via recordLoginEvent -- no direct query of the table happens in this file.
     'apps/api/src/app.ts',

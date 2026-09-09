@@ -40,6 +40,10 @@ import {
   loadPayeeAliases,
   DuplicateReconciliationAccountError,
   PostgresAccountStore,
+  PostgresSavedViewStore,
+  UnknownSavedViewError,
+  SavedViewNotOwnedError,
+  DuplicateSavedViewNameError,
   PostgresBlobStorage,
   PostgresImportRunStore,
   PostgresImportValidationStore,
@@ -150,6 +154,10 @@ import {
   matchingConfigVersionDraftBodySchema,
   publishMatchingConfigVersionBodySchema,
   registerAccountBodySchema,
+  createSavedViewBodySchema,
+  savedViewIdParamSchema,
+  updateSavedViewBodySchema,
+  listSavedViewsQuerySchema,
   reconciliationRunBodySchema,
   respondWithValidationError,
   reviewerDecisionBodySchema,
@@ -1535,6 +1543,56 @@ export const buildOpenApiSpec = () => ({
         responses: {
           200: { description: 'Queued job status payload' },
           404: { description: 'Queued job not found' },
+        },
+      },
+    },
+    '/api/saved-views': {
+      get: {
+        summary: 'List the saved views this user may see (Issue #458)',
+        description:
+          "The caller's own views at any visibility, plus every view shared with the finance team. Retired views are excluded unless asked for.",
+        parameters: [
+          { in: 'query', name: 'scope', schema: { type: 'string', enum: ['exceptions', 'open_items'] } },
+          { in: 'query', name: 'includeRetired', schema: { type: 'string', enum: ['true', 'false'] } },
+        ],
+        responses: {
+          200: { description: 'Saved views, most recently updated first' },
+          400: { description: 'Unrecognised scope or includeRetired value' },
+          401: { description: 'Not authenticated' },
+        },
+      },
+      post: {
+        summary: 'Save a new view (Issue #458)',
+        description:
+          'The author becomes the first owner. Visibility defaults to private -- sharing is an explicit act.',
+        responses: {
+          201: { description: 'Saved view created' },
+          400: { description: 'Invalid body (missing scope, empty or over-long name)' },
+          401: { description: 'Not authenticated' },
+          409: { description: 'This owner already has an active view of that name' },
+        },
+      },
+    },
+    '/api/saved-views/{savedViewId}': {
+      patch: {
+        summary: 'Update a saved view, including retiring it (Issue #458)',
+        description:
+          "Owner-only. `scope` cannot be changed -- it is what the saved filters mean. There is no DELETE: a view is retired by patching status to RETIRED, which frees its name for reuse without losing the row.",
+        parameters: [
+          {
+            in: 'path',
+            name: 'savedViewId',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          200: { description: 'Updated saved view' },
+          400: { description: 'Malformed id or invalid body' },
+          401: { description: 'Not authenticated' },
+          403: { description: 'Readable by this user, but owned by someone else' },
+          404: { description: 'No such view in this organization' },
+          409: { description: 'The target name is already in use by an active view' },
         },
       },
     },
@@ -3081,6 +3139,100 @@ export const createApp = (
   // A statement can only be assigned to an account that already exists here. Registration is
   // deliberate and explicit: nothing in the import path creates an account as a side effect of a
   // filename any more, which is what made last-four digits behave like an identity.
+  // ── Saved views (Issue #458) ────────────────────────────────────────────────────────────────
+  // Replaces the per-browser localStorage list. Visibility is private or team, where team means the
+  // whole finance team org-wide -- so there is no membership check here, only ownership on write.
+  // Nothing deletes: PATCH with status RETIRED is the removal path.
+
+  app.get('/api/saved-views', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'SAVED_VIEWS_LIST'))) return;
+    try {
+      const query = listSavedViewsQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        respondWithValidationError(response, query.error);
+        return;
+      }
+
+      const savedViewStore = new PostgresSavedViewStore(pool!);
+      const savedViews = await savedViewStore.listVisible(
+        request.auth!.organizationId,
+        request.auth!.username,
+        { scope: query.data.scope, includeRetired: query.data.includeRetired },
+      );
+      response.json({ savedViews });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/saved-views', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'SAVED_VIEWS_CREATE'))) return;
+    try {
+      const body = createSavedViewBodySchema.safeParse(request.body);
+      if (!body.success) {
+        respondWithValidationError(response, body.error);
+        return;
+      }
+
+      const savedViewStore = new PostgresSavedViewStore(pool!);
+      const savedView = await savedViewStore.create(
+        request.auth!.organizationId,
+        request.auth!.username,
+        body.data,
+      );
+      response.status(201).json({ savedView });
+    } catch (error) {
+      if (error instanceof DuplicateSavedViewNameError) {
+        response.status(409).json({ message: error.message });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  app.patch('/api/saved-views/:savedViewId', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'SAVED_VIEWS_UPDATE'))) return;
+    try {
+      const params = savedViewIdParamSchema.safeParse(request.params);
+      if (!params.success) {
+        respondWithValidationError(response, params.error);
+        return;
+      }
+
+      const body = updateSavedViewBodySchema.safeParse(request.body);
+      if (!body.success) {
+        respondWithValidationError(response, body.error);
+        return;
+      }
+
+      const savedViewStore = new PostgresSavedViewStore(pool!);
+      const savedView = await savedViewStore.update(
+        request.auth!.organizationId,
+        request.auth!.username,
+        params.data.savedViewId,
+        body.data,
+      );
+      response.json({ savedView });
+    } catch (error) {
+      // 404 for a view this organization does not have; 403 for one it has but this user does not
+      // own. A shared view is readable by the team, so pretending it is missing would be a
+      // confusing lie to someone looking straight at it.
+      if (error instanceof UnknownSavedViewError) {
+        response.status(404).json({ message: error.message });
+        return;
+      }
+      if (error instanceof SavedViewNotOwnedError) {
+        response.status(403).json({ message: error.message });
+        return;
+      }
+      if (error instanceof DuplicateSavedViewNameError) {
+        response.status(409).json({ message: error.message });
+        return;
+      }
+      next(error);
+    }
+  });
+
   app.get('/api/accounts', async (request, response, next) => {
     if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
     try {

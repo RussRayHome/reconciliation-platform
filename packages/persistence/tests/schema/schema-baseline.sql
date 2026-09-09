@@ -6,9 +6,9 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(2367);
+SELECT plan(2412);
 
-SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
+SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_saved_view', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
 SELECT col_is_pk('public', 'canonical_record', ARRAY['id']::name[], 'canonical_record primary key');
 SELECT indexes_are('public', 'canonical_record', ARRAY['canonical_record_counterparty_id_idx', 'normalized_record_account_txn_date_idx', 'normalized_record_organization_idx', 'normalized_record_pkey', 'normalized_record_reconciliation_run_idx', 'normalized_record_signed_amount_idx']::name[], 'canonical_record has exactly the expected indexes');
@@ -6220,6 +6220,148 @@ SELECT is(
   'reconciliation_run_event row-level security policies'
 );
 SELECT triggers_are('public', 'reconciliation_run_event', ARRAY[]::name[], 'reconciliation_run_event has exactly the expected triggers');
+SELECT columns_are('public', 'reconciliation_saved_view', ARRAY['id', 'organization_id', 'created_by_user_id', 'owner_user_id', 'name', 'scope', 'filters', 'visibility', 'status', 'created_at', 'updated_at']::name[], 'reconciliation_saved_view has exactly the expected columns');
+SELECT col_is_pk('public', 'reconciliation_saved_view', ARRAY['id']::name[], 'reconciliation_saved_view primary key');
+SELECT indexes_are('public', 'reconciliation_saved_view', ARRAY['reconciliation_saved_view_owner_name_key', 'reconciliation_saved_view_pkey', 'reconciliation_saved_view_visible_idx']::name[], 'reconciliation_saved_view has exactly the expected indexes');
+SELECT is(
+  (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_saved_view' AND relnamespace = 'public'::regnamespace),
+  true,
+  'reconciliation_saved_view has row-level security enabled'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'id', 'uuid', 'reconciliation_saved_view.id is uuid');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'id', 'reconciliation_saved_view.id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'id'),
+  NULL,
+  'reconciliation_saved_view.id default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'organization_id', 'uuid', 'reconciliation_saved_view.organization_id is uuid');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'organization_id', 'reconciliation_saved_view.organization_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'organization_id'),
+  NULL,
+  'reconciliation_saved_view.organization_id default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'created_by_user_id', 'uuid', 'reconciliation_saved_view.created_by_user_id is uuid');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'created_by_user_id', 'reconciliation_saved_view.created_by_user_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'created_by_user_id'),
+  NULL,
+  'reconciliation_saved_view.created_by_user_id default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'owner_user_id', 'uuid', 'reconciliation_saved_view.owner_user_id is uuid');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'owner_user_id', 'reconciliation_saved_view.owner_user_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'owner_user_id'),
+  NULL,
+  'reconciliation_saved_view.owner_user_id default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'name', 'text', 'reconciliation_saved_view.name is text');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'name', 'reconciliation_saved_view.name is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'name'),
+  NULL,
+  'reconciliation_saved_view.name default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'scope', 'text', 'reconciliation_saved_view.scope is text');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'scope', 'reconciliation_saved_view.scope is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'scope'),
+  NULL,
+  'reconciliation_saved_view.scope default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'filters', 'jsonb', 'reconciliation_saved_view.filters is jsonb');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'filters', 'reconciliation_saved_view.filters is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'filters'),
+  $dflt$'{}'::jsonb$dflt$,
+  'reconciliation_saved_view.filters default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'visibility', 'text', 'reconciliation_saved_view.visibility is text');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'visibility', 'reconciliation_saved_view.visibility is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'visibility'),
+  $dflt$'private'::text$dflt$,
+  'reconciliation_saved_view.visibility default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'status', 'text', 'reconciliation_saved_view.status is text');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'status', 'reconciliation_saved_view.status is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'status'),
+  $dflt$'ACTIVE'::text$dflt$,
+  'reconciliation_saved_view.status default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'created_at', 'timestamp with time zone', 'reconciliation_saved_view.created_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'created_at', 'reconciliation_saved_view.created_at is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'created_at'),
+  $dflt$now()$dflt$,
+  'reconciliation_saved_view.created_at default'
+);
+SELECT col_type_is('public', 'reconciliation_saved_view', 'updated_at', 'timestamp with time zone', 'reconciliation_saved_view.updated_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_saved_view', 'updated_at', 'reconciliation_saved_view.updated_at is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_saved_view'::regclass AND a.attname = 'updated_at'),
+  $dflt$now()$dflt$,
+  'reconciliation_saved_view.updated_at default'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.reconciliation_saved_view'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$reconciliation_saved_view_scope_check => CHECK ((scope = ANY (ARRAY['exceptions'::text, 'open_items'::text])))
+reconciliation_saved_view_status_check => CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'RETIRED'::text])))
+reconciliation_saved_view_visibility_check => CHECK ((visibility = ANY (ARRAY['private'::text, 'team'::text])))$chk$,
+  'reconciliation_saved_view check/unique/exclusion constraints'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(p.grantee || ' => ' || p.privs, E'\n' ORDER BY p.grantee), '')
+     FROM (
+       SELECT grantee, string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privs
+         FROM information_schema.table_privileges
+        WHERE table_schema = 'public' AND table_name = 'reconciliation_saved_view'
+          AND grantee <> (SELECT rolname FROM pg_roles WHERE oid = (SELECT relowner FROM pg_class WHERE relname = 'reconciliation_saved_view' AND relnamespace = 'public'::regnamespace))
+        GROUP BY grantee
+     ) p),
+  $grants$app_user => DELETE,INSERT,SELECT,UPDATE
+recon_app_runtime => DELETE,INSERT,SELECT,UPDATE$grants$,
+  'reconciliation_saved_view grants'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(policyname || ' => cmd=' || cmd || ' roles=' || array_to_string(roles, ',') || ' using=' || COALESCE(qual, '') || ' check=' || COALESCE(with_check, ''), E'\n' ORDER BY policyname), '')
+     FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'reconciliation_saved_view'),
+  $policy$reconciliation_saved_view_tenant_isolation => cmd=ALL roles=public using=(organization_id = (current_setting('app.current_organization_id'::text, true))::uuid) check=$policy$,
+  'reconciliation_saved_view row-level security policies'
+);
+SELECT triggers_are('public', 'reconciliation_saved_view', ARRAY['trg_reconciliation_saved_view_updated_at']::name[], 'reconciliation_saved_view has exactly the expected triggers');
+SELECT is(
+  (SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgname = 'trg_reconciliation_saved_view_updated_at' AND tgrelid = 'public.reconciliation_saved_view'::regclass),
+  $trig$CREATE TRIGGER trg_reconciliation_saved_view_updated_at BEFORE UPDATE ON public.reconciliation_saved_view FOR EACH ROW EXECUTE FUNCTION set_updated_at()$trig$,
+  'reconciliation_saved_view.trg_reconciliation_saved_view_updated_at definition'
+);
 SELECT columns_are('public', 'reconciliation_source_file', ARRAY['id', 'job_id', 'source_system', 'source_format', 'file_name', 'mime_type', 'size_bytes', 'sha256', 'storage_uri', 'worksheet_name', 'header_row', 'transaction_start_row', 'excluded_row_numbers', 'imported_row_count', 'uploaded_at', 'created_at', 'updated_at', 'organization_id', 'uploaded_by', 'approval_status', 'ingestion_mode']::name[], 'reconciliation_source_file has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_source_file', ARRAY['id']::name[], 'reconciliation_source_file primary key');
 SELECT indexes_are('public', 'reconciliation_source_file', ARRAY['reconciliation_source_file_job_id_source_system_key', 'reconciliation_source_file_job_idx', 'reconciliation_source_file_organization_approval_idx', 'reconciliation_source_file_organization_idx', 'reconciliation_source_file_pkey', 'reconciliation_source_file_sha_idx']::name[], 'reconciliation_source_file has exactly the expected indexes');
@@ -7467,6 +7609,9 @@ SELECT fk_ok('public', 'reconciliation_run_account', ARRAY['organization_id']::n
 SELECT fk_ok('public', 'reconciliation_run_account', ARRAY['reconciliation_run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_run_event', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_run_event', ARRAY['run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_saved_view', ARRAY['created_by_user_id']::name[], 'public', 'reconciliation_user', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_saved_view', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_saved_view', ARRAY['owner_user_id']::name[], 'public', 'reconciliation_user', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_source_file', ARRAY['job_id']::name[], 'public', 'reconciliation_job', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_source_file', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_source_file', ARRAY['uploaded_by']::name[], 'public', 'reconciliation_user', ARRAY['user_name']::name[]);
