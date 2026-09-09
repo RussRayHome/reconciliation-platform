@@ -48,21 +48,9 @@
     border-radius: var(--radius-panel);
     border: 1px solid var(--line);
     background: var(--bg-surface);
-    animation: fadeInUp 700ms ease-out;
     position: relative;
     overflow: hidden;
     box-shadow: none;
-  }
-
-  .page-footer::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: linear-gradient(180deg, var(--accent), var(--severity-high));
-    opacity: 0.6;
   }
 
   .page-footer p {

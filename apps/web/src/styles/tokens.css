@@ -34,9 +34,15 @@
     --gl: #dcc58f;
     --bank-hover: #8fbcff;
     /* AP/Billing source hue (R1: AP inclusion & shared aging) — same status-neutral role as --bank,
-       one per source type. */
-    --ap: #dcc58f;
-    --ap-hover: #e6d5a8;
+       one per source type. Was #dcc58f, byte-identical to --gl above: harmless while AP and GL never
+       appeared together, wrong the moment the New run tab strip shows all five source types at once
+       (UI refresh 1a). Now the design's terracotta, distinct from GL's brass. */
+    --ap: #e08f6a;
+    --ap-hover: #eaa88c;
+    /* AR/Invoices and Payroll complete the five-hue set the source tab strip needs. Unused until
+       those source types are wired (UI-2); declared here so the palette is defined in one place. */
+    --ar: #c39be0;
+    --payroll: #8fd3c0;
     /* Soft fills: 0.12 alpha bg + 0.28–0.32 alpha border + full-strength text */
     --accent-soft: rgba(31, 209, 161, 0.12);
     --accent-soft-border: rgba(31, 209, 161, 0.3);
@@ -44,13 +50,18 @@
     --negative-soft-border: rgba(242, 73, 92, 0.3);
     --bank-soft: rgba(111, 168, 255, 0.12);
     --bank-soft-border: rgba(111, 168, 255, 0.3);
-    --ap-soft: rgba(220, 197, 143, 0.12);
-    --ap-soft-border: rgba(220, 197, 143, 0.3);
+    --ap-soft: rgba(224, 143, 106, 0.12);
+    --ap-soft-border: rgba(224, 143, 106, 0.3);
     --severity-high-soft: rgba(240, 136, 62, 0.12);
     --severity-high-soft-border: rgba(240, 136, 62, 0.3);
     --severity-medium-soft: rgba(201, 154, 46, 0.12);
     --severity-medium-soft-border: rgba(201, 154, 46, 0.3);
     /* Radii: 6 row · 8 control · 12 module · 999 pill */
+    /* Label/meta type pair (UI refresh 1d). The label size replaces the 0.62/0.66/0.68rem spread
+       that mono eyebrows had drifted into; --font-meta is the inline-meta counterpart, declared
+       here so later phases use the pair by name rather than reintroducing a third size. */
+    --font-label: 10.5px;
+    --font-meta: 12px;
     --radius-row: 6px;
     --radius-control: 8px;
     --radius-panel: 12px;
@@ -65,16 +76,11 @@
     --nav-item: 34px;
     /* Elevation: flat (hairline), raised, glass (floating layers only) */
     --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.32);
-    /* Control depth (R3 X5): pressable surfaces -- decision buttons, Save view, the density
-       thumb. Distinct from --shadow-raised, which is for panels/floating layers. */
-    --shadow-control:
-      0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 1px 2px rgba(0, 0, 0, 0.5),
-      0 3px 8px rgba(0, 0, 0, 0.35);
-    --shadow-control-hover:
-      0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 2px 4px rgba(0, 0, 0, 0.5),
-      0 6px 14px rgba(0, 0, 0, 0.4);
-    --shadow-control-active: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 1px rgba(0, 0, 0, 0.5);
-    --gradient-control: linear-gradient(180deg, var(--bg-raised), #12161d);
+    /* Button depth (UI refresh 1d): one inset highlight + one cast shadow, on every tone. Replaces
+       the R3 X5 control-depth set (--shadow-control/-hover/-active and --gradient-control), whose
+       gradient fill the single button family does not use -- tones are flat colour now. */
+    --shadow-button: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 2px 6px rgba(0, 0, 0, 0.45);
+    --shadow-button-secondary: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 2px 5px rgba(0, 0, 0, 0.4);
     --shadow-popover: var(--shadow-raised);
     --shadow-sm: none;
     --shadow: none;
@@ -111,25 +117,31 @@
       --bank: #1d4ed8;
       --gl: #7a5a12;
       --bank-hover: #1e40af;
-      --ap: #92702c;
-      --ap-hover: #7a5b1f;
+      /* Light counterparts are derived, not the dark values: on light --bg-raised #efece5 the design's
+         hues measure 2.14:1 (ap), 1.96:1 (ar) and 1.45:1 (payroll) — invisible, the same problem
+         --gl has and for the same reason. Hue preserved, lightness reduced to >= 4.5:1, matching the
+         3.9-5.7:1 band the existing light source hues already sit in. */
+      --ap: #b04d20;
+      --ap-hover: #96401b;
+      --ar: #9246ca;
+      --payroll: #2c7762;
       --accent-soft: rgba(15, 118, 110, 0.1);
       --accent-soft-border: rgba(15, 118, 110, 0.3);
       --negative-soft: rgba(179, 38, 30, 0.1);
       --negative-soft-border: rgba(179, 38, 30, 0.3);
       --bank-soft: rgba(29, 78, 216, 0.1);
       --bank-soft-border: rgba(29, 78, 216, 0.3);
-      --ap-soft: rgba(146, 112, 44, 0.1);
-      --ap-soft-border: rgba(146, 112, 44, 0.3);
+      --ap-soft: rgba(176, 77, 32, 0.1);
+      --ap-soft-border: rgba(176, 77, 32, 0.3);
       --severity-high-soft: rgba(194, 65, 12, 0.1);
       --severity-high-soft-border: rgba(194, 65, 12, 0.3);
       --severity-medium-soft: rgba(146, 96, 10, 0.1);
       --severity-medium-soft-border: rgba(146, 96, 10, 0.3);
       --shadow-raised: none;
-      --shadow-control: none;
-      --shadow-control-hover: none;
-      --shadow-control-active: none;
-      --gradient-control: var(--bg-raised);
+      /* Light keeps buttons flat, as the control-depth tokens did: a cast shadow on paper reads as
+         grime rather than depth. The inset highlight goes too -- there is nothing to catch light. */
+      --shadow-button: none;
+      --shadow-button-secondary: none;
       --shadow-popover: none;
       --shadow-md: none;
       --shadow-lg: none;

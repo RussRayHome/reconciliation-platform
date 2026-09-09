@@ -68,7 +68,7 @@
 
   .exception-facet-group {
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     padding: 0.5rem 0.65rem;
     display: grid;
     gap: 0.3rem;
@@ -236,7 +236,7 @@
   }
 
   .exception-triage__shortcut-legend kbd {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.72rem;
     padding: 0.05rem 0.3rem;
     border: 1px solid var(--line);
@@ -316,7 +316,7 @@
   }
 
   .exception-list-header__indicator {
-    font-size: 0.62rem;
+    font-size: var(--font-label);
   }
 
   .exception-row:focus-visible {
@@ -356,8 +356,8 @@
 
   .exception-row__category,
   .exception-row__source {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.68rem;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
     letter-spacing: 0.04em;
   }
 
@@ -386,7 +386,7 @@
   }
 
   .exception-row__fileline {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.76rem;
     color: var(--text-tertiary);
   }
@@ -518,7 +518,7 @@
   }
 
   .exception-detail__fileline {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     color: var(--text-tertiary);
   }
 
@@ -544,7 +544,7 @@
 
   .exception-compare-column {
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     padding: 0.6rem;
   }
 
@@ -575,7 +575,7 @@
   }
 
   .exception-compare-column__fileline {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.76rem;
   }
 
@@ -608,7 +608,7 @@
   }
 
   .exception-lineage-trail__label {
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-tertiary);
@@ -680,7 +680,7 @@
 
   .exception-detail__token-list {
     margin: 0.4rem 0 0;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.78rem;
     color: var(--text-tertiary);
   }
@@ -694,38 +694,41 @@
     gap: 0.4rem;
   }
 
+  /* UI refresh 1d: decision buttons are FLAT TINTED tones with a <kbd> inside, not the R3 X5
+     gradient-plus-drop-shadow. They keep their own compact padding -- these sit in a dense row
+     under the evidence panel -- but take the family's radius, border and secondary depth. The
+     press feedback is now the family's scale(0.97) rather than a translateY nudge, so a decision
+     button behaves like every other control in the app. */
   .exception-decision-button,
   .exception-facets__save-row button {
     padding: 0.4rem 0.7rem;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--line);
-    /* R3 X5: pressable depth. Light mode flattens these tokens to none/flat (tokens.css). */
-    background: var(--gradient-control);
-    box-shadow: var(--shadow-control);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-button-secondary);
     cursor: pointer;
     font-weight: 600;
     transition:
-      transform 120ms ease,
-      box-shadow 120ms ease;
+      background-color 150ms ease-in-out,
+      border-color 150ms ease-in-out,
+      transform 100ms ease-in-out;
   }
 
-  .exception-decision-button:hover,
-  .exception-facets__save-row button:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-control-hover);
+  .exception-decision-button:hover:not(:disabled),
+  .exception-facets__save-row button:hover:not(:disabled) {
+    background: var(--bg-surface);
   }
 
-  .exception-decision-button:active,
-  .exception-facets__save-row button:active {
-    transform: translateY(1px);
-    box-shadow: var(--shadow-control-active);
+  .exception-decision-button:active:not(:disabled),
+  .exception-facets__save-row button:active:not(:disabled) {
+    transform: scale(0.97);
   }
 
   .exception-decision-button:disabled {
     transform: none;
-    box-shadow: var(--shadow-control);
+    box-shadow: none;
     cursor: not-allowed;
-    opacity: 0.6;
+    opacity: 0.5;
   }
 
   .exception-decision-button--active {

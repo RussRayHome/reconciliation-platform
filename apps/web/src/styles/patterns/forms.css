@@ -67,7 +67,7 @@
   .field-help-popover {
     margin-top: -0.05rem;
     padding: 0.55rem 0.65rem;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--accent-soft-border);
     background: var(--accent-soft);
     color: var(--text-primary);

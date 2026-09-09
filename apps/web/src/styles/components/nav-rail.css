@@ -43,7 +43,7 @@
     flex: 0 0 auto;
     width: 44px;
     height: 44px;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     object-fit: cover;
     border: 1px solid var(--line-strong);
   }
@@ -193,7 +193,7 @@
     height: 18px;
     padding: 0 4px;
     border-radius: var(--radius-pill);
-    font-size: 0.62rem;
+    font-size: var(--font-label);
   }
 
   .nav-rail__item-label-group {
@@ -207,7 +207,7 @@
     overflow: hidden;
     color: var(--text-tertiary);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.62rem;
+    font-size: var(--font-label);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -381,7 +381,7 @@
     background: var(--bg-surface);
     color: var(--text-tertiary);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
+    font-size: var(--font-label);
   }
 
   .nav-rail--collapsed .nav-rail__pill {
@@ -431,7 +431,7 @@
     border: 1px solid var(--line-strong);
     background: var(--bg-raised);
     color: var(--text-secondary);
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     font-weight: 600;
   }
 

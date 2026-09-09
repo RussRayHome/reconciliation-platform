@@ -106,7 +106,6 @@
 
   .hero-card:hover .hero-brand__mascot {
     box-shadow: var(--shadow-raised);
-    transform: translateY(-4px);
   }
 
   .hero-brand__company {

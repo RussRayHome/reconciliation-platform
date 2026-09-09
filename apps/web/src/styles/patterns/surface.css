@@ -36,7 +36,6 @@
   .rule-card:hover,
   .empty-state-card:hover,
   .rules-overview-card:hover {
-    transform: translateY(-4px);
     box-shadow: var(--shadow);
   }
 }

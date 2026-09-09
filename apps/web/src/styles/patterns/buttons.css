@@ -1,156 +1,167 @@
 /* Lives under patterns/ but must sit in the components layer, imported after
    user-role.css and rules.css and before triage.css: the original source order
    had these base button rules beating earlier component rules (signout, rule
-   reset buttons) and losing to later ones (.exception-facets__clear). */
+   reset buttons) and losing to later ones (.exception-facets__clear).
+
+   ONE BUTTON FAMILY (UI refresh 1d). Every button is 36px (--control-height) at
+   --radius-control with an inset highlight plus a cast shadow, in one of four tones:
+   primary, secondary, ghost, destructive. A 30px small variant exists for in-row use.
+
+   The bare `button` element inherits the SECONDARY tone. It used to be a 46px teal pill
+   -- the loudest control in the app -- so any unstyled button anywhere rendered as a
+   full primary call to action. Secondary is the safe default: an unlabelled-by-class
+   button now reads as an ordinary control instead of the page's main action.
+
+   Legacy class names are redirected onto the family rather than deleted, so the ~17
+   call sites in TSX keep working and the screen phases can retire them as they rewrite
+   each screen. */
 @layer components {
-  .accent-button {
-    align-self: flex-start;
-    margin-top: auto;
-    min-height: var(--control-height);
-    padding: 0.5rem 0.95rem;
-    border: 0;
-    border-radius: var(--radius-control);
-    background: var(--accent);
-    color: var(--on-accent);
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-      background-color 150ms ease-in-out,
-      transform 100ms ease-in-out;
-  }
-
-  .accent-button:hover {
-    background: var(--accent-hover);
-  }
-
-  .accent-button:active {
-    transform: scale(0.97);
-  }
-
-  /* R2 V4.3: this button uses `aria-disabled`, not the native `disabled` attribute, so it stays
-     focusable and a screen reader can reach its `aria-describedby` reason -- `button:disabled`
-     below never applies to it, so the visual needs its own rule with the same treatment. */
-  .accent-button[aria-disabled='true'] {
-    cursor: not-allowed;
-    opacity: 0.6;
-    box-shadow: none;
-  }
-
-  .accent-button[aria-disabled='true']:hover {
-    background: var(--accent);
-    transform: none;
-  }
-
+  button,
+  .primary-button,
+  .secondary-button,
+  .ghost-button,
+  .destructive-button,
+  .accent-button,
   .hero-primary-cta {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-top: 1rem;
-    min-height: 46px;
-    padding: 0.85rem 1.25rem;
-    border-radius: 999px;
-    background: var(--accent);
-    color: var(--on-accent);
-    text-decoration: none;
-    font-weight: 600;
+    gap: 0.4rem;
+    min-height: var(--control-height);
+    padding: 0 0.85rem;
     border: 1px solid transparent;
-    box-shadow: none;
-    transition:
-      background 150ms ease-in-out,
-      transform 100ms ease;
-  }
-
-  .hero-cta-row .hero-primary-cta {
-    margin-top: 0;
-    width: 100%;
-  }
-
-  .hero-primary-cta:hover {
-    background: var(--accent-hover);
-  }
-
-  .hero-primary-cta:active {
-    transform: scale(0.97);
-  }
-
-  button,
-  .secondary-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 46px;
-    padding: 0.85rem 1.25rem;
-    border-radius: 999px;
-    border: 0;
+    border-radius: var(--radius-control);
+    font-size: 0.85rem;
+    font-weight: 600;
     text-decoration: none;
     cursor: pointer;
     transition:
-      background 150ms ease-in-out,
+      background-color 150ms ease-in-out,
       border-color 150ms ease-in-out,
-      transform 100ms ease;
-    font-weight: 600;
-    position: relative;
-    overflow: hidden;
+      color 150ms ease-in-out,
+      transform 100ms ease-in-out;
   }
 
-  button {
+  /* --- primary ------------------------------------------------------------ */
+
+  .primary-button,
+  .accent-button,
+  .hero-primary-cta {
     background: var(--accent);
     color: var(--on-accent);
-    box-shadow: none;
+    box-shadow: var(--shadow-button);
   }
 
-  button::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: transparent;
-    opacity: 0;
-    transition: opacity 150ms ease-in-out;
+  .primary-button:hover:not(:disabled),
+  .accent-button:hover:not(:disabled),
+  .hero-primary-cta:hover:not(:disabled) {
+    background: var(--accent-hover);
   }
 
-  button:hover::before {
-    opacity: 1;
-  }
+  /* --- secondary (also the bare `button` default) -------------------------- */
 
+  button,
   .secondary-button {
     background: var(--bg-raised);
     color: var(--text-primary);
-    border: 1px solid var(--line-strong);
-    transition: all 150ms ease-in-out;
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-button-secondary);
   }
 
-  button:hover {
-    background: var(--accent-hover);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .secondary-button:hover {
-    transform: none;
-    box-shadow: none;
-    background: var(--bg-raised);
+  button:hover:not(:disabled),
+  .secondary-button:hover:not(:disabled) {
+    background: var(--bg-surface);
     border-color: var(--line-strong);
   }
 
-  button:active {
-    transform: scale(0.97);
-  }
+  /* --- ghost --------------------------------------------------------------- */
 
-  button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
+  .ghost-button {
+    background: transparent;
+    color: var(--text-secondary);
+    border-color: transparent;
     box-shadow: none;
   }
+
+  .ghost-button:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--bg-raised);
+  }
+
+  /* --- destructive --------------------------------------------------------- */
 
   .destructive-button {
     background: var(--negative-soft);
     color: var(--negative);
-    border: 1px solid var(--negative-soft-border);
+    border-color: var(--negative-soft-border);
+    box-shadow: var(--shadow-button-secondary);
   }
 
   .destructive-button:hover:not(:disabled) {
     background: var(--negative);
     color: var(--on-accent);
+  }
+
+  /* --- shared states ------------------------------------------------------- */
+
+  button:active:not(:disabled),
+  .primary-button:active:not(:disabled),
+  .secondary-button:active:not(:disabled),
+  .ghost-button:active:not(:disabled),
+  .destructive-button:active:not(:disabled),
+  .accent-button:active:not(:disabled),
+  .hero-primary-cta:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  button:disabled,
+  .primary-button:disabled,
+  .secondary-button:disabled,
+  .ghost-button:disabled,
+  .destructive-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    box-shadow: none;
+  }
+
+  /* R2 V4.3: the submit button uses `aria-disabled`, not the native `disabled` attribute, so it
+     stays focusable and a screen reader can reach its `aria-describedby` reason -- `:disabled`
+     above never applies to it, so the visual needs its own rule with the same treatment. This is
+     what the design means by "a disabled primary action always carries a reason beside it"; the
+     reason is already wired, so do not swap these for the native attribute. */
+  [aria-disabled='true'].primary-button,
+  [aria-disabled='true'].secondary-button,
+  [aria-disabled='true'].ghost-button,
+  [aria-disabled='true'].destructive-button,
+  [aria-disabled='true'].accent-button,
+  [aria-disabled='true'].hero-primary-cta {
+    cursor: not-allowed;
+    opacity: 0.5;
+    box-shadow: none;
+  }
+
+  [aria-disabled='true'].primary-button:hover,
+  [aria-disabled='true'].accent-button:hover,
+  [aria-disabled='true'].hero-primary-cta:hover {
+    background: var(--accent);
+    transform: none;
+  }
+
+  /* --- 30px small variant, for in-row controls ----------------------------- */
+
+  .button-small {
+    min-height: 30px;
+    padding: 0 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  /* `.accent-button` kept its layout role from the card footers it sits in. */
+  .accent-button {
+    align-self: flex-start;
+    margin-top: auto;
+  }
+
+  .hero-cta-row .hero-primary-cta {
+    width: 100%;
   }
 }
