@@ -66,7 +66,9 @@ export interface ReasonSourceTab extends SourceTabBase {
   /** Why this source type cannot be attached yet, and what to do meanwhile. Rendered in place of
    * the drop zone — never as a tooltip on a disabled control. */
   reason: string;
-  /** The issue that delivers it, so the reason names something a reader can look up. */
+  /** The issue that delivers this capability. **Not rendered.** User-facing copy carries no issue
+   * numbers: "arrives with registry validation" ages better than "#448", which may slip again now
+   * that #463 blocks it. Kept here so the code can point at the work without the screen doing so. */
   trackingIssue: string;
 }
 
@@ -126,9 +128,9 @@ export const sourceTabs: readonly SourceTab[] = [
     id: 'ap',
     label: 'AP / Payments',
     hueToken: '--ap',
-    headline: 'Reconcile AP through the ledger this period',
+    headline: 'Payments reconcile through your general ledger this month',
     reason:
-      'The control-account totals in your ledger export already carry the month’s payables activity: the control-account totals in your ledger export already carry the month’s payables activity. What this tab adds is the invoice-level detail behind those totals — matching a payment to the document it settles — and that needs the AP registry to check entity ids against.',
+      'Every vendor payment appears as a bank debit and a GL entry, and the run matches those directly. Importing the AP subledger adds vendor and invoice attribution, and proves the subledger ties to your AP control account — that arrives with registry validation. Nothing is missed in the meantime; exceptions will cite the GL account rather than the vendor.',
     trackingIssue: '#448',
   },
   {
@@ -136,9 +138,9 @@ export const sourceTabs: readonly SourceTab[] = [
     id: 'ar',
     label: 'AR / Invoices',
     hueToken: '--ar',
-    headline: 'Reconcile AR through the ledger this period',
+    headline: 'Customer receipts reconcile through your general ledger this month',
     reason:
-      'Same as AP — the ledger export carries the receivables control-account totals. This tab adds the invoice-level detail, and unpaid invoices flowing to the open-items schedule rather than to exceptions, once the AR registry exists.',
+      'Each deposit matches its GL entry. Importing the AR subledger adds invoice-level detail and populates the open items schedule with unpaid invoices — until then, open items shows only bank and GL activity, so unpaid invoices are not tracked here. Keep using your AR aging report for those.',
     trackingIssue: '#448',
   },
   payrollTab,

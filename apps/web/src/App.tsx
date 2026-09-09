@@ -2342,7 +2342,6 @@ function SourceUploadSection({
               <SourceUnavailableNotice
                 title={activeTab.kind === 'reason' ? activeTab.headline : ''}
                 reason={activeTab.kind === 'reason' ? activeTab.reason : ''}
-                trackingIssue={activeTab.kind === 'reason' ? activeTab.trackingIssue : ''}
               />
             </div>
           )}

@@ -56,6 +56,17 @@ describe('sourceTabs', () => {
     expect(bounds).toEqual({ bank: [1, 4], gl: [1, 1] });
   });
 
+  it('keeps issue numbers out of user-facing copy', () => {
+    // "arrives with registry validation" ages better than "#448", which may slip again now that
+    // #463 blocks it. The tracking issue stays in the model for code cross-reference; it must not
+    // reach a headline or a reason.
+    for (const tab of sourceTabs) {
+      if (tab.kind !== 'reason') continue;
+      expect(tab.headline).not.toMatch(/#\d/);
+      expect(tab.reason).not.toMatch(/#\d/);
+    }
+  });
+
   it('tells a reason tab reader what to do now, not only what is missing', () => {
     // A reader who cannot attach the file still has this month's reconciliation to finish. Every
     // reason panel names the path that works today.

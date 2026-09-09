@@ -99,6 +99,17 @@ export function OpenItemsScheduleSection({
       title="Open Items Schedule"
       description="The reconciling-item support schedule: every carried-forward item, its age, and its disposition, in one browsable list."
     >
+      {/* [SCREEN] 8b interim scope notice. AR unpaid invoices were designed to land here and
+          cannot until the AR subledger can be imported -- so an empty schedule reads as "nothing
+          is overdue", which is the worst false negative in this product. Stated in the header
+          area and visible without interaction, never a tooltip. Wording is approved copy; do not
+          reword. Remove this when AR import ships. */}
+      <p className="open-items-scope-notice">
+        Bank and general ledger activity only. Unpaid AR invoices are not tracked here until the AR
+        subledger can be imported — keep using your AR aging report for those. An empty schedule
+        means nothing carried forward from bank or GL, not that nothing is overdue.
+      </p>
+
       <div className="table-toolbar">
         <label htmlFor="open-items-status-filter">Status</label>
         <select

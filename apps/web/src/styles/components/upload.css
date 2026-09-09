@@ -615,15 +615,7 @@
     line-height: 1.5;
   }
 
-  .source-unavailable__tracking {
-    margin: 0;
-    color: var(--text-tertiary);
-    font-size: var(--font-label);
-  }
 
-  .source-unavailable__issue {
-    font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  }
 }
 
 /* [SCREEN] 1a header — breadcrumb eyebrow, title, subtitle. The action row (role pill +

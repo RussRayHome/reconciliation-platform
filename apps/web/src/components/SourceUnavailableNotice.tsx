@@ -14,22 +14,18 @@
 export function SourceUnavailableNotice({
   title,
   reason,
-  trackingIssue,
 }: Readonly<{
+  /** States the procedure that works today, not what is missing. */
   title: string;
-  /** One sentence: why it cannot be done, and what to do meanwhile. */
+  /** The procedure in full, then what this capability would add. Carries no issue number:
+   * "arrives with registry validation" ages better than a number that can slip, and the tracking
+   * issue belongs in code comments rather than on the screen. */
   reason: string;
-  /** The issue that delivers the capability, so the reason names something a reader can look up
-   * rather than reading as a permanent limitation. */
-  trackingIssue: string;
 }>) {
   return (
     <div className="source-unavailable" role="note">
       <p className="source-unavailable__title">{title}</p>
       <p className="source-unavailable__reason">{reason}</p>
-      <p className="source-unavailable__tracking">
-        Tracked in <span className="source-unavailable__issue">{trackingIssue}</span>
-      </p>
     </div>
   );
 }
