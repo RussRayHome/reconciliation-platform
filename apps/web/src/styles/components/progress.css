@@ -2,7 +2,7 @@
   .step-progress-detail {
     margin: 0.25rem 0 0;
     font-size: 0.8rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-variant-numeric: tabular-nums;
   }
 
@@ -51,7 +51,7 @@
 
   .step-progress-item p {
     margin: 0.55rem 0 0;
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.9rem;
   }
 

@@ -71,7 +71,7 @@
   .source-slot__empty {
     margin: 0;
     font-size: 0.8rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   /* R2 V6 (warn-only, Issue #250): a fuzzy header-match heads-up, not a rejection -- amber like
@@ -114,7 +114,7 @@
   .source-slot__account-hint {
     margin: 0;
     font-size: 0.74rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   /* Amber, matching source-slot__header-warning: a filename disagreeing with the assignment is a
@@ -132,7 +132,7 @@
   .source-dropzone__note {
     margin: 0;
     font-size: 0.8rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .import-screen {

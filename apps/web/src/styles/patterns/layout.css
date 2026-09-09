@@ -61,14 +61,14 @@
     top: 0;
     bottom: 0;
     width: 3px;
-    background: linear-gradient(180deg, var(--teal), var(--amber));
+    background: linear-gradient(180deg, var(--accent), var(--severity-high));
     opacity: 0.6;
   }
 
   .page-footer p {
     margin: 0;
     margin-left: 0.5rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.95rem;
     line-height: 1.4;
   }

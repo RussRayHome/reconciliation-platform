@@ -35,7 +35,7 @@
   .bank-accounts__hint {
     margin: 0;
     font-size: 0.72rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .bank-accounts__error {
@@ -47,7 +47,7 @@
 
   .bank-accounts__empty {
     margin: 0;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .bank-accounts__table {
@@ -67,6 +67,6 @@
     font-size: 0.74rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 }

@@ -38,13 +38,13 @@
     padding: 0.45rem 0.6rem;
     border-radius: 8px;
     border: 1px solid var(--line);
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
   }
 
   .exception-facets__count {
     margin: 0;
     font-size: 0.82rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-variant-numeric: tabular-nums;
   }
 
@@ -57,7 +57,7 @@
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.4rem 0;
-    background: var(--bg);
+    background: var(--bg-base);
     border-bottom: 1px solid var(--line);
   }
 
@@ -82,7 +82,7 @@
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--muted);
+    color: var(--text-tertiary);
     list-style: none;
   }
 
@@ -106,7 +106,7 @@
     border: none;
     background: none;
     padding: 0.1rem 0;
-    color: var(--teal);
+    color: var(--accent);
     font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
@@ -117,13 +117,13 @@
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-facet-group__empty {
     margin: 0;
     font-size: 0.8rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-facet-option {
@@ -142,7 +142,7 @@
 
   .exception-facet-option__count {
     font-variant-numeric: tabular-nums;
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.78rem;
   }
 
@@ -189,7 +189,7 @@
     cursor: pointer;
     font-size: 1rem;
     line-height: 1;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-facets__save-row {
@@ -219,7 +219,7 @@
   .exception-triage__position {
     margin: 0;
     font-size: 0.78rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     /* Digits must not reflow the counter as the selection moves down the list. */
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -228,7 +228,7 @@
   .exception-triage__shortcut-legend {
     margin: 0;
     font-size: 0.78rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
@@ -241,7 +241,7 @@
     padding: 0.05rem 0.3rem;
     border: 1px solid var(--line);
     border-radius: 5px;
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
   }
 
   .exception-triage__list {
@@ -271,7 +271,7 @@
     text-align: left;
     cursor: pointer;
     font-size: 0.82rem;
-    color: var(--ink);
+    color: var(--text-primary);
   }
 
   .exception-list-header {
@@ -283,12 +283,12 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.35rem 0.65rem;
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
     border-bottom: 1px solid var(--line);
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-list-header__decision {
@@ -311,7 +311,7 @@
   }
 
   .exception-list-header__sort--active {
-    color: var(--ink);
+    color: var(--text-primary);
     font-weight: 700;
   }
 
@@ -320,7 +320,7 @@
   }
 
   .exception-row:focus-visible {
-    outline: 2px solid var(--teal);
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
 
@@ -335,7 +335,7 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: var(--muted);
+    background: var(--text-tertiary);
   }
 
   .exception-row__severity[data-severity='Critical'] {
@@ -370,7 +370,7 @@
   }
 
   .exception-row__counterpart--none {
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-row__counterpart,
@@ -388,7 +388,7 @@
   .exception-row__fileline {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.76rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-row__decision {
@@ -437,7 +437,7 @@
     z-index: 30;
     border-radius: 0;
     overflow: auto;
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
   }
 
   /* R3 X2: identity on the left, decision controls on the right, stuck to the top of the panel so
@@ -452,7 +452,7 @@
     gap: 0.4rem 2rem;
     align-items: start;
     padding: var(--module-padding);
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
     border-bottom: 1px solid var(--line);
     border-radius: 12px 12px 0 0;
   }
@@ -502,7 +502,7 @@
 
   .exception-detail__reason {
     margin: 0;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-detail__meta {
@@ -519,7 +519,7 @@
 
   .exception-detail__fileline {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-detail__compare {
@@ -535,7 +535,7 @@
     margin: 0 0 0.6rem;
     font-size: 0.82rem;
     font-variant-numeric: tabular-nums;
-    color: var(--ink);
+    color: var(--text-primary);
   }
 
   .exception-detail__delta-item {
@@ -553,7 +553,7 @@
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-compare-column ul {
@@ -611,7 +611,7 @@
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-detail__evidence ul {
@@ -644,7 +644,7 @@
     border: none;
     background: none;
     padding: 0;
-    color: var(--teal);
+    color: var(--accent);
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
@@ -661,7 +661,7 @@
   .exception-decision-undo {
     margin: 0 0 0.5rem;
     font-size: 0.82rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -670,7 +670,7 @@
   .exception-row__note-indicator {
     margin-left: 0.35rem;
     font-size: 0.78rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-detail__tokens summary {
@@ -682,7 +682,7 @@
     margin: 0.4rem 0 0;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.78rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .exception-decision-buttons {
@@ -732,7 +732,7 @@
     border-color: var(--accent-soft-border);
     /* Keeps the tint while retaining the pressed-surface depth. */
     background:
-      linear-gradient(180deg, var(--accent-soft), rgba(0, 0, 0, 0.25)), var(--bg-secondary);
+      linear-gradient(180deg, var(--accent-soft), rgba(0, 0, 0, 0.25)), var(--bg-surface);
     color: var(--accent);
   }
 
@@ -756,7 +756,7 @@
   .exception-decision-status {
     margin: 0.35rem 0 0;
     font-size: 0.82rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   @media (max-width: 960px) {
