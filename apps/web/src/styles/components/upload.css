@@ -53,7 +53,7 @@
     gap: 0.35rem;
     padding: 0.6rem 0.7rem;
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
   }
 
   .source-slot__file {
@@ -167,7 +167,7 @@
     padding: 0 0.1rem;
     color: var(--text-tertiary);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -507,10 +507,13 @@
     font-size: 0.78rem;
   }
 
+  /* UI refresh 1d: pills are for status and counts only -- a button takes --radius-control, at the
+     family's 30px small size. The negative/severity tones are contextual to the error banner and
+     stay: these are "dismiss" and "retry" on a failed upload, not general-purpose actions. */
   .import-upload-card__ghost-button {
     min-height: 30px;
     padding: 0.3rem 0.75rem;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-control);
     border: 1px solid var(--negative-soft-border);
     background: transparent;
     color: var(--negative);
@@ -522,7 +525,7 @@
   .import-upload-card__retry-button {
     min-height: 30px;
     padding: 0.3rem 0.85rem;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-control);
     border: 0;
     background: var(--severity-high);
     color: var(--bg-sunken);

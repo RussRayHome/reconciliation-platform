@@ -130,7 +130,7 @@
   }
 
   .kpi-well strong {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     /* Scales down from the shared --kpi-font so long signed currency strings
        (e.g. "($9,999,999,999.99)") stay on one line at the 2-up well width
        instead of overflowing into the neighboring module. */
@@ -176,7 +176,7 @@
   }
 
   .match-meter__head strong {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
   }
@@ -204,7 +204,7 @@
 
   .materiality__count {
     margin: 0;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 2.25rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
@@ -255,7 +255,7 @@
   }
 
   .exposure-row__amount {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.82rem;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
@@ -305,7 +305,7 @@
   }
 
   .watchlist-row__amount {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.8rem;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);

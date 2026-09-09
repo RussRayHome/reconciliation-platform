@@ -24,7 +24,7 @@
     margin: 0;
     color: var(--negative);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -128,7 +128,7 @@
     text-align: left;
     padding: 0.35rem 0.5rem;
     color: var(--text-tertiary);
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     border-bottom: 1px solid var(--line);
@@ -345,7 +345,7 @@
     padding: 0.5rem 0.6rem;
     background: var(--bg-sunken);
     color: var(--text-tertiary);
-    font-size: 0.66rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     text-align: left;

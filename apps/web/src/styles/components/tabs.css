@@ -64,7 +64,7 @@
     width: 32%;
     min-width: 4rem;
     height: 0.7rem;
-    border-radius: 10px 10px 0 0;
+    border-radius: var(--radius-control) var(--radius-control) 0 0;
     border: 1px solid var(--line);
     border-bottom: none;
     background: var(--bg-raised);

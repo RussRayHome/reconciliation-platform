@@ -166,7 +166,7 @@
     margin-left: auto;
     color: var(--text-tertiary);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
+    font-size: var(--font-label);
   }
 
   .approvals__empty-row {
@@ -211,7 +211,7 @@
   .approvals__grid-row--header {
     background: var(--bg-sunken);
     color: var(--text-tertiary);
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -229,7 +229,7 @@
     overflow: hidden;
     color: var(--text-tertiary);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -278,7 +278,7 @@
   .approvals__version-row--header {
     background: var(--bg-sunken);
     color: var(--text-tertiary);
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;

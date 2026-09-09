@@ -70,7 +70,7 @@
   }
 
   .run-bar__id-value {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.82rem;
   }
 
@@ -143,8 +143,8 @@
     inset: 3px auto 3px 3px;
     width: calc(50% - 3px);
     border-radius: var(--radius-pill);
-    background: var(--gradient-control);
-    box-shadow: var(--shadow-control);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-button-secondary);
     transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 

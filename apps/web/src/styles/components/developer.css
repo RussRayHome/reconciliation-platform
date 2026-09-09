@@ -269,7 +269,7 @@
 
   .detail-panel th {
     text-align: left;
-    font-size: 0.68rem;
+    font-size: var(--font-label);
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
