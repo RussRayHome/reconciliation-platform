@@ -105,9 +105,10 @@ export const loginToApplication = async (
     : resolveLoginCandidates();
   const loginHeading = page.getByRole('heading', { name: 'Log in' });
   const submitButton = page.getByRole('button', { name: 'Log in' });
-  // Import Files became a CollapsibleNavSection (R1 WP1) -- its own header is a button, not a
-  // link, so "workspace ready" now waits on its default child instead.
-  const workspaceReady = page.getByRole('link', { name: 'Bank Statements' });
+  // UI-1 flattened Import Files into a single "New run" leaf. That leaf is now the workspace-ready
+  // signal: it is a link (not a disclosure header), it is present for every role, and it is the
+  // rail's first destination -- so its appearance means the authenticated shell has rendered.
+  const workspaceReady = page.getByRole('link', { name: 'New run' });
 
   await page.goto('/');
   await expect(loginHeading).toBeVisible();
@@ -162,7 +163,7 @@ export const submitRunButton = (page: Page) => page.locator('button[form="source
  * dependent, so this only checks the button exists, not what it's currently labelled. */
 export const openSetup = async (page: Page): Promise<void> => {
   await page.goto('/');
-  await page.getByRole('link', { name: 'Bank Statements' }).click();
+  await page.getByRole('link', { name: 'New run' }).click();
   await expect(submitRunButton(page)).toBeVisible();
 };
 

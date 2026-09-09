@@ -178,47 +178,9 @@
     color: var(--text-strong);
   }
 
-  .run-bar__profile {
-    position: relative;
-  }
 
-  .run-bar__profile-trigger {
-    cursor: pointer;
-    padding: 0.35rem 0.75rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--line);
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    list-style: none;
-    white-space: nowrap;
-  }
 
-  .run-bar__profile-trigger::-webkit-details-marker {
-    display: none;
-  }
 
-  .run-bar__profile-menu {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 0.5rem);
-    z-index: 9;
-    width: min(360px, 92vw);
-    padding: 0.5rem;
-    border-radius: var(--radius-panel);
-    border: 1px solid var(--glass-border);
-    background: var(--glass-bg);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-    box-shadow: var(--shadow-raised);
-    animation: popover-rise 150ms ease-out;
-  }
-
-  .run-bar__profile-menu .user-role-shell {
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-  }
 
   .run-bar__overflow-link {
     color: var(--accent);

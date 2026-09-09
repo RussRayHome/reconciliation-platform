@@ -155,51 +155,36 @@ export function NavRail({
             Exceptions, Reports. Renamed from "Work" (a label change) with Reports moved in from
             Analyze (also a label/position change); every sectionId below is untouched, since
             useNavSectionCollapse bakes the id into each user's collapse-state storage key. */}
-        <NavRailCategory title="Close" first>
-          <CollapsibleNavSection
-            sectionId="importFiles"
-            label="Import Files"
+        <NavRailCategory title="Runs" first>
+          {/* UI refresh decision 1: Import Files is the ONLY section that flattens, because its two
+              children became source-type tabs on one New run screen. Every other disclosure stays.
+              The caption is the design's sub-label; AR and payroll join it when UI-2 wires them. */}
+          <NavItemLink
+            to={routePaths.importFiles}
+            label="New run"
             icon="upload"
-            username={username}
-            bordered={false}
-          >
-            <NavItemLink
-              to={routePaths.importFilesBank}
-              label="Bank Statements"
-              icon="upload"
-              caption="BANK · GL"
-              hue="bank"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-            <NavItemLink
-              to={routePaths.importFilesBilling}
-              label="AP / Billing"
-              icon="upload"
-              caption="BILLING"
-              hue="ap"
-              isCollapsed={isCollapsed}
-              onNavigate={onMobileClose}
-            />
-          </CollapsibleNavSection>
+            caption="BANK · GL · SUBLEDGERS"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
 
           <CollapsibleNavSection
             sectionId="reconciliation"
-            label="Reconcile"
+            label="Match results"
             icon="reports"
             username={username}
             bordered={false}
           >
             <NavItemLink
               to={routePaths.reconSummary}
-              label="File-based"
+              label="Summary"
               icon="reports"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
             <NavItemLink
               to={routePaths.probableMatches}
-              label="Rules-based"
+              label="Probable matches"
               icon="match"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
@@ -217,7 +202,7 @@ export function NavRail({
 
           <NavItemLink
             to={routePaths.export}
-            label="Reports"
+            label="Reports & export"
             icon="operations"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
@@ -232,7 +217,7 @@ export function NavRail({
               point. */}
           <NavItemLink
             to={routePaths.bankAccounts}
-            label="Bank Accounts"
+            label="Bank accounts"
             icon="setup"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
@@ -240,7 +225,7 @@ export function NavRail({
 
           <NavItemLink
             to={routePaths.mappingCreate}
-            label="Create Mapping"
+            label="Mapping"
             icon="setup"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
@@ -248,22 +233,22 @@ export function NavRail({
 
           <CollapsibleNavSection
             sectionId="rules"
-            label="Rules & Variances"
+            label="Matching rules"
             icon="rule"
             username={username}
             bordered={false}
           >
             <NavItemLink
               to={routePaths.mappingRules}
-              label="Matching Rules"
+              label="Rules & variances"
               icon="rule"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
               count={matchingRuleTotalCount}
               ariaLabel={
                 matchingRuleTotalCount === undefined
-                  ? 'Matching Rules'
-                  : `Matching Rules, ${matchingRuleTotalCount} rules`
+                  ? 'Rules & variances'
+                  : `Rules & variances, ${matchingRuleTotalCount} rules`
               }
             />
             {/* N3: the per-family/tunability facets and the Variance thresholds link both
@@ -272,7 +257,7 @@ export function NavRail({
                 removed here, not rebuilt there. */}
             <NavItemLink
               to={routePaths.mappingRulesVersions}
-              label="Rule Versions"
+              label="Versions"
               icon="clock"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
@@ -280,13 +265,13 @@ export function NavRail({
           </CollapsibleNavSection>
         </NavRailCategory>
 
-        <NavRailCategory title="Review">
+        <NavRailCategory title="Approvals">
           {/* N1: the five per-type approval submenus (and their section header) are removed --
               one destination, one summed count. Each row inside links to its own object screen
               (ApprovalsPage.tsx's APPROVAL_GROUPS), not a queue copy. */}
           <NavItemLink
             to={routePaths.approvals}
-            label="Pending approvals"
+            label="Pending"
             icon="review"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
@@ -298,7 +283,7 @@ export function NavRail({
         <NavRailCategory title="Analyze">
           <NavItemLink
             to={routePaths.openItemsSchedule}
-            label="Open Items Schedule"
+            label="Open items"
             icon="clock"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}

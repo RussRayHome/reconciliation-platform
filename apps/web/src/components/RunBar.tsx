@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   ProcessProgressSection,
@@ -84,8 +84,6 @@ export function RunBar({
   rulesUsedCount,
   reviewProgressLabel,
   progressSteps,
-  profile,
-  profileLabel,
   onToggleNav,
   density,
   onChangeDensity,
@@ -106,8 +104,6 @@ export function RunBar({
   rulesUsedCount: number | null;
   reviewProgressLabel: string | null;
   progressSteps: ProgressStep[];
-  profile: ReactNode;
-  profileLabel: string;
   onToggleNav: () => void;
   density: Density;
   onChangeDensity: (density: Density) => void;
@@ -121,7 +117,6 @@ export function RunBar({
   // R3 X6: <details> has no dismissal of its own, so both run-bar popovers close on an outside
   // press or Escape.
   const overflowRef = useDismissableDetails();
-  const profileRef = useDismissableDetails();
 
   return (
     <header className="run-bar" aria-label="Reconciliation run status">
@@ -196,13 +191,6 @@ export function RunBar({
             Compact
           </button>
         </div>
-
-        <details className="run-bar__profile" ref={profileRef}>
-          <summary className="run-bar__profile-trigger" aria-label="User profile menu">
-            User: {profileLabel}
-          </summary>
-          <div className="run-bar__profile-menu">{profile}</div>
-        </details>
       </div>
 
       <div className="run-bar__status-row">

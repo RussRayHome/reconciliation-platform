@@ -175,7 +175,7 @@ const screenshotOptions = {
 // the review-summary capture for why a handful of screens still use this instead of a region.
 const fullPageScreenshotOptions = { ...screenshotOptions, fullPage: true } as const;
 
-// loginToApplication waits for the Bank Statements link (Import Files' default child, R1 WP1),
+// loginToApplication waits for the New run link (UI-1 flattened Import Files to one leaf),
 // which only superuser/admin roles see; this variant just submits credentials and lets each test
 // wait for its own landmark.
 //

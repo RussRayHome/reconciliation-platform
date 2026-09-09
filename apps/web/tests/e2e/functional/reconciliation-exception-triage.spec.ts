@@ -144,7 +144,7 @@ test.describe('export artifacts', () => {
     ]);
     await runReconciliation(page, bankBuffer, glBuffer);
     // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
-    await page.getByRole('link', { name: 'Reports' }).click();
+    await page.getByRole('link', { name: 'Reports & export' }).click();
   });
 
   test('Download workbook button is present in Export', async ({ page }) => {
