@@ -10,7 +10,7 @@ import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
 import { openSetup, submitRunButton } from '../auth';
-import { assignBankAccounts } from '../reconciliationHelpers';
+import { assignBankAccounts, selectSourceTab, stageGlWorkbook } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -291,15 +291,11 @@ const runReconciliation = async (page: Page): Promise<void> => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: bankAccountBBuffer,
   });
-  await page.locator('#gl-workbook-input').setInputFiles({
-    name: 'gl.xlsx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer: glBuffer,
-  });
+  await stageGlWorkbook(page, 'gl.xlsx', glBuffer);
   await assignBankAccounts(page);
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
-  await page.getByLabel('Monthly reconciliation month').selectOption('March');
-  await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);
+  await page.getByLabel('Month').selectOption('March');
+  await page.getByLabel('Run label').fill(`Monthly Recon for March ${currentYear}`);
   await submitRunButton(page).click();
   await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible({ timeout: 30_000 });
   // R2 V3: the Run Bar's percentage meter (and `.run-bar__meter-percent`, this wait's original
@@ -361,11 +357,30 @@ for (const width of widths) {
         {
           ...screenshotOptions,
           mask: [
-            page.getByLabel('Reconciliation frequency'),
-            page.getByLabel('Monthly reconciliation month'),
+            page.getByLabel('Frequency'),
+            page.getByLabel('Month'),
           ],
         },
       );
+
+      // The reason panels are this phase's most deliberated UI and had no visual coverage at all:
+      // the spec only ever sat on the bank tab, so AP, AR and Payroll shipped untested. They are
+      // also the most likely thing for a later phase to "helpfully" turn back into a disabled
+      // control, which [OBJECT] rule 27 forbids and which no unit test would catch as a *visual*
+      // regression. One capture covers the pattern; AP stands for all three, since they render
+      // through the same component and differ only in copy and hue.
+      await selectSourceTab(page, 'AP / Payments');
+      await expect(page.locator('#source-upload-form')).toHaveScreenshot(
+        `setup-reason-panel-${width}.png`,
+        {
+          ...screenshotOptions,
+          mask: [
+            page.getByLabel('Frequency'),
+            page.getByLabel('Month'),
+          ],
+        },
+      );
+      await selectSourceTab(page, 'Bank statements');
 
       await page.locator('.run-bar__overflow-trigger').click();
       await page.getByRole('button', { name: 'Rules', exact: true }).click();

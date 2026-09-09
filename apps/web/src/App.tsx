@@ -37,6 +37,15 @@ import { SignupScreen } from './components/SignupScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './components/AppFormFields';
 import { MIN_BANK_ACCOUNTS, SourceDropZone } from './components/SourceDropZone';
+import { RunSourceRecap } from './components/RunSourceRecap';
+import { SourceUnavailableNotice } from './components/SourceUnavailableNotice';
+import {
+  getSourceTab,
+  resolveSourceTab,
+  sourceTabMeta,
+  sourceTabs,
+  type SourceTabId,
+} from './lib/sourceTabs';
 import { RovingTabList } from './components/RovingTabList';
 import {
   CloseExportSection,
@@ -489,7 +498,7 @@ const resolveSubmitButtonState = (
     return {
       disabled: true,
       label: phaseLabel,
-      reason: 'Add every bank workbook and the GL workbook.',
+      reason: 'Add every bank statement and the GL workbook to enable.',
     };
   }
 
@@ -507,7 +516,7 @@ const resolveSubmitButtonState = (
     return {
       disabled: true,
       label: phaseLabel,
-      reason: 'Give the run a label — it names every export.',
+      reason: 'Give the run a label — it names every file this run produces.',
     };
   }
 
@@ -777,7 +786,6 @@ function ReconciliationApp({
   // R1 WP2/WP4: 1-4 AP/Billing entity ledgers per run, same cardinality/slot-growth shape as
   // bankFiles above (MIN/MAX_AP_ENTITIES). Starts at one empty slot -- unlike bank's two, since a
   // single-entity AP subledger export is the common case.
-  const [apFiles, setApFiles] = useState<(File | null)[]>([null]);
   const [accountIdentifier, setAccountIdentifier] = useState('');
   const [reconciliationFrequency, setReconciliationFrequency] =
     useState<ReconciliationFrequency>('Monthly');
@@ -788,6 +796,10 @@ function ReconciliationApp({
   const [hasExportedJson, setHasExportedJson] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  /** The source tab is URL state, not route state (Phase 2): `?source=` keeps a tab linkable
+   * without making it a navigation decision, which is why the five tabs share one route. An
+   * unrecognised value falls back rather than rendering a blank panel. */
+  const activeSourceType = resolveSourceTab(new URLSearchParams(location.search).get('source'));
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [pendingSavedViewId, setPendingSavedViewId] = useState<string | null>(null);
   const [persistedRun, setPersistedRun] = useState<RunData | undefined>(() => loadPersistedRun());
@@ -1664,7 +1676,7 @@ function ReconciliationApp({
                 path={routePaths.importFilesBank}
                 element={
                   <SourceUploadSection
-                    activeSourceType="bank"
+                    activeSourceType={activeSourceType}
                     annualYear={annualYear}
                     bankFiles={bankFiles}
                     bankAccountIds={bankAccountIds}
@@ -1672,7 +1684,6 @@ function ReconciliationApp({
                     accounts={accounts.accounts}
                     accountsUnavailable={accounts.error !== null}
                     glFile={glFile}
-                    apFiles={apFiles}
                     submitState={submitState}
                     currentYear={currentYear}
                     handleSubmit={handleSubmit}
@@ -1690,7 +1701,6 @@ function ReconciliationApp({
                     setMonthlyMonth={setMonthlyMonth}
                     setPeriodLabel={setPeriodLabel}
                     setGlFile={setGlFile}
-                    setApFiles={setApFiles}
                     setReconciliationFrequency={setReconciliationFrequency}
                     suggestedPeriodLabel={suggestedPeriodLabel}
                     accountIdentifier={accountIdentifier}
@@ -1709,53 +1719,13 @@ function ReconciliationApp({
                 }
               />
 
+              {/* UI-2 absorbed AP/Billing into New run as a source tab, so this path no longer
+                  renders a screen of its own. Kept as a redirect rather than deleted: it shipped,
+                  so bookmarks and any link out there must land on the tab that replaced it instead
+                  of the unmatched-route fallback. */}
               <Route
                 path={routePaths.importFilesBilling}
-                element={
-                  <SourceUploadSection
-                    activeSourceType="billing"
-                    annualYear={annualYear}
-                    bankFiles={bankFiles}
-                    bankAccountIds={bankAccountIds}
-                    setBankAccountIds={setBankAccountIds}
-                    accounts={accounts.accounts}
-                    accountsUnavailable={accounts.error !== null}
-                    glFile={glFile}
-                    apFiles={apFiles}
-                    submitState={submitState}
-                    currentYear={currentYear}
-                    handleSubmit={handleSubmit}
-                    isCustomPeriodLabel={isCustomPeriodLabel}
-                    isLabelMissing={isLabelMissing}
-                    monthlyMonth={monthlyMonth}
-                    periodLabel={periodLabel}
-                    previousSevenYears={previousSevenYears}
-                    reconciliation={reconciliation}
-                    reconciliationFrequency={reconciliationFrequency}
-                    setAccountIdentifier={setAccountIdentifier}
-                    setAnnualYear={setAnnualYear}
-                    setBankFiles={setBankFiles}
-                    setIsCustomPeriodLabel={setIsCustomPeriodLabel}
-                    setMonthlyMonth={setMonthlyMonth}
-                    setPeriodLabel={setPeriodLabel}
-                    setGlFile={setGlFile}
-                    setApFiles={setApFiles}
-                    setReconciliationFrequency={setReconciliationFrequency}
-                    suggestedPeriodLabel={suggestedPeriodLabel}
-                    accountIdentifier={accountIdentifier}
-                    uploadTransfer={uploadTransfer}
-                    partialAccept={partialAccept}
-                    durableRunPhase={durableRunPhase}
-                    submittedQueuedRun={submittedQueuedRun}
-                    latestImportRunId={latestImportRun?.id ?? null}
-                    onDismissDurableRun={() => setLatestImportRun(null)}
-                    onRefreshDurableRun={() => {
-                      void getLatestImportRunRequest().then((latest) => {
-                        setLatestImportRun(latest);
-                      });
-                    }}
-                  />
-                }
+                element={<Navigate to={`${routePaths.importFilesBank}?source=ap`} replace />}
               />
 
               <Route
@@ -2082,7 +2052,6 @@ function SourceUploadSection({
   annualYear,
   bankFiles,
   glFile,
-  apFiles,
   submitState,
   currentYear,
   handleSubmit,
@@ -2100,7 +2069,6 @@ function SourceUploadSection({
   setMonthlyMonth,
   setPeriodLabel,
   setGlFile,
-  setApFiles,
   setReconciliationFrequency,
   suggestedPeriodLabel,
   uploadTransfer,
@@ -2118,7 +2086,7 @@ function SourceUploadSection({
   /** Which Import Files tab is active, driven by the matched route (R1 WP2/WP3) -- not local
    * component state, mirroring how the Reconciliation section's File-based/Rules-based split
    * already works (ReviewSection's `activeView` prop, one <Route> per tab). */
-  activeSourceType: 'bank' | 'billing';
+  activeSourceType: SourceTabId;
   accountIdentifier: string;
   annualYear: string;
   bankFiles: (File | null)[];
@@ -2129,7 +2097,6 @@ function SourceUploadSection({
   accounts: ReconciliationAccount[];
   accountsUnavailable: boolean;
   glFile: File | null;
-  apFiles: (File | null)[];
   submitState: SubmitButtonState;
   currentYear: number;
   handleSubmit: (event: { preventDefault: () => void }) => void;
@@ -2147,7 +2114,6 @@ function SourceUploadSection({
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
   setPeriodLabel: Dispatch<SetStateAction<string>>;
   setGlFile: Dispatch<SetStateAction<File | null>>;
-  setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
   uploadTransfer: UploadTransferModel;
@@ -2183,9 +2149,33 @@ function SourceUploadSection({
     };
   }, []);
 
+  /** What this run currently carries, per source type. Read by both the tab meta lines and the
+   * IN THIS RUN recap, so the strip and the recap can never disagree about the same run. */
+  const attachedBySource: Record<SourceTabId, number> = {
+    bank: bankFiles.filter(Boolean).length,
+    gl: glFile ? 1 : 0,
+    // AP, AR and payroll are always zero: no user action attaches one, so a count would imply an
+    // affordance that is not there. They stay in the recap so the run's full shape stays legible.
+    ap: 0,
+    ar: 0,
+    payroll: 0,
+  };
+
+  const activeTab = getSourceTab(activeSourceType);
+
   return (
     <div className="import-screen">
-      <p className="import-screen__eyebrow">Reconciliations / New run</p>
+      <header className="import-screen__header">
+        <div>
+          <p className="import-screen__eyebrow">Runs / New run</p>
+          {/* The one permitted use of "reconciliation" on this screen (README 3b rule 2): it names
+              the thing once, and every string after this says "run". */}
+          <h1 className="import-screen__title">Start a reconciliation run</h1>
+          <p className="import-screen__subtitle">
+            Attach every source for one period, describe the run, submit.
+          </p>
+        </div>
+      </header>
       {/* N1: "a live object screen shows its own approval state" -- AP/Billing runs aren't part
           of the submit flow yet (see the billing tab's own note below), so this only applies to
           the bank tab, where latestImportRunId actually tracks something. */}
@@ -2237,15 +2227,18 @@ function SourceUploadSection({
           </div>
         }
       >
-        <RovingTabList<'bank' | 'billing'>
-          items={[
-            { id: 'bank', label: 'Bank Statements', description: 'BANK · GL' },
-            { id: 'billing', label: 'AP / Billing', description: 'BILLING' },
-          ]}
+        {/* One place computing "what this run currently carries", read by both the tab meta lines
+            and the IN THIS RUN recap so the two can never disagree. */}
+        <RovingTabList<SourceTabId>
+          items={sourceTabs.map((tab) => ({
+            id: tab.id,
+            label: tab.label,
+            description: sourceTabMeta(tab, attachedBySource[tab.id]),
+          }))}
           activeId={activeSourceType}
-          onSelect={(id) =>
-            navigate(id === 'bank' ? routePaths.importFilesBank : routePaths.importFilesBilling)
-          }
+          // A tab is URL state, not a route: same screen, `?source=` so it stays linkable.
+          // `replace` keeps Back leaving the screen rather than walking the tabs the user clicked.
+          onSelect={(id) => navigate(`${routePaths.importFilesBank}?source=${id}`, { replace: true })}
           ariaLabel="Import source type"
           tabIdPrefix="import-tab"
           panelIdPrefix="import-panel"
@@ -2260,12 +2253,12 @@ function SourceUploadSection({
           aria-busy={reconciliation.isPending}
           onSubmit={handleSubmit}
         >
-          {activeSourceType === 'bank' ? (
+          {activeSourceType === 'bank' || activeSourceType === 'gl' ? (
             <div
               className="import-screen__upload-column"
               role="tabpanel"
-              id="import-panel-bank"
-              aria-labelledby="import-tab-bank"
+              id={`import-panel-${activeSourceType}`}
+              aria-labelledby={`import-tab-${activeSourceType}`}
             >
               {/* An assignment conflict keeps the drop zone mounted rather than swapping in
                   progress cards: the banner below tells the operator to change the assignment, so
@@ -2275,6 +2268,7 @@ function SourceUploadSection({
               uploadTransfer.transfer.kind === 'assignment-conflict' ? (
                 <SourceDropZone
                   mode="bank-gl"
+                  only={activeSourceType}
                   bankFiles={bankFiles}
                   glFile={glFile}
                   setBankFiles={setBankFiles}
@@ -2336,22 +2330,23 @@ function SourceUploadSection({
             <div
               className="import-screen__upload-column"
               role="tabpanel"
-              id="import-panel-billing"
-              aria-labelledby="import-tab-billing"
+              id={`import-panel-${activeSourceType}`}
+              aria-labelledby={`import-tab-${activeSourceType}`}
             >
-              {/* AP/Billing files aren't yet part of the Submit run request (uploadTransfer.start
-                  only takes bankFiles/glFile) -- how AP combines with an existing bank+GL run
-                  submission is an open product decision, not guessed at here. This tab is
-                  file-selection/validation only for now; it's never shown mid-transfer since
-                  nothing here drives uploadTransfer's state. */}
-              <SourceDropZone
-                mode="billing"
-                apFiles={apFiles}
-                setApFiles={setApFiles}
-                canonicalFields={canonicalFields}
+              {/* [OBJECT] rule 27, "not available" case: payroll cannot be attached by any user
+                  action until #408, so the panel body IS the reason -- not a greyed-out drop zone.
+                  The reason text is the Phase 2 ruling's, deliberately not screen 1a's: 1a shows
+                  provider rows and an "Add payroll provider" control, and that panel depicts the
+                  post-#408 state. Lifting its copy would promise an ingestion path that does not
+                  exist. */}
+              <SourceUnavailableNotice
+                title={activeTab.kind === 'reason' ? activeTab.headline : ''}
+                reason={activeTab.kind === 'reason' ? activeTab.reason : ''}
               />
             </div>
           )}
+
+          <RunSourceRecap attachedBySource={attachedBySource} />
 
           <aside className="run-configuration-panel">
             <h3 className="run-configuration-panel__title">Run configuration</h3>
@@ -2413,7 +2408,7 @@ function SourceUploadSection({
               className="error-banner import-screen__status"
               role="alert"
             >
-              Reconciliation label is required before running.
+              A run label is required before submitting.
             </p>
           ) : null}
           {/* R2 V5: one outcome panel, switched on phase, replacing the old scattered one-line
@@ -2790,7 +2785,7 @@ function HelpedFrequencyField({
       fieldId="reconciliation-frequency"
       helpText="Choose Monthly for one-month close checks, or Annual for full-year reconciliation validation."
       inputId="reconciliation-frequency-select"
-      label="Reconciliation frequency"
+      label="Frequency"
       onChange={onChange}
       options={reconciliationFrequencyOptions}
       value={value}
@@ -2827,7 +2822,7 @@ function ReconciliationPeriodField({
         fieldId={fieldId}
         helpText="Select the completed year you want to reconcile across all 12 months."
         inputId="annual-reconciliation-year-select"
-        label="Annual reconciliation year"
+        label="Year"
         hint={{
           id: 'annual-year-hint',
           text: 'Choose one of the last 7 completed years.',
@@ -2850,7 +2845,7 @@ function ReconciliationPeriodField({
       fieldId={fieldId}
       helpText="Select the month in the current year that this reconciliation run represents."
       inputId="monthly-reconciliation-month-select"
-      label="Monthly reconciliation month"
+      label="Month"
       hint={{
         id: 'monthly-month-hint',
         text: `Month applies to the current year (${currentYear}).`,

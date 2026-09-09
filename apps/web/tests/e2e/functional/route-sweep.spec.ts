@@ -71,12 +71,15 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   support: { heading: 'Contact Support' },
 };
 
-// importFilesBank ('/') and importFilesBilling ('/imports/billing', R1 WP2/WP3) both render
-// SourceUploadSection (the tab strip just swaps which panel is active inside it) -- neither route
-// has a heading element at all, so every other e2e spec already targets the run-submission button
-// instead (see auth.ts's submitRunButton/openSetup, and R1 WP3: Run Configuration -- and its
-// Submit button -- is a sibling of the tab panels, always rendered regardless of which tab is
-// active). R2 V4: that button's accessible name is now phase-dependent ("Submit run" / "Retry
+// importFilesBank ('/') renders SourceUploadSection; importFilesBilling ('/imports/billing', R1
+// WP2/WP3) was absorbed into it as a source tab in UI-2 and no longer renders anything of its
+// own. The rendering route had no heading element at all when this sweep was written, so every
+// other e2e spec targets the run-submission button instead (see auth.ts's submitRunButton/
+// openSetup, and R1 WP3: Run Configuration -- and its Submit button -- is a sibling of the tab
+// panels, always rendered regardless of which tab is active). UI-2 added an <h1> ("Start a
+// reconciliation run"), so a heading landmark now exists; the button locator is kept because the
+// step below races it against reconSummary's heading, and swapping in a second heading would make
+// that race harder to read for no added coverage. R2 V4: that button's accessible name is now phase-dependent ("Submit run" / "Retry
 // run" / "Start new run"), so this landmark uses submitRunButton(page) (a stable `form`-attribute
 // locator), not a role+name pair.
 
@@ -184,14 +187,16 @@ test.describe('route sweep', () => {
       await test.step(`importFilesBilling (${routePaths.importFilesBilling})`, async () => {
         await page.goto(routePaths.importFilesBilling);
 
-        // Unlike importFilesBank, this route has no legacy redirect-to-reconSummary behavior --
-        // that guard is gated on pathname === importFiles ('/') specifically (App.tsx), so
-        // landing here always renders SourceUploadSection with the AP/Billing tab active. A
-        // plain wait suffices; still soft so one route's failure doesn't abort the sweep.
+        // UI-2 absorbed AP/Billing into New run as a source tab, so this path no longer renders a
+        // screen -- it redirects to the tab that replaced it. Kept in the sweep rather than
+        // dropped: it shipped, so the thing worth guarding is now that an old bookmark still lands
+        // somewhere real instead of the unmatched-route fallback. Soft, like every other step, so
+        // one route's failure does not abort the sweep.
         await expect.soft(submitRunButton(page)).toBeVisible({ timeout: 60_000 });
-        expect.soft(new URL(page.url()).pathname).toBe(
-          expectedPathname(routePaths.importFilesBilling),
-        );
+
+        const landed = new URL(page.url());
+        expect.soft(landed.pathname).toBe(expectedPathname(routePaths.importFilesBank));
+        expect.soft(landed.searchParams.get('source')).toBe('ap');
       });
 
       for (const [routeKey, { heading }] of Object.entries(AUTHENTICATED_ROUTES)) {

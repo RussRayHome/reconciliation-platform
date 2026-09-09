@@ -140,7 +140,7 @@ test.describe('edge cases', () => {
     ]);
     await page.getByRole('link', { name: 'New run' }).click();
     await setWorkbookFiles(page, bank2, gl2);
-    await page.getByLabel('Reconciliation label').fill('Second Run April');
+    await page.getByLabel('Run label').fill('Second Run April');
     await submitRunButton(page).click();
 
     await expect(page.getByText('Total reviewed')).toBeVisible({ timeout: 30_000 });
@@ -175,7 +175,7 @@ test.describe('edge cases', () => {
     page,
   }) => {
     await openSetup(page);
-    const label = page.getByLabel('Reconciliation label');
+    const label = page.getByLabel('Run label');
 
     const monthlyDefault = await label.inputValue();
     expect(monthlyDefault).toMatch(/Monthly Recon/);

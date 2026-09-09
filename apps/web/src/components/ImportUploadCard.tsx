@@ -5,7 +5,9 @@ export type RejectedUploadCode =
   | 'UPLOAD_SIZE_EXCEEDED'
   | 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED'
   | 'UPLOAD_AP_FILENAME_INVALID'
-  | 'UPLOAD_AP_ENTITY_LIMIT_REACHED';
+  | 'UPLOAD_AP_ENTITY_LIMIT_REACHED'
+  | 'UPLOAD_AR_FILENAME_INVALID'
+  | 'UPLOAD_AR_ENTITY_LIMIT_REACHED';
 
 type ImportUploadCardProps =
   | {
@@ -57,6 +59,18 @@ const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }
   UPLOAD_AP_ENTITY_LIMIT_REACHED: {
     label: 'UPLOAD_AP_ENTITY_LIMIT_REACHED',
     body: 'A run supports up to 4 AP entity ledgers. Remove an AP file before adding another.',
+  },
+  // AR carries its own codes and its own copy even though the filename check behind them is the
+  // same function as AP's. The Phase 2 ruling on #401 forbids AR inheriting AP's rule set, and
+  // wording is the visible half of that: screen 1b's exception copy quotes these strings verbatim,
+  // so an AR file rejected with "AP/Billing file names must..." would mislabel the user's data.
+  UPLOAD_AR_FILENAME_INVALID: {
+    label: 'UPLOAD_AR_FILENAME_INVALID',
+    body: 'AR/Invoices file names must start with the entity id followed by "-" or "_", e.g. "E100_ar-invoices.csv".',
+  },
+  UPLOAD_AR_ENTITY_LIMIT_REACHED: {
+    label: 'UPLOAD_AR_ENTITY_LIMIT_REACHED',
+    body: 'A run supports up to 4 AR entity ledgers. Remove an AR file before adding another.',
   },
 };
 

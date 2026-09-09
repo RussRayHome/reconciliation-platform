@@ -736,9 +736,15 @@ const fillUploadInputs = async ({
       target: { files: [bankFile] },
     });
   });
+  // Phase 2 split bank and GL into separate source tabs, so the GL slot is no longer on the bank
+  // panel. Switching tabs here rather than dropping the GL file on the bank panel's merged input
+  // keeps this helper doing what a user does, and means these tests exercise the tab strip on
+  // every run instead of only where a test targets it deliberately.
+  fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
   fireEvent.change(screen.getByLabelText('GL workbook'), {
     target: { files: [glFile] },
   });
+  fireEvent.click(screen.getByRole('tab', { name: /Bank statements/ }));
 
   // Flush the account registry fetch's promise chain and the render it triggers, so each staged
   // statement carries its pre-selected assignment before the caller asserts anything.
@@ -1606,7 +1612,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    const monthSelect = screen.getByLabelText(/Monthly reconciliation month/i);
+    const monthSelect = screen.getByLabelText(/Month/i);
     const options = Array.from((monthSelect as HTMLSelectElement).options).map(
       (option) => option.value,
     );
@@ -1614,11 +1620,11 @@ describe('App', () => {
     expect(options).toHaveLength(12);
     expect(options[0]).toBe('January');
     expect(options[11]).toBe('December');
-    expect(screen.queryByLabelText('Annual reconciliation year')).toBeNull();
+    expect(screen.queryByLabelText('Year')).toBeNull();
 
     const month = monthsWithinYear[new Date().getMonth()] ?? 'January';
     const currentYear = new Date().getFullYear();
-    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue(
+    expect(screen.getByLabelText(/Run label/i)).toHaveValue(
       `Monthly Recon for ${month} ${currentYear}`,
     );
     expect(
@@ -1650,11 +1656,11 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Reconciliation frequency'), {
+    fireEvent.change(screen.getByLabelText('Frequency'), {
       target: { value: 'Annual' },
     });
 
-    const annualYearSelect = screen.getByLabelText(/Annual reconciliation year/i);
+    const annualYearSelect = screen.getByLabelText(/Year/i);
     const options = Array.from((annualYearSelect as HTMLSelectElement).options).map(
       (option) => option.value,
     );
@@ -1663,8 +1669,8 @@ describe('App', () => {
     expect(options).toHaveLength(7);
     expect(options[0]).toBe(String(currentYear - 1));
     expect(options[6]).toBe(String(currentYear - 7));
-    expect(screen.queryByLabelText('Monthly reconciliation month')).toBeNull();
-    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue(
+    expect(screen.queryByLabelText('Month')).toBeNull();
+    expect(screen.getByLabelText(/Run label/i)).toHaveValue(
       `Annual Recon for ${String(currentYear - 1)}`,
     );
     expect(screen.getByText('Choose one of the last 7 completed years.')).toBeInTheDocument();
@@ -1799,10 +1805,10 @@ describe('App', () => {
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
     });
-    fireEvent.change(screen.getByLabelText(/Reconciliation frequency/i), {
+    fireEvent.change(screen.getByLabelText(/Frequency/i), {
       target: { value: 'Annual' },
     });
-    fireEvent.change(screen.getByLabelText(/Annual reconciliation year/i), {
+    fireEvent.change(screen.getByLabelText(/Year/i), {
       target: { value: '2023' },
     });
 
@@ -1834,7 +1840,7 @@ describe('App', () => {
     renderApp();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
+    fireEvent.change(screen.getByLabelText(/Month/i), {
       target: { value: 'March' },
     });
 
@@ -1859,7 +1865,7 @@ describe('App', () => {
     renderApp();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: 'Custom Monthly Label' },
     });
 
@@ -1878,15 +1884,15 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: 'Custom Label' },
     });
 
-    fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
+    fireEvent.change(screen.getByLabelText(/Month/i), {
       target: { value: 'April' },
     });
 
-    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue('Custom Label');
+    expect(screen.getByLabelText(/Run label/i)).toHaveValue('Custom Label');
     expect(
       screen.getByText(`Suggested: Monthly Recon for April ${new Date().getFullYear()}`),
     ).toBeInTheDocument();
@@ -1896,7 +1902,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    const labelInput = screen.getByLabelText(/Reconciliation label/i);
+    const labelInput = screen.getByLabelText(/Run label/i);
     fireEvent.change(labelInput, { target: { value: 'Custom Label' } });
     expect(labelInput).toHaveValue('Custom Label');
 
@@ -1935,6 +1941,9 @@ describe('App', () => {
     });
     expect(screen.getAllByText('1111_bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.xlsx').length).toBeGreaterThan(0);
+    // The GL file was routed to its own slot by filename even though it was dropped on the bank
+    // panel (Phase 2 kept detection shared across the two tabs) -- so it is visible on the GL tab.
+    fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
     expect(screen.getAllByText('gl.xlsx').length).toBeGreaterThan(0);
   });
 
@@ -1966,6 +1975,7 @@ describe('App', () => {
     });
     expect(screen.getAllByText('1111_bank.csv').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.csv').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
     expect(screen.getAllByText('gl.csv').length).toBeGreaterThan(0);
   });
 
@@ -2618,15 +2628,15 @@ describe('App', () => {
     renderApp();
 
     // A required slot is empty (nothing staged yet).
-    expect(screen.getByText('Add every bank workbook and the GL workbook.')).toBeInTheDocument();
+    expect(screen.getByText('Add every bank statement and the GL workbook to enable.')).toBeInTheDocument();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: '   ' },
     });
 
     // Run label empty.
-    expect(screen.getByText('Give the run a label — it names every export.')).toBeInTheDocument();
+    expect(screen.getByText('Give the run a label — it names every file this run produces.')).toBeInTheDocument();
 
     cleanup();
     mockedApiState.latestImportRunResponse = createImportRunSummary({
@@ -2874,8 +2884,9 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.queryByText('gl_export_2026-08.csv — Step 2 of 3')).not.toBeInTheDocument();
     });
-    // Reset back to the #153 default of two empty bank slots + one empty GL slot.
-    expect(screen.getAllByText('No file selected')).toHaveLength(3);
+    // Reset back to the #153 default of two empty bank slots. The GL slot resets too, but it lives
+    // on its own tab since Phase 2 and so is not part of this panel's count.
+    expect(screen.getAllByText('Drop statement here')).toHaveLength(2);
   });
 
   it('shows Screen 07 (all rows invalid) when every row fails Step 3 with zero rows importable', async () => {
@@ -3182,8 +3193,9 @@ describe('App', () => {
     });
 
     expect(screen.queryByText('UPLOAD_BANK_FILENAME_INVALID')).not.toBeInTheDocument();
-    // Staged into slot 1, so only the other two slots (1 bank + GL) are still empty.
-    expect(screen.getAllByText('No file selected')).toHaveLength(2);
+    // Staged into slot 1, so only the other bank slot is still empty -- the GL slot moved to its
+    // own tab in Phase 2 and is no longer part of this panel's count.
+    expect(screen.getAllByText('Drop statement here')).toHaveLength(1);
   });
 
   it('#153: starts with two bank slots, and "Add another bank statement" adds slots up to 4', () => {
@@ -3352,9 +3364,11 @@ describe('App', () => {
       expect(screen.getByLabelText('Source workbooks')).toBeInTheDocument();
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    // The files stay selected -- cancelling only aborts the in-flight transfer.
+    // The files stay selected -- cancelling only aborts the in-flight transfer. The GL file is
+    // still staged too; it is asserted on its own tab since Phase 2 moved the slot there.
     expect(screen.getByText('1111_bank-a.xlsx')).toBeInTheDocument();
     expect(screen.getByText('2222_bank-b.xlsx')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
     expect(screen.getByText('gl.csv')).toBeInTheDocument();
   });
 
@@ -3450,7 +3464,7 @@ describe('App', () => {
     renderApp();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: '   ' },
     });
 
@@ -3459,7 +3473,7 @@ describe('App', () => {
       'true',
     );
     expect(
-      screen.getByText('Reconciliation label is required before running.'),
+      screen.getByText('A run label is required before submitting.'),
     ).toBeInTheDocument();
   });
 

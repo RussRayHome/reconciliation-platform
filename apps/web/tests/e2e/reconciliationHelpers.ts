@@ -39,6 +39,37 @@ export async function ensureBankAccountsRegistered(page: Page): Promise<void> {
   }
 }
 
+/**
+ * Switches the New run screen's source tab (UI-2, #401). Bank and GL are separate tabs now, so
+ * anything staging a GL workbook has to be on the GL tab first -- the slot simply is not in the
+ * DOM otherwise, which surfaces as a `setInputFiles` timeout on `#gl-workbook-input` rather than
+ * anything that names the tab.
+ *
+ * Matched on the tab's accessible name rather than an id: `RovingTabList` derives tab ids from a
+ * prefix the caller passes, so a name match is the stable half of that contract.
+ */
+export async function selectSourceTab(
+  page: Page,
+  tab: 'Bank statements' | 'General ledger' | 'AP / Payments' | 'AR / Invoices' | 'Payroll',
+): Promise<void> {
+  await page.getByRole('tab', { name: new RegExp(`^${tab}`) }).click();
+}
+
+/**
+ * Stages the GL workbook and returns to the bank tab.
+ *
+ * The round trip is encapsulated because doing it by hand is a trap: UI-2 put the GL slot on its
+ * own tab, but the per-slot account pickers stay on the bank tab, so a caller that switches and
+ * forgets to switch back reaches for `#bank-workbook-input-account` while it is not in the DOM --
+ * and that surfaces as a 60s `selectOption` timeout naming a locator, not a tab. That is exactly
+ * what happened at one of four hand-written call sites; one helper removes the whole class.
+ */
+export async function stageGlWorkbook(page: Page, name: string, buffer: Buffer): Promise<void> {
+  await selectSourceTab(page, 'General ledger');
+  await page.locator('#gl-workbook-input').setInputFiles({ name, mimeType: XLSX_MIME, buffer });
+  await selectSourceTab(page, 'Bank statements');
+}
+
 /** Assigns each staged bank statement to its account, in slot order. */
 export async function assignBankAccounts(page: Page): Promise<void> {
   for (const [slot, account] of TEST_BANK_ACCOUNTS.entries()) {
@@ -60,7 +91,12 @@ export async function setWorkbookFiles(
 
   await attachAndVerify(page, 'bank-workbook-input', '1111_bank.xlsx', bankBuffer);
   await attachAndVerify(page, 'bank-workbook-b-input', '2222_bank.xlsx', bankAccountBBuffer);
+  // GL lives on its own tab since UI-2; attachAndVerify needs the slot mounted, and the bank tab
+  // is where the account pickers are, so the round trip is bracketed here rather than left to the
+  // caller.
+  await selectSourceTab(page, 'General ledger');
   await attachAndVerify(page, 'gl-workbook-input', 'gl.xlsx', glBuffer);
+  await selectSourceTab(page, 'Bank statements');
 
   // A-D1: staged files alone no longer make the form submittable -- each statement must also be
   // assigned to a registered account. Assigning here keeps "the form is filled in" a single step
@@ -75,7 +111,7 @@ export async function setWorkbookFiles(
  * Attaches one workbook and confirms the slot actually took it, retrying once if not.
  *
  * Issue #291: under parallel load a `setInputFiles` call occasionally returns without the app
- * recording the file -- traced directly, the slot still reads "No file selected" immediately
+ * recording the file -- traced directly, the slot still showed its empty prompt immediately
  * afterwards, so it is never assigned rather than assigned and cleared. The submit button then
  * stays correctly disabled and every later assertion in the test fails for reasons that look
  * nothing like the real cause.
@@ -98,12 +134,19 @@ async function attachAndVerify(
     try {
       await expect(slots.getByText(name, { exact: true })).toBeVisible({ timeout: 5_000 });
       return;
-    } catch {
+    } catch (error) {
       if (attempt === 2) {
+        // The original message asserted "This is Issue #291" outright. That is a diagnosis, not an
+        // observation, and it was wrong at least once: a grid-column regression made the file name
+        // zero-width, and this helper reported a flaky-parallel-load defect instead of the
+        // regression that had just been introduced. Say what was observed, name #291 as the
+        // *likely* cause, and carry the underlying failure so the next reader can tell them apart.
         throw new Error(
-          `Upload slot #${inputId} did not accept "${name}" after two attempts. This is Issue #291 ` +
-            '(a file assignment lost under parallel load), not an assertion failure in the spec ' +
-            'that called this helper.',
+          `Upload slot #${inputId} did not show "${name}" in .source-dropzone__slots after two ` +
+            'attempts. Most often this is Issue #291 (a file assignment lost under parallel ' +
+            'load), but a rendering change that hides or zero-sizes the file name looks identical ' +
+            'from here -- read the cause before assuming which.',
+          { cause: error },
         );
       }
     }
@@ -134,11 +177,11 @@ export async function runReconciliation(
   if (frequency === 'Annual') {
     await page.locator('#reconciliation-frequency-select').selectOption('Annual');
   } else {
-    await page.getByLabel('Monthly reconciliation month').selectOption(month);
+    await page.getByLabel('Month').selectOption(month);
   }
 
   if (label !== undefined) {
-    await page.getByLabel('Reconciliation label').fill(label);
+    await page.getByLabel('Run label').fill(label);
   }
 
   await submitRunButton(page).click();
