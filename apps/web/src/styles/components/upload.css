@@ -625,3 +625,27 @@
     font-family: 'IBM Plex Mono', ui-monospace, monospace;
   }
 }
+
+/* [SCREEN] 1a header — breadcrumb eyebrow, title, subtitle. The action row (role pill +
+   Download templates) stays on the SectionCard below, which already aligns it at 36px. */
+@layer components {
+  .import-screen__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .import-screen__title {
+    margin: 0.15rem 0 0;
+    font-size: 1.625rem;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .import-screen__subtitle {
+    margin: 0.3rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+  }
+}

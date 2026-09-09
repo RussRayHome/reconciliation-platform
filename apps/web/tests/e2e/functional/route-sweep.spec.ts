@@ -73,10 +73,13 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
 
 // importFilesBank ('/') renders SourceUploadSection; importFilesBilling ('/imports/billing', R1
 // WP2/WP3) was absorbed into it as a source tab in UI-2 and no longer renders anything of its
-// own. The rendering route has no heading element at all, so every other e2e spec already targets
-// the run-submission button instead (see auth.ts's submitRunButton/openSetup, and R1 WP3: Run
-// Configuration -- and its Submit button -- is a sibling of the tab panels, always rendered
-// regardless of which tab is active). R2 V4: that button's accessible name is now phase-dependent ("Submit run" / "Retry
+// own. The rendering route had no heading element at all when this sweep was written, so every
+// other e2e spec targets the run-submission button instead (see auth.ts's submitRunButton/
+// openSetup, and R1 WP3: Run Configuration -- and its Submit button -- is a sibling of the tab
+// panels, always rendered regardless of which tab is active). UI-2 added an <h1> ("Start a
+// reconciliation run"), so a heading landmark now exists; the button locator is kept because the
+// step below races it against reconSummary's heading, and swapping in a second heading would make
+// that race harder to read for no added coverage. R2 V4: that button's accessible name is now phase-dependent ("Submit run" / "Retry
 // run" / "Start new run"), so this landmark uses submitRunButton(page) (a stable `form`-attribute
 // locator), not a role+name pair.
 

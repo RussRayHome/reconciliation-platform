@@ -122,7 +122,7 @@ export function HelpedLabelField({
 
   return (
     <div className="field-group">
-      <label htmlFor="reconciliation-label-input">Reconciliation label</label>
+      <label htmlFor="reconciliation-label-input">Run label</label>
       <div className="label-input-row">
         <input
           id="reconciliation-label-input"
@@ -130,7 +130,7 @@ export function HelpedLabelField({
           aria-invalid={isInvalid}
           aria-describedby={joinIds(helpId, hintId, isInvalid ? labelErrorId : undefined)}
           onChange={onChange}
-          placeholder="Reconciliation label"
+          placeholder="Run label"
         />
         {canResetToSuggested ? (
           <button

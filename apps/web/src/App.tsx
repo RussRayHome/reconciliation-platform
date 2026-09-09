@@ -498,7 +498,7 @@ const resolveSubmitButtonState = (
     return {
       disabled: true,
       label: phaseLabel,
-      reason: 'Add every bank workbook and the GL workbook.',
+      reason: 'Add every bank statement and the GL workbook to enable.',
     };
   }
 
@@ -516,7 +516,7 @@ const resolveSubmitButtonState = (
     return {
       disabled: true,
       label: phaseLabel,
-      reason: 'Give the run a label — it names every export.',
+      reason: 'Give the run a label — it names every file this run produces.',
     };
   }
 
@@ -2165,7 +2165,17 @@ function SourceUploadSection({
 
   return (
     <div className="import-screen">
-      <p className="import-screen__eyebrow">Runs / New run</p>
+      <header className="import-screen__header">
+        <div>
+          <p className="import-screen__eyebrow">Runs / New run</p>
+          {/* The one permitted use of "reconciliation" on this screen (README 3b rule 2): it names
+              the thing once, and every string after this says "run". */}
+          <h1 className="import-screen__title">Start a reconciliation run</h1>
+          <p className="import-screen__subtitle">
+            Attach every source for one period, describe the run, submit.
+          </p>
+        </div>
+      </header>
       {/* N1: "a live object screen shows its own approval state" -- AP/Billing runs aren't part
           of the submit flow yet (see the billing tab's own note below), so this only applies to
           the bank tab, where latestImportRunId actually tracks something. */}
@@ -2399,7 +2409,7 @@ function SourceUploadSection({
               className="error-banner import-screen__status"
               role="alert"
             >
-              Reconciliation label is required before running.
+              A run label is required before submitting.
             </p>
           ) : null}
           {/* R2 V5: one outcome panel, switched on phase, replacing the old scattered one-line
@@ -2776,7 +2786,7 @@ function HelpedFrequencyField({
       fieldId="reconciliation-frequency"
       helpText="Choose Monthly for one-month close checks, or Annual for full-year reconciliation validation."
       inputId="reconciliation-frequency-select"
-      label="Reconciliation frequency"
+      label="Frequency"
       onChange={onChange}
       options={reconciliationFrequencyOptions}
       value={value}
@@ -2813,7 +2823,7 @@ function ReconciliationPeriodField({
         fieldId={fieldId}
         helpText="Select the completed year you want to reconcile across all 12 months."
         inputId="annual-reconciliation-year-select"
-        label="Annual reconciliation year"
+        label="Year"
         hint={{
           id: 'annual-year-hint',
           text: 'Choose one of the last 7 completed years.',
@@ -2836,7 +2846,7 @@ function ReconciliationPeriodField({
       fieldId={fieldId}
       helpText="Select the month in the current year that this reconciliation run represents."
       inputId="monthly-reconciliation-month-select"
-      label="Monthly reconciliation month"
+      label="Month"
       hint={{
         id: 'monthly-month-hint',
         text: `Month applies to the current year (${currentYear}).`,

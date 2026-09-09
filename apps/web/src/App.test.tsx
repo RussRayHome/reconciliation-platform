@@ -1612,7 +1612,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    const monthSelect = screen.getByLabelText(/Monthly reconciliation month/i);
+    const monthSelect = screen.getByLabelText(/Month/i);
     const options = Array.from((monthSelect as HTMLSelectElement).options).map(
       (option) => option.value,
     );
@@ -1620,11 +1620,11 @@ describe('App', () => {
     expect(options).toHaveLength(12);
     expect(options[0]).toBe('January');
     expect(options[11]).toBe('December');
-    expect(screen.queryByLabelText('Annual reconciliation year')).toBeNull();
+    expect(screen.queryByLabelText('Year')).toBeNull();
 
     const month = monthsWithinYear[new Date().getMonth()] ?? 'January';
     const currentYear = new Date().getFullYear();
-    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue(
+    expect(screen.getByLabelText(/Run label/i)).toHaveValue(
       `Monthly Recon for ${month} ${currentYear}`,
     );
     expect(
@@ -1656,11 +1656,11 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText('Reconciliation frequency'), {
+    fireEvent.change(screen.getByLabelText('Frequency'), {
       target: { value: 'Annual' },
     });
 
-    const annualYearSelect = screen.getByLabelText(/Annual reconciliation year/i);
+    const annualYearSelect = screen.getByLabelText(/Year/i);
     const options = Array.from((annualYearSelect as HTMLSelectElement).options).map(
       (option) => option.value,
     );
@@ -1669,8 +1669,8 @@ describe('App', () => {
     expect(options).toHaveLength(7);
     expect(options[0]).toBe(String(currentYear - 1));
     expect(options[6]).toBe(String(currentYear - 7));
-    expect(screen.queryByLabelText('Monthly reconciliation month')).toBeNull();
-    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue(
+    expect(screen.queryByLabelText('Month')).toBeNull();
+    expect(screen.getByLabelText(/Run label/i)).toHaveValue(
       `Annual Recon for ${String(currentYear - 1)}`,
     );
     expect(screen.getByText('Choose one of the last 7 completed years.')).toBeInTheDocument();
@@ -1805,10 +1805,10 @@ describe('App', () => {
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
       target: { value: 'OPERATING-001' },
     });
-    fireEvent.change(screen.getByLabelText(/Reconciliation frequency/i), {
+    fireEvent.change(screen.getByLabelText(/Frequency/i), {
       target: { value: 'Annual' },
     });
-    fireEvent.change(screen.getByLabelText(/Annual reconciliation year/i), {
+    fireEvent.change(screen.getByLabelText(/Year/i), {
       target: { value: '2023' },
     });
 
@@ -1840,7 +1840,7 @@ describe('App', () => {
     renderApp();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
+    fireEvent.change(screen.getByLabelText(/Month/i), {
       target: { value: 'March' },
     });
 
@@ -1865,7 +1865,7 @@ describe('App', () => {
     renderApp();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: 'Custom Monthly Label' },
     });
 
@@ -1884,15 +1884,15 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: 'Custom Label' },
     });
 
-    fireEvent.change(screen.getByLabelText(/Monthly reconciliation month/i), {
+    fireEvent.change(screen.getByLabelText(/Month/i), {
       target: { value: 'April' },
     });
 
-    expect(screen.getByLabelText(/Reconciliation label/i)).toHaveValue('Custom Label');
+    expect(screen.getByLabelText(/Run label/i)).toHaveValue('Custom Label');
     expect(
       screen.getByText(`Suggested: Monthly Recon for April ${new Date().getFullYear()}`),
     ).toBeInTheDocument();
@@ -1902,7 +1902,7 @@ describe('App', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
-    const labelInput = screen.getByLabelText(/Reconciliation label/i);
+    const labelInput = screen.getByLabelText(/Run label/i);
     fireEvent.change(labelInput, { target: { value: 'Custom Label' } });
     expect(labelInput).toHaveValue('Custom Label');
 
@@ -2628,15 +2628,15 @@ describe('App', () => {
     renderApp();
 
     // A required slot is empty (nothing staged yet).
-    expect(screen.getByText('Add every bank workbook and the GL workbook.')).toBeInTheDocument();
+    expect(screen.getByText('Add every bank statement and the GL workbook to enable.')).toBeInTheDocument();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: '   ' },
     });
 
     // Run label empty.
-    expect(screen.getByText('Give the run a label — it names every export.')).toBeInTheDocument();
+    expect(screen.getByText('Give the run a label — it names every file this run produces.')).toBeInTheDocument();
 
     cleanup();
     mockedApiState.latestImportRunResponse = createImportRunSummary({
@@ -3464,7 +3464,7 @@ describe('App', () => {
     renderApp();
 
     await fillUploadInputs();
-    fireEvent.change(screen.getByLabelText(/Reconciliation label/i), {
+    fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: '   ' },
     });
 
@@ -3473,7 +3473,7 @@ describe('App', () => {
       'true',
     );
     expect(
-      screen.getByText('Reconciliation label is required before running.'),
+      screen.getByText('A run label is required before submitting.'),
     ).toBeInTheDocument();
   });
 
