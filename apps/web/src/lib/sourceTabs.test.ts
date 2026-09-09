@@ -32,24 +32,39 @@ describe('sourceTabs', () => {
     expect(payroll?.kind === 'reason' && payroll.trackingIssue).toBe('#408');
   });
 
-  it('requires bank and GL, and makes both subledgers optional', () => {
+  it('never offers a drop zone for a source the submission cannot carry', () => {
+    // THE invariant of this screen: never stage a file the submission discards. `POST
+    // /api/imports/runs` registers multer fields for bankFiles and glFile only, and
+    // `assertBankOrGl` (importValidationService.ts) throws on any other source type -- so a run
+    // physically cannot carry AP, AR or payroll today. A drop zone for one of them would take a
+    // file, show it in the recap, and lose it on submit: data loss with a footnote.
+    //
+    // When the submit path widens, this list widens with it -- and this test is what makes that
+    // ordering impossible to get backwards.
+    expect(sourceTabs.filter(isDroppable).map((tab) => tab.id)).toEqual(['bank', 'gl']);
+  });
+
+  it('requires both of the types it does accept', () => {
     const required = sourceTabs.filter((tab) => isDroppable(tab) && !tab.optional).map((t) => t.id);
     expect(required).toEqual(['bank', 'gl']);
   });
 
-  it('allows one GL workbook and up to four of each other droppable type', () => {
+  it('allows 1-4 bank statements and exactly one GL workbook', () => {
     const bounds = Object.fromEntries(
       sourceTabs.filter(isDroppable).map((tab) => [tab.id, [tab.min, tab.max]]),
     );
-    expect(bounds).toEqual({ bank: [1, 4], gl: [1, 1], ap: [1, 4], ar: [1, 4] });
+    expect(bounds).toEqual({ bank: [1, 4], gl: [1, 1] });
   });
 
-  it('never lets AR reuse AP wording in its hint', () => {
-    // The Phase 2 ruling permits AP and AR to share the BILLING source type and the filename
-    // shape, but not the rule set -- and wording is the visible half of that.
-    const ar = findSourceTab('ar');
-    expect(ar?.kind === 'droppable' && ar.hint).not.toMatch(/\bAP\b/);
-    expect(ar?.kind === 'droppable' && ar.sampleName).toContain('ar');
+  it('tells a reason tab reader what to do now, not only what is missing', () => {
+    // A reader who cannot attach the file still has this month's reconciliation to finish. Every
+    // reason panel names the path that works today.
+    for (const tab of sourceTabs) {
+      if (tab.kind !== 'reason') continue;
+      expect(tab.headline).toMatch(/ledger|journal entry/i);
+      expect(tab.reason.length).toBeGreaterThan(80);
+      expect(tab.trackingIssue).toMatch(/^#\d+$/);
+    }
   });
 
   describe('resolveSourceTab', () => {
@@ -75,16 +90,16 @@ describe('sourceTabs', () => {
       expect(sourceTabMeta(tab('gl'), 1)).toBe('1 workbook');
     });
 
-    it('reads "optional" rather than a zero count when an optional type is empty', () => {
-      // A "0 of 4" on AR would imply the run is short of something it is not -- the same instinct
-      // as the rail's badge rule (absent, not zero).
+    it('reads "optional" rather than a zero count for a tab that takes no files', () => {
+      // A "0 of 4" would imply the run is short of something it is not -- the same instinct as the
+      // rail's badge rule (absent, not zero).
       expect(sourceTabMeta(tab('ar'), 0)).toBe('optional');
       expect(sourceTabMeta(tab('ap'), 0)).toBe('optional');
       expect(sourceTabMeta(tab('payroll'), 0)).toBe('optional');
     });
 
-    it('switches an optional type to a count once it carries files', () => {
-      expect(sourceTabMeta(tab('ar'), 1)).toBe('1 of 4 entities');
+    it('switches a droppable type to a count once it carries files', () => {
+      expect(sourceTabMeta(tab('bank'), 1)).toBe('1 of 4 accounts');
     });
 
     it('says a required type is required rather than showing zero', () => {

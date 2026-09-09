@@ -60,6 +60,9 @@ export interface DroppableSourceTab extends SourceTabBase {
 /** A tab whose panel is a reason, because the capability is not built yet (rule 27). */
 export interface ReasonSourceTab extends SourceTabBase {
   kind: 'reason';
+  /** The panel's headline. States what to do now, not what is missing — a reader who cannot attach
+   * the file still has this month's reconciliation to finish. */
+  headline: string;
   /** Why this source type cannot be attached yet, and what to do meanwhile. Rendered in place of
    * the drop zone — never as a tooltip on a disabled control. */
   reason: string;
@@ -85,8 +88,12 @@ export const payrollTab: ReasonSourceTab = {
   // payroll provider" control and provider-file guidance -- that panel depicts the POST-#408
   // state and is #408's acceptance target. Lifting its copy here would ship provider
   // instructions for an ingestion path that does not exist.
+  headline: 'Bring payroll in as a GL-side journal entry',
+  // 07's substance, reordered to lead with the action. Both of its facts survive: what to do this
+  // period, and that the register as its own source in a run arrives with #408. Deliberately not
+  // 1a's copy, which shows provider rows for the post-#408 state.
   reason:
-    'Payroll ingestion ships with #408. Until then, payroll lands as a GL-side journal entry.',
+    'Post the payroll register to the ledger as a journal entry and reconcile it there, as you do today. Attaching the register itself as a source in the run — matched line by line rather than in total — is what ships with the payroll track.',
   trackingIssue: '#408',
 };
 
@@ -115,37 +122,38 @@ export const sourceTabs: readonly SourceTab[] = [
     note: 'Header differences are reported but never block the run.',
   },
   {
-    kind: 'droppable',
+    kind: 'reason',
     id: 'ap',
     label: 'AP / Payments',
     hueToken: '--ap',
-    min: 1,
-    max: MAX_SLOTS_PER_SUBLEDGER,
-    optional: true,
-    hint: 'Name must start with the entity id, then “-” or “_”. Only that prefix is checked today; field rules arrive with the AP registry.',
-    sampleName: 'E100_ap-payments.csv',
-    note: 'Invoices and payments in one file are split by Doc Type.',
+    headline: 'Reconcile AP through the ledger this period',
+    reason:
+      'The control-account totals in your ledger export already carry the month’s payables activity: the control-account totals in your ledger export already carry the month’s payables activity. What this tab adds is the invoice-level detail behind those totals — matching a payment to the document it settles — and that needs the AP registry to check entity ids against.',
+    trackingIssue: '#448',
   },
   {
-    kind: 'droppable',
+    kind: 'reason',
     id: 'ar',
     label: 'AR / Invoices',
     hueToken: '--ar',
-    min: 1,
-    max: MAX_SLOTS_PER_SUBLEDGER,
-    optional: true,
-    hint: 'Name must start with the entity id, then “-” or “_”. Only that prefix is checked today; field rules arrive with the AR registry.',
-    sampleName: 'E100_ar-invoices.csv',
-    note: 'Unpaid invoices flow to the open-items schedule rather than exceptions.',
+    headline: 'Reconcile AR through the ledger this period',
+    reason:
+      'Same as AP — the ledger export carries the receivables control-account totals. This tab adds the invoice-level detail, and unpaid invoices flowing to the open-items schedule rather than to exceptions, once the AR registry exists.',
+    trackingIssue: '#448',
   },
   payrollTab,
 ];
 
 const tabsById = new Map(sourceTabs.map((tab) => [tab.id, tab]));
 
-/** Looks a tab up by id. Returns undefined for anything not in `sourceTabIds`, which is what makes
- * an unrecognised `?source=` fall back rather than render an empty panel. */
+/** Looks a tab up by an arbitrary string. Returns undefined for anything not in `sourceTabIds`,
+ * which is what lets an unrecognised `?source=` fall back rather than render an empty panel. */
 export const findSourceTab = (id: string): SourceTab | undefined => tabsById.get(id as SourceTabId);
+
+/** Total lookup for an id already known to be valid — every `SourceTabId` has a tab by
+ * construction, so callers that went through `resolveSourceTab` need no undefined branch and no
+ * non-null assertion. */
+export const getSourceTab = (id: SourceTabId): SourceTab => tabsById.get(id)!;
 
 /** The tab a bare visit lands on. */
 export const DEFAULT_SOURCE_TAB: SourceTabId = 'bank';

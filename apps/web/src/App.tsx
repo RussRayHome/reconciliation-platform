@@ -40,7 +40,7 @@ import { MIN_BANK_ACCOUNTS, SourceDropZone } from './components/SourceDropZone';
 import { RunSourceRecap } from './components/RunSourceRecap';
 import { SourceUnavailableNotice } from './components/SourceUnavailableNotice';
 import {
-  payrollTab,
+  getSourceTab,
   resolveSourceTab,
   sourceTabMeta,
   sourceTabs,
@@ -786,11 +786,6 @@ function ReconciliationApp({
   // R1 WP2/WP4: 1-4 AP/Billing entity ledgers per run, same cardinality/slot-growth shape as
   // bankFiles above (MIN/MAX_AP_ENTITIES). Starts at one empty slot -- unlike bank's two, since a
   // single-entity AP subledger export is the common case.
-  const [apFiles, setApFiles] = useState<(File | null)[]>([null]);
-  // AR gets its own slot array rather than sharing AP's. They render through one component and
-  // share a filename convention, but a run carries both independently -- and the Phase 2 ruling
-  // on #401 forbids them sharing a rule set, which a shared array would quietly reintroduce.
-  const [arFiles, setArFiles] = useState<(File | null)[]>([null]);
   const [accountIdentifier, setAccountIdentifier] = useState('');
   const [reconciliationFrequency, setReconciliationFrequency] =
     useState<ReconciliationFrequency>('Monthly');
@@ -1689,8 +1684,6 @@ function ReconciliationApp({
                     accounts={accounts.accounts}
                     accountsUnavailable={accounts.error !== null}
                     glFile={glFile}
-                    apFiles={apFiles}
-                    arFiles={arFiles}
                     submitState={submitState}
                     currentYear={currentYear}
                     handleSubmit={handleSubmit}
@@ -1708,8 +1701,6 @@ function ReconciliationApp({
                     setMonthlyMonth={setMonthlyMonth}
                     setPeriodLabel={setPeriodLabel}
                     setGlFile={setGlFile}
-                    setApFiles={setApFiles}
-                    setArFiles={setArFiles}
                     setReconciliationFrequency={setReconciliationFrequency}
                     suggestedPeriodLabel={suggestedPeriodLabel}
                     accountIdentifier={accountIdentifier}
@@ -2061,8 +2052,6 @@ function SourceUploadSection({
   annualYear,
   bankFiles,
   glFile,
-  apFiles,
-  arFiles,
   submitState,
   currentYear,
   handleSubmit,
@@ -2080,8 +2069,6 @@ function SourceUploadSection({
   setMonthlyMonth,
   setPeriodLabel,
   setGlFile,
-  setApFiles,
-  setArFiles,
   setReconciliationFrequency,
   suggestedPeriodLabel,
   uploadTransfer,
@@ -2110,8 +2097,6 @@ function SourceUploadSection({
   accounts: ReconciliationAccount[];
   accountsUnavailable: boolean;
   glFile: File | null;
-  apFiles: (File | null)[];
-  arFiles: (File | null)[];
   submitState: SubmitButtonState;
   currentYear: number;
   handleSubmit: (event: { preventDefault: () => void }) => void;
@@ -2129,8 +2114,6 @@ function SourceUploadSection({
   setMonthlyMonth: Dispatch<SetStateAction<string>>;
   setPeriodLabel: Dispatch<SetStateAction<string>>;
   setGlFile: Dispatch<SetStateAction<File | null>>;
-  setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
-  setArFiles: Dispatch<SetStateAction<(File | null)[]>>;
   setReconciliationFrequency: Dispatch<SetStateAction<ReconciliationFrequency>>;
   suggestedPeriodLabel: string;
   uploadTransfer: UploadTransferModel;
@@ -2171,12 +2154,14 @@ function SourceUploadSection({
   const attachedBySource: Record<SourceTabId, number> = {
     bank: bankFiles.filter(Boolean).length,
     gl: glFile ? 1 : 0,
-    ap: apFiles.filter(Boolean).length,
-    ar: arFiles.filter(Boolean).length,
-    // Payroll cannot be attached until #408; a count would imply an affordance that is not there.
+    // AP, AR and payroll are always zero: no user action attaches one, so a count would imply an
+    // affordance that is not there. They stay in the recap so the run's full shape stays legible.
+    ap: 0,
+    ar: 0,
     payroll: 0,
   };
 
+  const activeTab = getSourceTab(activeSourceType);
 
   return (
     <div className="import-screen">
@@ -2331,12 +2316,12 @@ function SourceUploadSection({
                 })()
               )}
             </div>
-          ) : activeSourceType === 'payroll' ? (
+          ) : (
             <div
               className="import-screen__upload-column"
               role="tabpanel"
-              id="import-panel-payroll"
-              aria-labelledby="import-tab-payroll"
+              id={`import-panel-${activeSourceType}`}
+              aria-labelledby={`import-tab-${activeSourceType}`}
             >
               {/* [OBJECT] rule 27, "not available" case: payroll cannot be attached by any user
                   action until #408, so the panel body IS the reason -- not a greyed-out drop zone.
@@ -2345,29 +2330,9 @@ function SourceUploadSection({
                   post-#408 state. Lifting its copy would promise an ingestion path that does not
                   exist. */}
               <SourceUnavailableNotice
-                title="Payroll is not part of a run yet"
-                reason={payrollTab.reason}
-                trackingIssue={payrollTab.trackingIssue}
-              />
-            </div>
-          ) : (
-            <div
-              className="import-screen__upload-column"
-              role="tabpanel"
-              id={`import-panel-${activeSourceType}`}
-              aria-labelledby={`import-tab-${activeSourceType}`}
-            >
-              {/* Subledger files are not yet part of the Submit run request -- createImportRunRequest
-                  builds a FormData of bankFiles/glFile only, with no AP or AR part, and
-                  POST /api/imports/runs has no field to receive them. How subledgers combine with a
-                  bank+GL run is still an open product decision. The panel says so rather than
-                  accepting files it will silently drop. */}
-              <SourceDropZone
-                mode="subledger"
-                subledger={activeSourceType}
-                apFiles={activeSourceType === 'ap' ? apFiles : arFiles}
-                setApFiles={activeSourceType === 'ap' ? setApFiles : setArFiles}
-                canonicalFields={canonicalFields}
+                title={activeTab.kind === 'reason' ? activeTab.headline : ''}
+                reason={activeTab.kind === 'reason' ? activeTab.reason : ''}
+                trackingIssue={activeTab.kind === 'reason' ? activeTab.trackingIssue : ''}
               />
             </div>
           )}
