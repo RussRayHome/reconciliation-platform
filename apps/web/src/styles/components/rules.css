@@ -225,7 +225,7 @@
   .rule-variance-item__changed {
     margin-left: 0.5rem;
     padding: 0.05rem 0.4rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--severity-high-soft);
     color: var(--severity-high);
     font-weight: 600;

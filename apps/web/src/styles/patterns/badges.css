@@ -1,9 +1,43 @@
+/* PILLS ARE FOR STATUS AND COUNTS ONLY (UI refresh 1d, decision 23). Never a pill as a button --
+   a button is 36px at --radius-control, in one of the four tones in patterns/buttons.css. The
+   pill shape is what tells a reader "this is a state or a number", not "this is something you
+   press", so using it for both erases the distinction the shape is carrying.
+
+   Two variants, and only two:
+
+     .badge            neutral  -- an ordinary count, no attention claimed
+     .badge--attention           -- a count that needs a decision
+
+   The attention variant is deliberately the only coloured one. If everything can shout, the rail
+   reads as noise and a real backlog stops standing out. */
 @layer patterns {
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6;
+  }
+
+  .badge--attention {
+    border-color: var(--negative-soft-border);
+    background: var(--negative-soft);
+    color: var(--negative);
+    font-weight: 600;
+  }
+
   .eyebrow {
     display: inline-flex;
     margin-bottom: 0.75rem;
     padding: 0.45rem 0.75rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--bg-raised);
     font-size: 0.8rem;
     text-transform: uppercase;
@@ -18,7 +52,7 @@
 
   .summary-badges span {
     padding: 0.45rem 0.75rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--bg-raised);
     font-size: 0.84rem;
   }

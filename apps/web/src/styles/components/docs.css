@@ -38,7 +38,7 @@
   .docs-track-filter-button {
     min-height: 34px;
     padding: 0.45rem 0.85rem;
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--line-strong);
     background: var(--bg-raised);
     color: var(--text-tertiary);
@@ -113,7 +113,7 @@
   .docs-track-count {
     justify-self: start;
     padding: 0.35rem 0.7rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--bg-raised);
     color: var(--text-tertiary);
     font-size: 0.8rem;
@@ -148,7 +148,7 @@
   .docs-category-header__count {
     margin: 0;
     padding: 0.35rem 0.7rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--bg-raised);
     color: var(--text-tertiary);
     font-size: 0.82rem;
@@ -263,7 +263,7 @@
   .docs-viewer-meta span,
   .docs-heading-link {
     padding: 0.4rem 0.75rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--bg-raised);
     color: var(--text-tertiary);
     font-size: 0.82rem;
@@ -393,7 +393,7 @@
   .docs-image-modal-close {
     min-height: 38px;
     padding: 0.5rem 0.95rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--glass-border);
     background: var(--glass-bg);
     color: var(--text-strong);

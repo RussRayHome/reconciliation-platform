@@ -541,7 +541,7 @@
     width: 42px;
     height: 24px;
     flex: none;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--line-strong);
     background: var(--bg-base);
     padding: 2px;

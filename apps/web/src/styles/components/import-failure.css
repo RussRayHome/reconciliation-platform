@@ -207,7 +207,7 @@
     place-items: center;
     width: 52px;
     height: 52px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--negative-soft);
     color: var(--negative);
     font-family: 'Space Grotesk', sans-serif;

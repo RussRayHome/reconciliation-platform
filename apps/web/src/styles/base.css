@@ -20,7 +20,7 @@
 
   ::-webkit-scrollbar-thumb {
     background: rgba(240, 246, 252, 0.14);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   @keyframes fadeInUp {
