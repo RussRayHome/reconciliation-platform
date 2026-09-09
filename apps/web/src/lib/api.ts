@@ -4,6 +4,7 @@ import type {
   ApprovalCountsByGroup,
   ApprovalRow,
   CanonicalField,
+  CreateSavedViewInput,
   EntityVerificationStatus,
   ErrorCategory,
   ErrorCode,
@@ -19,7 +20,10 @@ import type {
   ReviewerDecisionTargetType,
   RuleCatalogResponse,
   RuleVersionsResponse,
+  SavedView,
+  SavedViewScope,
   UpdateReconciliationAccountInput,
+  UpdateSavedViewInput,
   UserRole,
 } from '@recon/domain';
 import { clearAuthToken, getAuthToken, setAuthToken } from './authToken';
@@ -505,6 +509,52 @@ export const updateAccountRequest = async (
   });
   return parseResponse<ReconciliationAccount>(response);
 };
+
+/**
+ * Saved views (Issue #458). These replace `SAVED_VIEWS_STORAGE_KEY` in `exceptionTriage.ts`, which
+ * kept views in each browser's own `localStorage` -- per-device, invisible to the server, and with
+ * nowhere for the designed "Shared" visibility to live.
+ */
+export const listSavedViewsRequest = async (
+  options: { scope?: SavedViewScope; includeRetired?: boolean } = {},
+): Promise<SavedView[]> => {
+  const query = new URLSearchParams();
+  if (options.scope) query.set('scope', options.scope);
+  if (options.includeRetired) query.set('includeRetired', 'true');
+  const queryString = query.toString();
+  const suffix = queryString ? `?${queryString}` : '';
+  const response = await apiFetch(`/api/saved-views${suffix}`);
+  const { savedViews } = await parseResponse<{ savedViews: SavedView[] }>(response);
+  return savedViews;
+};
+
+export const createSavedViewRequest = async (input: CreateSavedViewInput): Promise<SavedView> => {
+  const response = await apiFetch('/api/saved-views', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const { savedView } = await parseResponse<{ savedView: SavedView }>(response);
+  return savedView;
+};
+
+export const updateSavedViewRequest = async (
+  savedViewId: string,
+  input: UpdateSavedViewInput,
+): Promise<SavedView> => {
+  const response = await apiFetch(`/api/saved-views/${savedViewId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const { savedView } = await parseResponse<{ savedView: SavedView }>(response);
+  return savedView;
+};
+
+/** The only removal path -- there is no DELETE endpoint. Retiring frees the name for reuse and
+ * keeps the row, so a view can be brought back (#396: "Nothing is deleted. It is retired"). */
+export const retireSavedViewRequest = async (savedViewId: string): Promise<SavedView> =>
+  updateSavedViewRequest(savedViewId, { status: 'RETIRED' });
 
 /** Accounts a filename could refer to. Returns every match -- the caller pre-selects only when
  * there is exactly one, because A-D1 forbids choosing the first of several automatically. */

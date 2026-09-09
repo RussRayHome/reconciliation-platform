@@ -7,3 +7,4 @@ export * from './importRunStore';
 export * from './importValidationStore';
 export * from './openItemStore';
 export * from './accountStore';
+export * from './savedViewStore';

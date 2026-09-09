@@ -196,6 +196,102 @@
         }
       }
     },
+    "/api/saved-views": {
+      "get": {
+        "summary": "List the saved views this user may see (Issue #458)",
+        "description": "The caller's own views at any visibility, plus every view shared with the finance team. Retired views are excluded unless asked for.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "exceptions",
+                "open_items"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeRetired",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved views, most recently updated first"
+          },
+          "400": {
+            "description": "Unrecognised scope or includeRetired value"
+          },
+          "401": {
+            "description": "Not authenticated"
+          }
+        }
+      },
+      "post": {
+        "summary": "Save a new view (Issue #458)",
+        "description": "The author becomes the first owner. Visibility defaults to private -- sharing is an explicit act.",
+        "responses": {
+          "201": {
+            "description": "Saved view created"
+          },
+          "400": {
+            "description": "Invalid body (missing scope, empty or over-long name)"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "409": {
+            "description": "This owner already has an active view of that name"
+          }
+        }
+      }
+    },
+    "/api/saved-views/{savedViewId}": {
+      "patch": {
+        "summary": "Update a saved view, including retiring it (Issue #458)",
+        "description": "Owner-only. `scope` cannot be changed -- it is what the saved filters mean. There is no DELETE: a view is retired by patching status to RETIRED, which frees its name for reuse without losing the row.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "savedViewId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated saved view"
+          },
+          "400": {
+            "description": "Malformed id or invalid body"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Readable by this user, but owned by someone else"
+          },
+          "404": {
+            "description": "No such view in this organization"
+          },
+          "409": {
+            "description": "The target name is already in use by an active view"
+          }
+        }
+      }
+    },
     "/api/reconciliation/latest": {
       "get": {
         "summary": "Fetch the latest completed reconciliation run",

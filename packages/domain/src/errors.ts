@@ -106,6 +106,9 @@ export const OPERATIONS = {
   APPROVALS_COUNTS: 'load approval counts',
   APPROVAL_DECISION: 'record this approval decision',
   APPROVAL_CLAIM: 'claim this approval',
+  SAVED_VIEWS_LIST: 'load saved views',
+  SAVED_VIEWS_CREATE: 'save this view',
+  SAVED_VIEWS_UPDATE: 'update this saved view',
 } as const satisfies Record<string, string>;
 
 export type OperationCode = keyof typeof OPERATIONS;

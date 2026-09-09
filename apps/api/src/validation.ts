@@ -9,6 +9,9 @@ import {
   severityLevels,
   transformKinds,
   approvableTypes,
+  savedViewScopes,
+  savedViewVisibilities,
+  savedViewStatuses,
 } from '@recon/domain';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -184,6 +187,50 @@ export const reconciliationRunBodySchema = z.object({
  * deliberately not accepted from the client, so the display tail can never disagree with the
  * identifier it is supposed to summarize.
  */
+/** Saved views (Issue #458). `scope` and `visibility` mirror the domain unions rather than free
+ * strings so an unknown value is a 400 here, not a CHECK-constraint 23514 from Postgres. `filters`
+ * is the screen's own filter model and is deliberately unvalidated beyond "an object": the two
+ * scopes carry different shapes, and pinning either here would mean editing the API every time a
+ * facet is added to a screen. */
+/** Bounded because the column is TEXT and nothing in Postgres caps it -- 120 matches the account
+ * `displayName` cap, and this string has to fit a view picker. */
+const savedViewNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'A view name is required.')
+  .max(120, 'A view name must be 120 characters or fewer.');
+
+export const createSavedViewBodySchema = z.object({
+  name: savedViewNameSchema,
+  scope: z.enum(savedViewScopes),
+  filters: z.record(z.string(), z.unknown()).default({}),
+  visibility: z.enum(savedViewVisibilities).optional(),
+});
+
+/** Every field optional -- PATCH semantics. `scope` is absent on purpose: it is what the saved
+ * filters mean, so changing it would reinterpret the payload rather than edit it. */
+export const updateSavedViewBodySchema = z.object({
+  name: savedViewNameSchema.optional(),
+  filters: z.record(z.string(), z.unknown()).optional(),
+  visibility: z.enum(savedViewVisibilities).optional(),
+  status: z.enum(savedViewStatuses).optional(),
+});
+
+/** Validated as a UUID before it reaches the store. Without this an unparseable path segment
+ * reaches Postgres, which raises 22P02 -- and `classifyError` has no case for it, so a client-side
+ * typo becomes a 500 *and* a captured exception rather than a 400. */
+export const savedViewIdParamSchema = z.object({
+  savedViewId: z.string().uuid('savedViewId must be a valid saved view id.'),
+});
+
+export const listSavedViewsQuerySchema = z.object({
+  scope: z.enum(savedViewScopes).optional(),
+  includeRetired: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+});
+
 export const registerAccountBodySchema = z.object({
   accountIdentifier: requiredTrimmedString('An account number is required.'),
   displayName: z.string().trim().max(120, 'displayName must be 120 characters or fewer.').optional(),
