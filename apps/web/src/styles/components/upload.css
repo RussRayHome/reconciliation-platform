@@ -48,19 +48,118 @@
     gap: 0.75rem;
   }
 
+  /* [SCREEN] 1a — the compact slot. The file line is a fixed-height row; anything that belongs to
+     the slot but not the file (the per-slot account picker, a header warning) sits beneath it, so
+     the row keeps its height whatever the slot carries. */
   .source-slot {
     display: grid;
     gap: 0.35rem;
-    padding: 0.6rem 0.7rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-control);
+    padding: 0;
+    border: 0;
   }
 
-  .source-slot__file {
+  .source-slot__row {
     display: grid;
-    gap: 0.1rem;
-    font-size: 0.82rem;
+    grid-template-columns: 84px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    min-height: 48px;
+    padding: 0 0.75rem;
+    border: 1.5px dashed var(--line-strong);
+    border-left: 3px solid var(--source-slot-hue, var(--line-strong));
+    border-radius: var(--radius-control);
+    background: var(--bg-sunken, var(--bg-raised));
   }
+
+  /* Filled: the dashed prompt row becomes a stored row -- name, size, and the one word that says
+     the file is held. Solid border, because a dashed edge reads as "still waiting for something". */
+  .source-slot--filled .source-slot__row {
+    grid-template-columns: 84px minmax(0, 1fr) 90px auto;
+    border-style: solid;
+    border-color: var(--line);
+    border-left-color: var(--source-slot-hue, var(--line-strong));
+  }
+
+  .source-slot__tag {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+  }
+
+  .source-slot__prompt {
+    color: var(--text-secondary);
+    font-size: var(--font-meta);
+    cursor: pointer;
+  }
+
+  .source-slot__hint,
+  .source-slot__size {
+    color: var(--text-tertiary);
+    font-size: var(--font-label);
+  }
+
+  /* Truncates rather than wraps: a long file name must not push the row past its fixed height. */
+  .source-slot__name {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .source-slot__stored {
+    color: var(--positive);
+    font-size: var(--font-label);
+  }
+
+  .source-slot__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .source-slot__browse {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 0.6rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    font-size: var(--font-label);
+    cursor: pointer;
+  }
+
+  .source-slot__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .source-slot__remove:hover {
+    color: var(--text-primary);
+  }
+
+  /* The one hue per source type, set on the slot rather than hard-coded into each rule. */
+  .source-slot--bank { --source-slot-hue: var(--bank); }
+  .source-slot--gl { --source-slot-hue: var(--gl); }
+  .source-slot--ap { --source-slot-hue: var(--ap); }
+  .source-slot--ar { --source-slot-hue: var(--ar); }
+
 
   .source-slot__override {
     color: var(--severity-high);
@@ -68,11 +167,6 @@
     font-size: 0.72rem;
   }
 
-  .source-slot__empty {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--text-tertiary);
-  }
 
   /* R2 V6 (warn-only, Issue #250): a fuzzy header-match heads-up, not a rejection -- amber like
      the existing severity-medium tone, distinct from source-slot__override's error-adjacent red,

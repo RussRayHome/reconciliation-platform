@@ -491,7 +491,7 @@ describe('per-slot file input ignores an empty change event (Issue #291)', () =>
 
     fireEvent.change(screen.getByLabelText('Bank workbook (Account 1)'), { target: { files: [] } });
 
-    expect(slot).toHaveTextContent('No file selected');
+    expect(slot).toHaveTextContent('Drop statement here');
   });
 
   it('warns when it ignores one, so the next occurrence leaves a trace', () => {

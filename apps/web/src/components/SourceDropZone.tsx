@@ -400,6 +400,7 @@ function BankGlDropZone({
             <SourceSlot
               key={index}
               kind="bank"
+              tag="BANK"
               label={`Bank workbook (Account ${index + 1})`}
               inputId={bankInputId(index)}
               file={file}
@@ -423,6 +424,7 @@ function BankGlDropZone({
         {only === 'gl' ? (
           <SourceSlot
             kind="gl"
+            tag="GL"
             label="GL workbook"
             inputId="gl-workbook-input"
             file={glFile}
@@ -625,6 +627,7 @@ function SubledgerDropZone({
           <SourceSlot
             key={index}
             kind="billing"
+            tag={noun}
             label={`${noun} workbook (Entity ${index + 1})`}
             inputId={subledgerInputId(subledger, index)}
             file={file}
@@ -667,8 +670,28 @@ function SubledgerDropZone({
   );
 }
 
+/** The mono tag, prompt and one-line hint each slot kind shows in its 48px row (README 1a). Keyed
+ * by kind so a caller cannot give a bank slot AP's filename rule by mistake. The subledger entry
+ * is shared by AP and AR: they have the same convention, and the tag that distinguishes them is
+ * passed per call. */
+const SLOT_COPY: Record<SourceKind, { prompt: string; hint: string }> = {
+  bank: {
+    prompt: 'Drop statement here',
+    hint: 'Name starts with the account number, or its last four — e.g. 4321_bank-statement.csv',
+  },
+  gl: {
+    prompt: 'Drop ledger export here',
+    hint: 'One workbook covering every account in the run',
+  },
+  billing: {
+    prompt: 'Drop subledger here',
+    hint: 'Name starts with the entity id — e.g. E100_ap-payments.csv',
+  },
+};
+
 function SourceSlot({
   kind,
+  tag,
   label,
   inputId,
   file,
@@ -678,6 +701,8 @@ function SourceSlot({
   footer,
 }: Readonly<{
   kind: SourceKind;
+  /** The mono source tag in the row's first cell — BANK, GL, AP, AR. */
+  tag: string;
   label: string;
   inputId: string;
   file: File | null;
@@ -688,25 +713,66 @@ function SourceSlot({
    * here so the choice sits with the file it belongs to; GL and AP slots pass nothing. */
   footer?: ReactNode;
 }>) {
+  const { prompt, hint } = SLOT_COPY[kind];
   const detected = kind === 'billing' ? null : file ? detectSource(file.name) : null;
   const isOverride = kind !== 'billing' && Boolean(file) && detected !== null && detected !== kind;
   const headerWarning = useHeaderPreviewWarning(file, canonicalFields);
 
+  // README 1a: the file line is a 48px row -- mono tag, prompt, one-line hint, Browse, remove. The
+  // spec's four-column grid has no cell for the per-slot account picker, and #401 says A-D1's
+  // assignment control is unchanged; the reading that satisfies both is that 48px describes the
+  // FILE row, with the assignment staying beneath as the slot's footer. A single row containing a
+  // select cannot be 48px, so the alternative would mean dropping a control A-D1 requires.
   return (
-    <div className="source-slot">
-      <div className="source-slot__header">
-        <label htmlFor={inputId}>{label}</label>
-        {onRemove ? (
-          <button
-            type="button"
-            className="import-upload-card__ghost-button"
-            onClick={onRemove}
-            aria-label={`Remove ${label}`}
-          >
-            Remove
-          </button>
-        ) : null}
+    <div
+      className={[
+        'source-slot',
+        // The hue is per source type, not per slot kind: AP and AR share `kind: 'billing'` but
+        // must not share a colour, since the whole point of five distinct hues is that a glance
+        // at the strip tells them apart.
+        `source-slot--${tag.toLowerCase()}`,
+        file ? 'source-slot--filled' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <div className="source-slot__row">
+        <span className="source-slot__tag">{tag}</span>
+        {file ? (
+          <>
+            <span className="source-slot__name">{file.name}</span>
+            <span className="source-slot__size">{formatFileSize(file.size)}</span>
+            <span className="source-slot__stored">Stored</span>
+          </>
+        ) : (
+          <>
+            <label className="source-slot__prompt" htmlFor={inputId}>
+              {prompt}
+            </label>
+            <span className="source-slot__hint">{hint}</span>
+          </>
+        )}
+        <span className="source-slot__actions">
+          <label className="source-slot__browse" htmlFor={inputId}>
+            Browse
+          </label>
+          {onRemove ? (
+            <button
+              type="button"
+              className="source-slot__remove"
+              onClick={onRemove}
+              aria-label={`Remove ${label}`}
+            >
+              ×
+            </button>
+          ) : null}
+        </span>
       </div>
+      {/* The visible label moved into the row above; this keeps the input's accessible name, which
+          every e2e fixture and unit test locates the slot by. */}
+      <label className="visually-hidden" htmlFor={inputId}>
+        {label}
+      </label>
       <input
         id={inputId}
         type="file"
@@ -718,8 +784,8 @@ function SourceSlot({
             // no clear affordance (Remove deletes the whole slot), and cancelling the picker fires
             // no event at all. Passing the `null` through took `onBankFileChange`'s
             // `file === null` branch, which emptied the slot and returned -- no rejection
-            // recorded, nothing rendered but "No file selected", indistinguishable from the file
-            // never having been offered. Both multi-file inputs above already ignore this case
+            // recorded, and the slot still showing its empty prompt -- indistinguishable from the
+            // file never having been offered. Both multi-file inputs above already ignore this case
             // (`if (event.target.files?.length)`); this makes the per-slot input agree with them.
             //
             // Not a proven fix for #291 -- the mechanism there is still unknown and it no longer
@@ -733,15 +799,8 @@ function SourceSlot({
           onChange(selected);
         }}
       />
-      {file ? (
-        <div className="source-slot__file">
-          <strong>{file.name}</strong>
-          <span>{formatFileSize(file.size)}</span>
-          {isOverride ? <span className="source-slot__override">Manual override</span> : null}
-        </div>
-      ) : (
-        <p className="source-slot__empty">No file selected</p>
-      )}
+      {file && isOverride ? <span className="source-slot__override">Manual override</span> : null}
+
       {headerWarning && headerWarning.unmatchedRequiredFields.length > 0 ? (
         <p className="source-slot__header-warning">
           We couldn&apos;t confidently match a column to{' '}

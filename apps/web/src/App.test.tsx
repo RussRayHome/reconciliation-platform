@@ -2886,7 +2886,7 @@ describe('App', () => {
     });
     // Reset back to the #153 default of two empty bank slots. The GL slot resets too, but it lives
     // on its own tab since Phase 2 and so is not part of this panel's count.
-    expect(screen.getAllByText('No file selected')).toHaveLength(2);
+    expect(screen.getAllByText('Drop statement here')).toHaveLength(2);
   });
 
   it('shows Screen 07 (all rows invalid) when every row fails Step 3 with zero rows importable', async () => {
@@ -3195,7 +3195,7 @@ describe('App', () => {
     expect(screen.queryByText('UPLOAD_BANK_FILENAME_INVALID')).not.toBeInTheDocument();
     // Staged into slot 1, so only the other bank slot is still empty -- the GL slot moved to its
     // own tab in Phase 2 and is no longer part of this panel's count.
-    expect(screen.getAllByText('No file selected')).toHaveLength(1);
+    expect(screen.getAllByText('Drop statement here')).toHaveLength(1);
   });
 
   it('#153: starts with two bank slots, and "Add another bank statement" adds slots up to 4', () => {
