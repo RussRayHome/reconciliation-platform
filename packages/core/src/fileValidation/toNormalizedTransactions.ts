@@ -50,8 +50,50 @@ export interface NormalizedTransactionContext {
   config: ReconciliationConfig;
 }
 
-const toSourceSystem = (sourceSystem: NormalizedRecord['sourceSystem']): SourceSystem =>
-  sourceSystem === 'BANK' ? 'bank' : 'gl';
+/** Raised when a record whose source system has no reconciliation side reaches this adapter --
+ * today that means `BILLING` (Issue #381). A caller-contract violation, like
+ * {@link BankFileCountError}: the route that selected this file chose to reconcile something the
+ * engine has no side for, which is a wiring fault rather than a per-row content problem. */
+export class UnreconcilableSourceSystemError extends Error {
+  /** @param sourceSystem The File Validation source system that has no `SourceSystem` mapping,
+   * named back in the message so the caller can see which file was routed here. */
+  constructor(public readonly sourceSystem: NormalizedRecord['sourceSystem']) {
+    super(
+      `Source system "${sourceSystem}" has no reconciliation side. Only BANK and GL records can be adapted into NormalizedTransactions.`,
+    );
+    this.name = 'UnreconcilableSourceSystemError';
+  }
+}
+
+/**
+ * Maps File Validation's ingestion vocabulary onto the engine's two-sided one. These are two
+ * different taxonomies and only overlap partially: `NormalizedRecord.sourceSystem` is
+ * `BANK | GL | BILLING` (`validationSourceTypes`), while `SourceSystem` is `bank | gl` -- a
+ * reconciliation compares exactly two ledgers, and a billing subledger is a third source, not a
+ * side of that comparison.
+ *
+ * This was `sourceSystem === 'BANK' ? 'bank' : 'gl'`, so `BILLING` fell into the `else` and every
+ * billing row would arrive downstream silently labelled GL (Issue #381). Nothing routes billing
+ * records here today -- `app.ts` passes the bank and GL outcomes explicitly -- which is the only
+ * reason it has never produced a defect, and exactly why it is worth closing before the AP
+ * subledger route (Issue #384) is built on top of it.
+ *
+ * It throws rather than returning a `'billing'` side deliberately. `SourceSystem` has no such
+ * member, and adding one is not this fix's call to make: `reconciliation_open_item.source_system`
+ * still CHECKs `('bank', 'gl')` (changeset 0063 -- widening it is Issue #382, which is blocked on
+ * the Track E design decisions), and the matching engine has no semantics for a third side. Until
+ * those are settled, failing loudly is what makes the mislabel impossible.
+ */
+const toSourceSystem = (sourceSystem: NormalizedRecord['sourceSystem']): SourceSystem => {
+  switch (sourceSystem) {
+    case 'BANK':
+      return 'bank';
+    case 'GL':
+      return 'gl';
+    default:
+      throw new UnreconcilableSourceSystemError(sourceSystem);
+  }
+};
 
 const BEGINNING_BALANCE_EXCLUSION_REASON = 'Beginning balance row excluded from reconciliation.';
 

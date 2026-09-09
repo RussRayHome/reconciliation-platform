@@ -2,9 +2,13 @@ import { defaultReconciliationConfig } from '@recon/config';
 import { describe, expect, it } from 'vitest';
 
 import { reconcileMatches } from '../matching/engine';
-import { validateBankingRows, validateGeneralLedgerRows } from './rowValidators';
-import { toNormalizedTransactions } from './toNormalizedTransactions';
-import type { RawBankingRow, RawGeneralLedgerRow } from './types';
+import { validateBankingRows, validateBillingRows, validateGeneralLedgerRows } from './rowValidators';
+import {
+  toNormalizedTransactions,
+  toRawTransactionRows,
+  UnreconcilableSourceSystemError,
+} from './toNormalizedTransactions';
+import type { RawApBillingRow, RawBankingRow, RawGeneralLedgerRow } from './types';
 
 const bankContext = {
   runId: 'run-1',
@@ -148,5 +152,70 @@ describe('toNormalizedTransactions', () => {
     const [transaction] = toNormalizedTransactions(normalized, glContext);
 
     expect(transaction?.dataQualityIssues).toEqual([]);
+  });
+
+  // Issue #381. The old mapping was `sourceSystem === 'BANK' ? 'bank' : 'gl'`, so a BILLING record
+  // came out of here labelled `'gl'` -- indistinguishable downstream from a real general-ledger
+  // row, in the matching engine, the exception output and `reconciliation_open_item.source_system`
+  // alike. Nothing routes billing records through this adapter yet, so these tests are the guard
+  // that keeps it that way until Track E decides what an AP side actually means.
+  describe('a source system with no reconciliation side (Issue #381)', () => {
+    const billingRecord = () => {
+      const billingRow: RawApBillingRow = {
+        'Entity Id': 'E100',
+        'Vendor Id': 'V001',
+        'Vendor Name': 'Acme Supplies',
+        'Doc Type': 'Bill',
+        'Doc No': 'B-1001',
+        'Doc Date': '2026-07-01',
+        Amount: '500.00',
+      };
+      const { normalized } = validateBillingRows([billingRow]);
+      expect(normalized).toHaveLength(1);
+      expect(normalized[0]?.sourceSystem).toBe('BILLING');
+      return normalized;
+    };
+
+    it('rejects a BILLING record instead of silently labelling it gl', () => {
+      const normalized = billingRecord();
+
+      expect(() => toNormalizedTransactions(normalized, glContext)).toThrow(
+        UnreconcilableSourceSystemError,
+      );
+      // The specific guarantee the old code broke: whatever happens, it must never come back 'gl'.
+      expect(() => toNormalizedTransactions(normalized, glContext)).toThrow(/BILLING/);
+    });
+
+    it('rejects a BILLING record in toRawTransactionRows too -- both entry points map the side', () => {
+      expect(() => toRawTransactionRows(billingRecord(), glContext)).toThrow(
+        UnreconcilableSourceSystemError,
+      );
+    });
+
+    it('still maps the two sides that do have a reconciliation meaning', () => {
+      const bankRow: RawBankingRow = {
+        Date: '2026-07-01',
+        Description: 'Deposit',
+        'Sequence Number': '1',
+        Debit: '',
+        Credit: '100.00',
+      };
+      const glRow: RawGeneralLedgerRow = {
+        Date: '2026-07-01',
+        Type: 'Deposit',
+        Num: '1',
+        Name: 'Acme',
+        Memo: 'Deposit',
+        Amount: '100.00',
+      };
+
+      expect(
+        toNormalizedTransactions(validateBankingRows([bankRow]).normalized, bankContext)[0]?.source,
+      ).toBe('bank');
+      expect(
+        toNormalizedTransactions(validateGeneralLedgerRows([glRow]).normalized, glContext)[0]
+          ?.source,
+      ).toBe('gl');
+    });
   });
 });
