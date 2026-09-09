@@ -34,7 +34,7 @@
     justify-self: center;
     margin-top: 0.2rem;
     padding: 0.4rem 0.85rem;
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--line-strong);
     background: var(--bg-raised);
     color: var(--text-primary);
