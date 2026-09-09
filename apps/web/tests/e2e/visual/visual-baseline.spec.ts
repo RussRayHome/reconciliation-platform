@@ -175,7 +175,7 @@ const screenshotOptions = {
 // the review-summary capture for why a handful of screens still use this instead of a region.
 const fullPageScreenshotOptions = { ...screenshotOptions, fullPage: true } as const;
 
-// loginToApplication waits for the Bank Statements link (Import Files' default child, R1 WP1),
+// loginToApplication waits for the New run link (UI-1 flattened Import Files to one leaf),
 // which only superuser/admin roles see; this variant just submits credentials and lets each test
 // wait for its own landmark.
 //
@@ -458,8 +458,11 @@ for (const width of widths) {
         screenshotOptions,
       );
 
-      // The rail item for routePaths.export is labelled "Reports" since the v3 nav restructure.
-      await page.getByRole('link', { name: 'Reports', exact: true }).click();
+      // The rail item for routePaths.export is labelled "Reports & export" since UI-1. Kept
+      // `exact` deliberately: the functional specs match this link on the bare substring
+      // "Reports", which silently kept passing across the rename and is why only the baseline
+      // regeneration run caught it.
+      await page.getByRole('link', { name: 'Reports & export', exact: true }).click();
       // Region-scoped to the artifacts grid itself. Artifact filenames embed the run id --
       // previously masked because a live run's id was different every time. Now that the report
       // is a frozen fixture (mockReconciliationRun), the filename is identical every run and this
