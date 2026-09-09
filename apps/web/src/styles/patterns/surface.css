@@ -1,7 +1,7 @@
 @layer patterns {
   .hero-card,
   .chart-card {
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
     border: 1px solid var(--line);
   }
 

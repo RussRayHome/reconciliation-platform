@@ -105,7 +105,7 @@
   }
 
   .tab-button small {
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.79rem;
   }
 

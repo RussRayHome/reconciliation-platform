@@ -8,7 +8,7 @@
   }
 
   .hero-card p {
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .hero-heading-row {
@@ -54,7 +54,7 @@
     display: inline-flex;
     margin-left: 0.8rem;
     margin-top: 1rem;
-    color: var(--teal);
+    color: var(--accent);
     font-weight: 600;
     text-decoration: underline;
     text-underline-offset: 3px;
@@ -116,14 +116,14 @@
     font-weight: 700;
     letter-spacing: 0.01em;
     line-height: 1.05;
-    color: var(--ink);
+    color: var(--text-primary);
     white-space: nowrap;
   }
 
   .hero-meta span {
     display: block;
     font-size: 0.85rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .hero-meta strong {

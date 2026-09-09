@@ -18,13 +18,13 @@
     font-weight: 600;
     font-size: 0.9rem;
     cursor: pointer;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .review-segment--active {
-    background: var(--bg-secondary);
+    background: var(--bg-surface);
     border-color: var(--line);
-    color: var(--ink);
+    color: var(--text-primary);
     box-shadow: var(--shadow-sm);
   }
 

@@ -40,7 +40,7 @@
   }
 
   button.report-link small {
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.82rem;
     line-height: 1.4;
   }

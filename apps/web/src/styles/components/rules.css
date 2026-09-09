@@ -176,7 +176,7 @@
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .threshold-set-banner strong {
@@ -219,7 +219,7 @@
   .rule-variance-item__default {
     margin: 0;
     font-size: 0.8rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .rule-variance-item__changed {
@@ -240,7 +240,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.72rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .rule-variance-item__reset {
@@ -253,7 +253,7 @@
   .rule-variance-item__consequence {
     margin: 0.15rem 0 0;
     font-size: 0.8rem;
-    color: var(--teal);
+    color: var(--accent);
   }
 
   .rules-reference {
@@ -562,7 +562,7 @@
     align-items: center;
     justify-content: space-between;
     margin-top: -0.28rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.72rem;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -576,7 +576,7 @@
   }
 
   .rule-card__meta span {
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;

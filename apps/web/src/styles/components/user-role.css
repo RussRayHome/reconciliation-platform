@@ -33,7 +33,7 @@
 
   .user-role-shell__identity span,
   .user-role-shell__meta span {
-    color: var(--muted);
+    color: var(--text-tertiary);
     font-size: 0.82rem;
   }
 
@@ -52,7 +52,7 @@
 
   .user-role-shell__permissions li {
     font-size: 0.88rem;
-    color: var(--ink);
+    color: var(--text-primary);
   }
 
   .user-role-shell__signout {

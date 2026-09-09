@@ -84,17 +84,6 @@
     --shadow-elevated: var(--shadow-raised);
     --glass-bg: rgba(22, 27, 34, 0.72);
     --glass-border: rgba(240, 246, 252, 0.12);
-    /* Legacy aliases (delete after one release) */
-    --bg: var(--bg-base);
-    --bg-secondary: var(--bg-surface);
-    --ink: var(--text-primary);
-    --muted: var(--text-tertiary);
-    --teal: var(--accent);
-    --teal-soft: var(--accent-soft);
-    --amber: var(--severity-high);
-    --amber-soft: var(--severity-high-soft);
-    --rose: var(--negative);
-    --rose-soft: var(--negative-soft);
   }
 
   /* Print stays light: reassert the warm-neutral paper palette for the workpaper/export path. */

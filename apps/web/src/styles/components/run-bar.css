@@ -47,7 +47,7 @@
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--muted);
+    color: var(--text-tertiary);
   }
 
   .run-bar__field-value {
@@ -221,7 +221,7 @@
   }
 
   .run-bar__overflow-link {
-    color: var(--teal);
+    color: var(--accent);
     font-weight: 600;
     text-decoration: none;
     font-size: 0.88rem;
@@ -364,7 +364,7 @@
 
   .run-bar__step {
     font-size: 0.82rem;
-    color: var(--muted);
+    color: var(--text-tertiary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
