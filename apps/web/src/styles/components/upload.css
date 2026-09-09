@@ -534,3 +534,94 @@
     cursor: pointer;
   }
 }
+
+/* [SCREEN] 1a — the persistent "IN THIS RUN" recap beneath the source tab panel. The tab strip
+   shows one panel at a time, so without this a user on the AR tab cannot see whether the GL
+   workbook was ever attached. */
+@layer components {
+  .run-source-recap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding-top: 12px;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .run-source-recap__label {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .run-source-recap__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .run-source-recap__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-secondary);
+    font-size: var(--font-meta);
+  }
+
+  /* A type carrying nothing is dimmed rather than hidden -- the run's full shape stays legible,
+     which is the reason five source types share one strip in the first place. */
+  .run-source-recap__item--empty {
+    color: var(--text-tertiary);
+  }
+
+  .run-source-recap__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-pill);
+    background: var(--line-strong);
+  }
+
+  /* [OBJECT] rule 27, "not available": the reason that replaces a control the platform cannot
+     offer yet. Not a disabled control, and deliberately not styled as an error -- nothing has
+     gone wrong. */
+  .source-unavailable {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 18px 20px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-panel);
+    background: var(--bg-raised);
+  }
+
+  .source-unavailable__title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .source-unavailable__reason {
+    margin: 0;
+    max-width: 60ch;
+    color: var(--text-secondary);
+    font-size: var(--font-meta);
+    line-height: 1.5;
+  }
+
+  .source-unavailable__tracking {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-label);
+  }
+
+  .source-unavailable__issue {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+}

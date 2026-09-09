@@ -7,7 +7,7 @@ import {
   type SetStateAction,
 } from 'react';
 
-import { parseApEntityIdFromFilename } from '@recon/domain';
+import { parseSubledgerEntityIdFromFilename } from '@recon/domain';
 import type { CanonicalField, ReconciliationAccount } from '@recon/domain';
 
 import { suggestAccountIdForFilename } from '../lib/bankAccountSuggestion';
@@ -57,9 +57,15 @@ const detectRejection = (file: File): RejectedUploadCode | null => {
  * outright unless its name began with an account number, because the name was the only thing that
  * said which account the statement belonged to. The account is now chosen explicitly per slot, so
  * a filename carries no authority and any name is acceptable -- it only feeds the suggestion and
- * the disagreement warning in `BankAccountAssignment`. AP/Billing keeps its own convention. */
-const detectApEntityRejection = (file: File): RejectedUploadCode | null =>
-  parseApEntityIdFromFilename(file.name) === null ? 'UPLOAD_AP_FILENAME_INVALID' : null;
+ * the disagreement warning in `BankAccountAssignment`. The subledgers keep their own convention.
+ *
+ * The caller supplies the code because AP and AR share this check and must not share its wording
+ * (Phase 2 ruling on #401). */
+const detectSubledgerEntityRejection = (
+  file: File,
+  code: 'UPLOAD_AP_FILENAME_INVALID' | 'UPLOAD_AR_FILENAME_INVALID',
+): RejectedUploadCode | null =>
+  parseSubledgerEntityIdFromFilename(file.name) === null ? code : null;
 
 /** Slots 1-2 keep their pre-#153 ids (`bank-workbook-input`, `bank-workbook-b-input`) so existing
  * Playwright fixtures (`#bank-workbook-input`/`#bank-workbook-b-input`) don't break; slots 3-4 get
@@ -67,9 +73,12 @@ const detectApEntityRejection = (file: File): RejectedUploadCode | null =>
 const bankInputId = (index: number): string =>
   index === 0 ? 'bank-workbook-input' : `bank-workbook-${String.fromCharCode(97 + index)}-input`;
 
-/** Same lettered-slot id convention as `bankInputId`, new namespace for AP entity slots. */
-const apInputId = (index: number): string =>
-  index === 0 ? 'ap-workbook-input' : `ap-workbook-${String.fromCharCode(97 + index)}-input`;
+/** Same lettered-slot id convention as `bankInputId`, one namespace per subledger. AP keeps its
+ * pre-existing unprefixed ids so the e2e fixtures that target `#ap-workbook-input` still resolve. */
+const subledgerInputId = (subledger: 'ap' | 'ar', index: number): string =>
+  index === 0
+    ? `${subledger}-workbook-input`
+    : `${subledger}-workbook-${String.fromCharCode(97 + index)}-input`;
 
 const detectSource = (fileName: string): 'bank' | 'gl' | null => {
   const lower = fileName.toLowerCase();
@@ -88,6 +97,12 @@ const detectSource = (fileName: string): 'bank' | 'gl' | null => {
 type SourceDropZoneProps = (
   | {
       mode: 'bank-gl';
+      /** Which half of the pair this panel renders (Phase 2, #401). Bank and GL are separate tabs
+       * on 1a, but they stay one component: dropped files are routed by filename signature, so a
+       * GL export dropped on the Bank tab still lands in the GL slot rather than being rejected.
+       * Splitting the component would mean splitting that detection, and a file would go nowhere
+       * on whichever tab the user guessed wrong. */
+      only: 'bank' | 'gl';
       bankFiles: (File | null)[];
       glFile: File | null;
       setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
@@ -103,7 +118,8 @@ type SourceDropZoneProps = (
       accountsUnavailable?: boolean;
     }
   | {
-      mode: 'billing';
+      mode: 'subledger';
+      subledger: 'ap' | 'ar';
       apFiles: (File | null)[];
       setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
     }
@@ -119,9 +135,10 @@ type SourceDropZoneProps = (
  * logic/render stays independent (no shared mutable state to reason about across modes) since
  * only one is ever mounted at a time (R1 WP3's tab strip). */
 export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
-  if (props.mode === 'billing') {
+  if (props.mode === 'subledger') {
     return (
-      <ApDropZone
+      <SubledgerDropZone
+        subledger={props.subledger}
         apFiles={props.apFiles}
         setApFiles={props.setApFiles}
         canonicalFields={props.canonicalFields}
@@ -130,6 +147,7 @@ export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
   }
   return (
     <BankGlDropZone
+      only={props.only}
       bankFiles={props.bankFiles}
       glFile={props.glFile}
       setBankFiles={props.setBankFiles}
@@ -151,6 +169,7 @@ export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
  * remove control (floored at 1 slot).
  */
 function BankGlDropZone({
+  only,
   bankFiles,
   glFile,
   setBankFiles,
@@ -161,6 +180,7 @@ function BankGlDropZone({
   accountsUnavailable = false,
   canonicalFields,
 }: Readonly<{
+  only: 'bank' | 'gl';
   bankFiles: (File | null)[];
   glFile: File | null;
   setBankFiles: Dispatch<SetStateAction<(File | null)[]>>;
@@ -355,7 +375,9 @@ function BankGlDropZone({
         onDrop={handleDrop}
       >
         <span className="source-dropzone__prompt">
-          Drag your bank and GL workbooks here, or browse
+          {only === 'bank'
+            ? 'Drag your bank statements here, or browse'
+            : 'Drag your GL export here, or browse'}
         </span>
         <span className="source-dropzone__hint">.csv · .xlsx — max 50 MB per file</span>
         <span className="source-dropzone__browse-button">Choose files</span>
@@ -373,41 +395,44 @@ function BankGlDropZone({
       </label>
 
       <div className="source-dropzone__slots">
-        {bankFiles.map((file, index) => (
+        {only === 'bank' &&
+          bankFiles.map((file, index) => (
+            <SourceSlot
+              key={index}
+              kind="bank"
+              label={`Bank workbook (Account ${index + 1})`}
+              inputId={bankInputId(index)}
+              file={file}
+              onChange={(nextFile) => onBankFileChange(index, nextFile)}
+              onRemove={
+                bankFiles.length > MIN_BANK_ACCOUNTS ? () => onRemoveBankSlot(index) : undefined
+              }
+              canonicalFields={canonicalFields}
+              footer={
+                <BankAccountAssignment
+                  file={file}
+                  accounts={accounts}
+                  accountId={bankAccountIds[index] ?? null}
+                  onChange={(accountId) => onAssignmentChange(index, accountId)}
+                  controlId={`${bankInputId(index)}-account`}
+                  accountsUnavailable={accountsUnavailable}
+                />
+              }
+            />
+          ))}
+        {only === 'gl' ? (
           <SourceSlot
-            key={index}
-            kind="bank"
-            label={`Bank workbook (Account ${index + 1})`}
-            inputId={bankInputId(index)}
-            file={file}
-            onChange={(nextFile) => onBankFileChange(index, nextFile)}
-            onRemove={
-              bankFiles.length > MIN_BANK_ACCOUNTS ? () => onRemoveBankSlot(index) : undefined
-            }
+            kind="gl"
+            label="GL workbook"
+            inputId="gl-workbook-input"
+            file={glFile}
+            onChange={glSlotChange}
             canonicalFields={canonicalFields}
-            footer={
-              <BankAccountAssignment
-                file={file}
-                accounts={accounts}
-                accountId={bankAccountIds[index] ?? null}
-                onChange={(accountId) => onAssignmentChange(index, accountId)}
-                controlId={`${bankInputId(index)}-account`}
-                accountsUnavailable={accountsUnavailable}
-              />
-            }
           />
-        ))}
-        <SourceSlot
-          kind="gl"
-          label="GL workbook"
-          inputId="gl-workbook-input"
-          file={glFile}
-          onChange={glSlotChange}
-          canonicalFields={canonicalFields}
-        />
+        ) : null}
       </div>
 
-      {bankFiles.length < MAX_BANK_ACCOUNTS ? (
+      {only === 'bank' && bankFiles.length < MAX_BANK_ACCOUNTS ? (
         <button type="button" className="secondary-button" onClick={onAddBankSlot}>
           Add another bank statement
         </button>
@@ -446,15 +471,31 @@ function BankGlDropZone({
  * `BankGlDropZone`'s `assignBankSlot`), auto-adding a slot up to the cap. One slot type only
  * (no GL-style second slot), since every file here is the same AP_SUBLEDGER-shaped source.
  */
-function ApDropZone({
+function SubledgerDropZone({
+  subledger,
   apFiles,
   setApFiles,
   canonicalFields,
 }: Readonly<{
+  /** Which subledger this panel serves. AP and AR share this component because they share a
+   * filename convention and a slot model -- but never a rejection code, so an AR file can never
+   * surface AP-worded copy (the Phase 2 ruling on #401; screen 1b quotes these strings verbatim). */
+  subledger: 'ap' | 'ar';
   apFiles: (File | null)[];
   setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
   canonicalFields: CanonicalField[];
 }>) {
+  const codes =
+    subledger === 'ap'
+      ? {
+          filename: 'UPLOAD_AP_FILENAME_INVALID' as const,
+          limit: 'UPLOAD_AP_ENTITY_LIMIT_REACHED' as const,
+        }
+      : {
+          filename: 'UPLOAD_AR_FILENAME_INVALID' as const,
+          limit: 'UPLOAD_AR_ENTITY_LIMIT_REACHED' as const,
+        };
+  const noun = subledger === 'ap' ? 'AP' : 'AR';
   const [isDragging, setIsDragging] = useState(false);
   const [rejectedFiles, setRejectedFiles] = useState<RejectedUpload[]>([]);
   const [nextRejectionId, setNextRejectionId] = useState(0);
@@ -488,14 +529,14 @@ function ApDropZone({
         continue;
       }
 
-      const entityRejection = detectApEntityRejection(file);
+      const entityRejection = detectSubledgerEntityRejection(file, codes.filename);
       if (entityRejection) {
         rejectFile(file, entityRejection);
         continue;
       }
 
       if (!assignApSlot(file)) {
-        rejectFile(file, 'UPLOAD_AP_ENTITY_LIMIT_REACHED');
+        rejectFile(file, codes.limit);
       }
     }
 
@@ -527,7 +568,7 @@ function ApDropZone({
       return;
     }
 
-    const entityRejection = detectApEntityRejection(file);
+    const entityRejection = detectSubledgerEntityRejection(file, codes.filename);
     if (entityRejection) {
       rejectFile(file, entityRejection);
       return;
@@ -584,8 +625,8 @@ function ApDropZone({
           <SourceSlot
             key={index}
             kind="billing"
-            label={`AP/Billing workbook (Entity ${index + 1})`}
-            inputId={apInputId(index)}
+            label={`${noun} workbook (Entity ${index + 1})`}
+            inputId={subledgerInputId(subledger, index)}
             file={file}
             onChange={(nextFile) => onApFileChange(index, nextFile)}
             onRemove={apFiles.length > MIN_AP_ENTITIES ? () => onRemoveApSlot(index) : undefined}
@@ -596,7 +637,7 @@ function ApDropZone({
 
       {apFiles.length < MAX_AP_ENTITIES ? (
         <button type="button" className="secondary-button" onClick={onAddApSlot}>
-          Add another AP entity ledger
+          {`Add another ${noun} entity ledger`}
         </button>
       ) : null}
 

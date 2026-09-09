@@ -23,10 +23,14 @@ afterEach(cleanup);
  * setter actually taking effect between renders) can be exercised end to end, not just asserted
  * against a single mocked setState call. */
 function BankGlHarness({
+  only = 'bank',
   initialBankFiles = [null, null],
   canonicalFields = [],
   accounts = [],
 }: {
+  /** Which half of the pair to render. Bank and GL are separate tabs on 1a (Phase 2) but stay one
+   * component, so dropped files are still routed by filename signature across both. */
+  only?: 'bank' | 'gl' | 'both';
   initialBankFiles?: (File | null)[];
   canonicalFields?: CanonicalField[];
   /** A-D1 (Issue #338): the registry the per-slot assignment control offers. Empty by default --
@@ -38,9 +42,30 @@ function BankGlHarness({
     initialBankFiles.map(() => null),
   );
   const [glFile, setGlFile] = useState<File | null>(null);
+  const shared = {
+    bankFiles,
+    glFile,
+    setBankFiles: setBankFiles as Dispatch<SetStateAction<(File | null)[]>>,
+    setGlFile,
+    accounts,
+    bankAccountIds,
+    setBankAccountIds,
+    canonicalFields,
+  };
+  // 'both' mounts the two panels over one state, which is what the real screen does across a tab
+  // switch -- App.tsx owns the file state above the panel, so switching tabs never remounts it.
+  if (only === 'both') {
+    return (
+      <>
+        <SourceDropZone mode="bank-gl" only="bank" {...shared} />
+        <SourceDropZone mode="bank-gl" only="gl" {...shared} />
+      </>
+    );
+  }
   return (
     <SourceDropZone
       mode="bank-gl"
+      only={only}
       bankFiles={bankFiles}
       glFile={glFile}
       setBankFiles={setBankFiles as Dispatch<SetStateAction<(File | null)[]>>}
@@ -63,7 +88,8 @@ function ApHarness({
   const [apFiles, setApFiles] = useState<(File | null)[]>(initialApFiles);
   return (
     <SourceDropZone
-      mode="billing"
+      mode="subledger"
+      subledger="ap"
       apFiles={apFiles}
       setApFiles={setApFiles as Dispatch<SetStateAction<(File | null)[]>>}
       canonicalFields={canonicalFields}
@@ -71,13 +97,21 @@ function ApHarness({
   );
 }
 
-describe('SourceDropZone (mode="bank-gl")', () => {
-  it('renders a slot per bank account plus one GL slot', () => {
+describe('SourceDropZone (bank panel)', () => {
+  it('renders a slot per bank account and no GL slot', () => {
+    // Phase 2 split bank and GL into separate tabs; the GL slot belongs to the GL panel now.
     render(<BankGlHarness />);
 
     expect(screen.getByLabelText('Bank workbook (Account 1)')).toBeInTheDocument();
     expect(screen.getByLabelText('Bank workbook (Account 2)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('GL workbook')).not.toBeInTheDocument();
+  });
+
+  it('renders only the GL slot on the GL panel', () => {
+    render(<BankGlHarness only="gl" />);
+
     expect(screen.getByLabelText('GL workbook')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Bank workbook (Account 1)')).not.toBeInTheDocument();
   });
 
   it('auto-assigns a bank-named file to the first empty bank slot via the merged input', async () => {
@@ -89,11 +123,19 @@ describe('SourceDropZone (mode="bank-gl")', () => {
     expect(screen.getByText('1111_bank-export.csv')).toBeInTheDocument();
   });
 
-  it('auto-assigns a gl-named file to the GL slot via the merged input', async () => {
+  it('still routes a gl-named file dropped on the bank panel to the GL slot', async () => {
+    // The two tabs share one component precisely so this keeps working: a user who drops the GL
+    // export on the Bank tab should not have the file silently go nowhere because they guessed the
+    // wrong tab. The bank panel does not render the GL slot, so the file's arrival is observed on
+    // the GL panel -- which is the user-visible consequence.
     const user = userEvent.setup();
-    render(<BankGlHarness />);
+    render(<BankGlHarness only="both" />);
 
-    await user.upload(screen.getByLabelText('Source workbooks'), makeFile('gl-export.csv'));
+    // Drop it on the bank panel's input, the one a user on the Bank tab would reach.
+    await user.upload(
+      screen.getAllByLabelText('Source workbooks')[0]!,
+      makeFile('gl-export.csv'),
+    );
 
     const glSlot = screen.getByLabelText('GL workbook').closest('.source-slot');
     expect(glSlot).toHaveTextContent('gl-export.csv');
@@ -305,11 +347,11 @@ describe('SourceDropZone header preview (Issue #250)', () => {
   });
 });
 
-describe('SourceDropZone (mode="billing")', () => {
+describe('SourceDropZone (subledger: AP)', () => {
   it('renders one AP entity slot by default', () => {
     render(<ApHarness />);
 
-    expect(screen.getByLabelText('AP/Billing workbook (Entity 1)')).toBeInTheDocument();
+    expect(screen.getByLabelText('AP workbook (Entity 1)')).toBeInTheDocument();
   });
 
   it('fills the first empty AP slot in drop order via the merged input', async () => {
@@ -333,7 +375,7 @@ describe('SourceDropZone (mode="billing")', () => {
       makeFile('E200_ap-export.csv'),
     );
 
-    expect(screen.getByLabelText('AP/Billing workbook (Entity 2)')).toBeInTheDocument();
+    expect(screen.getByLabelText('AP workbook (Entity 2)')).toBeInTheDocument();
     expect(screen.getByText('E200_ap-export.csv')).toBeInTheDocument();
   });
 
@@ -387,7 +429,7 @@ describe('SourceDropZone (mode="billing")', () => {
     await user.click(screen.getByRole('button', { name: 'Add another AP entity ledger' }));
     await user.click(screen.getByRole('button', { name: 'Add another AP entity ledger' }));
 
-    expect(screen.getByLabelText('AP/Billing workbook (Entity 4)')).toBeInTheDocument();
+    expect(screen.getByLabelText('AP workbook (Entity 4)')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Add another AP entity ledger' }),
     ).not.toBeInTheDocument();
@@ -399,11 +441,11 @@ describe('SourceDropZone (mode="billing")', () => {
     render(<ApHarness />);
 
     await user.upload(
-      screen.getByLabelText('AP/Billing workbook (Entity 1)'),
+      screen.getByLabelText('AP workbook (Entity 1)'),
       makeFile('E100_override.csv'),
     );
 
-    const slotOne = screen.getByLabelText('AP/Billing workbook (Entity 1)').closest('.source-slot');
+    const slotOne = screen.getByLabelText('AP workbook (Entity 1)').closest('.source-slot');
     expect(slotOne).toHaveTextContent('E100_override.csv');
   });
 
@@ -415,10 +457,10 @@ describe('SourceDropZone (mode="billing")', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Remove AP/Billing workbook (Entity 2)' }));
+    await user.click(screen.getByRole('button', { name: 'Remove AP workbook (Entity 2)' }));
 
-    expect(screen.queryByLabelText('AP/Billing workbook (Entity 2)')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('AP/Billing workbook (Entity 1)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('AP workbook (Entity 2)')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('AP workbook (Entity 1)')).toBeInTheDocument();
   });
 });
 

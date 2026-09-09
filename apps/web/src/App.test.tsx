@@ -736,9 +736,15 @@ const fillUploadInputs = async ({
       target: { files: [bankFile] },
     });
   });
+  // Phase 2 split bank and GL into separate source tabs, so the GL slot is no longer on the bank
+  // panel. Switching tabs here rather than dropping the GL file on the bank panel's merged input
+  // keeps this helper doing what a user does, and means these tests exercise the tab strip on
+  // every run instead of only where a test targets it deliberately.
+  fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
   fireEvent.change(screen.getByLabelText('GL workbook'), {
     target: { files: [glFile] },
   });
+  fireEvent.click(screen.getByRole('tab', { name: /Bank statements/ }));
 
   // Flush the account registry fetch's promise chain and the render it triggers, so each staged
   // statement carries its pre-selected assignment before the caller asserts anything.
@@ -1935,6 +1941,9 @@ describe('App', () => {
     });
     expect(screen.getAllByText('1111_bank.xlsx').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.xlsx').length).toBeGreaterThan(0);
+    // The GL file was routed to its own slot by filename even though it was dropped on the bank
+    // panel (Phase 2 kept detection shared across the two tabs) -- so it is visible on the GL tab.
+    fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
     expect(screen.getAllByText('gl.xlsx').length).toBeGreaterThan(0);
   });
 
@@ -1966,6 +1975,7 @@ describe('App', () => {
     });
     expect(screen.getAllByText('1111_bank.csv').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2222_bank.csv').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
     expect(screen.getAllByText('gl.csv').length).toBeGreaterThan(0);
   });
 
@@ -2874,8 +2884,9 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.queryByText('gl_export_2026-08.csv — Step 2 of 3')).not.toBeInTheDocument();
     });
-    // Reset back to the #153 default of two empty bank slots + one empty GL slot.
-    expect(screen.getAllByText('No file selected')).toHaveLength(3);
+    // Reset back to the #153 default of two empty bank slots. The GL slot resets too, but it lives
+    // on its own tab since Phase 2 and so is not part of this panel's count.
+    expect(screen.getAllByText('No file selected')).toHaveLength(2);
   });
 
   it('shows Screen 07 (all rows invalid) when every row fails Step 3 with zero rows importable', async () => {
@@ -3182,8 +3193,9 @@ describe('App', () => {
     });
 
     expect(screen.queryByText('UPLOAD_BANK_FILENAME_INVALID')).not.toBeInTheDocument();
-    // Staged into slot 1, so only the other two slots (1 bank + GL) are still empty.
-    expect(screen.getAllByText('No file selected')).toHaveLength(2);
+    // Staged into slot 1, so only the other bank slot is still empty -- the GL slot moved to its
+    // own tab in Phase 2 and is no longer part of this panel's count.
+    expect(screen.getAllByText('No file selected')).toHaveLength(1);
   });
 
   it('#153: starts with two bank slots, and "Add another bank statement" adds slots up to 4', () => {
@@ -3352,9 +3364,11 @@ describe('App', () => {
       expect(screen.getByLabelText('Source workbooks')).toBeInTheDocument();
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    // The files stay selected -- cancelling only aborts the in-flight transfer.
+    // The files stay selected -- cancelling only aborts the in-flight transfer. The GL file is
+    // still staged too; it is asserted on its own tab since Phase 2 moved the slot there.
     expect(screen.getByText('1111_bank-a.xlsx')).toBeInTheDocument();
     expect(screen.getByText('2222_bank-b.xlsx')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /General ledger/ }));
     expect(screen.getByText('gl.csv')).toBeInTheDocument();
   });
 
