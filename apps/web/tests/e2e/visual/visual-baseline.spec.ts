@@ -371,6 +371,25 @@ for (const width of widths) {
         },
       );
 
+      // The reason panels are this phase's most deliberated UI and had no visual coverage at all:
+      // the spec only ever sat on the bank tab, so AP, AR and Payroll shipped untested. They are
+      // also the most likely thing for a later phase to "helpfully" turn back into a disabled
+      // control, which [OBJECT] rule 27 forbids and which no unit test would catch as a *visual*
+      // regression. One capture covers the pattern; AP stands for all three, since they render
+      // through the same component and differ only in copy and hue.
+      await selectSourceTab(page, 'AP / Payments');
+      await expect(page.locator('#source-upload-form')).toHaveScreenshot(
+        `setup-reason-panel-${width}.png`,
+        {
+          ...screenshotOptions,
+          mask: [
+            page.getByLabel('Frequency'),
+            page.getByLabel('Month'),
+          ],
+        },
+      );
+      await selectSourceTab(page, 'Bank statements');
+
       await page.locator('.run-bar__overflow-trigger').click();
       await page.getByRole('button', { name: 'Rules', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Matching Rules' })).toBeVisible();
