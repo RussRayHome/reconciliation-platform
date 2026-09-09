@@ -2,6 +2,7 @@ import { createWorkbookFromRows } from '@recon/test-fixtures';
 
 import { expect, test } from '../fixtures';
 import { loginToApplication, openSetup, submitRunButton } from '../auth';
+import { assignBankAccounts, ensureBankAccountsRegistered } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
   createSampleBankFileValidationWorkbook,
@@ -24,6 +25,13 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
   ]);
 
   await loginToApplication(page);
+
+  // A-D1 (Issue #338): a statement can only be reconciled once it is assigned to a REGISTERED
+  // account, and a fresh database has none. The account numbers deliberately end in the same four
+  // digits as the filenames uploaded below -- a mismatch is a real, separate product behaviour
+  // (it demands an explicit confirmation before the merge), and this test is not about that path.
+  await ensureBankAccountsRegistered(page);
+
   await openSetup(page);
 
   const bankAccountBBuffer = await createWorkbookFromRows(bankHeaderOnlyFileValidationRows);
@@ -43,6 +51,11 @@ test('uploads workbooks and shows reconciliation results', async ({ page }) => {
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: glBuffer,
   });
+  // Assign each uploaded statement to its account. Until both are assigned the submit button stays
+  // disabled ("Assign every bank statement to a registered account"), which is what makes this
+  // step load-bearing rather than decorative.
+  await assignBankAccounts(page);
+
   await page.getByPlaceholder('OPERATING-001').fill('OPERATING-001');
   await page.getByLabel('Monthly reconciliation month').selectOption('March');
   await page.getByLabel('Reconciliation label').fill(`Monthly Recon for March ${currentYear}`);

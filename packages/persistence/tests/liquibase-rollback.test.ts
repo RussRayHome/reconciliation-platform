@@ -86,15 +86,17 @@ describe('Liquibase rollback', () => {
       // approval control: reconciliation_open_item.written_off_by plus a segregation-of-duty
       // trigger, and a reconciliation_user role CHECK widening -- again different tables), and 0076
       // (widens reconciliation_approval_request's subject_type CHECK to admit 'payeeAlias', #311 --
-      // a different table once more) all sit on top of it without touching
-      // the schema this test cares about, so rolling back 27 changesets (0076 down through 0050)
+      // a different table once more), and 0077 (adds reconciliation_account.last_four/
+      // gl_cash_account_code and run_source_file.account_id for A-D1's account registry and
+      // statement assignment, #338 -- different tables again) all sit on top of it without touching
+      // the schema this test cares about, so rolling back 28 changesets (0077 down through 0050)
       // lands on the same DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a
       // future changeset lands here, extend the count again rather than re-pinning this test to a
       // single changeset number. If two branches each add a changeset, they will each bump this
       // by one to the SAME value, git will treat those identical edits as agreement and merge them
       // without a conflict, and the result is one short. Re-derive the count from the changeset
       // files on disk after any merge; do not trust a clean auto-merge here.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=27');
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=28');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -109,7 +111,7 @@ describe('Liquibase rollback', () => {
 
     it('removes the changesets from the tracking table and restores it on reapply', async () => {
       // Checked after beforeAll's final `update` call re-applies everything -- this asserts the
-      // round trip (update -> rollback-count=27 -> update) lands back on the full changelog count,
+      // round trip (update -> rollback-count=28 -> update) lands back on the full changelog count,
       // not the count immediately after the rollback step (which beforeAll never captures).
       expect(await changelogCount(database!.pool)).toBe(changesetFileCount);
     });
@@ -207,7 +209,9 @@ describe('Liquibase rollback', () => {
       // DOES touch reconciliation_user -- it widens the role CHECK to add coo/ceo -- but the
       // assertions below read only the password/password_hash/role *columns*, which it leaves
       // alone, so its presence in the range is correct and unobserved rather than benign by luck.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=51');
+      // 0077 (A-D1's account registry columns, #338) likewise touches neither reconciliation_user
+      // nor the columns asserted below.
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=52');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

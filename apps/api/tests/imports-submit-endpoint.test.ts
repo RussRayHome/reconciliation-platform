@@ -78,6 +78,16 @@ interface CapturedRecordRow {
   source_type: string;
 }
 
+/** A-D1 (Issue #338): the two registered accounts these runs' statements are assigned to. Their
+ * last four match the `1111_bank.csv`/`2222_bank.csv` fixtures, so no filename disagreement is
+ * raised on the happy path. */
+const SUBMIT_ACCOUNT_IDS = [
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222',
+];
+const SUBMIT_ACCOUNT_LAST_FOUR = ['1111', '2222'];
+const SUBMIT_ACCOUNT_ASSIGNMENTS = SUBMIT_ACCOUNT_IDS.map((accountId) => ({ accountId }));
+
 const createFakeSubmitPool = () => {
   const importFiles: ImportFileRow[] = [];
   const runs: RunRow[] = [];
@@ -456,6 +466,26 @@ const createFakeSubmitPool = () => {
       return Promise.resolve({ rows: [], rowCount: 0 });
     }
 
+    // A-D1 (Issue #338): the upload path resolves each statement's assigned account against the
+    // registry before merging. Every id these tests send is registered to the caller's org.
+    if (text.includes('FROM reconciliation_account') && text.includes('id = ANY(')) {
+      const [organizationId, accountIds] = params as [string, string[]];
+      const rows = accountIds.map((accountId, index) => ({
+        id: accountId,
+        organization_id: organizationId,
+        account_identifier: SUBMIT_ACCOUNT_LAST_FOUR[index] ?? accountId,
+        display_name: null,
+        institution_name: null,
+        last_four: SUBMIT_ACCOUNT_LAST_FOUR[index] ?? null,
+        currency_code: 'USD',
+        gl_cash_account_code: null,
+        is_active: true,
+        created_at: new Date(0),
+        updated_at: new Date(0),
+      }));
+      return Promise.resolve({ rows, rowCount: rows.length });
+    }
+
     if (text === 'SELECT 1') {
       // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
       // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
@@ -534,6 +564,7 @@ const createRun = async (
     .field('label', 'Submit Test Run')
     .field('frequency', 'MONTHLY')
     .field('periodYear', '2026')
+    .field('bankAccountAssignments', JSON.stringify(SUBMIT_ACCOUNT_ASSIGNMENTS))
     .attach('bankFiles', files.bankFileA, { filename: '1111_bank.csv', contentType: 'text/csv' })
     .attach('bankFiles', files.bankFileB, { filename: '2222_bank.csv', contentType: 'text/csv' })
     .attach('glFile', files.glFile, { filename: 'gl.csv', contentType: 'text/csv' });

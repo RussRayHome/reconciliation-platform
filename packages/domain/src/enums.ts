@@ -300,6 +300,13 @@ export interface RolePermissions {
    *  (controller/vp-finance/cfo) are deliberately excluded -- they sit on the other side of this
    *  workflow's segregation of duty (reconciliation_run_segregation_of_duty_check, changeset 0042). */
   canSubmitImportRuns: boolean;
+  /** A-D1 (Issue #338): who may register, rename or deactivate a bank account. Bank accounts are
+   *  master data -- a statement can only be assigned to one that already exists -- so this tracks
+   *  `canSubmitImportRuns` exactly: whoever submits runs must be able to register the accounts
+   *  those runs reconcile, and nobody on the approval side of the segregation-of-duty boundary
+   *  gains a way to alter what a run is measured against. Reading the registry is deliberately not
+   *  gated: every role with application access needs account labels to interpret a run. */
+  canManageAccounts: boolean;
 }
 
 /**
@@ -316,6 +323,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: false,
     canSubmitImportRuns: false,
+    canManageAccounts: false,
   },
   'senior-analyst': {
     canAccessApplication: true,
@@ -324,6 +332,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: false,
     canSubmitImportRuns: true,
+    canManageAccounts: true,
   },
   'staff-accountant': {
     canAccessApplication: true,
@@ -332,6 +341,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: false,
     canSubmitImportRuns: false,
+    canManageAccounts: false,
   },
   controller: {
     canAccessApplication: true,
@@ -340,6 +350,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: true,
     canSubmitImportRuns: false,
+    canManageAccounts: false,
   },
   'vp-finance': {
     canAccessApplication: true,
@@ -348,6 +359,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: true,
     canSubmitImportRuns: false,
+    canManageAccounts: false,
   },
   cfo: {
     canAccessApplication: true,
@@ -356,6 +368,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: true,
     canSubmitImportRuns: false,
+    canManageAccounts: false,
   },
   coo: {
     canAccessApplication: true,
@@ -364,6 +377,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: true,
     canSubmitImportRuns: false,
+    canManageAccounts: false,
   },
   ceo: {
     canAccessApplication: true,
@@ -372,6 +386,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: false,
     canApprove: true,
     canSubmitImportRuns: false,
+    canManageAccounts: false,
   },
   admin: {
     canAccessApplication: true,
@@ -380,6 +395,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: true,
     canApprove: true,
     canSubmitImportRuns: true,
+    canManageAccounts: true,
   },
   superuser: {
     canAccessApplication: true,
@@ -388,6 +404,7 @@ export const rolePermissionsByRole: Record<UserRole, RolePermissions> = {
     canAccessRunBook: true,
     canApprove: true,
     canSubmitImportRuns: true,
+    canManageAccounts: true,
   },
 };
 

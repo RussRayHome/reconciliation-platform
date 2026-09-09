@@ -3,7 +3,6 @@ import { formatFileSize } from '../lib/formatFileSize';
 export type RejectedUploadCode =
   | 'UPLOAD_EXTENSION_UNSUPPORTED'
   | 'UPLOAD_SIZE_EXCEEDED'
-  | 'UPLOAD_BANK_FILENAME_INVALID'
   | 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED'
   | 'UPLOAD_AP_FILENAME_INVALID'
   | 'UPLOAD_AP_ENTITY_LIMIT_REACHED';
@@ -46,10 +45,6 @@ const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }
   UPLOAD_SIZE_EXCEEDED: {
     label: 'UPLOAD_SIZE_EXCEEDED · limit 50 MB',
     body: 'Split the export by period, or switch the run frequency to Annual and import per quarter.',
-  },
-  UPLOAD_BANK_FILENAME_INVALID: {
-    label: 'UPLOAD_BANK_FILENAME_INVALID',
-    body: 'Bank file names must start with the account number (or its last 4 digits) followed by "-" or "_", e.g. "4321_bank-export.csv".',
   },
   UPLOAD_BANK_ACCOUNT_LIMIT_REACHED: {
     label: 'UPLOAD_BANK_ACCOUNT_LIMIT_REACHED',

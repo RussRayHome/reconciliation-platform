@@ -16,6 +16,10 @@ export const routePaths = {
   exceptions: '/exceptions',
   export: '/export',
   openItemsSchedule: '/open-items',
+  /** A-D1 (Issue #338): the bank account registry. Named `bankAccounts` and pathed `/accounts`
+   * to keep it distinct from the `account*` routes below, which are the signed-in user's own
+   * profile/security settings, not the organization's bank accounts. */
+  bankAccounts: '/accounts',
   mappingProfiles: '/mapping/profiles',
   mappingCreate: '/mapping/create',
   mappingVersions: '/mapping/versions',

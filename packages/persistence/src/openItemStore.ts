@@ -12,6 +12,7 @@ import type {
 } from '@recon/domain';
 import { canApproveWriteOff, writeOffBandForAmount } from '@recon/domain';
 
+import { UnknownReconciliationAccountError } from './accountStore';
 import { runInTenantScope } from './postgres';
 
 /** One account's roll-forward snapshot, frozen at period close (PR E.2) -- the persisted
@@ -110,24 +111,29 @@ export class PostgresOpenItemStore {
    * `getCarryForwardEnabled`'s own doc comment for why). */
   constructor(private readonly pool: Pool) {}
 
-  /** Resolves `accountIdentifier` to a `reconciliation_account.id`, creating the row if this is
-   * the first time this organization has seen that identifier. The `DO UPDATE SET` (rather than
-   * `DO NOTHING`) is the standard trick to make `RETURNING id` also work on the conflict path --
-   * a plain `DO NOTHING` returns no row at all when the account already existed. */
-  private async findOrCreateAccount(
+  /**
+   * Asserts that `accountId` is a `reconciliation_account.id` this organization owns.
+   *
+   * This replaced a find-or-create (A-D1, Issue #338/#343). Creating an account here meant any
+   * string reaching the roll-forward path minted a tenant-scoped account row as a side effect --
+   * the side door that made a filename-derived last-four behave like an identity. Registration is
+   * now the only way an account comes into existence, so an unresolvable id is a fault to raise,
+   * not a row to invent.
+   */
+  private async requireAccountId(
     client: PoolClient,
     organizationId: string,
-    accountIdentifier: string,
+    accountId: string,
   ): Promise<string> {
     const result = await client.query<{ id: string }>(
-      `INSERT INTO reconciliation_account (id, organization_id, account_identifier)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (organization_id, account_identifier)
-         DO UPDATE SET account_identifier = EXCLUDED.account_identifier
-       RETURNING id`,
-      [randomUUID(), organizationId, accountIdentifier],
+      `SELECT id FROM reconciliation_account WHERE organization_id = $1 AND id = $2`,
+      [organizationId, accountId],
     );
-    return result.rows[0]!.id;
+    const id = result.rows[0]?.id;
+    if (!id) {
+      throw new UnknownReconciliationAccountError(accountId);
+    }
+    return id;
   }
 
   /**
@@ -145,7 +151,7 @@ export class PostgresOpenItemStore {
       let carriedForward = 0;
 
       for (const candidate of input.candidates) {
-        const accountId = await this.findOrCreateAccount(
+        const accountId = await this.requireAccountId(
           client,
           organizationId,
           candidate.accountIdentifier,
@@ -259,19 +265,24 @@ export class PostgresOpenItemStore {
 
   /**
    * Loads every still-`OPEN` item for the given accounts (PR D.1) -- the read side of
-   * `projectOpenItems`. `accountIdentifiers` is raw free text (the run's own distinct
-   * `NormalizedTransaction.accountIdentifier` values, not resolved account UUIDs); the join to
-   * `reconciliation_account` resolves it the same way `findOrCreateAccount` does on the write
-   * side. `amount`/`original_transaction_date` get the same `::text`/`Number()` treatment as
-   * every other numeric/date column this store touches -- `pg` returns NUMERIC as a string and
-   * DATE as a `Date` object by default, neither of which matches `OpenItemRecord`'s declared
-   * shape without an explicit cast.
+   * `projectOpenItems`. `accountIds` are `reconciliation_account.id` values, which since A-D1
+   * (Issue #338) is what `NormalizedTransaction.accountIdentifier` carries.
+   *
+   * The returned `accountIdentifier` is the account *id*, not `reconciliation_account.
+   * account_identifier`, and that is deliberate: these records are seeded straight back into the
+   * run's transaction list by `seedCarriedForwardTransactions`, where they must share one account
+   * identity with this run's fresh transactions. Handing back the human identifier here would give
+   * a carried item a different natural key than the transaction it is meant to pair with, so it
+   * would re-open every period instead of matching. The UI-facing listings further down this file
+   * still return the human identifier -- they are read for display, not fed back into matching.
+   *
+   * `amount`/`original_transaction_date` get the same `::text`/`Number()` treatment as every other
+   * numeric/date column this store touches -- `pg` returns NUMERIC as a string and DATE as a
+   * `Date` object by default, neither of which matches `OpenItemRecord`'s declared shape without
+   * an explicit cast.
    */
-  async loadOpenItems(
-    organizationId: string,
-    accountIdentifiers: string[],
-  ): Promise<OpenItemRecord[]> {
-    if (accountIdentifiers.length === 0) {
+  async loadOpenItems(organizationId: string, accountIds: string[]): Promise<OpenItemRecord[]> {
+    if (accountIds.length === 0) {
       return [];
     }
 
@@ -289,15 +300,14 @@ export class PostgresOpenItemStore {
         reference_number: string | null;
         description_snapshot: string | null;
       }>(
-        `SELECT oi.id, a.account_identifier, oi.source_system, oi.category, oi.natural_key,
-                oi.natural_key_tier,
+        `SELECT oi.id, oi.account_id AS account_identifier, oi.source_system, oi.category,
+                oi.natural_key, oi.natural_key_tier,
                 oi.original_transaction_date::text AS original_transaction_date,
                 oi.amount, oi.check_number, oi.reference_number, oi.description_snapshot
            FROM reconciliation_open_item oi
-           JOIN reconciliation_account a ON a.id = oi.account_id
           WHERE oi.organization_id = $1 AND oi.status = 'OPEN'
-            AND a.account_identifier = ANY($2::text[])`,
-        [organizationId, accountIdentifiers],
+            AND oi.account_id = ANY($2::uuid[])`,
+        [organizationId, accountIds],
       );
 
       return result.rows.map((row) => ({
@@ -383,9 +393,9 @@ export class PostgresOpenItemStore {
 
   /**
    * Links a run to the real accounts its own normalized transactions touch (PR E.1's prerequisite
-   * fix, not a plan work item by name -- see this method's own investigation note below). Upserts
-   * each `reconciliation_account` row (same `findOrCreateAccount` used by `projectOpenItems`) and
-   * links it via `reconciliation_run_account` (PR A.2, changeset 0060).
+   * fix, not a plan work item by name -- see this method's own investigation note below). Asserts
+   * each account is one this organization has registered (same `requireAccountId` used by
+   * `projectOpenItems`) and links it via `reconciliation_run_account` (PR A.2, changeset 0060).
    *
    * `reconciliation_run_account` was created "unused on landing" in PR A -- its own changeset
    * backfilled one row per *existing* run at migration time, but nothing in the application ever
@@ -398,9 +408,9 @@ export class PostgresOpenItemStore {
    */
   async linkRunAccounts(
     organizationId: string,
-    input: { reconciliationRunId: string; accountIdentifiers: string[] },
+    input: { reconciliationRunId: string; accountIds: string[] },
   ): Promise<void> {
-    if (input.accountIdentifiers.length === 0) {
+    if (input.accountIds.length === 0) {
       return;
     }
     await runInTenantScope(this.pool, organizationId, async (client) => {
@@ -424,8 +434,8 @@ export class PostgresOpenItemStore {
       }
       const isTerminalGood = run.status === 'RECONCILED' || run.status === 'CLOSED';
 
-      for (const accountIdentifier of input.accountIdentifiers) {
-        const accountId = await this.findOrCreateAccount(client, organizationId, accountIdentifier);
+      for (const candidateAccountId of input.accountIds) {
+        const accountId = await this.requireAccountId(client, organizationId, candidateAccountId);
         await client.query(
           `INSERT INTO reconciliation_run_account
              (id, organization_id, reconciliation_run_id, account_id, period_year, period_month,

@@ -7,6 +7,8 @@
 # Routes requiring a path parameter (e.g. /api/reconciliation/:id) are intentionally excluded
 # -- not a real URL until backed by a specific resource id.
 
+/api/accounts
+/api/accounts/suggest
 /api/aliases
 /api/approvals
 /api/approvals/counts

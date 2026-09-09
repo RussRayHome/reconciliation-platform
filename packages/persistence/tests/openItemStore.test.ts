@@ -12,8 +12,73 @@ let runtimePool: Pool;
 let startupError: Error | null = null;
 let defaultOrganizationId: string;
 
+/**
+ * A-D1 (Issue #338): accounts exist because they were registered, so the tests register the ones
+ * they use up front and address them by their real `reconciliation_account.id`. `PostgresOpenItem
+ * Store` no longer creates an account from whatever identifier arrives -- that side door is what
+ * A-D1 closed -- so a candidate naming an unregistered account is now an error, not a new row.
+ */
+const registeredAccountIds = new Map<string, string>();
+
+/** The registered account id for a friendly test identifier. Throws rather than returning
+ * undefined so a typo fails as a missing registration instead of as a silent SQL null.
+ *
+ * Named `accountId`, not `account`: several tests bind a local `const account` to the id they are
+ * working with, and a helper of the same name would be shadowed inside exactly those blocks. */
+const accountId = (identifier: string): string => {
+  const id = registeredAccountIds.get(identifier);
+  if (!id) {
+    throw new Error(`Test account "${identifier}" was never registered -- add it to TEST_ACCOUNTS.`);
+  }
+  return id;
+};
+
+const TEST_ACCOUNTS = [
+  'OPEN-ITEM-STORE-1',
+  'OPEN-ITEM-STORE-2',
+  'OPEN-ITEM-STORE-3',
+  'OPEN-ITEM-STORE-CLEAR-1',
+  'OPEN-ITEM-STORE-CLEAR-2',
+  'OPEN-ITEM-STORE-CLEAR-3',
+  'OPEN-ITEM-STORE-LOAD-1',
+  'OPEN-ITEM-STORE-LOAD-2',
+  'OPEN-ITEM-STORE-TWO-PERIOD',
+  'LINK-ACCOUNT-1',
+  'LINK-ACCOUNT-2',
+  'CLOSE-SNAPSHOT-1',
+  'CLOSE-TERMINAL-GOOD-1',
+  'REOPEN-STALE-1',
+  'ROLLFORWARD-DETAIL-1',
+  'SCHEDULE-1',
+  'SCHEDULE-2',
+  'WRITEOFF-OPEN-1',
+  'WRITEOFF-NOT-OPEN-1',
+  'WRITEOFF-BAND-OVER',
+  'WRITEOFF-BAND-CFO',
+  'WRITEOFF-BAND-EXACT',
+  'WRITEOFF-SOD-SELF',
+  'WRITEOFF-SOD-OTHER',
+] as const;
+
+const registerTestAccounts = async (): Promise<void> => {
+  for (const identifier of TEST_ACCOUNTS) {
+    const id = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO reconciliation_account (id, organization_id, account_identifier, last_four)
+       VALUES ($1, $2, $3, RIGHT(REGEXP_REPLACE($3, '\\D', '', 'g'), 4))
+       ON CONFLICT (organization_id, account_identifier) DO NOTHING`,
+      [id, defaultOrganizationId, identifier],
+    );
+    const resolved = await pool.query<{ id: string }>(
+      'SELECT id FROM reconciliation_account WHERE organization_id = $1 AND account_identifier = $2',
+      [defaultOrganizationId, identifier],
+    );
+    registeredAccountIds.set(identifier, resolved.rows[0]!.id);
+  }
+};
+
 const buildCandidate = (overrides: Partial<OpenItemCandidate> = {}): OpenItemCandidate => ({
-  accountIdentifier: 'OPEN-ITEM-STORE-1',
+  accountIdentifier: accountId('OPEN-ITEM-STORE-1'),
   sourceSystem: 'gl',
   category: 'OutstandingCheck',
   naturalKey: 'check:OPEN-ITEM-STORE-1:1001',
@@ -92,6 +157,7 @@ describe('PostgresOpenItemStore', () => {
         throw new Error("Expected migrations to seed a 'Default Organization' row.");
       }
       defaultOrganizationId = organizationId;
+      await registerTestAccounts();
 
       await pool.query(
         `INSERT INTO reconciliation_user (user_name, first_name, last_name, password_hash, role, organization_id)
@@ -164,7 +230,7 @@ describe('PostgresOpenItemStore', () => {
     if (startupError) throw startupError;
 
     const store = new PostgresOpenItemStore(runtimePool);
-    const candidate = buildCandidate({ accountIdentifier: 'OPEN-ITEM-STORE-2', naturalKey: 'check:OPEN-ITEM-STORE-2:2001' });
+    const candidate = buildCandidate({ accountIdentifier: accountId('OPEN-ITEM-STORE-2'), naturalKey: 'check:OPEN-ITEM-STORE-2:2001' });
     // Same jobId both times -- this is what "finalize runs twice for the same job" (a retry)
     // actually looks like, not two different jobs each opening the item once.
     const jobId = await insertJob();
@@ -198,7 +264,7 @@ describe('PostgresOpenItemStore', () => {
     expect(eventTypes.rows.map((row) => row.event_type)).toEqual(['OPENED', 'CARRIED_FORWARD']);
   });
 
-  it('reuses the same reconciliation_account row across two separate candidates for the same identifier', async () => {
+  it('reuses the same reconciliation_account row across two separate candidates for the same account', async () => {
     if (startupError) throw startupError;
 
     const store = new PostgresOpenItemStore(runtimePool);
@@ -206,12 +272,12 @@ describe('PostgresOpenItemStore', () => {
       jobId: await insertJob(),
       candidates: [
         buildCandidate({
-          accountIdentifier: 'OPEN-ITEM-STORE-3',
+          accountIdentifier: accountId('OPEN-ITEM-STORE-3'),
           naturalKey: 'check:OPEN-ITEM-STORE-3:3001',
           checkNumber: '3001',
         }),
         buildCandidate({
-          accountIdentifier: 'OPEN-ITEM-STORE-3',
+          accountIdentifier: accountId('OPEN-ITEM-STORE-3'),
           naturalKey: 'check:OPEN-ITEM-STORE-3:3002',
           checkNumber: '3002',
         }),
@@ -222,6 +288,35 @@ describe('PostgresOpenItemStore', () => {
       "SELECT COUNT(*)::text AS count FROM reconciliation_account WHERE account_identifier = 'OPEN-ITEM-STORE-3'",
     );
     expect(accountCount.rows[0]?.count).toBe('1');
+  });
+
+  it('rejects a candidate naming an account this organization has not registered (A-D1)', async () => {
+    if (startupError) throw startupError;
+
+    // The behaviour this replaces: any string reaching projectOpenItems minted a
+    // reconciliation_account row as a side effect. Registration is the only way an account comes
+    // into existence now, so an unknown id has to fail loudly rather than quietly become real.
+    const unregisteredAccountId = crypto.randomUUID();
+    const store = new PostgresOpenItemStore(runtimePool);
+
+    await expect(
+      store.projectOpenItems(defaultOrganizationId, {
+        jobId: await insertJob(),
+        candidates: [
+          buildCandidate({
+            accountIdentifier: unregisteredAccountId,
+            naturalKey: 'check:UNREGISTERED:9001',
+            checkNumber: '9001',
+          }),
+        ],
+      }),
+    ).rejects.toThrow(/No registered account/);
+
+    const created = await pool.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM reconciliation_account WHERE id = $1',
+      [unregisteredAccountId],
+    );
+    expect(created.rows[0]?.count).toBe('0');
   });
 
   it('markRunReconciled flips reconciliation_run.status to RECONCILED and is idempotent', async () => {
@@ -323,25 +418,25 @@ describe('PostgresOpenItemStore', () => {
       jobId: await insertJob(),
       candidates: [
         buildCandidate({
-          accountIdentifier: 'OPEN-ITEM-STORE-LOAD-1',
+          accountIdentifier: accountId('OPEN-ITEM-STORE-LOAD-1'),
           naturalKey: 'check:OPEN-ITEM-STORE-LOAD-1:4001',
           checkNumber: '4001',
           amount: -333.33,
         }),
         // Different account -- must not come back when only LOAD-1 is requested.
         buildCandidate({
-          accountIdentifier: 'OPEN-ITEM-STORE-LOAD-2',
+          accountIdentifier: accountId('OPEN-ITEM-STORE-LOAD-2'),
           naturalKey: 'check:OPEN-ITEM-STORE-LOAD-2:4002',
           checkNumber: '4002',
         }),
       ],
     });
 
-    const loaded = await store.loadOpenItems(defaultOrganizationId, ['OPEN-ITEM-STORE-LOAD-1']);
+    const loaded = await store.loadOpenItems(defaultOrganizationId, [accountId('OPEN-ITEM-STORE-LOAD-1')]);
 
     expect(loaded).toHaveLength(1);
     expect(loaded[0]).toMatchObject({
-      accountIdentifier: 'OPEN-ITEM-STORE-LOAD-1',
+      accountIdentifier: accountId('OPEN-ITEM-STORE-LOAD-1'),
       sourceSystem: 'gl',
       category: 'OutstandingCheck',
       naturalKey: 'check:OPEN-ITEM-STORE-LOAD-1:4001',
@@ -368,7 +463,7 @@ describe('PostgresOpenItemStore', () => {
       jobId,
       candidates: [
         buildCandidate({
-          accountIdentifier: 'OPEN-ITEM-STORE-CLEAR-1',
+          accountIdentifier: accountId('OPEN-ITEM-STORE-CLEAR-1'),
           naturalKey: 'check:OPEN-ITEM-STORE-CLEAR-1:5001',
           checkNumber: '5001',
         }),
@@ -426,7 +521,9 @@ describe('PostgresOpenItemStore', () => {
     expect(events.rows[1]).toMatchObject({ from_status: 'OPEN', to_status: 'CLEARED' });
 
     // No longer OPEN -- must not come back from loadOpenItems.
-    expect(await store.loadOpenItems(defaultOrganizationId, ['OPEN-ITEM-STORE-CLEAR-1'])).toEqual([]);
+    expect(
+      await store.loadOpenItems(defaultOrganizationId, [accountId('OPEN-ITEM-STORE-CLEAR-1')]),
+    ).toEqual([]);
   });
 
   it('clearOpenItems is idempotent: clearing an already-CLEARED item is a harmless no-op', async () => {
@@ -438,7 +535,7 @@ describe('PostgresOpenItemStore', () => {
       jobId,
       candidates: [
         buildCandidate({
-          accountIdentifier: 'OPEN-ITEM-STORE-CLEAR-2',
+          accountIdentifier: accountId('OPEN-ITEM-STORE-CLEAR-2'),
           naturalKey: 'check:OPEN-ITEM-STORE-CLEAR-2:5002',
           checkNumber: '5002',
         }),
@@ -477,7 +574,7 @@ describe('PostgresOpenItemStore', () => {
       jobId,
       candidates: [
         buildCandidate({
-          accountIdentifier: 'OPEN-ITEM-STORE-CLEAR-3',
+          accountIdentifier: accountId('OPEN-ITEM-STORE-CLEAR-3'),
           naturalKey: 'check:OPEN-ITEM-STORE-CLEAR-3:5003',
           checkNumber: '5003',
         }),
@@ -516,7 +613,7 @@ describe('PostgresOpenItemStore', () => {
     if (startupError) throw startupError;
 
     const store = new PostgresOpenItemStore(runtimePool);
-    const account = 'OPEN-ITEM-STORE-TWO-PERIOD';
+    const account = accountId('OPEN-ITEM-STORE-TWO-PERIOD');
 
     // Period 1: the run detects one outstanding check and projects it as OPEN.
     const period1JobId = await insertJob();
@@ -590,12 +687,12 @@ describe('PostgresOpenItemStore', () => {
 
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: runId,
-        accountIdentifiers: ['LINK-ACCOUNT-1', 'LINK-ACCOUNT-2'],
+        accountIds: [accountId('LINK-ACCOUNT-1'), accountId('LINK-ACCOUNT-2')],
       });
       // Same call again -- must not duplicate or throw.
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: runId,
-        accountIdentifiers: ['LINK-ACCOUNT-1', 'LINK-ACCOUNT-2'],
+        accountIds: [accountId('LINK-ACCOUNT-1'), accountId('LINK-ACCOUNT-2')],
       });
 
       const linked = await pool.query<{ account_identifier: string }>(
@@ -620,7 +717,7 @@ describe('PostgresOpenItemStore', () => {
       await expect(
         store.linkRunAccounts(defaultOrganizationId, {
           reconciliationRunId: runId,
-          accountIdentifiers: [],
+          accountIds: [],
         }),
       ).resolves.toBeUndefined();
     });
@@ -689,7 +786,7 @@ describe('PostgresOpenItemStore', () => {
       const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: runId,
-        accountIdentifiers: ['CLOSE-TERMINAL-GOOD-1'],
+        accountIds: [accountId('CLOSE-TERMINAL-GOOD-1')],
       });
 
       const beforeClose = await pool.query<{ is_terminal_good: boolean }>(
@@ -716,14 +813,14 @@ describe('PostgresOpenItemStore', () => {
 
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: runId,
-        accountIdentifiers: ['CLOSE-SNAPSHOT-1'],
+        accountIds: [accountId('CLOSE-SNAPSHOT-1')],
       });
       await store.projectOpenItems(defaultOrganizationId, {
         jobId,
         reconciliationRunId: runId,
         candidates: [
           buildCandidate({
-            accountIdentifier: 'CLOSE-SNAPSHOT-1',
+            accountIdentifier: accountId('CLOSE-SNAPSHOT-1'),
             naturalKey: 'check:CLOSE-SNAPSHOT-1:7001',
             checkNumber: '7001',
             amount: -125.5,
@@ -743,6 +840,10 @@ describe('PostgresOpenItemStore', () => {
       // abs()-ed like SummaryMetrics.rollForward's UI-facing exposure figures -- a genuine dollar
       // rollforward, not an exposure count. The candidate's amount is -125.5.
       expect(result.snapshots[0]).toMatchObject({
+        // A snapshot carries both: `accountId` is the identity, `accountIdentifier` the human
+        // label it is displayed under. A-D1 makes the id authoritative; it does not make the
+        // label go away.
+        accountId: accountId('CLOSE-SNAPSHOT-1'),
         accountIdentifier: 'CLOSE-SNAPSHOT-1',
         openingCount: 0,
         openingAmount: 0,
@@ -863,7 +964,7 @@ describe('PostgresOpenItemStore', () => {
       if (startupError) throw startupError;
 
       const store = new PostgresOpenItemStore(runtimePool);
-      const account = 'REOPEN-STALE-1';
+      const account = accountId('REOPEN-STALE-1');
 
       const januaryRunId = await insertRun({
         status: 'RECONCILED',
@@ -889,15 +990,15 @@ describe('PostgresOpenItemStore', () => {
 
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: januaryRunId,
-        accountIdentifiers: [account],
+        accountIds: [account],
       });
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: februaryRunId,
-        accountIdentifiers: [account],
+        accountIds: [account],
       });
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: marchRunId,
-        accountIdentifiers: [account],
+        accountIds: [account],
       });
 
       await store.closeRun(defaultOrganizationId, { runId: januaryRunId, actorUsername: 'close-approver' });
@@ -947,7 +1048,7 @@ describe('PostgresOpenItemStore', () => {
         jobId: await insertJob(),
         candidates: [
           buildCandidate({
-            accountIdentifier: 'WRITEOFF-NOT-OPEN-1',
+            accountIdentifier: accountId('WRITEOFF-NOT-OPEN-1'),
             naturalKey: 'check:WRITEOFF-NOT-OPEN-1:8001',
             checkNumber: '8001',
           }),
@@ -979,7 +1080,7 @@ describe('PostgresOpenItemStore', () => {
         jobId: await insertJob(),
         candidates: [
           buildCandidate({
-            accountIdentifier: 'WRITEOFF-OPEN-1',
+            accountIdentifier: accountId('WRITEOFF-OPEN-1'),
             naturalKey: 'check:WRITEOFF-OPEN-1:8002',
             checkNumber: '8002',
           }),
@@ -1037,9 +1138,12 @@ describe('PostgresOpenItemStore', () => {
   });
 
   describe('writeOffOpenItem approval controls (Issue #283)', () => {
-    /** Projects one candidate and returns its open item id. */
+    /** Projects one candidate and returns its open item id. `account` is the friendly test
+     * identifier; the candidate and the lookup both address the registered account by its
+     * `reconciliation_account.id`, since A-D1 (Issue #338) made the id the only thing that
+     * resolves an account. */
     const openItemFor = async (
-      account: string,
+      account: (typeof TEST_ACCOUNTS)[number],
       overrides: Parameters<typeof buildCandidate>[0] = {},
       reconciliationRunId?: string,
     ): Promise<string> => {
@@ -1049,7 +1153,7 @@ describe('PostgresOpenItemStore', () => {
         ...(reconciliationRunId ? { reconciliationRunId } : {}),
         candidates: [
           buildCandidate({
-            accountIdentifier: account,
+            accountIdentifier: accountId(account),
             naturalKey: `check:${account}:9000`,
             checkNumber: '9000',
             ...overrides,
@@ -1057,10 +1161,8 @@ describe('PostgresOpenItemStore', () => {
         ],
       });
       const row = await pool.query<{ id: string }>(
-        `SELECT oi.id FROM reconciliation_open_item oi
-           JOIN reconciliation_account a ON a.id = oi.account_id
-          WHERE a.account_identifier = $1`,
-        [account],
+        `SELECT id FROM reconciliation_open_item WHERE account_id = $1`,
+        [accountId(account)],
       );
       return row.rows[0]!.id;
     };
@@ -1196,7 +1298,8 @@ describe('PostgresOpenItemStore', () => {
       if (startupError) throw startupError;
 
       const store = new PostgresOpenItemStore(runtimePool);
-      const account = 'ROLLFORWARD-DETAIL-1';
+      const accountLabel = 'ROLLFORWARD-DETAIL-1';
+      const account = accountId(accountLabel);
 
       // February closes first, with its own item still open at close -- gives that item a real
       // "opening" pedigree for March. Periods must close in chronological order: an item left
@@ -1211,7 +1314,7 @@ describe('PostgresOpenItemStore', () => {
       });
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: priorRunId,
-        accountIdentifiers: [account],
+        accountIds: [account],
       });
       await store.projectOpenItems(defaultOrganizationId, {
         jobId: await insertJob(),
@@ -1235,7 +1338,7 @@ describe('PostgresOpenItemStore', () => {
       const runId = await insertRun({ status: 'RECONCILED', submittedByUsername: 'close-submitter' });
       await store.linkRunAccounts(defaultOrganizationId, {
         reconciliationRunId: runId,
-        accountIdentifiers: [account],
+        accountIds: [account],
       });
       await store.projectOpenItems(defaultOrganizationId, {
         jobId: await insertJob(),
@@ -1251,9 +1354,7 @@ describe('PostgresOpenItemStore', () => {
       });
 
       const priorItemRow = await pool.query<{ id: string }>(
-        `SELECT oi.id FROM reconciliation_open_item oi
-           JOIN reconciliation_account a ON a.id = oi.account_id
-          WHERE a.account_identifier = $1 AND oi.natural_key = $2`,
+        `SELECT id FROM reconciliation_open_item WHERE account_id = $1 AND natural_key = $2`,
         [account, `check:${account}:9002`],
       );
       await store.clearOpenItems(defaultOrganizationId, {
@@ -1270,7 +1371,8 @@ describe('PostgresOpenItemStore', () => {
       const result = await store.getRunRollforward(defaultOrganizationId, runId);
       expect(result?.snapshots).toHaveLength(1);
       expect(result?.snapshots[0]).toMatchObject({
-        accountIdentifier: account,
+        accountId: account,
+        accountIdentifier: accountLabel,
         newCount: 1,
         newAmount: -50,
         clearedCount: 1,
@@ -1290,7 +1392,7 @@ describe('PostgresOpenItemStore', () => {
         jobId: await insertJob(),
         candidates: [
           buildCandidate({
-            accountIdentifier: 'SCHEDULE-1',
+            accountIdentifier: accountId('SCHEDULE-1'),
             naturalKey: 'check:SCHEDULE-1:1001',
             checkNumber: '1001',
             originalTransactionDate: '2026-01-01',
@@ -1299,6 +1401,10 @@ describe('PostgresOpenItemStore', () => {
         ],
       });
 
+      // `listOpenItemsSchedule` is the UI-facing read: it both filters and returns on the human
+      // `reconciliation_account.account_identifier`, not the account id -- unlike `loadOpenItems`,
+      // whose output is seeded back into matching. `GET /api/reconciliation/open-items` passes the
+      // run's displayed account label straight through, so this is the contract that route needs.
       const items = await store.listOpenItemsSchedule(defaultOrganizationId, {
         accountIdentifier: 'SCHEDULE-1',
       });
@@ -1323,7 +1429,7 @@ describe('PostgresOpenItemStore', () => {
         jobId: await insertJob(),
         candidates: [
           buildCandidate({
-            accountIdentifier: 'SCHEDULE-2',
+            accountIdentifier: accountId('SCHEDULE-2'),
             naturalKey: 'check:SCHEDULE-2:2001',
             checkNumber: '2001',
           }),

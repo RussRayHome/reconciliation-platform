@@ -11,7 +11,7 @@ import {
 import {
   defaultReconciliationConfig,
   resolveReconciliationConfig,
-  sampleAccountOverrides,
+  sampleAccountOverridesForContext,
 } from '@recon/config';
 
 import type { PostgresOpenItemStore, PostgresReconciliationLifecycleStore } from '@recon/persistence';
@@ -301,18 +301,22 @@ const runReconciliationPipeline = async ({
     // runs. PR E's close operation needs it to enumerate a run's accounts, and it belongs here
     // regardless of carry-forward enablement (E doesn't depend on D). Best-effort, matching every
     // other rollforward side path in this pipeline.
-    const accountIdentifiers = [
+    // Since A-D1 (Issue #338) NormalizedTransaction.accountIdentifier carries the registered
+    // reconciliation_account.id the operator assigned the statement to, so these are account ids,
+    // not free text. Before that they were undefined on every transaction, which is why this set
+    // was always empty and linkRunAccounts never once fired.
+    const accountIds = [
       ...new Set(
         normalizedTransactions
           .map((t) => t.accountIdentifier)
           .filter((value): value is string => Boolean(value)),
       ),
     ];
-    if (openItemStore && reconciliationRunId && accountIdentifiers.length > 0) {
+    if (openItemStore && reconciliationRunId && accountIds.length > 0) {
       try {
         await openItemStore.linkRunAccounts(organizationId, {
           reconciliationRunId,
-          accountIdentifiers,
+          accountIds,
         });
       } catch (linkError) {
         log.warn({
@@ -332,7 +336,7 @@ const runReconciliationPipeline = async ({
     // nothing carries in this run (logged, not silent).
     if (openItemStore && carryForwardDecision?.enabled) {
       try {
-        const openItems = await openItemStore.loadOpenItems(organizationId, accountIdentifiers);
+        const openItems = await openItemStore.loadOpenItems(organizationId, accountIds);
         const { carriedTransactions, skippedAlreadyPresent } = seedCarriedForwardTransactions(
           runId,
           openItems,
@@ -773,7 +777,11 @@ export const executeReconciliationFromNormalized = async ({
   });
 
   const baseConfig =
-    resolveReconciliationConfig(accountIdentifier, sampleAccountOverrides) ??
+    // A-D1 (Issue #338): sample overrides are confined to a designated sample context. In
+    // production this resolves an empty override list, so a tenant whose account number
+    // happens to collide with a demo identifier gets the production default, not demo
+    // thresholds. Previously harmless only because accountIdentifier was never populated.
+    resolveReconciliationConfig(accountIdentifier, sampleAccountOverridesForContext()) ??
     defaultReconciliationConfig;
 
   // Issue #260. Overrides are applied to the config the engine is about to use, and

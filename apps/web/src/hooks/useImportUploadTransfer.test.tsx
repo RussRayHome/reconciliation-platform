@@ -20,6 +20,7 @@ afterEach(() => {
 
 const PAYLOAD: ImportUploadTransferPayload = {
   bankFiles: [new File(['a'], '1234-bank.csv')],
+  bankAccountAssignments: [{ accountId: '11111111-1111-4111-8111-111111111111' }],
   glFile: new File(['b'], 'gl.csv'),
   label: 'Test run',
   frequency: 'MONTHLY',

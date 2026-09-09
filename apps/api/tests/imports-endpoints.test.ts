@@ -56,6 +56,20 @@ interface RunSourceFileRow {
  * branches are order-sensitive: 'INSERT INTO import_file_content' is checked before the plain
  * 'INSERT INTO import_file' insert, since the latter is a substring of the former.
  */
+/**
+ * A-D1 (Issue #338): every bank statement is assigned to a registered account before upload. One
+ * fixture account per bank file the tests attach, with last-four digits matching those files'
+ * names so the happy path carries no filename disagreement -- the disagreement case gets its own
+ * test below.
+ */
+const TEST_ACCOUNT_LAST_FOUR: Record<string, string> = {
+  '11111111-1111-4111-8111-111111111111': '1111',
+  '22222222-2222-4222-8222-222222222222': '2222',
+  '33333333-3333-4333-8333-333333333333': '3333',
+  '44444444-4444-4444-8444-444444444444': '4444',
+};
+const TEST_ACCOUNT_IDS = Object.keys(TEST_ACCOUNT_LAST_FOUR);
+
 const createFakeImportsPool = () => {
   const importFiles: ImportFileRow[] = [];
   const runs: RunRow[] = [];
@@ -205,6 +219,30 @@ const createFakeImportsPool = () => {
       return Promise.resolve({ rows, rowCount: rows.length });
     }
 
+    // A-D1 (Issue #338): resolveAccounts asserts every assigned account belongs to the caller's
+    // organization before anything is merged. These tests register their accounts implicitly by
+    // using TEST_ACCOUNT_IDS -- anything else resolves to nothing and is rejected, which is what
+    // the "account this organization does not own" test relies on.
+    if (text.includes('FROM reconciliation_account') && text.includes('id = ANY(')) {
+      const [organizationId, accountIds] = params as [string, string[]];
+      const rows = accountIds
+        .filter((accountId) => TEST_ACCOUNT_IDS.includes(accountId))
+        .map((accountId) => ({
+          id: accountId,
+          organization_id: organizationId,
+          account_identifier: TEST_ACCOUNT_LAST_FOUR[accountId] ?? accountId,
+          display_name: null,
+          institution_name: null,
+          last_four: TEST_ACCOUNT_LAST_FOUR[accountId] ?? null,
+          currency_code: 'USD',
+          gl_cash_account_code: null,
+          is_active: true,
+          created_at: new Date(0),
+          updated_at: new Date(0),
+        }));
+      return Promise.resolve({ rows, rowCount: rows.length });
+    }
+
     if (text === 'SELECT 1') {
       // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
       // request via checkDatabaseReachable(pool) -- this fake pool must answer it too.
@@ -264,14 +302,21 @@ const glXlsx = Buffer.from('gl-bytes-not-real-xlsx');
  * content, or filenames for a specific test. */
 const attachImportFiles = (
   request: ReturnType<ReturnType<typeof authedApp>['post']>,
-  overrides: { bankFiles?: Array<{ buffer?: Buffer; filename?: string }> } = {},
+  overrides: {
+    bankFiles?: Array<{ buffer?: Buffer; filename?: string }>;
+    /** A-D1: overrides the positional account assignments, for the rejection cases. */
+    bankAccountAssignments?: Array<{ accountId: string; confirmed?: boolean }>;
+  } = {},
 ) => {
   const bankFiles = overrides.bankFiles ?? [
     { buffer: bankCsvA, filename: '1111_bank.csv' },
     { buffer: bankCsvB, filename: '2222_bank.csv' },
   ];
+  const assignments =
+    overrides.bankAccountAssignments ??
+    bankFiles.map((_, index) => ({ accountId: TEST_ACCOUNT_IDS[index]! }));
 
-  let req = request;
+  let req = request.field('bankAccountAssignments', JSON.stringify(assignments));
   bankFiles.forEach((file, index) => {
     req = req.attach('bankFiles', file.buffer ?? bankCsvA, {
       filename: file.filename ?? `${1111 * (index + 1)}_bank.csv`,
@@ -397,6 +442,10 @@ describe('imports endpoints', () => {
         .field('label', 'CSV-only run')
         .field('frequency', 'MONTHLY')
         .field('periodYear', '2026')
+        .field(
+          'bankAccountAssignments',
+          JSON.stringify([{ accountId: TEST_ACCOUNT_IDS[0] }, { accountId: TEST_ACCOUNT_IDS[1] }]),
+        )
         .attach('bankFiles', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' })
         .attach('bankFiles', bankCsvB, { filename: '2222_bank.csv', contentType: 'text/csv' })
         .attach('glFile', bankCsvA, { filename: 'gl.csv', contentType: 'text/csv' });
@@ -470,11 +519,13 @@ describe('imports endpoints', () => {
       });
     });
 
-    it('returns 400 naming the file when a bank filename has no account-number prefix', async () => {
+    it('accepts a bank filename with no account-number prefix, because the assignment is explicit (A-D1)', async () => {
+      // The inverse of the rule this route used to enforce. A filename can no longer establish or
+      // deny account identity, so a file named anything at all is fine once it is assigned.
       const response = await attachImportFiles(
         authedApp(appWithPool(pool), { role: 'senior-analyst' })
           .post('/api/imports/runs')
-          .field('label', 'Bad Filename')
+          .field('label', 'Unconventional Filename')
           .field('frequency', 'MONTHLY')
           .field('periodYear', '2026'),
         {
@@ -485,10 +536,123 @@ describe('imports endpoints', () => {
         },
       );
 
+      expect(response.status).toBe(201);
+    });
+
+    it('returns 400 when the assignment set is missing (A-D1)', async () => {
+      const response = await authedApp(appWithPool(pool), { role: 'senior-analyst' })
+        .post('/api/imports/runs')
+        .field('label', 'No Assignments')
+        .field('frequency', 'MONTHLY')
+        .field('periodYear', '2026')
+        .attach('bankFiles', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' })
+        .attach('glFile', glXlsx, { filename: 'gl.xlsx' });
+
       expect(response.status).toBe(400);
       expect(response.body).toMatchObject({
-        message: expect.stringContaining('checking-account.csv'),
+        message: expect.stringContaining('bankAccountAssignments'),
       });
+    });
+
+    it('returns 400 when the assignment count does not match the bank file count (A-D1)', async () => {
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Short Assignment Set')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        { bankAccountAssignments: [{ accountId: TEST_ACCOUNT_IDS[0]! }] },
+      );
+
+      expect(response.status).toBe(400);
+    });
+
+    it('returns 400 when two statements are assigned to the same account (A-D1)', async () => {
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Duplicate Assignment')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        {
+          bankAccountAssignments: [
+            { accountId: TEST_ACCOUNT_IDS[0]! },
+            { accountId: TEST_ACCOUNT_IDS[0]! },
+          ],
+        },
+      );
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        message: expect.stringContaining('different account'),
+      });
+    });
+
+    it('returns 404 when a statement names an account this organization does not own (A-D1)', async () => {
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Foreign Account')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        {
+          bankAccountAssignments: [
+            { accountId: TEST_ACCOUNT_IDS[0]! },
+            { accountId: '99999999-9999-4999-8999-999999999999' },
+          ],
+        },
+      );
+
+      expect(response.status).toBe(404);
+    });
+
+    it('returns 409 with per-file conflicts when a filename disagrees with its assignment (A-D1)', async () => {
+      // Not auto-resolved either way: the operator confirms the assignment or picks another
+      // account. The response carries every disagreement so the client can ask per file.
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Filename Disagreement')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        {
+          bankFiles: [
+            { buffer: bankCsvA, filename: '1111_bank.csv' },
+            { buffer: bankCsvB, filename: '9999_bank.csv' },
+          ],
+        },
+      );
+
+      expect(response.status).toBe(409);
+      expect(response.body.conflicts).toMatchObject([
+        {
+          kind: 'FILENAME_LAST_FOUR_MISMATCH',
+          originalFilename: '9999_bank.csv',
+          filenameLastFour: '9999',
+        },
+      ]);
+    });
+
+    it('creates the run once the disagreement is confirmed (A-D1)', async () => {
+      const response = await attachImportFiles(
+        authedApp(appWithPool(pool), { role: 'senior-analyst' })
+          .post('/api/imports/runs')
+          .field('label', 'Confirmed Disagreement')
+          .field('frequency', 'MONTHLY')
+          .field('periodYear', '2026'),
+        {
+          bankFiles: [
+            { buffer: bankCsvA, filename: '1111_bank.csv' },
+            { buffer: bankCsvB, filename: '9999_bank.csv' },
+          ],
+          bankAccountAssignments: [
+            { accountId: TEST_ACCOUNT_IDS[0]! },
+            { accountId: TEST_ACCOUNT_IDS[1]!, confirmed: true },
+          ],
+        },
+      );
+
+      expect(response.status).toBe(201);
     });
 
     it('returns 400 with structural issues when a raw bank file fails Step 1/Step 2 on its own', async () => {

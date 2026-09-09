@@ -84,6 +84,7 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   accountPreferences: 'Preferences',
   importFilesBank: 'Bank Statements',
   importFilesBilling: 'AP / Billing',
+  bankAccounts: 'Bank Accounts',
   mappingCreate: 'Create Mapping',
   mappingRules: 'Matching Rules',
   mappingRulesVersions: 'Rule Versions',

@@ -165,3 +165,60 @@ export const openSetup = async (page: Page): Promise<void> => {
   await page.getByRole('link', { name: 'Bank Statements' }).click();
   await expect(submitRunButton(page)).toBeVisible();
 };
+
+/**
+ * Registers one bank account through the real `/accounts` screen (A-D1, Issue #338).
+ *
+ * Needed by any spec that submits a run, because a statement can no longer be reconciled unless it
+ * is assigned to a REGISTERED account, and a fresh database has none: changeset 0059's backfill
+ * derives accounts from pre-existing `reconciliation_run`/`reconciliation_canonical_row` rows, so
+ * it produces nothing on a database whose first run has not happened yet.
+ *
+ * Driving the real screen rather than seeding over the API on purpose -- it is the path a new
+ * customer actually walks, and it keeps the registry UI covered by the functional lane.
+ */
+export const registerBankAccount = async (
+  page: Page,
+  account: { accountNumber: string; name: string },
+): Promise<void> => {
+  await page.goto('/accounts');
+  await expect(page.getByRole('heading', { name: 'Bank accounts' })).toBeVisible();
+
+  // Wait for the LIST to settle, not just the heading. The heading is the SectionCard title and
+  // renders immediately, while the accounts themselves are fetched -- so checking for an existing
+  // row too early reports "absent" for an account that is merely still loading, and the
+  // registration below is then rejected as a duplicate. Exactly one of the empty-state paragraph
+  // or the table renders once the fetch resolves, so waiting for either is deterministic.
+  await expect(page.locator('.bank-accounts__empty, .bank-accounts__table')).toBeVisible();
+
+  // `rowheader`, not `cell`: the account label sits in a `<th scope="row">` (BankAccountsScreen),
+  // which maps to role `rowheader`.
+  const row = page.getByRole('rowheader', { name: account.name, exact: false });
+
+  // IDEMPOTENT ON PURPOSE. `playwright.config.ts` retries twice in CI, and an account identifier is
+  // unique per organization -- so a test that registered an account and then flaked for any
+  // unrelated reason would come back on retry and be rejected with
+  // DuplicateReconciliationAccountError, failing for a reason that has nothing to do with the
+  // original flake. Registering only what is missing keeps a retry a real retry.
+  if ((await row.count()) > 0) {
+    return;
+  }
+
+  await page.locator('#account-number-input').fill(account.accountNumber);
+  await page.locator('#account-name-input').fill(account.name);
+  await page.getByRole('button', { name: 'Register account' }).click();
+
+  // A rejected registration surfaces in the form itself; assert its absence first so the failure
+  // reports the server's own reason instead of timing out on a row that was never going to appear.
+  await expect(page.locator('.bank-accounts__error')).toHaveCount(0);
+  await expect(row).toBeVisible();
+};
+
+/** The account-assignment `<select>` for one bank slot. Ids follow `SourceDropZone`'s
+ * `bankInputId` convention: slot 0 is `bank-workbook-input`, later slots are lettered. */
+export const bankAccountSelect = (page: Page, slot: number) =>
+  page.locator(
+    slot === 0
+      ? '#bank-workbook-input-account'
+      : `#bank-workbook-${String.fromCodePoint(97 + slot)}-input-account`,
+  );
