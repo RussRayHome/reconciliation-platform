@@ -11,12 +11,14 @@ const STATUS_LABEL: Record<MatchingConfigVersionStatus, string> = {
   DRAFT: 'draft',
   ACTIVE: 'live',
   SUPERSEDED: 'superseded',
+  REJECTED: 'rejected',
 };
 
 const STATUS_TONE: Record<MatchingConfigVersionStatus, string> = {
   DRAFT: 'approvals__version-pill--draft',
   ACTIVE: 'approvals__version-pill--live',
   SUPERSEDED: 'approvals__version-pill--superseded',
+  REJECTED: 'approvals__version-pill--rejected',
 };
 
 const describeChange = (version: MatchingConfigVersion): string => {

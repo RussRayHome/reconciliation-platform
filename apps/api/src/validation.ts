@@ -602,10 +602,29 @@ export const saveMappingProfileBodySchema = z.object({
  */
 export const matchingConfigVersionDraftBodySchema = z.object({
   varianceOverrides: z.record(z.string(), z.number()),
+  /** Required, and non-empty after trimming (#404). An approver deciding a draft needs the
+   * proposer's own account of why, not only a diff they must interpret unaided -- and "required"
+   * that accepts "   " is not required. */
+  reason: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, 'A reason is required to open a draft.').max(2000)),
   pendingApprovalOwner: z
     .string()
     .transform((value) => value.trim())
     .optional(),
+});
+
+/**
+ * Rejecting a draft (#404). The note is required for the same reason the draft's is: a decision
+ * recorded without its justification is not an audit trail, it is a timestamp. Changeset 0080
+ * enforces the same pairing at the database, so a direct write cannot bypass this.
+ */
+export const rejectMatchingConfigVersionBodySchema = z.object({
+  note: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, 'A note is required to reject a draft.').max(2000)),
 });
 
 export const publishMatchingConfigVersionBodySchema = z.object({

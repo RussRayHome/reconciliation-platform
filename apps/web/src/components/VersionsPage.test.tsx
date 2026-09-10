@@ -39,6 +39,10 @@ const baseVersion = (overrides: Partial<MatchingConfigVersion>): MatchingConfigV
   publishedAt: null,
   effectiveAt: null,
   pendingApprovalOwner: null,
+  draftReason: null,
+  rejectionNote: null,
+  rejectedBy: null,
+  rejectedAt: null,
   ...overrides,
 });
 

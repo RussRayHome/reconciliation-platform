@@ -69,6 +69,7 @@ describe('Matching config versions (against the Liquibase-migrated database)', (
       organizationId,
       varianceOverrides: { wireFeeTolerance: 750 },
       createdBy: 'mortega',
+      draftReason: 'Postgres fixture draft',
     });
     expect(draft1.versionNumber).toBe(1);
     expect(draft1.status).toBe('DRAFT');
@@ -86,6 +87,7 @@ describe('Matching config versions (against the Liquibase-migrated database)', (
       organizationId,
       varianceOverrides: { wireFeeTolerance: 900 },
       createdBy: 'mortega',
+      draftReason: 'Postgres fixture draft',
     });
     expect(draft2.versionNumber).toBe(2);
 
@@ -112,6 +114,7 @@ describe('Matching config versions (against the Liquibase-migrated database)', (
       organizationId,
       varianceOverrides: {},
       createdBy: 'bray',
+      draftReason: 'Postgres fixture draft',
     });
 
     await expect(
@@ -120,6 +123,7 @@ describe('Matching config versions (against the Liquibase-migrated database)', (
         organizationId,
         varianceOverrides: {},
         createdBy: 'bray',
+        draftReason: 'Postgres fixture draft',
       }),
     ).rejects.toThrow(/duplicate key value violates unique constraint/);
   });

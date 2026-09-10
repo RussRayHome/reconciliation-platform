@@ -88,15 +88,18 @@ describe('Liquibase rollback', () => {
       // (widens reconciliation_approval_request's subject_type CHECK to admit 'payeeAlias', #311 --
       // a different table once more), and 0077 (adds reconciliation_account.last_four/
       // gl_cash_account_code and run_source_file.account_id for A-D1's account registry and
-      // statement assignment, #338 -- different tables again) all sit on top of it without touching
-      // the schema this test cares about, so rolling back 28 changesets (0077 down through 0050)
+      // statement assignment, #338 -- different tables again), 0078/0079 (create
+      // reconciliation_saved_view and reconciliation_subledger_entity -- new tables) and 0080 (adds
+      // draft_reason/rejection columns and a REJECTED status to
+      // reconciliation_matching_config_version, #404 -- a different table again) all sit on top of
+      // it without touching the schema this test cares about, so rolling back 0080 down through 0050
       // lands on the same DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a
       // future changeset lands here, extend the count again rather than re-pinning this test to a
       // single changeset number. If two branches each add a changeset, they will each bump this
       // by one to the SAME value, git will treat those identical edits as agreement and merge them
       // without a conflict, and the result is one short. Re-derive the count from the changeset
       // files on disk after any merge; do not trust a clean auto-merge here.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=30');
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=31');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -111,7 +114,7 @@ describe('Liquibase rollback', () => {
 
     it('removes the changesets from the tracking table and restores it on reapply', async () => {
       // Checked after beforeAll's final `update` call re-applies everything -- this asserts the
-      // round trip (update -> rollback-count=28 -> update) lands back on the full changelog count,
+      // round trip (update -> rollback-count -> update) lands back on the full changelog count,
       // not the count immediately after the rollback step (which beforeAll never captures).
       expect(await changelogCount(database!.pool)).toBe(changesetFileCount);
     });
@@ -132,7 +135,7 @@ describe('Liquibase rollback', () => {
       // reconciliation_run_event, 0070 redefines canonical_record's source_type CHECK, and 0071
       // seeds validation_rule_version plus redefines its own source_type CHECK -- none touch
       // reconciliation_login_event, so 0050 remains the most recent changeset with a schema diff
-      // this test's col_type_is approach can observe. See the --count=27 comment above.
+      // this test's col_type_is approach can observe. See the --count comment above.
       expect(migratedSchema).toContain(
         "col_type_is('public', 'reconciliation_login_event', 'session_id', 'uuid'",
       );
@@ -151,7 +154,7 @@ describe('Liquibase rollback', () => {
     });
   });
 
-  describe('rolling back forty-eight changesets (0071 down through 0026 schema-changing)', () => {
+  describe('rolling back to before 0026 (the auth/tenancy changeset)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -211,7 +214,7 @@ describe('Liquibase rollback', () => {
       // alone, so its presence in the range is correct and unobserved rather than benign by luck.
       // 0077 (A-D1's account registry columns, #338) likewise touches neither reconciliation_user
       // nor the columns asserted below.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=54');
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=55');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

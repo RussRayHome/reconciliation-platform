@@ -1062,6 +1062,7 @@ describe('createMatchingConfigVersionDraft', () => {
       organizationId: 'org-1',
       varianceOverrides: { wireFeeTolerance: 750 },
       createdBy: 'rray',
+      draftReason: 'Widen wire fee tolerance after the Q3 bank fee change',
       pendingApprovalOwner: 'mortega',
     });
     expect(version.id).toBe('mcv-1');
@@ -1079,6 +1080,7 @@ describe('createMatchingConfigVersionDraft', () => {
         organizationId: 'org-1',
         varianceOverrides: {},
         createdBy: 'rray',
+        draftReason: 'reason',
       }),
     ).rejects.toThrow('createMatchingConfigVersionDraft: INSERT returned no row');
   });

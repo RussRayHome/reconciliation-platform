@@ -35,6 +35,7 @@ import {
   createMappingProfile,
   createMappingProfileVersion,
   createMatchingConfigVersionDraft,
+  rejectMatchingConfigVersionDraft,
   activatePayeeAlias,
   createPayeeAlias,
   findPayeeAliasById,
@@ -166,6 +167,7 @@ import {
   listReconciliationRunsQuerySchema,
   loginBodySchema,
   matchingConfigVersionDraftBodySchema,
+  rejectMatchingConfigVersionBodySchema,
   publishMatchingConfigVersionBodySchema,
   registerAccountBodySchema,
   createSavedViewBodySchema,
@@ -4689,6 +4691,7 @@ export const createApp = (
         organizationId: request.auth!.organizationId,
         varianceOverrides: bodyResult.data.varianceOverrides,
         createdBy: request.auth!.username,
+        draftReason: bodyResult.data.reason,
         pendingApprovalOwner: bodyResult.data.pendingApprovalOwner ?? null,
       });
       // Opens the Approvals-queue gate for this draft (subjectType 'matchingRule' covers both
@@ -4708,6 +4711,51 @@ export const createApp = (
           .json({ message: 'A draft version is already pending for this organization.' });
         return;
       }
+      next(error);
+    }
+  });
+
+  /**
+   * Decline a pending draft, terminally (#404).
+   *
+   * The mirror of publish, and gated on the same capability: whoever may publish a version may
+   * decline one, or the pathway offers approve-or-stall rather than a real decision.
+   *
+   * The store scopes its UPDATE to `status = 'DRAFT'`, so a draft already decided by another
+   * approver matches no row and returns null -- reported as 409, not overwritten. Self-rejection is
+   * not blocked here: the segregation-of-duty constraint (changeset 0056) governs APPROVALS, and
+   * declining your own proposal withdraws it rather than certifying it, which is a different act.
+   */
+  app.post('/api/rules/versions/:id/reject', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'RULE_VERSION_REJECT'))) return;
+    if (!rolePermissionsByRole[request.auth!.role].canAdjustSliderDefaults) {
+      response.status(403).json({ message: 'Only admins can reject a matching-config version.' });
+      return;
+    }
+
+    try {
+      const bodyResult = rejectMatchingConfigVersionBodySchema.safeParse(request.body ?? {});
+      if (!bodyResult.success) {
+        respondWithValidationError(response, bodyResult.error);
+        return;
+      }
+
+      const version = await rejectMatchingConfigVersionDraft(pool!, {
+        organizationId: request.auth!.organizationId,
+        versionId: request.params.id!,
+        rejectedBy: request.auth!.username,
+        rejectionNote: bodyResult.data.note,
+      });
+
+      if (!version) {
+        response
+          .status(409)
+          .json({ message: 'That version is not a pending draft; it may already have been decided.' });
+        return;
+      }
+
+      response.status(200).json(version);
+    } catch (error) {
       next(error);
     }
   });

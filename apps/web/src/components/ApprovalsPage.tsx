@@ -109,10 +109,14 @@ const approveLabel = (row: ApprovalRow): string => {
 export function PendingApprovalsInbox({
   canApprove,
   isAdmin,
+  currentUsername,
   onApprovalStateChange,
 }: Readonly<{
   canApprove: boolean;
   isAdmin: boolean;
+  /** The signed-in user, so a row they submitted can be told apart from one they may decide.
+   * See the checkbox comment below (#404). */
+  currentUsername: string;
   /** Called after any decision/claim/withdraw succeeds, so the owner of the rail badge counts
    * (App) can refetch them -- the inbox only knows how to reload its own rows. */
   onApprovalStateChange?: () => void;
@@ -291,6 +295,7 @@ export function PendingApprovalsInbox({
               objectPath={group.objectPath}
               canApprove={canApprove}
               showCheckboxes={canApprove && group.isLive}
+              currentUsername={currentUsername}
               selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
               onApprove={(row) => handleDecision(row, 'APPROVED')}
@@ -314,6 +319,7 @@ function ApprovalTable({
   objectPath,
   canApprove,
   showCheckboxes,
+  currentUsername,
   selectedIds,
   onToggleSelected,
   onApprove,
@@ -330,6 +336,7 @@ function ApprovalTable({
   objectPath: string;
   canApprove: boolean;
   showCheckboxes: boolean;
+  currentUsername: string;
   selectedIds: Set<string>;
   onToggleSelected: (id: string) => void;
   onApprove: (row: ApprovalRow) => void;
@@ -373,13 +380,34 @@ function ApprovalTable({
           </div>
           {rows.map((row) => (
             <div className="approvals__grid-row" key={row.id}>
+              {/* #404 (v3): a row the signed-in user submitted gets no checkbox.
+                  This is a USABILITY fix, not a security one, and the distinction matters. Self-
+                  approval is already refused by a database CHECK constraint (changeset 0056's
+                  segregation of duty) -- the two-person rule is enforced where it counts, and this
+                  does not close a bypass. What it fixes is that the UI offered a selectable
+                  checkbox on rows the database would reject, so bulk approve returned a constraint
+                  error instead of simply not offering the row.
+
+                  Removed rather than disabled, per [OBJECT] rule 27's "not available" case: no
+                  action the user can take makes their own submission approvable by them, so the
+                  control goes and the reason takes its place. A disabled checkbox would invite them
+                  to look for the way to enable it. */}
               {showCheckboxes ? (
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${row.title}`}
-                  checked={selectedIds.has(row.id)}
-                  onChange={() => onToggleSelected(row.id)}
-                />
+                row.submitter === currentUsername ? (
+                  <span className="approvals__row-self" title="You submitted this">
+                    <span aria-hidden="true">—</span>
+                    <span className="visually-hidden">
+                      You submitted this, so you cannot approve it
+                    </span>
+                  </span>
+                ) : (
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${row.title}`}
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => onToggleSelected(row.id)}
+                  />
+                )
               ) : null}
               <span className="approvals__row-primary">
                 <NavLink to={objectPath}>{row.title}</NavLink>

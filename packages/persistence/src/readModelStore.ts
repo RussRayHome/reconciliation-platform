@@ -1196,11 +1196,16 @@ type MatchingConfigVersionRow = {
   published_at: string | null;
   effective_at: string | null;
   pending_approval_owner: string | null;
+  draft_reason: string | null;
+  rejection_note: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
 };
 
 const MATCHING_CONFIG_VERSION_COLUMNS =
   'id, organization_id, version_number, status, variance_overrides, created_by, created_at, ' +
-  'published_by, published_at, effective_at, pending_approval_owner';
+  'published_by, published_at, effective_at, pending_approval_owner, draft_reason, ' +
+  'rejection_note, rejected_by, rejected_at';
 
 const mapMatchingConfigVersion = (row: MatchingConfigVersionRow): MatchingConfigVersion => ({
   id: row.id,
@@ -1214,7 +1219,50 @@ const mapMatchingConfigVersion = (row: MatchingConfigVersionRow): MatchingConfig
   publishedAt: row.published_at,
   effectiveAt: row.effective_at,
   pendingApprovalOwner: row.pending_approval_owner,
+  draftReason: row.draft_reason,
+  rejectionNote: row.rejection_note,
+  rejectedBy: row.rejected_by,
+  rejectedAt: row.rejected_at,
 });
+
+/**
+ * Declines a pending DRAFT, terminally (#404).
+ *
+ * The row is UPDATED, never deleted, and that is what makes "a rejected version's number is not
+ * reused" true: `createMatchingConfigVersionDraft` takes `MAX(version_number) + 1` across every row
+ * for the organization, so a kept REJECTED row permanently occupies its number. Deleting it would
+ * hand the number back and let v13 mean two different proposals to two different readers.
+ *
+ * Scoped to `status = 'DRAFT'` in the WHERE clause rather than checked first, so two approvers
+ * racing cannot both reject: the second matches no row and gets null, which the caller reports as
+ * "no longer pending" instead of silently overwriting the first decision.
+ */
+export const rejectMatchingConfigVersionDraft = async (
+  pool: Pool,
+  input: Readonly<{
+    organizationId: string;
+    versionId: string;
+    rejectedBy: string;
+    rejectionNote: string;
+  }>,
+): Promise<MatchingConfigVersion | null> => {
+  return runInTenantScope(pool, input.organizationId, async (client) => {
+    const result = await client.query<MatchingConfigVersionRow>(
+      `UPDATE reconciliation_matching_config_version
+          SET status = 'REJECTED',
+              rejection_note = $3,
+              rejected_by = $4,
+              rejected_at = NOW(),
+              pending_approval_owner = NULL
+        WHERE organization_id = $1 AND id = $2 AND status = 'DRAFT'
+       RETURNING ${MATCHING_CONFIG_VERSION_COLUMNS}`,
+      [input.organizationId, input.versionId, input.rejectionNote, input.rejectedBy],
+    );
+
+    const row = result.rows[0];
+    return row ? mapMatchingConfigVersion(row) : null;
+  });
+};
 
 /** Input fields accepted when drafting a new matching-config version. */
 export interface CreateMatchingConfigVersionDraftInput {
@@ -1223,6 +1271,9 @@ export interface CreateMatchingConfigVersionDraftInput {
   varianceOverrides: Partial<Record<keyof MatchingConfig, number>>;
   createdBy: string;
   pendingApprovalOwner?: string | null;
+  /** Why this version is being proposed. Required by the API (#404) -- an approver deciding a draft
+   * needs the proposer's own account of it, not only a diff they must interpret unaided. */
+  draftReason: string;
 }
 
 /**
@@ -1239,8 +1290,9 @@ export const createMatchingConfigVersionDraft = async (
   return runInTenantScope(pool, input.organizationId, async (client) => {
     const result = await client.query<MatchingConfigVersionRow>(
       `INSERT INTO reconciliation_matching_config_version
-         (id, organization_id, version_number, variance_overrides, created_by, pending_approval_owner)
-       SELECT $1, $2, COALESCE(MAX(version_number), 0) + 1, $3::jsonb, $4, $5
+         (id, organization_id, version_number, variance_overrides, created_by,
+          pending_approval_owner, draft_reason)
+       SELECT $1, $2, COALESCE(MAX(version_number), 0) + 1, $3::jsonb, $4, $5, $6
          FROM reconciliation_matching_config_version
         WHERE organization_id = $2
        RETURNING ${MATCHING_CONFIG_VERSION_COLUMNS}`,
@@ -1250,6 +1302,7 @@ export const createMatchingConfigVersionDraft = async (
         JSON.stringify(input.varianceOverrides),
         input.createdBy,
         input.pendingApprovalOwner ?? null,
+        input.draftReason,
       ],
     );
     const row = result.rows[0];

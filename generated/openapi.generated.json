@@ -1027,6 +1027,36 @@
         }
       }
     },
+    "/api/rules/versions/{id}/reject": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Decline a draft matching-config version",
+        "description": "Terminal. The row is kept rather than deleted, so its version number is never reused — a later draft always takes a new one. The note is required; changeset 0080 enforces that a REJECTED row carries its note, rejecter and timestamp together.",
+        "responses": {
+          "200": {
+            "description": "Version rejected"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Not a pending draft; it may already have been decided"
+          }
+        }
+      }
+    },
     "/api/rules/versions/{id}/publish": {
       "parameters": [
         {
