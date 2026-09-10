@@ -6,9 +6,9 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(2412);
+SELECT plan(2452);
 
-SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_saved_view', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
+SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_saved_view', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_subledger_entity', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
 SELECT col_is_pk('public', 'canonical_record', ARRAY['id']::name[], 'canonical_record primary key');
 SELECT indexes_are('public', 'canonical_record', ARRAY['canonical_record_counterparty_id_idx', 'normalized_record_account_txn_date_idx', 'normalized_record_organization_idx', 'normalized_record_pkey', 'normalized_record_reconciliation_run_idx', 'normalized_record_signed_amount_idx']::name[], 'canonical_record has exactly the expected indexes');
@@ -6891,6 +6891,137 @@ SELECT is(
   'reconciliation_staged_transaction row-level security policies'
 );
 SELECT triggers_are('public', 'reconciliation_staged_transaction', ARRAY[]::name[], 'reconciliation_staged_transaction has exactly the expected triggers');
+SELECT columns_are('public', 'reconciliation_subledger_entity', ARRAY['id', 'organization_id', 'kind', 'entity_id', 'display_name', 'ledger_source', 'currency_code', 'is_active', 'created_at', 'updated_at']::name[], 'reconciliation_subledger_entity has exactly the expected columns');
+SELECT col_is_pk('public', 'reconciliation_subledger_entity', ARRAY['id']::name[], 'reconciliation_subledger_entity primary key');
+SELECT indexes_are('public', 'reconciliation_subledger_entity', ARRAY['reconciliation_subledger_entity_kind_entity_key', 'reconciliation_subledger_entity_pkey', 'reconciliation_subledger_entity_registry_idx']::name[], 'reconciliation_subledger_entity has exactly the expected indexes');
+SELECT is(
+  (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_subledger_entity' AND relnamespace = 'public'::regnamespace),
+  true,
+  'reconciliation_subledger_entity has row-level security enabled'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'id', 'uuid', 'reconciliation_subledger_entity.id is uuid');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'id', 'reconciliation_subledger_entity.id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'id'),
+  NULL,
+  'reconciliation_subledger_entity.id default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'organization_id', 'uuid', 'reconciliation_subledger_entity.organization_id is uuid');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'organization_id', 'reconciliation_subledger_entity.organization_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'organization_id'),
+  NULL,
+  'reconciliation_subledger_entity.organization_id default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'kind', 'text', 'reconciliation_subledger_entity.kind is text');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'kind', 'reconciliation_subledger_entity.kind is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'kind'),
+  NULL,
+  'reconciliation_subledger_entity.kind default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'entity_id', 'text', 'reconciliation_subledger_entity.entity_id is text');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'entity_id', 'reconciliation_subledger_entity.entity_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'entity_id'),
+  NULL,
+  'reconciliation_subledger_entity.entity_id default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'display_name', 'text', 'reconciliation_subledger_entity.display_name is text');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'display_name', 'reconciliation_subledger_entity.display_name is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'display_name'),
+  NULL,
+  'reconciliation_subledger_entity.display_name default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'ledger_source', 'text', 'reconciliation_subledger_entity.ledger_source is text');
+SELECT col_is_null('public', 'reconciliation_subledger_entity', 'ledger_source', 'reconciliation_subledger_entity.ledger_source is nullable');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'ledger_source'),
+  NULL,
+  'reconciliation_subledger_entity.ledger_source default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'currency_code', 'text', 'reconciliation_subledger_entity.currency_code is text');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'currency_code', 'reconciliation_subledger_entity.currency_code is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'currency_code'),
+  $dflt$'USD'::text$dflt$,
+  'reconciliation_subledger_entity.currency_code default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'is_active', 'boolean', 'reconciliation_subledger_entity.is_active is boolean');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'is_active', 'reconciliation_subledger_entity.is_active is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'is_active'),
+  $dflt$true$dflt$,
+  'reconciliation_subledger_entity.is_active default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'created_at', 'timestamp with time zone', 'reconciliation_subledger_entity.created_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'created_at', 'reconciliation_subledger_entity.created_at is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'created_at'),
+  $dflt$now()$dflt$,
+  'reconciliation_subledger_entity.created_at default'
+);
+SELECT col_type_is('public', 'reconciliation_subledger_entity', 'updated_at', 'timestamp with time zone', 'reconciliation_subledger_entity.updated_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_subledger_entity', 'updated_at', 'reconciliation_subledger_entity.updated_at is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_subledger_entity'::regclass AND a.attname = 'updated_at'),
+  $dflt$now()$dflt$,
+  'reconciliation_subledger_entity.updated_at default'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.reconciliation_subledger_entity'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$reconciliation_subledger_entity_kind_check => CHECK ((kind = ANY (ARRAY['ap'::text, 'ar'::text])))$chk$,
+  'reconciliation_subledger_entity check/unique/exclusion constraints'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(p.grantee || ' => ' || p.privs, E'\n' ORDER BY p.grantee), '')
+     FROM (
+       SELECT grantee, string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privs
+         FROM information_schema.table_privileges
+        WHERE table_schema = 'public' AND table_name = 'reconciliation_subledger_entity'
+          AND grantee <> (SELECT rolname FROM pg_roles WHERE oid = (SELECT relowner FROM pg_class WHERE relname = 'reconciliation_subledger_entity' AND relnamespace = 'public'::regnamespace))
+        GROUP BY grantee
+     ) p),
+  $grants$app_user => DELETE,INSERT,SELECT,UPDATE
+recon_app_runtime => DELETE,INSERT,SELECT,UPDATE$grants$,
+  'reconciliation_subledger_entity grants'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(policyname || ' => cmd=' || cmd || ' roles=' || array_to_string(roles, ',') || ' using=' || COALESCE(qual, '') || ' check=' || COALESCE(with_check, ''), E'\n' ORDER BY policyname), '')
+     FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'reconciliation_subledger_entity'),
+  $policy$reconciliation_subledger_entity_tenant_isolation => cmd=ALL roles=public using=(organization_id = (current_setting('app.current_organization_id'::text, true))::uuid) check=$policy$,
+  'reconciliation_subledger_entity row-level security policies'
+);
+SELECT triggers_are('public', 'reconciliation_subledger_entity', ARRAY['trg_reconciliation_subledger_entity_updated_at']::name[], 'reconciliation_subledger_entity has exactly the expected triggers');
+SELECT is(
+  (SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgname = 'trg_reconciliation_subledger_entity_updated_at' AND tgrelid = 'public.reconciliation_subledger_entity'::regclass),
+  $trig$CREATE TRIGGER trg_reconciliation_subledger_entity_updated_at BEFORE UPDATE ON public.reconciliation_subledger_entity FOR EACH ROW EXECUTE FUNCTION set_updated_at()$trig$,
+  'reconciliation_subledger_entity.trg_reconciliation_subledger_entity_updated_at definition'
+);
 SELECT columns_are('public', 'reconciliation_template_definition', ARRAY['id', 'template_type', 'version', 'headers_json', 'instructions', 'status', 'created_at']::name[], 'reconciliation_template_definition has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_template_definition', ARRAY['id']::name[], 'reconciliation_template_definition primary key');
 SELECT indexes_are('public', 'reconciliation_template_definition', ARRAY['reconciliation_template_definition_active_idx', 'reconciliation_template_definition_pkey', 'reconciliation_template_definition_type_version_key']::name[], 'reconciliation_template_definition has exactly the expected indexes');
@@ -7622,6 +7753,7 @@ SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['organization_
 SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['promoted_by']::name[], 'public', 'reconciliation_user', ARRAY['user_name']::name[]);
 SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['raw_row_id']::name[], 'public', 'reconciliation_raw_row', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_staged_transaction', ARRAY['source_file_id']::name[], 'public', 'reconciliation_source_file', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_subledger_entity', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_user', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['account_id']::name[], 'public', 'reconciliation_account', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'run_source_file', ARRAY['import_file_id']::name[], 'public', 'import_file', ARRAY['id']::name[]);

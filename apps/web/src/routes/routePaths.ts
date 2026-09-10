@@ -11,6 +11,8 @@ export const routePaths = {
   importFiles: '/',
   importFilesBank: '/',
   importFilesBilling: '/imports/billing',
+  apEntities: '/entities/ap',
+  arEntities: '/entities/ar',
   reconSummary: '/recon-summary',
   probableMatches: '/probable-matches',
   exceptions: '/exceptions',

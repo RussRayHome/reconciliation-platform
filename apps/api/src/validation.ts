@@ -10,6 +10,7 @@ import {
   transformKinds,
   approvableTypes,
   savedViewScopes,
+  subledgerKinds,
   savedViewVisibilities,
   savedViewStatuses,
 } from '@recon/domain';
@@ -229,6 +230,47 @@ export const listSavedViewsQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((value) => value === 'true'),
+});
+
+/** The prefix a subledger file's name carries. Bounded and pattern-checked because it must round
+ * trip through a filename: `SUBLEDGER_ENTITY_ID_FILENAME_PATTERN` only matches an alphanumeric run
+ * before the first "-" or "_", so an id containing anything else could never be matched to a file
+ * that claims it. Rejecting it here beats registering an entity no import can ever reach. */
+const subledgerEntityIdSchema = z
+  .string()
+  .trim()
+  .min(1, 'An entity id is required.')
+  .max(32, 'An entity id must be 32 characters or fewer.')
+  .regex(/^[A-Za-z0-9]+$/, 'An entity id may contain only letters and digits.');
+
+export const registerSubledgerEntityBodySchema = z.object({
+  entityId: subledgerEntityIdSchema,
+  displayName: z
+    .string()
+    .trim()
+    .min(1, 'A display name is required.')
+    .max(120, 'A display name must be 120 characters or fewer.'),
+  ledgerSource: z.string().trim().max(120).nullish(),
+  currencyCode: z.string().trim().length(3, 'currencyCode must be a 3-letter ISO code.').optional(),
+});
+
+/** PATCH. `entityId` and `kind` are absent on purpose — the first is what filenames claim, the
+ * second is which registry the row lives in; changing either re-points history rather than editing
+ * it (design 5a). */
+export const updateSubledgerEntityBodySchema = z.object({
+  displayName: z.string().trim().min(1).max(120).optional(),
+  ledgerSource: z.string().trim().max(120).nullish(),
+  currencyCode: z.string().trim().length(3).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const subledgerKindParamSchema = z.object({
+  kind: z.enum(subledgerKinds),
+});
+
+export const subledgerEntityParamsSchema = z.object({
+  kind: z.enum(subledgerKinds),
+  entityRowId: z.string().uuid('entityRowId must be a valid entity id.'),
 });
 
 export const registerAccountBodySchema = z.object({
