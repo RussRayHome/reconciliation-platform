@@ -58,6 +58,10 @@ const mockedApiState = vi.hoisted<{
     publishedAt: '2026-08-04T00:00:00.000Z',
     effectiveAt: '2026-08-01T00:00:00.000Z',
     pendingApprovalOwner: null,
+    draftReason: null,
+    rejectionNote: null,
+    rejectedBy: null,
+    rejectedAt: null,
   };
   const defaultRuleVersionsResponse = {
     active: activeVersion,

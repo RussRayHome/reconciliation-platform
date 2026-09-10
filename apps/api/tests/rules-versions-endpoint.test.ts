@@ -155,7 +155,7 @@ describe('POST /api/rules/versions/draft', () => {
     const app = createApp(undefined, undefined, undefined, pool);
     const response = await authedApp(app)
       .post('/api/rules/versions/draft')
-      .send({ varianceOverrides: { wireFeeTolerance: 750 } })
+      .send({ varianceOverrides: { wireFeeTolerance: 750 }, reason: 'Widen wire fee tolerance' })
       .expect(201);
 
     expect(response.body.status).toBe('DRAFT');
@@ -167,8 +167,25 @@ describe('POST /api/rules/versions/draft', () => {
     const app = createApp(undefined, undefined, undefined, pool);
     await authedApp(app, { role: 'financial-analyst' })
       .post('/api/rules/versions/draft')
-      .send({ varianceOverrides: {} })
+      .send({ varianceOverrides: {}, reason: 'Fixture draft' })
       .expect(403);
+  });
+
+  // #404: the reason is required, and "required" that accepts whitespace is not required.
+  // Worth its own case because the three tests above were silently relying on it being optional --
+  // making it required turned the unknown-metric test into a test of the missing reason instead,
+  // which is the kind of drift that leaves a suite asserting something other than its own name.
+  it('rejects a draft with no reason, and one that is only whitespace', async () => {
+    const pool = createFakePool({ insertRows: [DRAFT_ROW] });
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    await authedApp(app).post('/api/rules/versions/draft').send({ varianceOverrides: {} }).expect(400);
+
+    // Trimmed before the min(1) check, so whitespace is not a reason.
+    await authedApp(app)
+      .post('/api/rules/versions/draft')
+      .send({ varianceOverrides: {}, reason: '   ' })
+      .expect(400);
   });
 
   it('rejects an unknown variance metric id with 400', async () => {
@@ -176,7 +193,7 @@ describe('POST /api/rules/versions/draft', () => {
     const app = createApp(undefined, undefined, undefined, pool);
     const response = await authedApp(app)
       .post('/api/rules/versions/draft')
-      .send({ varianceOverrides: { notARealMetric: 1 } })
+      .send({ varianceOverrides: { notARealMetric: 1 }, reason: 'Probe unknown metric' })
       .expect(400);
 
     expect(response.body.message).toContain('notARealMetric');
@@ -187,7 +204,7 @@ describe('POST /api/rules/versions/draft', () => {
     const app = createApp(undefined, undefined, undefined, pool);
     await authedApp(app)
       .post('/api/rules/versions/draft')
-      .send({ varianceOverrides: {} })
+      .send({ varianceOverrides: {}, reason: 'Fixture draft' })
       .expect(409);
   });
 
@@ -195,7 +212,7 @@ describe('POST /api/rules/versions/draft', () => {
     const app = createApp(undefined, undefined, undefined, undefined);
     const response = await authedApp(app)
       .post('/api/rules/versions/draft')
-      .send({ varianceOverrides: {} })
+      .send({ varianceOverrides: {}, reason: 'Fixture draft' })
       .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
     expectNoPoolError(response.body, 'RULE_VERSION_DRAFT');
   });

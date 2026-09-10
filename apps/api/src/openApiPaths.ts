@@ -306,6 +306,19 @@ export const additionalOpenApiPaths: Record<string, unknown> = {
   ...describe('/api/rules/versions/draft', {
     post: { summary: 'Open a draft matching-config version', responses: { 201: 'Draft created', 409: 'A draft already exists', 403: FORBIDDEN } },
   }),
+  ...describe('/api/rules/versions/{id}/reject', {
+    post: {
+      summary: 'Decline a draft matching-config version',
+      description:
+        'Terminal. The row is kept rather than deleted, so its version number is never reused — a later draft always takes a new one. The note is required; changeset 0080 enforces that a REJECTED row carries its note, rejecter and timestamp together.',
+      responses: {
+        200: 'Version rejected',
+        400: VALIDATION,
+        403: FORBIDDEN,
+        409: 'Not a pending draft; it may already have been decided',
+      },
+    },
+  }),
   ...describe('/api/rules/versions/{id}/publish', {
     post: {
       summary: 'Publish a draft matching-config version',

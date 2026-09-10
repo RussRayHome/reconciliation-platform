@@ -211,8 +211,19 @@ export type LoginEventType = (typeof loginEventTypes)[number];
  * `MatchingConfig` variance overrides). At most one version per organization is `ACTIVE` and at
  * most one is `DRAFT` at a time; publishing a `DRAFT` moves it to `ACTIVE` and moves the
  * previously `ACTIVE` version to `SUPERSEDED` in the same transaction.
+ *
+ * `REJECTED` is terminal and is what makes the pathway a two-person rule rather than a one-person
+ * veto by inaction (#404): before it, an approver could publish a draft or leave it pending forever,
+ * with no way to decline it on the record. A rejected row is KEPT, never deleted -- the
+ * `(organization_id, version_number)` unique key then guarantees its number is never reused, so v13
+ * cannot come to mean two different proposals to two different readers.
  */
-export const matchingConfigVersionStatuses = ['DRAFT', 'ACTIVE', 'SUPERSEDED'] as const;
+export const matchingConfigVersionStatuses = [
+  'DRAFT',
+  'ACTIVE',
+  'SUPERSEDED',
+  'REJECTED',
+] as const;
 /** Union of valid matching-config version lifecycle statuses. */
 export type MatchingConfigVersionStatus = (typeof matchingConfigVersionStatuses)[number];
 

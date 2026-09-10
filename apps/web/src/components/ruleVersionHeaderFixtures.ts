@@ -14,6 +14,10 @@ const ACTIVE_VERSION: MatchingConfigVersion = {
   publishedAt: '2026-08-04T00:00:00.000Z',
   effectiveAt: '2026-08-01T00:00:00.000Z',
   pendingApprovalOwner: null,
+  draftReason: null,
+  rejectionNote: null,
+  rejectedBy: null,
+  rejectedAt: null,
 };
 
 const DRAFT_VERSION: MatchingConfigVersion = {
@@ -25,6 +29,10 @@ const DRAFT_VERSION: MatchingConfigVersion = {
   publishedAt: null,
   effectiveAt: null,
   pendingApprovalOwner: 'VP Finance',
+  draftReason: null,
+  rejectionNote: null,
+  rejectedBy: null,
+  rejectedAt: null,
 };
 
 const SUPERSEDED_VERSION: MatchingConfigVersion = {

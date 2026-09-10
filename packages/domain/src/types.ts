@@ -568,6 +568,15 @@ export interface MatchingConfigVersion {
   effectiveAt: string | null;
   /** Who a `DRAFT` version is waiting on for approval; null once published or if unassigned. */
   pendingApprovalOwner: string | null;
+  /** Why this version was proposed. Required by the API when creating a draft (#404); nullable here
+   * because versions created before changeset 0080 have no truthful answer, and inventing one would
+   * put a fabricated justification into an audit trail. */
+  draftReason: string | null;
+  /** Why a `REJECTED` version was declined, and by whom. All three are set together or not at all --
+   * a DB CHECK enforces that, so a direct write cannot record a rejection without its reason. */
+  rejectionNote: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
 }
 
 /**
