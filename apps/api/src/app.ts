@@ -25,6 +25,7 @@ import {
   type SubledgerTabId,
 } from '@recon/domain';
 import type { OperationCode } from '@recon/domain';
+import { additionalOpenApiPaths } from './openApiPaths';
 import {
   checkDatabaseReachable,
   claimApprovalRequest,
@@ -1463,6 +1464,9 @@ export const buildOpenApiSpec = () => ({
   },
   servers: [{ url: '/', description: 'Current origin' }],
   paths: {
+    // Everything beyond the original hand-written twelve lives in ./openApiPaths (#462). Spread
+    // first so the literal below stays the authority on any path declared in both.
+    ...additionalOpenApiPaths,
     '/api/health': {
       get: {
         summary: 'Health check',
