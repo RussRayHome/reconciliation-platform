@@ -162,6 +162,78 @@ const mockReconciliationRun = async (page: Page): Promise<void> => {
 // Shared by both page-level and region-scoped (locator) captures -- fullPage is a page-only
 // option, so it's added separately below rather than living in this shared object, where it
 // would be meaningless (and misleading to read) on every region-scoped call.
+/**
+ * Holds until the triage screen has finished switching layouts, before it is photographed (#467).
+ *
+ * `exceptions-triage-900` rendered differently between runs with no code change -- always exactly
+ * 4730 pixels, and the -diff shows the same content ghosted ~91px apart rather than pixel drift.
+ *
+ * The cause is that this screen has TWO layouts and settles into the second one asynchronously:
+ *
+ *   const isVirtualized = virtualRows.length > 0;                       // ExceptionTriage.tsx
+ *   style={isVirtualized ? { height: `${getTotalSize()}px` } : undefined}
+ *
+ * Before the virtualizer has measured, `virtualRows` is empty, the canvas gets no explicit height
+ * and the rows sit in natural flow. Once it measures, the canvas is sized from `getTotalSize()` and
+ * the rows become absolutely positioned. The two produce different heights, so everything below the
+ * list -- the evidence panel and its decision row -- shifts by the difference.
+ *
+ * The capture waited only for `.exception-detail` to be VISIBLE, which is true in both layouts.
+ *
+ * Only 900px is affected because at that width the panel stacks below the list, so the list's height
+ * change moves it; the desktop widths place the panel beside the list where the same change does not
+ * displace it.
+ *
+ * Deliberately does NOT touch `scrollTop`. An earlier attempt pinned it to 0 and made the capture
+ * deterministic in a state the baseline was never recorded in -- three consecutive runs then failed
+ * rather than two of four, which is a worse outcome than the flake and is what ruled that approach
+ * out. Observe the settle; do not steer it.
+ *
+ * Deliberately not a raised `maxDiffPixelRatio`: #467 argues correctly that a 2% tolerance would
+ * also absorb a row genuinely appearing or disappearing, which is what this capture exists to catch.
+ */
+const settleTriageLayout = async (page: Page): Promise<void> => {
+  await expect(page.getByRole('button', { name: /^Accept/ })).toBeVisible();
+
+  await page.waitForFunction(
+    () => {
+      const canvas = document.querySelector('.exception-triage__list-canvas');
+      const header = document.querySelector('.exception-triage__list-header');
+      const panel = document.querySelector('.exception-detail');
+
+      if (!canvas || !header || !panel) {
+        return false;
+      }
+
+      // An explicit inline height is the observable signal that `isVirtualized` has flipped true.
+      // Without it the screen is still in its pre-measurement layout, whatever else has rendered.
+      if (!(canvas as HTMLElement).style.height) {
+        return false;
+      }
+
+      const sample = [
+        Math.round(canvas.getBoundingClientRect().height),
+        Math.round(header.getBoundingClientRect().top),
+        Math.round(panel.getBoundingClientRect().top),
+        Math.round(panel.getBoundingClientRect().height),
+      ].join('|');
+
+      const store = window as unknown as { __triageSettle?: { sample: string; stable: number } };
+      const previous = store.__triageSettle;
+
+      if (previous?.sample === sample) {
+        store.__triageSettle = { sample, stable: previous.stable + 1 };
+        return previous.stable + 1 >= 3;
+      }
+
+      store.__triageSettle = { sample, stable: 0 };
+      return false;
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+};
+
 const screenshotOptions = {
   animations: 'disabled',
   // Was 0.015 suite-wide (pre-P4/P5), justified by ~1% observed sub-pixel font-rendering
@@ -486,6 +558,7 @@ for (const width of widths) {
       // tag, ExceptionEvidencePanel.tsx) its only real coverage in this suite.
       await page.getByRole('listbox', { name: 'Exceptions' }).getByRole('option').first().click();
       await expect(page.locator('.exception-detail')).toBeVisible();
+      await settleTriageLayout(page);
       await expect(page.locator('.exception-triage')).toHaveScreenshot(
         `exceptions-triage-${width}.png`,
         screenshotOptions,
