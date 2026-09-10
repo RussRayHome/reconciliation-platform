@@ -1898,6 +1898,7 @@ function ReconciliationApp({
                   <PendingApprovalsInbox
                     canApprove={rolePermissions.canApprove}
                     isAdmin={isAdmin}
+                    currentUsername={username}
                     onApprovalStateChange={() => setApprovalCountsRefreshNonce((nonce) => nonce + 1)}
                   />
                 }

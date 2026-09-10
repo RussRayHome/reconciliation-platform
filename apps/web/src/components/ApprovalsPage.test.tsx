@@ -66,11 +66,19 @@ const PENDING_ASSIGNED_RUN: ApprovalRow = {
   state: 'PENDING',
 };
 
-const renderPage = (props: Partial<{ canApprove: boolean; isAdmin: boolean }> = {}) => {
-  const merged = { canApprove: true, isAdmin: false, ...props };
+const renderPage = (
+  props: Partial<{ canApprove: boolean; isAdmin: boolean; currentUsername: string }> = {},
+) => {
+  // Defaults to a reviewer who submitted none of the fixture rows, so the pre-#404 cases keep
+  // exercising the reviewer path rather than tripping the new self-submission guard.
+  const merged = { canApprove: true, isAdmin: false, currentUsername: 'm.ortega', ...props };
   return render(
     <MemoryRouter initialEntries={[routePaths.approvals]}>
-      <PendingApprovalsInbox canApprove={merged.canApprove} isAdmin={merged.isAdmin} />
+      <PendingApprovalsInbox
+        canApprove={merged.canApprove}
+        isAdmin={merged.isAdmin}
+        currentUsername={merged.currentUsername}
+      />
     </MemoryRouter>,
   );
 };
@@ -112,6 +120,27 @@ describe('PendingApprovalsInbox (N1)', () => {
     expect(screen.getByText('Loading approvals…')).toBeTruthy();
   });
 
+
+  // #404 (v3). Deliberately worded as usability, not security: self-approval is refused by a
+  // database CHECK constraint (changeset 0056), so this does not close a two-person-rule bypass.
+  // What it fixes is the UI offering a selectable checkbox on a row the database would reject.
+  it('offers no bulk-select checkbox on a row the signed-in user submitted', async () => {
+    mockedApi.rows = [{ ...PENDING_UNASSIGNED, id: 'own-row', title: 'My Own Run', submitter: 'j.doe' }];
+    renderPage({ currentUsername: 'j.doe' });
+
+    await screen.findByText('My Own Run');
+    expect(screen.queryByRole('checkbox', { name: 'Select My Own Run' })).not.toBeInTheDocument();
+    // Rule 27: the control goes, the reason stays.
+    expect(screen.getByText(/You submitted this, so you cannot approve it/i)).toBeInTheDocument();
+  });
+
+  it('still offers the checkbox on a row someone else submitted', async () => {
+    mockedApi.rows = [{ ...PENDING_UNASSIGNED, id: 'other-row', title: 'Their Run', submitter: 'a.smith' }];
+    renderPage({ currentUsername: 'j.doe' });
+
+    await screen.findByText('Their Run');
+    expect(screen.getByRole('checkbox', { name: 'Select Their Run' })).toBeInTheDocument();
+  });
   it('renders rows for a live group once loaded, with claim/approve actions gated correctly', async () => {
     mockedApi.rows = [PENDING_UNASSIGNED, PENDING_ASSIGNED];
     renderPage({ canApprove: true });

@@ -359,4 +359,14 @@
       grid-template-columns: 1fr;
     }
   }
+
+  /* #404: stands in for the checkbox on a row the signed-in user submitted. Occupies the cell so
+     the grid columns stay aligned, and carries the reason for a screen reader -- rule 27's
+     "not available" case removes the control but never the explanation. */
+  .approvals__row-self {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+  }
 }
