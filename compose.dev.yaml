@@ -103,7 +103,17 @@ services:
     mem_limit: ${NGINX_UI_MEM_LIMIT:-512m}
     mem_reservation: ${NGINX_UI_MEM_RESERVATION:-128m}
     cpus: ${NGINX_UI_CPUS:-1.00}
-    stop_grace_period: 90s
+    # The uozi/nginx-ui image sets STOPSIGNAL SIGQUIT, which nginx reads as *graceful* shutdown:
+    # finish in-flight requests, drain keepalive connections, then exit. A single browser tab left
+    # open on the UI holds a keepalive open, so nginx keeps draining until the grace period runs
+    # out and Docker escalates to SIGKILL -- which is what `Exited (137)` on the stage container
+    # records. It was never hung; 90s was the wait it had been given.
+    #
+    # This is a local dev admin UI with two users and no traffic to drain, so graceful buys
+    # nothing and costs a minute and a half on every `docker compose stop`. SIGTERM is nginx's
+    # fast-shutdown signal; the shortened grace period is a backstop, not the mechanism.
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
 
 volumes:
   recon-nginx-ui-data:
