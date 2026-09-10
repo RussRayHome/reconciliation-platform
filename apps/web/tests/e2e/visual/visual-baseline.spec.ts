@@ -559,6 +559,20 @@ for (const width of widths) {
       await page.getByRole('listbox', { name: 'Exceptions' }).getByRole('option').first().click();
       await expect(page.locator('.exception-detail')).toBeVisible();
       await settleTriageLayout(page);
+
+      // UI-3 (#402) item 6, as an assertion rather than a conclusion in prose.
+      //
+      // `--exception-list-max: 560px` bounds the list so the evidence panel beneath it stays above
+      // the fold. The requirement R3 chose that cap for is "no scroll to decide", not a particular
+      // number -- so check the requirement. At 1440x900 the Accept button must sit inside the
+      // viewport without scrolling; raise the cap and this fails, which is the proof that the cap is
+      // load-bearing rather than arbitrary. #402 asks for exactly that check before anyone removes it.
+      if (width === 1440) {
+        const acceptBox = await page.getByRole('button', { name: /^Accept/ }).boundingBox();
+        expect(acceptBox).not.toBeNull();
+        expect(acceptBox!.y + acceptBox!.height).toBeLessThanOrEqual(900);
+      }
+
       await expect(page.locator('.exception-triage')).toHaveScreenshot(
         `exceptions-triage-${width}.png`,
         screenshotOptions,
