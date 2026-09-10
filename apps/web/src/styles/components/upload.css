@@ -279,12 +279,6 @@
     letter-spacing: 0.08em;
   }
 
-  .import-screen__header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-  }
-
   /* R2 V4.3: a disabled Submit run always states its reason on screen, right beneath the
      button -- ground rule 8, never a bare greyed control. */
   .import-screen__submit-group {
@@ -745,5 +739,88 @@
     margin: 0.3rem 0 0;
     color: var(--text-secondary);
     font-size: 0.84rem;
+  }
+}
+
+/* [SCREEN] 1a — control shapes the approved header and tab strip require. */
+@layer components {
+  /* The native file input is the picker's mechanism, never its appearance. The visible control is
+     the styled Browse label pointing at it via `htmlFor`; leaving the input visible rendered a
+     second, browser-chrome picker beside it ("Choose Files / No file chosen"). Clipped rather than
+     `display:none` so it stays focusable and reachable by keyboard and assistive tech — a hidden
+     input is still the thing that receives the file. */
+  .source-slot input[type='file'],
+  .source-dropzone__drop input[type='file'] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .source-dropzone__drop {
+    position: relative;
+  }
+
+  /* The capability pill: what this role may do here, not merely who they are. */
+  .import-screen__capability-pill {
+    display: inline-flex;
+    align-items: center;
+    height: var(--control-height);
+    padding: 0 0.7rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  /* Header action row: aligned at 36px, and allowed to wrap rather than overflow its card. The
+     previous row pushed past the card's right edge and sat on top of the recap column. */
+  .import-screen__header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Step 3 · Submit, at the foot of the left column. Badge + body, matching the numbered step
+     cards the design uses for "Add sources" and "Describe the run". */
+  .import-step-submit {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    margin-top: 1.125rem;
+    padding: 18px 20px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-panel);
+    background: var(--bg-raised);
+  }
+
+  .import-step-submit__badge {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-pill);
+    background: var(--positive);
+    color: var(--bg-sunken, #04140f);
+    font-size: var(--font-label);
+    font-weight: 600;
+  }
+
+  .import-step-submit__title {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 500;
   }
 }

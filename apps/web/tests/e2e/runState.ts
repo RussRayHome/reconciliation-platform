@@ -6,8 +6,9 @@ import { Client } from 'pg';
  * The Import Files screen behaves differently once its organization has a terminal run, and the
  * difference is not cosmetic. `durableRunPhase` is fetched from the server on each page load
  * (App.tsx's mount-time getLatestImportRunRequest), so in the succeeded phase the screen renders
- * its post-run shape: the submit button relabels to "Start new run", and the mount-time hydration
- * does noticeably more work (it fetches the latest run, then that run's full report).
+ * its post-run shape: the upload slots are cleared and the submit button is consequently disabled,
+ * and the mount-time hydration does noticeably more work (it fetches the latest run, then that
+ * run's full report).
  *
  * Empirically that extra in-flight work is what makes a programmatic `setInputFiles` on the first
  * bank slot go missing under parallel load -- traced directly: the slot showed its empty prompt

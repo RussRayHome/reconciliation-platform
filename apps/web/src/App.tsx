@@ -472,22 +472,26 @@ const resolveSubmitButtonState = (
   isPending: boolean,
   isQueued: boolean,
   durablePhaseKind: LatestRunPhase['kind'],
-  hasSucceeded: boolean,
 ): SubmitButtonState => {
   // What the button SAYS follows the run phase; whether it is ENABLED follows whether the files
   // are actually there. Keeping those separate is the point.
   //
-  // N4 originally bypassed the upload check whenever a run had succeeded, because a completed run
-  // resets its own upload slots (see the `run`-succeeded effect in App) and the caption would
-  // otherwise regress from "Start new run" to "Submit run". That fixed the caption by switching
-  // off the guard, which left the button live with no files attached -- and the submit handler
-  // below silently returns in exactly that state, so the click did nothing, said nothing, and the
-  // user got no indication anything had gone wrong. Deriving the label separately keeps the
-  // caption stable through the slot reset without ever enabling a button that cannot act.
+  // "Submit run" in every state, including after a success -- the run-start vocabulary approved on
+  // #455. Four labels for one action left a user unable to tell, from the button alone, whether
+  // they were about to navigate or start the engine: "New run" navigates, "Submit run" starts it,
+  // "Submit accepted rows" completes a partial accept, "Start over" discards a held run.
+  //
+  // "Start new run" was the fifth variant and appeared on no designed screen. Retiring it also
+  // makes the button's accessible name stable, which is what `submitRunButton` in the e2e helpers
+  // works around with a structural `form=` locator -- keep that locator regardless, it is strictly
+  // more robust than a name match.
+  //
+  // N4's history is worth preserving: it once bypassed the upload check after a success, because a
+  // completed run resets its own slots and the caption regressed. That fixed the caption by
+  // switching off the guard, leaving the button live with no files attached -- and the submit
+  // handler silently returns in exactly that state, so the click did nothing and said nothing.
+  // Label and enablement stay separate here for that reason; only the label set has narrowed.
   const resolvePhaseLabel = (): string => {
-    if (hasSucceeded || durablePhaseKind === 'succeeded') {
-      return 'Start new run';
-    }
     if (durablePhaseKind === 'validation-failed' || durablePhaseKind === 'matching-failed') {
       return 'Retry run';
     }
@@ -796,6 +800,15 @@ function ReconciliationApp({
   const [hasDownloadedWorkbook, setHasDownloadedWorkbook] = useState(false);
   const [hasExportedJson, setHasExportedJson] = useState(false);
   const navigate = useNavigate();
+  /** README 1a's header pill. A capability, not a bare role: the screen's whole question is
+   * whether this person may start a run, and "Senior analyst" alone does not answer it —
+   * `canSubmitImportRuns` is a deliberate product decision ("file reconciliation should stay with
+   * the senior Financial analyst"), so the pill states the consequence rather than the title.
+   * Uses the existing `roleDisplayLabels` vocabulary rather than reformatting the role id. */
+  const capabilityLabel = `${roleLabel}${
+    rolePermissions.canSubmitImportRuns ? ' · can submit runs' : ' · read only'
+  }`;
+
   const location = useLocation();
   /** The source tab is URL state, not route state (Phase 2): `?source=` keeps a tab linkable
    * without making it a navigation decision, which is why the five tabs share one route. An
@@ -1407,7 +1420,6 @@ function ReconciliationApp({
     reconciliation.isPending,
     Boolean(submittedQueuedRun),
     durableRunPhase.kind,
-    Boolean(run),
   );
 
   // R2 V2: the run step's status, in the same precedence order `resolveRunStatusTone` already
@@ -1678,6 +1690,7 @@ function ReconciliationApp({
                 element={
                   <SourceUploadSection
                     activeSourceType={activeSourceType}
+                    capabilityLabel={capabilityLabel}
                     annualYear={annualYear}
                     bankFiles={bankFiles}
                     bankAccountIds={bankAccountIds}
@@ -2071,6 +2084,7 @@ function MatchingFailurePanel({
 
 function SourceUploadSection({
   activeSourceType,
+  capabilityLabel,
   accountIdentifier,
   annualYear,
   bankFiles,
@@ -2110,6 +2124,10 @@ function SourceUploadSection({
    * component state, mirroring how the Reconciliation section's File-based/Rules-based split
    * already works (ReviewSection's `activeView` prop, one <Route> per tab). */
   activeSourceType: SourceTabId;
+  /** README 1a's header pill — the signed-in role and what it may do here, e.g.
+   * "Senior analyst · can submit runs". A capability, not a bare role: the screen's whole question
+   * is whether this person can start a run, and a role name alone does not answer it. */
+  capabilityLabel: string;
   accountIdentifier: string;
   annualYear: string;
   bankFiles: (File | null)[];
@@ -2210,6 +2228,13 @@ function SourceUploadSection({
         description="CSV or XLSX. Format is detected by extension; the engine preserves original file names, source line numbers, excluded rows, and normalized audit fields."
         actions={
           <div className="import-screen__header-actions">
+            {/* README 1a: the header action row carries the capability pill and Download templates
+                — and no primary. Submitting is step 3 at the foot of the left column, because the
+                screen argues add sources → describe the run → submit. A submit button up here
+                inverts that argument, offering the last step before the first. */}
+            <span className="import-screen__capability-pill">
+              {capabilityLabel}
+            </span>
             <details className="import-screen__templates-menu">
               <summary className="secondary-button">Download templates</summary>
               <div className="import-screen__templates-menu-list">
@@ -2227,26 +2252,6 @@ function SourceUploadSection({
                 </a>
               </div>
             </details>
-            <div className="import-screen__submit-group">
-              {/* R2 V4.3: `aria-disabled`, not the native `disabled` attribute -- a genuinely
-                  disabled button drops out of the tab order, so a screen reader user could never
-                  reach `aria-describedby`'s reason at all. `handleSubmit` enforces the same gate
-                  for real (see its own comment); this only controls presentation and focusability. */}
-              <button
-                type="submit"
-                form="source-upload-form"
-                className="accent-button"
-                aria-disabled={submitState.disabled}
-                aria-describedby={submitState.reason ? submitButtonReasonId : undefined}
-              >
-                {submitState.label}
-              </button>
-              {submitState.reason ? (
-                <p id={submitButtonReasonId} className="import-screen__submit-reason">
-                  {submitState.reason}
-                </p>
-              ) : null}
-            </div>
           </div>
         }
       >
@@ -2257,6 +2262,9 @@ function SourceUploadSection({
             id: tab.id,
             label: tab.label,
             description: sourceTabMeta(tab, attachedBySource[tab.id]),
+            // The same hue RunSourceRecap paints its chips with, so the strip and the
+            // "IN THIS RUN" recap identify a source type by the same colour.
+            accentToken: tab.hueToken,
           }))}
           activeId={activeSourceType}
           // A tab is URL state, not a route: same screen, `?source=` so it stays linkable.
@@ -2368,6 +2376,40 @@ function SourceUploadSection({
               />
             </div>
           )}
+
+          {/* Step 3 · Submit. Sits at the foot of the left column, after the sources and the run
+              description, because that is the order the screen argues (README 1a). Never a bare
+              disabled button: the reason always renders beside it — [OBJECT] rule 27's "not yet
+              valid" case, where the user can resolve it themselves, so the control stays put and
+              says what is missing. */}
+          <div className="import-step-submit">
+            <span className="import-step-submit__badge" aria-hidden="true">
+              3
+            </span>
+            <div className="import-step-submit__body">
+              <h3 className="import-step-submit__title">Submit</h3>
+              <div className="import-screen__submit-group">
+                {/* R2 V4.3: `aria-disabled`, not the native `disabled` attribute -- a genuinely
+                    disabled button drops out of the tab order, so a screen reader user could never
+                    reach `aria-describedby`'s reason at all. `handleSubmit` enforces the same gate
+                    for real (see its own comment); this only controls presentation and focusability. */}
+                <button
+                  type="submit"
+                  form="source-upload-form"
+                  className="primary-button"
+                  aria-disabled={submitState.disabled}
+                  aria-describedby={submitState.reason ? submitButtonReasonId : undefined}
+                >
+                  {submitState.label}
+                </button>
+                {submitState.reason ? (
+                  <p id={submitButtonReasonId} className="import-screen__submit-reason">
+                    {submitState.reason}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
 
           <RunSourceRecap attachedBySource={attachedBySource} />
 

@@ -10,133 +10,84 @@
     gap: 0;
   }
 
-  .tab-list {
-    display: grid;
-    align-items: end;
-    justify-content: start;
-    gap: 0.45rem;
-    grid-auto-columns: minmax(10.5rem, max-content);
-    grid-auto-flow: column;
-    padding: 0;
-    margin-bottom: -1px;
-    position: relative;
-    z-index: 1;
-  }
+  /* README 1a: a SEGMENTED CONTROL, not folder tabs.
+     The five source types are peers a single run carries at once. A folder metaphor says the
+     opposite -- documents filed away in separate drawers, one open at a time -- and the browser-tab
+     shape it produced (rounded top corners, a nub, a baseline the active tab breaks through) read
+     as chrome rather than as part of the run.
 
-  .tab-list::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 1px;
-    background: var(--line-strong);
+     Each segment carries its type's hue as a 3px left edge, using the same `hueToken` the config
+     already declares and RunSourceRecap already paints its chips with. That is the point of the
+     colour: the strip and the recap name a source type identically, so a reader scanning "what is
+     in this run" does not have to re-learn the mapping halfway down the screen. */
+  .tab-list {
+    display: flex;
+    align-items: stretch;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--bg-sunken);
+    /* Five segments do not fit a phone. Scrolling the strip keeps every source type reachable;
+       wrapping it into two rows would break the "one row of peers" reading that is the whole
+       reason this is a segmented control. */
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .tab-button {
     position: relative;
     display: grid;
     justify-items: start;
-    gap: 0.35rem;
-    min-height: 0;
-    width: 100%;
-    padding: 1rem 1.05rem 0.88rem;
-    border-radius: 12px 12px 0 0;
-    border: 1px solid var(--line);
-    border-bottom: none;
-    background: var(--bg-sunken);
+    gap: 0.15rem;
+    flex: 1 1 0;
+    /* Below this the two-line label wraps mid-word; the strip scrolls instead. */
+    min-width: 8.5rem;
+    padding: 0.5rem 0.7rem;
+    border: none;
+    border-left: 3px solid var(--roving-tab-accent, var(--line-strong));
+    border-radius: var(--radius-row);
+    background: transparent;
     color: var(--text-secondary);
-    box-shadow: none;
-    transform-origin: bottom center;
+    text-align: left;
     transition:
-      transform 180ms ease,
-      box-shadow 180ms ease,
-      background 180ms ease,
-      border-color 180ms ease;
-    isolation: isolate;
+      background 160ms ease,
+      color 160ms ease;
   }
 
-  .tab-button::before {
-    content: '';
-    position: absolute;
-    top: -0.45rem;
-    left: 1rem;
-    width: 32%;
-    min-width: 4rem;
-    height: 0.7rem;
-    border-radius: var(--radius-control) var(--radius-control) 0 0;
-    border: 1px solid var(--line);
-    border-bottom: none;
-    background: var(--bg-raised);
-    z-index: -1;
-  }
-
-  .tab-button__label-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .tab-button__label-text {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 1rem;
-  }
-
-  .tab-button__icon-shell {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.65rem;
-    height: 1.65rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--line-strong);
+  .tab-button:hover {
     background: var(--bg-raised);
     color: var(--text-primary);
   }
 
-  .tab-button__icon {
-    width: 0.95rem;
-    height: 0.95rem;
-  }
-
-  .tab-button--active .tab-button__icon-shell {
-    border-color: var(--accent-soft-border);
-    color: var(--accent);
-  }
-
-  .tab-button small {
-    color: var(--text-tertiary);
-    font-size: 0.79rem;
-  }
-
-  .tab-button:hover {
-    transform: translateY(-3px);
-    box-shadow: none;
-    border-color: var(--line-strong);
-  }
-
   .tab-button--active {
-    transform: translateY(1px) scale(1.01);
-    border-color: var(--line-strong);
     background: var(--bg-surface);
     color: var(--text-strong);
-    box-shadow: none;
-    z-index: 2;
   }
 
-  .tab-button--active::before {
-    border-color: var(--line-strong);
-    background: var(--bg-raised);
+  /* RovingTabList renders `.roving-tab__*`, not `.tab-button__*` -- the rules that used the
+     latter never matched anything. Scoped to `.tab-list` so the Review screen's segmented
+     control, which shares the component and styles `.roving-tab__label-row` in review.css as a
+     single inline row, keeps its own treatment. */
+  .tab-list .roving-tab__label-row {
+    display: grid;
+    justify-items: start;
+    gap: 0.1rem;
+    width: 100%;
+    min-width: 0;
   }
 
-  .tab-button--active::after {
-    content: '';
-    position: absolute;
-    left: -1px;
-    right: -1px;
-    bottom: -1px;
-    height: 3px;
-    background: var(--bg-surface);
+  .tab-list .roving-tab__label-text {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.92rem;
+    line-height: 1.25;
+  }
+
+  .tab-list small {
+    color: var(--text-tertiary);
+    font-size: 0.76rem;
+    line-height: 1.2;
   }
 
   .tabbed-workspace > [role='tabpanel'] {

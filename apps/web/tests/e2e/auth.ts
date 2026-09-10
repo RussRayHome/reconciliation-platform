@@ -27,9 +27,9 @@ const dedupeCredentials = (credentials: LoginCredentials[]): LoginCredentials[] 
  *
  * `durableRunPhase` is fetched from the server per page load and scoped to the logged-in user's
  * organization, so every test sharing one organization also shares run state: once ANY test
- * completed a run, the Import Files submit button switched to "Start new run" (enabled) for
- * everyone, and the specs asserting the pre-run disabled state failed depending on which worker
- * won the race. Giving each worker slot its own organization removes that cross-worker channel.
+ * completed a run, the Import Files screen rendered its post-run shape for everyone, and the specs
+ * asserting the pre-run state failed depending on which worker won the race. Giving each worker
+ * slot its own organization removes that cross-worker channel.
  *
  * TEST_PARALLEL_INDEX is Playwright's own 0..workers-1 slot number, stable for the life of a
  * worker, which is exactly the granularity the seeded pool is keyed on. It is absent outside a
@@ -149,7 +149,7 @@ export const loginToApplication = async (
 /** R2 V4: this button's accessible name now changes with the run's phase -- "Submit run" only
  * while nothing has been submitted yet; once ANY run for this organization (shared across every
  * e2e test -- confirmed: every seeded login belongs to the same "Default Organization") reaches a
- * terminal phase, it reads "Retry run" or "Start new run" instead, since `durableRunPhase` is
+ * terminal phase, it reads "Retry run" instead, since `durableRunPhase` is
  * fetched fresh from the server on every page load, not local/per-test state. A literal-name
  * locator broke every helper/spec that used one the moment any single e2e run anywhere in the
  * suite completed. What never changes is the `form` attribute (App.tsx sets it once, referencing

@@ -25,10 +25,26 @@
 
   .section-card__header {
     display: flex;
+    /* Both children are flex items, and a flex item's default `min-width: auto` means it refuses
+       to shrink below its content's intrinsic minimum. With a long description on one side and an
+       action row on the other, neither yields and the pair overflows the card -- which is what
+       screen 1a's header was doing. `min-width: 0` lets the text wrap, and wrapping lets the
+       actions drop to their own line instead of being clipped. Every SectionCard had this latent;
+       1a is simply the first whose content was wide enough to expose it. */
+    flex-wrap: wrap;
     justify-content: space-between;
     gap: 1rem;
     align-items: flex-start;
     margin-bottom: 1.25rem;
+  }
+
+  .section-card__header > * {
+    min-width: 0;
+  }
+
+  /* Keeps the actions right-aligned whether they share the first line or wrap onto their own. */
+  .section-card__actions {
+    margin-left: auto;
   }
 
   .section-card__body {

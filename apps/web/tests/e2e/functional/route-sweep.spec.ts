@@ -83,7 +83,7 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
 // reconciliation run"), so a heading landmark now exists; the button locator is kept because the
 // step below races it against reconSummary's heading, and swapping in a second heading would make
 // that race harder to read for no added coverage. R2 V4: that button's accessible name is now phase-dependent ("Submit run" / "Retry
-// run" / "Start new run"), so this landmark uses submitRunButton(page) (a stable `form`-attribute
+// run"), so this landmark uses submitRunButton(page) (a stable `form`-attribute
 // locator), not a role+name pair.
 
 const accountedForKeys = [
