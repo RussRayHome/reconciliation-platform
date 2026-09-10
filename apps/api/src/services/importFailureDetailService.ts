@@ -2,11 +2,13 @@ import {
   CsvParser,
   DEFAULT_VALIDATION_OPTIONS,
   REQUIRED_BANKING_HEADERS,
+  REQUIRED_BILLING_HEADERS,
   REQUIRED_GL_HEADERS,
   XlsxParser,
   type FileValidationGate,
 } from '@recon/core';
 import type { RunIssueItem } from '@recon/persistence';
+import type { ImportFileSourceType } from '@recon/domain';
 
 export interface HeaderComparisonRow {
   position: number;
@@ -23,7 +25,7 @@ export interface GateSequenceEntry {
 export interface ImportFileFailureDetail {
   importFileId: string;
   originalFilename: string;
-  sourceType: 'BANK' | 'GL';
+  sourceType: ImportFileSourceType;
   fileFormat: 'CSV' | 'XLSX';
   validationStatus: string;
   rowCount: number | null;
@@ -102,7 +104,7 @@ const buildHeaderComparison = (
 export const buildImportFileFailureDetail = async (input: {
   importFileId: string;
   originalFilename: string;
-  sourceType: 'BANK' | 'GL';
+  sourceType: ImportFileSourceType;
   fileFormat: 'CSV' | 'XLSX';
   validationStatus: string;
   rowCount: number | null;
@@ -121,9 +123,33 @@ export const buildImportFileFailureDetail = async (input: {
   if (isStructuralFailure) {
     const parser = input.fileFormat === 'CSV' ? new CsvParser() : new XlsxParser();
     const { headers } = await parser.parse(input.bytes);
-    const expectedHeaders =
-      input.sourceType === 'BANK' ? REQUIRED_BANKING_HEADERS : REQUIRED_GL_HEADERS;
-    headerComparison = buildHeaderComparison(expectedHeaders, headers);
+    // A lookup, not a ternary. This was `sourceType === 'BANK' ? banking : gl`, which was correct
+    // only while BANK and GL were the sole possibilities -- the moment #463 widened the union, that
+    // shape would have compared every AP, AR and payroll file against GL's headers and reported a
+    // confident, wrong comparison. That is the silent miscategorization `assertBankOrGl`'s comment
+    // was written to prevent, arriving through a different door.
+    //
+    // RECEIPT and PAYROLL are absent deliberately: no required-header set exists for them yet (AR
+    // rule content is deferred, payroll's ships with #408).
+    //
+    // They fall through to `null`, and that is NOT a neutral "no comparison available" -- null is
+    // load-bearing on the web side, where it selects Screen 07 (all rows invalid) when
+    // importableRowCount is also 0 (see ImportFileFailureDetail in apps/web/src/lib/api.ts). The
+    // combination null + importableRowCount > 0 is an unspecified third state.
+    //
+    // It is unreachable today: this whole block is gated on isStructuralFailure, and a source type
+    // with no validation rules produces no gate failures to be structural about. So RECEIPT and
+    // PAYROLL cannot arrive here until their rules land -- and whichever change lands those rules
+    // must add their header set here, or design the third state, before that stops being true.
+    // Emitting GL's headers instead would be worse in the meantime: a confident, wrong comparison
+    // reads as a real finding about the user's file.
+    const expectedHeadersBySourceType: Partial<Record<ImportFileSourceType, readonly string[]>> = {
+      BANK: REQUIRED_BANKING_HEADERS,
+      GL: REQUIRED_GL_HEADERS,
+      BILLING: REQUIRED_BILLING_HEADERS,
+    };
+    const expectedHeaders = expectedHeadersBySourceType[input.sourceType];
+    headerComparison = expectedHeaders ? buildHeaderComparison(expectedHeaders, headers) : null;
   }
 
   const issuesByCodeMap = new Map<string, { code: string; severity: string; count: number }>();

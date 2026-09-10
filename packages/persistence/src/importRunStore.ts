@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { computeSha256Hex } from './reconciliationLifecycleStore';
 import { runInTenantScope } from './postgres';
 import { PostgresBlobStorage, type BlobStorage } from './blobStorage';
+import type { ImportFileSourceType } from '@recon/domain';
 
 /** One uploaded source file for a new run. `role` and `sourceType` diverge as of Issue #141:
  * `run_source_file.role` is deliberately not FK'd to `import_file.source_type` (changeset 0045,
@@ -19,7 +20,7 @@ import { PostgresBlobStorage, type BlobStorage } from './blobStorage';
  * below) is already untyped `string` -- narrowing only the write side wouldn't add real safety. */
 export interface CreateImportRunFileInput {
   role: string;
-  sourceType: 'BANK' | 'GL';
+  sourceType: ImportFileSourceType;
   originalFilename: string;
   fileFormat: 'CSV' | 'XLSX';
   bytes: Buffer;
@@ -528,7 +529,7 @@ export class PostgresImportRunStore {
     importFileId: string,
   ): Promise<
     | (Omit<ImportRunFileSummary, 'sourceType'> & {
-        sourceType: 'BANK' | 'GL';
+        sourceType: ImportFileSourceType;
         bytes: Buffer;
       })
     | null
@@ -553,7 +554,7 @@ export class PostgresImportRunStore {
       return {
         importFileId: row.id,
         role: row.role,
-        sourceType: row.source_type as 'BANK' | 'GL',
+        sourceType: row.source_type as ImportFileSourceType,
         originalFilename: row.original_filename,
         fileFormat: row.file_format,
         validationStatus: row.validation_status,
