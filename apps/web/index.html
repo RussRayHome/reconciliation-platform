@@ -4,7 +4,39 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
-    <title>Financial Reconciliation Platform</title>
+    <!-- The product mark: five arrows pointing inward at a solid hub -- the five source types a
+         run carries (bank, GL, AP/payments, AR/invoices, payroll) resolving to one reconciled
+         record. Five is domain-accurate, not decorative: if the number of source types changes the
+         mark is wrong and should be redrawn, not quietly kept.
+
+         Drawn for tab size rather than resized down to it. It replaces a crop of brand-logo.png,
+         which is a detailed full-scene illustration and could not survive 16 physical pixels --
+         brand-logo.png itself is unchanged and remains the single brand source.
+
+         favicon.svg is HAND-AUTHORED, not exported, and the head of it is the reason: it carries
+         its own light-mode fill, because bare #1fd1a1 is legible on dark browser chrome and nearly
+         invisible on white. Every shape is `class="m"` with no fill attribute, so if that <style>
+         block is ever dropped the shapes fall back to SVG's initial fill -- solid black, invisible
+         on the dark chrome the switch exists to serve, and silent. indexHtml.test.ts asserts the
+         rule is present for exactly that reason. This is independent of <meta name="color-scheme">
+         above, which declares the page's scheme; the favicon's query resolves against the OS
+         scheme, which is what colours the tab strip.
+
+         The 180px apple-touch-icon is the TILE version (filled teal block, dark mark) while the
+         32px is the bare mark on transparent. Home-screen icons composite against wallpaper and
+         need the block; a tab does not. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png" />
+    <!-- "Recon Platform", not "Financial Reconciliation Platform". A browser tab shows roughly
+         15-20 characters before truncating and under 10 when crowded, and the old 33-character
+         title lost the only word that identified the product: it degraded to "Financial..." while
+         "Reconciliation" was cut mid-word. "Financial" is the least distinctive word in the name --
+         almost everything in this space is financial -- so it was the wrong half to keep.
+
+         Not a rename: the codebase, the compose projects and the design bundle already call it
+         this (`@recon/domain`, `recon-observability`, "Recon Platform Design Review"). -->
+    <title>Recon Platform</title>
   </head>
   <body>
     <div id="root"></div>

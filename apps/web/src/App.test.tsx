@@ -2262,7 +2262,7 @@ describe('App', () => {
       // the upload screen the way a user would before starting the next run.
       fireEvent.click(screen.getByRole('link', { name: 'New run' }));
       await fillUploadInputs();
-      fireEvent.click(screen.getByRole('button', { name: 'Start new run' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
       mockedApiState.latestImportRunResponse = createImportRunSummary({
         validationJob: {
@@ -2535,10 +2535,15 @@ describe('App', () => {
     });
   });
 
-  // The caption is what this covers. It used to also assert the button re-enabled, but success
-  // clears the upload slots, so an enabled button there could not actually submit anything -- see
-  // 'clears the upload slots after success and disables the button until files are re-added'.
-  it('relabels to Start new run after success', async () => {
+  // The caption is what this covers, and the invariant INVERTED when #455 retired "Start new
+  // run": it was the fifth caption variant and appeared on no designed screen, so the button now
+  // holds "Submit run" across success rather than relabelling. Asserting that explicitly is the
+  // point -- a silent return of the fifth variant is exactly what this is here to catch.
+  //
+  // It used to also assert the button re-enabled, but success clears the upload slots, so an
+  // enabled button there could not actually submit anything -- see 'clears the upload slots after
+  // success and disables the button until files are re-added'.
+  it('keeps the Submit run caption after success rather than relabelling', async () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
     renderApp();
@@ -2547,14 +2552,16 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Start new run' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Submit run' })).toBeInTheDocument();
     });
+    expect(screen.queryByRole('button', { name: 'Start new run' })).not.toBeInTheDocument();
   });
 
   // N4: navigating back to Import Files after a successful run (browser back, not a fresh
   // landing -- applyInitialLanding only fires once per mount) must not show the just-submitted
-  // filenames sitting in the upload slots as if they hadn't been submitted yet. The caption
-  // staying "Start new run" (not regressing to "Submit run") is the other half of this.
+  // filenames sitting in the upload slots as if they hadn't been submitted yet. Since #455 the
+  // caption no longer changes at all -- it is "Submit run" throughout -- so what is left to prove
+  // here is the disabled state and the cleared slots.
   //
   // The button is DISABLED here, and that is the fix, not a regression. It previously stayed
   // enabled: resolveSubmitButtonState skipped the upload check in the succeeded phase purely to
@@ -2571,7 +2578,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Start new run' })).toHaveAttribute(
+      expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
         'aria-disabled',
         'true',
       );
@@ -2678,7 +2685,10 @@ describe('App', () => {
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Start new run' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Submit run' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
     });
     expect(FakeImportRunXhr.instances).toHaveLength(1);
   });

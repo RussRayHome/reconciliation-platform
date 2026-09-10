@@ -21,9 +21,11 @@
 #
 # What it does:
 #   1. Validates env file presence and required variables (via validate-env.sh)
-#   2. Pulls/builds images if needed
-#   3. Starts all services with `docker compose up -d --build`
-#   4. Waits for the gateway health endpoint to become ready
+#   2. When building: reclaims orphaned test-run images (docker-footprint.sh) first, so the build
+#      adds to the smallest possible footprint -- skip with DEPLOY_SKIP_FOOTPRINT=true
+#   3. Pulls/builds images if needed (skip with DEPLOY_SKIP_BUILD=true, which also skips step 2)
+#   4. Starts all services with `docker compose up -d --build`
+#   5. Waits for the gateway health endpoint to become ready
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -125,6 +127,31 @@ if [[ "$DEPLOY_ENV" == "dev" || "$DEPLOY_ENV" == "stage" ]]; then
 fi
 
 if [[ "${DEPLOY_SKIP_BUILD:-false}" != "true" ]]; then
+  # Reclaim what previous test runs left behind BEFORE adding more images. Orphaned
+  # `reconciliation-platform-integration-*` images accumulate silently -- 714 of them, 30GB, by
+  # 2026-09-10 -- and the resulting disk pressure degrades Docker's container-create path badly
+  # enough that container-backed test suites start timing out with "machine saturation" errors that
+  # name nothing useful.
+  #
+  # INSIDE the build guard, deliberately. It was briefly outside, which meant a DEPLOY_SKIP_BUILD
+  # deploy paid for a full prune of a ~24GB cache anyway -- and that is what timed out
+  # `deploy-cleanup.test.ts`'s 170s budget on 2026-09-10 (`spawnSync /bin/sh ETIMEDOUT`). Two
+  # reasons it belongs here and not there:
+  #
+  #   1. Nothing to reclaim ahead of. The check exists to make room for images this deploy is about
+  #      to add. A skip-build deploy adds none, so pruning first buys nothing.
+  #   2. A test that deploys a stack must not garbage-collect the developer's Docker cache as a
+  #      side effect of asking for a deploy. That is a destructive side effect in a dependency.
+  #
+  # Never touches the dev stack, stage, or observability; see docker-footprint.sh's protected list.
+  # Set DEPLOY_SKIP_FOOTPRINT=true to bypass (it only ever removes regenerable test artifacts, so
+  # there is rarely a reason to).
+  if [[ "${DEPLOY_SKIP_FOOTPRINT:-false}" != "true" ]]; then
+    bash "$ROOT_DIR/scripts/pre-flight/docker-footprint.sh" || {
+      echo "Footprint check reported a problem; continuing with the deploy." >&2
+    }
+  fi
+
   if [[ "${DOCKER_BUILD_NO_CACHE:-false}" == "true" ]]; then
     docker compose "${compose_args[@]}" build --no-cache
   else

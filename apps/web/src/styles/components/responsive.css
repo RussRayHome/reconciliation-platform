@@ -7,7 +7,6 @@
     .import-failure-panel__body,
     .row-grid__footer,
     .run-configuration-panel__row,
-    .tab-list,
     .rules-overview-grid,
     .rules-grid,
     .reports-browser,
@@ -22,7 +21,6 @@
   @media (prefers-reduced-motion: reduce) {
     .section-card:hover,
     .chart-card:hover,
-    .tab-button:hover,
     button:hover,
     .secondary-button:hover,
     .rule-card:hover,

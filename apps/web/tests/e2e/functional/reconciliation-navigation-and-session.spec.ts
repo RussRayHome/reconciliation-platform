@@ -16,7 +16,7 @@ import { exceptionSummaryCell, runReconciliation, setWorkbookFiles } from '../re
 // Before login: these specs drive the Import Files screen, whose behaviour depends on whether
 // this worker's organization already has a terminal run (see runState.ts). Without this they
 // inherit whatever the previous spec on this worker left behind, and the submit button they
-// click is the post-run "Start new run" -- correctly disabled when no files are attached.
+// click is the post-run one -- correctly disabled when no files are attached.
 test.beforeEach(async ({ page }) => {
   await resetRunsForWorker();
   await loginToApplication(page);

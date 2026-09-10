@@ -121,6 +121,23 @@ export function SubledgerEntitiesScreen({
         </div>
       </header>
 
+      {/* [SCREEN] 5a/5b interim scope notice (10_REGISTRY_INTERIM). The registries ship ahead of
+          the validation that consults them, so without this the screen reads as authoritative
+          when nothing checks against it -- the same false negative as an empty open-items
+          schedule, which is why 8b carries the same device.
+
+          REMOVE THIS WITH #448 item 2, in that same changeset. Its disappearance is the visible
+          signal that registry validation landed; leaving it behind would understate the product.
+
+          Approved copy -- do not reword. Carries no issue number: "arrives with AP subledger
+          import" ages better than a number that has already slipped once. */}
+      <p className={`registry-scope-notice registry-scope-notice--${kind}`}>
+        Entities recorded here are <strong>not yet checked against imported files</strong> — a new
+        run validates the {copy.noun} file name’s shape only. Registry validation arrives with{' '}
+        {copy.noun} subledger import; open your entities now so file names are ready the day it
+        does.
+      </p>
+
       <div className="registry-screen__body">
         <SectionCard
           title={`Registered ${copy.noun} entities`}

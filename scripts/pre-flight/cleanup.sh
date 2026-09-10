@@ -81,6 +81,11 @@ elif [[ -f "$FALLBACK_FILE" ]]; then
   compose_args+=(--env-file "$FALLBACK_FILE")
 fi
 
+# Captured BEFORE the `set -a; source` below, which exports every name in the env file and so
+# OVERWRITES an explicit COMPOSE_PROJECT_NAME the caller set. Standard Compose precedence is the
+# other way round -- shell environment wins over an env file -- and callers rely on that.
+CALLER_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
+
 PROJECT_NAME="reconciliation-platform"
 if [[ -n "$SOURCE_FILE" ]]; then
   set -a
@@ -89,6 +94,24 @@ if [[ -n "$SOURCE_FILE" ]]; then
   set +a
   PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$PROJECT_NAME}"
 fi
+
+# The caller's explicit choice wins over the file's.
+#
+# Not hypothetical. `deploy-cleanup.test.ts` writes its env file to a FIXED path
+# ($TMPDIR/reconciliation-platform.integration.env), rewritten on every module load with the
+# current PID stamped into COMPOSE_PROJECT_NAME. Vitest loads that module more than once, so the
+# name in the file can belong to a different run than the containers on disk. On 2026-09-10 that
+# left a six-container project (`...-integration-29118`) running while the file said `...-30193`:
+# teardown targeted a project that did not exist and printed "Local stack cleaned up." It is a
+# race, which is why orphans accumulated slowly rather than every run -- 714 images by 2026-09-10,
+# the accumulation #215 chased.
+PROJECT_NAME="${CALLER_PROJECT_NAME:-$PROJECT_NAME}"
+export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
+
+# Passed explicitly so `docker compose down` and this script's own network/container sweep below
+# can never disagree about which project they act on. Previously compose inferred the project from
+# --env-file while the sweep used $PROJECT_NAME, and the two could diverge.
+compose_args+=(-p "$PROJECT_NAME")
 
 cleanup_project_network() {
   local network_name="$1"
@@ -140,4 +163,22 @@ cleanup_project_network "${PROJECT_NAME}_edge"
 cleanup_project_network "${PROJECT_NAME}_app"
 cleanup_project_network "${PROJECT_NAME}_data"
 
+# Post-condition, not decoration. This script's actual failure mode was printing success while
+# removing nothing -- indistinguishable from working, which is why orphans went unnoticed. Assert
+# the outcome rather than assume it: anything still carrying this project's prefix means the
+# teardown did not do what the next line is about to claim.
+#
+# grep -F: the project name is data, and an unanchored pattern containing regex metacharacters
+# would match the wrong thing or nothing at all.
+surviving="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -F "${PROJECT_NAME}-" || true)"
+if [[ -n "$surviving" ]]; then
+  echo "Cleanup did NOT remove every container for project '$PROJECT_NAME':" >&2
+  while IFS= read -r leftover; do
+    [[ -z "$leftover" ]] && continue
+    echo "  $leftover" >&2
+  done <<< "$surviving"
+  exit 1
+fi
+
+echo "Cleaned up project: $PROJECT_NAME"
 echo "Local stack cleaned up."

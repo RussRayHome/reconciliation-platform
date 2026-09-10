@@ -1,4 +1,4 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useRef } from 'react';
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useRef } from 'react';
 
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 
@@ -8,6 +8,10 @@ export type RovingTabItem<TId extends string> = {
   label: string;
   description?: string;
   icon?: SemanticIconName;
+  /** CSS custom property holding this tab's hue, e.g. `--bank`. Exposed to CSS as
+   * `--roving-tab-accent` so a strip can colour each segment by what it represents. Optional
+   * because only the import strip is colour-coded -- the Review segmented control is not. */
+  accentToken?: string;
 };
 
 /**
@@ -97,6 +101,11 @@ export function RovingTabList<TId extends string>({
           aria-selected={item.id === activeId}
           aria-controls={`${panelIdPrefix}-${item.id}`}
           tabIndex={activeIndex === index ? 0 : -1}
+          style={
+            item.accentToken
+              ? ({ '--roving-tab-accent': `var(${item.accentToken})` } as CSSProperties)
+              : undefined
+          }
           onClick={() => onSelect(item.id)}
           onKeyDown={(event) => handleTabKeyDown(event, index)}
         >
