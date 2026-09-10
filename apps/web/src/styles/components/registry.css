@@ -1,0 +1,155 @@
+/* [SCREEN] 5a / 5b — the AP and AR entity registries.
+   Its own sheet rather than an extension of bank-accounts.css: the two screens share a pattern,
+   not a stylesheet, and #405 is about to restyle 3a. Coupling them now would make that phase's
+   diff reach a screen it is not changing. */
+@layer components {
+  .registry-screen {
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+  }
+
+  .registry-screen__eyebrow {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .registry-screen__title {
+    margin: 0.15rem 0 0;
+    font-size: 1.625rem;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .registry-screen__subtitle {
+    margin: 0.3rem 0 0;
+    max-width: 70ch;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+  }
+
+  /* Table left, open-entity panel right (5a). The panel is absent for a non-admin (13c), and the
+     table takes the full width rather than leaving a gap where a control used to be. */
+  .registry-screen__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 352px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .registry-screen__body:has(> :only-child) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .registry-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+  }
+
+  .registry-table th,
+  .registry-table td {
+    padding: 0.6rem 0.5rem;
+    border-bottom: 1px solid var(--line-soft);
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .registry-table thead th {
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Name over id, so the row reads as one identity rather than two columns that happen to be
+     adjacent -- and so the id, which is what a filename claims, is always visible next to it. */
+  .registry-table__name {
+    display: block;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .registry-table__id {
+    display: block;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+  }
+
+  .registry-screen__rule,
+  .registry-screen__empty {
+    margin: 0.9rem 0 0;
+    max-width: 78ch;
+    color: var(--text-secondary);
+    font-size: var(--font-meta);
+    line-height: 1.5;
+  }
+
+  .registry-screen__error {
+    margin: 0.6rem 0 0;
+    color: var(--negative);
+    font-size: var(--font-meta);
+  }
+
+  .registry-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .registry-form label {
+    margin-top: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+  }
+
+  .registry-form input {
+    height: var(--control-height);
+    padding: 0 0.65rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    background: var(--bg-sunken, var(--bg-raised));
+    color: var(--text-primary);
+    font-size: 0.84rem;
+  }
+
+  .registry-form__hint {
+    margin: 0.15rem 0 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-label);
+    line-height: 1.45;
+  }
+
+  .registry-form__preview {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .registry-form__preview-label {
+    display: block;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .registry-form__preview-value {
+    display: block;
+    margin-top: 0.3rem;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .badge--muted {
+    color: var(--text-tertiary);
+  }
+}

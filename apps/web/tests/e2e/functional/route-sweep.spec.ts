@@ -26,6 +26,9 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   // documentationRunBook/approvalsPolicy, permission is a `canManage` prop on the screen, not a
   // guard on the <Route> -- so the generic loop's "renders and stays put" assumption holds.
   bankAccounts: { heading: 'Bank accounts' },
+  // UI-9 (#448): both registries render the same screen, differing only in copy.
+  apEntities: { heading: 'AP entities' },
+  arEntities: { heading: 'AR entities' },
   mappingProfiles: { heading: 'Mapping Profiles' },
   // Branches on the logged-in account's verification state (App.tsx ~1279): CreateMappingScreen
   // once fully verified, otherwise MappingVerificationRequiredNotice. Both are a correct render

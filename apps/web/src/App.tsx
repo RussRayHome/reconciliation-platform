@@ -39,6 +39,7 @@ import { HelpedLabelField, HelpedSelectField, HelpedTextField } from './componen
 import { MIN_BANK_ACCOUNTS, SourceDropZone } from './components/SourceDropZone';
 import { RunSourceRecap } from './components/RunSourceRecap';
 import { SourceUnavailableNotice } from './components/SourceUnavailableNotice';
+import { SubledgerEntitiesScreen } from './components/SubledgerEntitiesScreen';
 import {
   getSourceTab,
   resolveSourceTab,
@@ -1726,6 +1727,28 @@ function ReconciliationApp({
               <Route
                 path={routePaths.importFilesBilling}
                 element={<Navigate to={`${routePaths.importFilesBank}?source=ap`} replace />}
+              />
+
+              {/* UI-9 (#448): AP and AR registries. `canManage` gates the open-entity panel;
+                  13c specifies the non-admin variant REMOVES it rather than disabling it, which is
+                  what the screen does. */}
+              <Route
+                path={routePaths.apEntities}
+                element={
+                  <SubledgerEntitiesScreen
+                    kind="ap"
+                    canManage={rolePermissions.canManageAccounts}
+                  />
+                }
+              />
+              <Route
+                path={routePaths.arEntities}
+                element={
+                  <SubledgerEntitiesScreen
+                    kind="ar"
+                    canManage={rolePermissions.canManageAccounts}
+                  />
+                }
               />
 
               <Route

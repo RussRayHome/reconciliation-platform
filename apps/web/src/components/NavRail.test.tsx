@@ -84,6 +84,8 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   accountPreferences: 'Preferences',
   importFiles: 'New run',
   bankAccounts: 'Bank accounts',
+  apEntities: 'AP entities',
+  arEntities: 'AR entities',
   mappingCreate: 'Mapping',
   mappingRules: 'Rules & variances',
   mappingRulesVersions: 'Versions',

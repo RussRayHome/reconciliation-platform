@@ -41,7 +41,10 @@ import {
   DuplicateReconciliationAccountError,
   PostgresAccountStore,
   PostgresSavedViewStore,
+  PostgresSubledgerEntityStore,
   UnknownSavedViewError,
+  UnknownSubledgerEntityError,
+  DuplicateSubledgerEntityError,
   SavedViewNotOwnedError,
   DuplicateSavedViewNameError,
   PostgresBlobStorage,
@@ -155,7 +158,11 @@ import {
   publishMatchingConfigVersionBodySchema,
   registerAccountBodySchema,
   createSavedViewBodySchema,
+  registerSubledgerEntityBodySchema,
   savedViewIdParamSchema,
+  subledgerEntityParamsSchema,
+  subledgerKindParamSchema,
+  updateSubledgerEntityBodySchema,
   updateSavedViewBodySchema,
   listSavedViewsQuerySchema,
   reconciliationRunBodySchema,
@@ -3143,6 +3150,98 @@ export const createApp = (
   // Replaces the per-browser localStorage list. Visibility is private or team, where team means the
   // whole finance team org-wide -- so there is no membership check here, only ownership on write.
   // Nothing deletes: PATCH with status RETIRED is the removal path.
+
+  // ── AP / AR entity registries (UI-9, #448, designs 5a/5b) ──────────────────────────────────────
+  // One route family serves both registries; `:kind` selects which. They are structurally
+  // identical, and splitting them would duplicate three handlers to express a difference that is
+  // one column.
+  app.get('/api/subledger-entities/:kind', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'SUBLEDGER_ENTITIES_LIST'))) return;
+    try {
+      const params = subledgerKindParamSchema.safeParse(request.params);
+      if (!params.success) {
+        respondWithValidationError(response, params.error);
+        return;
+      }
+
+      const store = new PostgresSubledgerEntityStore(pool!);
+      const entities = await store.listEntities(request.auth!.organizationId, params.data.kind, {
+        activeOnly: request.query.activeOnly === 'true',
+      });
+      response.json({ entities });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/subledger-entities/:kind', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'SUBLEDGER_ENTITIES_REGISTER'))) return;
+    // 5a marks the open-entity panel "admin only", and the non-admin variant (13c) removes the
+    // panel rather than disabling it -- so this is a real gate, not a UI convenience.
+    if (!rolePermissionsByRole[request.auth!.role].canManageAccounts) {
+      response.status(403).json({ message: 'You may not open subledger entities.' });
+      return;
+    }
+    try {
+      const params = subledgerKindParamSchema.safeParse(request.params);
+      if (!params.success) {
+        respondWithValidationError(response, params.error);
+        return;
+      }
+      const body = registerSubledgerEntityBodySchema.safeParse(request.body ?? {});
+      if (!body.success) {
+        respondWithValidationError(response, body.error);
+        return;
+      }
+
+      const store = new PostgresSubledgerEntityStore(pool!);
+      const entity = await store.registerEntity(request.auth!.organizationId, {
+        kind: params.data.kind,
+        ...body.data,
+      });
+      response.status(201).json({ entity });
+    } catch (error) {
+      if (error instanceof DuplicateSubledgerEntityError) {
+        response.status(409).json({ message: error.message });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  app.patch('/api/subledger-entities/:kind/:entityRowId', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'SUBLEDGER_ENTITIES_UPDATE'))) return;
+    if (!rolePermissionsByRole[request.auth!.role].canManageAccounts) {
+      response.status(403).json({ message: 'You may not modify subledger entities.' });
+      return;
+    }
+    try {
+      const params = subledgerEntityParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        respondWithValidationError(response, params.error);
+        return;
+      }
+      const body = updateSubledgerEntityBodySchema.safeParse(request.body ?? {});
+      if (!body.success) {
+        respondWithValidationError(response, body.error);
+        return;
+      }
+
+      const store = new PostgresSubledgerEntityStore(pool!);
+      const entity = await store.updateEntity(
+        request.auth!.organizationId,
+        params.data.entityRowId,
+        body.data,
+      );
+      response.json({ entity });
+    } catch (error) {
+      if (error instanceof UnknownSubledgerEntityError) {
+        response.status(404).json({ message: error.message });
+        return;
+      }
+      next(error);
+    }
+  });
 
   app.get('/api/saved-views', async (request, response, next) => {
     if (!(await requireDatabase(response, 'SAVED_VIEWS_LIST'))) return;

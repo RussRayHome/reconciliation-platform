@@ -18,12 +18,16 @@ import type {
   ReviewerDecision,
   ReviewerDecisionOutcome,
   ReviewerDecisionTargetType,
+  RegisterSubledgerEntityInput,
   RuleCatalogResponse,
   RuleVersionsResponse,
   SavedView,
   SavedViewScope,
+  SubledgerEntity,
+  SubledgerKind,
   UpdateReconciliationAccountInput,
   UpdateSavedViewInput,
+  UpdateSubledgerEntityInput,
   UserRole,
 } from '@recon/domain';
 import { clearAuthToken, getAuthToken, setAuthToken } from './authToken';
@@ -508,6 +512,50 @@ export const updateAccountRequest = async (
     body: JSON.stringify(input),
   });
   return parseResponse<ReconciliationAccount>(response);
+};
+
+/**
+ * The AP and AR entity registries (Issue #448). One route family, `kind` selecting the registry —
+ * the two are structurally identical, and a second set of functions would express a difference
+ * that is one path segment.
+ */
+export const listSubledgerEntitiesRequest = async (
+  kind: SubledgerKind,
+  options: { activeOnly?: boolean } = {},
+): Promise<SubledgerEntity[]> => {
+  const suffix = options.activeOnly ? '?activeOnly=true' : '';
+  const response = await apiFetch(`/api/subledger-entities/${kind}${suffix}`);
+  const { entities } = await parseResponse<{ entities: SubledgerEntity[] }>(response);
+  return entities;
+};
+
+export const registerSubledgerEntityRequest = async (
+  kind: SubledgerKind,
+  input: Omit<RegisterSubledgerEntityInput, 'kind'>,
+): Promise<SubledgerEntity> => {
+  const response = await apiFetch(`/api/subledger-entities/${kind}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const { entity } = await parseResponse<{ entity: SubledgerEntity }>(response);
+  return entity;
+};
+
+/** The only removal path — there is no DELETE. A deactivated entity keeps every file, run and open
+ * item already attributed to it and stops being offered for new assignments (design 5a). */
+export const updateSubledgerEntityRequest = async (
+  kind: SubledgerKind,
+  entityRowId: string,
+  input: UpdateSubledgerEntityInput,
+): Promise<SubledgerEntity> => {
+  const response = await apiFetch(`/api/subledger-entities/${kind}/${entityRowId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const { entity } = await parseResponse<{ entity: SubledgerEntity }>(response);
+  return entity;
 };
 
 /**

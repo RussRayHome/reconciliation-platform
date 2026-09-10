@@ -96,7 +96,7 @@ describe('Liquibase rollback', () => {
       // by one to the SAME value, git will treat those identical edits as agreement and merge them
       // without a conflict, and the result is one short. Re-derive the count from the changeset
       // files on disk after any merge; do not trust a clean auto-merge here.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=29');
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=30');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -151,7 +151,7 @@ describe('Liquibase rollback', () => {
     });
   });
 
-  describe('rolling back forty-seven changesets (0071 down through 0026 schema-changing)', () => {
+  describe('rolling back forty-eight changesets (0071 down through 0026 schema-changing)', () => {
     let database: TestDatabase | undefined;
     let migratedSchema: string;
     let rolledBackTwoSchema: string;
@@ -211,7 +211,7 @@ describe('Liquibase rollback', () => {
       // alone, so its presence in the range is correct and unobserved rather than benign by luck.
       // 0077 (A-D1's account registry columns, #338) likewise touches neither reconciliation_user
       // nor the columns asserted below.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=53');
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=54');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

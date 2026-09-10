@@ -223,6 +223,33 @@ export function NavRail({
             onNavigate={onMobileClose}
           />
 
+          {/* UI-9 (#448): the disclosure the canonical rail promises. UI-1 deliberately did not add
+              it, because a section whose children do not exist is a rail entry pointing at
+              nothing -- exactly the failure the nav audit (#456) exists to catch. Its children
+              ship in the same commit as the screens they open. */}
+          <CollapsibleNavSection
+            sectionId="subledger-entities"
+            label="Subledger entities"
+            icon="setup"
+            username={username}
+            bordered={false}
+          >
+            <NavItemLink
+              to={routePaths.apEntities}
+              label="AP entities"
+              icon="setup"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+            <NavItemLink
+              to={routePaths.arEntities}
+              label="AR entities"
+              icon="setup"
+              isCollapsed={isCollapsed}
+              onNavigate={onMobileClose}
+            />
+          </CollapsibleNavSection>
+
           <NavItemLink
             to={routePaths.mappingCreate}
             label="Mapping"
