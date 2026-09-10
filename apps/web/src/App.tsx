@@ -1639,6 +1639,8 @@ function ReconciliationApp({
     starredIds,
     onToggleStar: toggleStar,
     density,
+    onChangeDensity: setDensity,
+   
   };
 
   return (
@@ -1679,8 +1681,6 @@ function ReconciliationApp({
           reviewProgressLabel={reviewProgressLabel}
           progressSteps={progressSteps}
           onToggleNav={() => setIsMobileNavOpen((open) => !open)}
-          density={density}
-          onChangeDensity={setDensity}
         />
 
         <section className="tabbed-workspace" aria-label="Reconciliation workspace">

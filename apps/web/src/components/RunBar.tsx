@@ -5,7 +5,6 @@ import {
   type ProgressStep,
   type ProgressStepStatus,
 } from './AppWorkspacePanels';
-import type { Density } from '../hooks/useDensity';
 import { useDismissableDetails } from '../hooks/useDismissableDetails';
 
 type RunStatusTone = 'idle' | 'queued' | 'running' | 'complete' | 'error';
@@ -85,8 +84,6 @@ export function RunBar({
   reviewProgressLabel,
   progressSteps,
   onToggleNav,
-  density,
-  onChangeDensity,
 }: Readonly<{
   periodLabel: string;
   accountIdentifier: string;
@@ -105,8 +102,6 @@ export function RunBar({
   reviewProgressLabel: string | null;
   progressSteps: ProgressStep[];
   onToggleNav: () => void;
-  density: Density;
-  onChangeDensity: (density: Density) => void;
 }>) {
   const accountDisplay = accountIdentifier.trim() || 'No account override';
   const sourcesDisplay =
@@ -161,36 +156,6 @@ export function RunBar({
             </button>
           </div>
         </details>
-
-        {/* R3 X5: a recessed track with one sliding thumb, so it reads as a single control rather
-            than two independent buttons. radio/radiogroup is the accurate role for a
-            mutually-exclusive choice; aria-pressed described a pair of toggles. */}
-        <div
-          className="density-toggle"
-          role="radiogroup"
-          aria-label="Display density"
-          data-density={density}
-        >
-          <span className="density-toggle__thumb" aria-hidden="true" />
-          <button
-            type="button"
-            role="radio"
-            className="density-toggle__option"
-            aria-checked={density === 'comfortable'}
-            onClick={() => onChangeDensity('comfortable')}
-          >
-            Comfortable
-          </button>
-          <button
-            type="button"
-            role="radio"
-            className="density-toggle__option"
-            aria-checked={density === 'compact'}
-            onClick={() => onChangeDensity('compact')}
-          >
-            Compact
-          </button>
-        </div>
       </div>
 
       <div className="run-bar__status-row">

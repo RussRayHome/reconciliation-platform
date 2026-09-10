@@ -108,6 +108,7 @@ describe('ReviewSection probable matches performance rendering', () => {
       <ReviewSection
         run={run}
         priorPeriodRollforward={{ status: 'idle', data: null }}
+        onChangeDensity={() => {}}
         activeView="probable-matches"
         isHydrating={false}
         loadError={null}
@@ -142,6 +143,7 @@ describe('ReviewSection probable matches performance rendering', () => {
       <ReviewSection
         run={run}
         priorPeriodRollforward={{ status: 'idle', data: null }}
+        onChangeDensity={() => {}}
         activeView="probable-matches"
         isHydrating={false}
         loadError={null}
@@ -178,6 +180,7 @@ describe('Verdict module Prior-period comparison (Unreconciled Item Roll-Forward
       <ReviewSection
         run={run}
         priorPeriodRollforward={priorPeriodRollforward}
+        onChangeDensity={() => {}}
         activeView="summary"
         isHydrating={false}
         loadError={null}
