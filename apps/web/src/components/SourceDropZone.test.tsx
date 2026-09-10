@@ -81,9 +81,17 @@ function BankGlHarness({
 function ApHarness({
   initialApFiles = [null],
   canonicalFields = [],
+  // Every entity id the pre-#448 cases use (E000-E300 from the templated slot filler, plus E100,
+  // E200 and E999). Defaulting to "all of them are registered" keeps those tests exercising what
+  // they were written for -- the limit case, for one, is about capacity and would otherwise be
+  // rejected as unknown before it ever reached the slot check, testing the wrong thing.
+  // A case that wants the unknown-entity path passes its own narrow list; one that wants the
+  // still-loading posture passes null.
+  registeredEntityIds = ['E000', 'E100', 'E200', 'E300', 'E999'],
 }: {
   initialApFiles?: (File | null)[];
   canonicalFields?: CanonicalField[];
+  registeredEntityIds?: readonly string[] | null;
 }) {
   const [apFiles, setApFiles] = useState<(File | null)[]>(initialApFiles);
   return (
@@ -93,6 +101,7 @@ function ApHarness({
       apFiles={apFiles}
       setApFiles={setApFiles as Dispatch<SetStateAction<(File | null)[]>>}
       canonicalFields={canonicalFields}
+      registeredEntityIds={registeredEntityIds}
     />
   );
 }
@@ -395,6 +404,50 @@ describe('SourceDropZone (subledger: AP)', () => {
     );
 
     expect(screen.getByText('UPLOAD_AP_ENTITY_LIMIT_REACHED')).toBeInTheDocument();
+  });
+
+  // #448 item 3: the registry becomes the authority, not just the filename's shape.
+  it('rejects a well-formed file whose entity id is not registered', async () => {
+    const user = userEvent.setup();
+    render(<ApHarness registeredEntityIds={['E100']} />);
+
+    await user.upload(
+      screen.getByLabelText('AP/Billing subledger workbooks'),
+      makeFile('E777_ap-export.csv'),
+    );
+
+    // Specifically NOT the filename code: this name is perfectly formed. Sending the user to fix
+    // the naming convention would point them at something that is not broken.
+    expect(screen.getByText('UPLOAD_AP_ENTITY_UNKNOWN')).toBeInTheDocument();
+    expect(screen.queryByText('UPLOAD_AP_FILENAME_INVALID')).not.toBeInTheDocument();
+  });
+
+  it('matches the registry case-insensitively, as changeset 0079 does', async () => {
+    const user = userEvent.setup();
+    render(<ApHarness registeredEntityIds={['e100']} />);
+
+    await user.upload(
+      screen.getByLabelText('AP/Billing subledger workbooks'),
+      makeFile('E100_ap-export.csv'),
+    );
+
+    // The registry's own unique key is (organization_id, kind, LOWER(entity_id)), so "e100" and
+    // "E100" are the same entity there. Rejecting this pair would contradict the registry.
+    expect(screen.queryByText('UPLOAD_AP_ENTITY_UNKNOWN')).not.toBeInTheDocument();
+  });
+
+  it('accepts files while the registry is still loading rather than calling them unknown', async () => {
+    const user = userEvent.setup();
+    render(<ApHarness registeredEntityIds={null} />);
+
+    await user.upload(
+      screen.getByLabelText('AP/Billing subledger workbooks'),
+      makeFile('E777_ap-export.csv'),
+    );
+
+    // A slow request must not make a legitimate file look unregistered. The server stays the
+    // authority; this check is the fast local half.
+    expect(screen.queryByText('UPLOAD_AP_ENTITY_UNKNOWN')).not.toBeInTheDocument();
   });
 
   it('rejects an AP file whose name has no entity-id delimiter', async () => {

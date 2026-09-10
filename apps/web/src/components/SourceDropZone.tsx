@@ -61,11 +61,49 @@ const detectRejection = (file: File): RejectedUploadCode | null => {
  *
  * The caller supplies the code because AP and AR share this check and must not share its wording
  * (Phase 2 ruling on #401). */
+/**
+ * Two distinct rejections, in order (#448 item 3).
+ *
+ * `*_FILENAME_INVALID` means the name carries no parseable entity id at all -- the fix is to rename
+ * the file. `*_ENTITY_UNKNOWN` means the id parsed fine and is simply not registered -- the file may
+ * be named perfectly, and the fix is to open the registry. Collapsing them would send half the users
+ * to correct something that is not wrong.
+ *
+ * `registeredEntityIds` is `null` while the registry is still loading, and that deliberately accepts
+ * the file rather than rejecting it: a slow request must not make a legitimate file look unknown.
+ * The server remains the authority either way -- this is the fast, local half of the check, and the
+ * same "empty means nothing to check yet" posture `canonicalFields` already takes for header hints.
+ *
+ * Comparison is case-insensitive to match changeset 0079's unique key, `(organization_id, kind,
+ * LOWER(entity_id))`. A registry that stores "e100" and a file named "E100_ap.csv" are the same
+ * entity, and rejecting that pair here would contradict what the registry itself considers unique.
+ */
 const detectSubledgerEntityRejection = (
   file: File,
-  code: 'UPLOAD_AP_FILENAME_INVALID' | 'UPLOAD_AR_FILENAME_INVALID',
-): RejectedUploadCode | null =>
-  parseSubledgerEntityIdFromFilename(file.name) === null ? code : null;
+  subledger: 'ap' | 'ar',
+  registeredEntityIds: readonly string[] | null,
+): RejectedUploadCode | null => {
+  const entityId = parseSubledgerEntityIdFromFilename(file.name);
+
+  if (entityId === null) {
+    return subledger === 'ap' ? 'UPLOAD_AP_FILENAME_INVALID' : 'UPLOAD_AR_FILENAME_INVALID';
+  }
+
+  if (registeredEntityIds === null) {
+    return null;
+  }
+
+  const normalized = entityId.toLowerCase();
+  const isRegistered = registeredEntityIds.some(
+    (registered) => registered.toLowerCase() === normalized,
+  );
+
+  if (isRegistered) {
+    return null;
+  }
+
+  return subledger === 'ap' ? 'UPLOAD_AP_ENTITY_UNKNOWN' : 'UPLOAD_AR_ENTITY_UNKNOWN';
+};
 
 /** Slots 1-2 keep their pre-#153 ids (`bank-workbook-input`, `bank-workbook-b-input`) so existing
  * Playwright fixtures (`#bank-workbook-input`/`#bank-workbook-b-input`) don't break; slots 3-4 get
@@ -122,6 +160,10 @@ type SourceDropZoneProps = (
       subledger: 'ap' | 'ar';
       apFiles: (File | null)[];
       setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
+      /** Entity ids registered for this subledger (#448 item 3). `null` while the registry request
+       * is in flight, which accepts files rather than rejecting them -- see
+       * `detectSubledgerEntityRejection`. */
+      registeredEntityIds: readonly string[] | null;
     }
 ) & {
   /** R2 V6 (warn-only, Issue #250): the canonical schema, for the per-slot fuzzy header preview.
@@ -142,6 +184,7 @@ export function SourceDropZone(props: Readonly<SourceDropZoneProps>) {
         apFiles={props.apFiles}
         setApFiles={props.setApFiles}
         canonicalFields={props.canonicalFields}
+        registeredEntityIds={props.registeredEntityIds}
       />
     );
   }
@@ -478,6 +521,7 @@ function SubledgerDropZone({
   apFiles,
   setApFiles,
   canonicalFields,
+  registeredEntityIds,
 }: Readonly<{
   /** Which subledger this panel serves. AP and AR share this component because they share a
    * filename convention and a slot model -- but never a rejection code, so an AR file can never
@@ -486,6 +530,7 @@ function SubledgerDropZone({
   apFiles: (File | null)[];
   setApFiles: Dispatch<SetStateAction<(File | null)[]>>;
   canonicalFields: CanonicalField[];
+  registeredEntityIds: readonly string[] | null;
 }>) {
   const codes =
     subledger === 'ap'
@@ -531,7 +576,7 @@ function SubledgerDropZone({
         continue;
       }
 
-      const entityRejection = detectSubledgerEntityRejection(file, codes.filename);
+      const entityRejection = detectSubledgerEntityRejection(file, subledger, registeredEntityIds);
       if (entityRejection) {
         rejectFile(file, entityRejection);
         continue;
@@ -570,7 +615,7 @@ function SubledgerDropZone({
       return;
     }
 
-    const entityRejection = detectSubledgerEntityRejection(file, codes.filename);
+    const entityRejection = detectSubledgerEntityRejection(file, subledger, registeredEntityIds);
     if (entityRejection) {
       rejectFile(file, entityRejection);
       return;
