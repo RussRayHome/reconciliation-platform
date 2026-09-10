@@ -12,6 +12,1048 @@
     }
   ],
   "paths": {
+    "/api/accounts": {
+      "get": {
+        "summary": "List reconciliation accounts",
+        "responses": {
+          "200": {
+            "description": "The organization’s accounts"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      },
+      "post": {
+        "summary": "Register a reconciliation account",
+        "responses": {
+          "201": {
+            "description": "Account created"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          }
+        }
+      }
+    },
+    "/api/accounts/suggest": {
+      "get": {
+        "summary": "Suggest an account for an uploaded statement",
+        "description": "Matches a bank file name against registered accounts. Advisory only — the operator confirms the assignment, and a disagreement is reported rather than auto-resolved.",
+        "responses": {
+          "200": {
+            "description": "Ranked suggestions"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/accounts/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Amend a reconciliation account",
+        "responses": {
+          "200": {
+            "description": "Updated account"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/aliases": {
+      "get": {
+        "summary": "List account aliases",
+        "responses": {
+          "200": {
+            "description": "Aliases"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create an account alias",
+        "responses": {
+          "201": {
+            "description": "Alias created"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          }
+        }
+      }
+    },
+    "/api/aliases/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Replace an account alias",
+        "responses": {
+          "200": {
+            "description": "Alias updated"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove an account alias",
+        "responses": {
+          "204": {
+            "description": "Alias removed"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/subledger-entities/{kind}": {
+      "parameters": [
+        {
+          "name": "kind",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List registered AP or AR entities",
+        "description": "kind is \"ap\" or \"ar\". One entity id may legitimately exist in both registries.",
+        "responses": {
+          "200": {
+            "description": "Registered entities"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      },
+      "post": {
+        "summary": "Register an AP or AR entity",
+        "responses": {
+          "201": {
+            "description": "Entity registered"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Entity id already registered"
+          }
+        }
+      }
+    },
+    "/api/subledger-entities/{kind}/{entityRowId}": {
+      "parameters": [
+        {
+          "name": "kind",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "entityRowId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Amend or deactivate a subledger entity",
+        "description": "The entity id itself is immutable once any import references it; entities are deactivated, never deleted.",
+        "responses": {
+          "200": {
+            "description": "Updated entity"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/auth/signup": {
+      "post": {
+        "summary": "Create an account",
+        "responses": {
+          "201": {
+            "description": "Account created"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "409": {
+            "description": "Username or email already in use"
+          }
+        }
+      }
+    },
+    "/api/auth/identity/confirm": {
+      "post": {
+        "summary": "Confirm an identity challenge",
+        "responses": {
+          "200": {
+            "description": "Identity confirmed"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/auth/identity/resend": {
+      "post": {
+        "summary": "Resend an identity challenge",
+        "responses": {
+          "202": {
+            "description": "Challenge resent"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/entity-verification/check": {
+      "post": {
+        "summary": "Check an organization’s entity verification status",
+        "responses": {
+          "200": {
+            "description": "Verification result"
+          },
+          "400": {
+            "description": "Request failed validation"
+          }
+        }
+      }
+    },
+    "/api/organizations/entity-verification/retry": {
+      "post": {
+        "summary": "Retry entity verification for an organization",
+        "responses": {
+          "202": {
+            "description": "Retry accepted"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/runs": {
+      "post": {
+        "summary": "Create an import run",
+        "description": "Multipart. Bank statements (1–4) and one GL workbook are required; AP, AR and payroll files are additive and optional.",
+        "responses": {
+          "201": {
+            "description": "Run created"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Bank account assignment conflict"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/latest": {
+      "get": {
+        "summary": "Fetch the most recent import run",
+        "responses": {
+          "200": {
+            "description": "Latest run, or null"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Fetch an import run",
+        "responses": {
+          "200": {
+            "description": "Run summary"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/submit": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Submit an import run for approval",
+        "responses": {
+          "200": {
+            "description": "Run submitted"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Run is not in a submittable state"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/withdraw": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Withdraw a submitted import run",
+        "responses": {
+          "200": {
+            "description": "Run withdrawn"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Run is not withdrawable"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/import": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Import an approved run’s validated rows",
+        "responses": {
+          "202": {
+            "description": "Import started"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Run is not approved"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/close": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Close an import run",
+        "responses": {
+          "200": {
+            "description": "Run closed"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Run is not closeable"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/reopen": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Reopen a closed import run",
+        "responses": {
+          "200": {
+            "description": "Run reopened"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Run is not reopenable"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/events": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List an import run’s lifecycle events",
+        "responses": {
+          "200": {
+            "description": "Ordered event history"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/issues": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List validation issues for a run",
+        "responses": {
+          "200": {
+            "description": "Paged validation issues"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/records": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List canonical records produced by a run",
+        "responses": {
+          "200": {
+            "description": "Paged canonical records"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/error-report.csv": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Download a run’s validation errors as CSV",
+        "responses": {
+          "200": {
+            "description": "CSV error report"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/files/{fileId}/failure-detail": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Explain why one file failed validation",
+        "description": "Drives the structure-failure and all-rows-invalid screens. headerComparison is null when no expected-header set exists for the file’s source type.",
+        "responses": {
+          "200": {
+            "description": "Failure detail"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/runs/{id}/files/{fileId}/rows": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List one file’s parsed rows",
+        "responses": {
+          "200": {
+            "description": "Paged rows"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/imports/open-items/{id}/write-off": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Write off an open item",
+        "responses": {
+          "200": {
+            "description": "Item written off"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/runs": {
+      "get": {
+        "summary": "List reconciliation runs",
+        "responses": {
+          "200": {
+            "description": "Runs"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/runs/{id}/rollforward": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Fetch a run’s roll-forward proof",
+        "responses": {
+          "200": {
+            "description": "Roll-forward figures"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/open-items": {
+      "get": {
+        "summary": "List open reconciling items",
+        "description": "Bank and general ledger activity only. Unpaid AR invoices are not represented until AR subledger import ships.",
+        "responses": {
+          "200": {
+            "description": "Open items schedule"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/{id}/reviewer-decisions": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List reviewer decisions for a run",
+        "responses": {
+          "200": {
+            "description": "Decisions"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      },
+      "post": {
+        "summary": "Record a reviewer decision",
+        "responses": {
+          "201": {
+            "description": "Decision recorded"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          }
+        }
+      }
+    },
+    "/api/reconciliation/{id}/reviewer-decisions/{targetId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "targetId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Withdraw a reviewer decision",
+        "responses": {
+          "204": {
+            "description": "Decision withdrawn"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/approvals": {
+      "get": {
+        "summary": "List pending approvals",
+        "responses": {
+          "200": {
+            "description": "Approvals grouped by type"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/approvals/counts": {
+      "get": {
+        "summary": "Count pending approvals by group",
+        "description": "Drives the rail badge, which is absent rather than zero when nothing is pending.",
+        "responses": {
+          "200": {
+            "description": "Counts by group"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/approvals/{type}/{id}/claim": {
+      "parameters": [
+        {
+          "name": "type",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Claim an approval for review",
+        "responses": {
+          "200": {
+            "description": "Claim recorded"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Already claimed"
+          }
+        }
+      }
+    },
+    "/api/approvals/{type}/{id}/decision": {
+      "parameters": [
+        {
+          "name": "type",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Approve or reject a claimed item",
+        "description": "Self-approval is refused by a database constraint (segregation of duty), not only by this endpoint.",
+        "responses": {
+          "200": {
+            "description": "Decision recorded"
+          },
+          "403": {
+            "description": "Forbidden, including self-approval"
+          },
+          "409": {
+            "description": "Not claimed by this reviewer"
+          }
+        }
+      }
+    },
+    "/api/mapping/canonical-fields": {
+      "get": {
+        "summary": "List canonical fields a mapping may target",
+        "responses": {
+          "200": {
+            "description": "Canonical field catalog"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/mapping/profiles": {
+      "get": {
+        "summary": "List mapping profiles",
+        "responses": {
+          "200": {
+            "description": "Profiles"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a mapping profile",
+        "responses": {
+          "201": {
+            "description": "Profile created"
+          },
+          "400": {
+            "description": "Request failed validation"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          }
+        }
+      }
+    },
+    "/api/mapping/profiles/{name}": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Fetch a mapping profile",
+        "responses": {
+          "200": {
+            "description": "Profile"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/mapping/profiles/{name}/retire": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Retire a mapping profile",
+        "description": "Retire is the only removal path; profiles are never deleted.",
+        "responses": {
+          "200": {
+            "description": "Profile retired"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "404": {
+            "description": "Not found, or not visible to this organization"
+          }
+        }
+      }
+    },
+    "/api/rules/catalog": {
+      "get": {
+        "summary": "List matching rules and their platform defaults",
+        "responses": {
+          "200": {
+            "description": "Rule catalog"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/rules/versions": {
+      "get": {
+        "summary": "List matching-config versions",
+        "responses": {
+          "200": {
+            "description": "Versions, newest first"
+          },
+          "401": {
+            "description": "Missing or invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/rules/versions/draft": {
+      "post": {
+        "summary": "Open a draft matching-config version",
+        "responses": {
+          "201": {
+            "description": "Draft created"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "A draft already exists"
+          }
+        }
+      }
+    },
+    "/api/rules/versions/{id}/publish": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Publish a draft matching-config version",
+        "description": "Moves the draft to ACTIVE and the previously active version to SUPERSEDED in one transaction.",
+        "responses": {
+          "200": {
+            "description": "Version published"
+          },
+          "403": {
+            "description": "The signed-in role may not perform this action"
+          },
+          "409": {
+            "description": "Version is not a publishable draft"
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health check",
