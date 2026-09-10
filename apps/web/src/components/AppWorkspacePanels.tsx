@@ -866,6 +866,7 @@ export function ReviewSection({
   starredIds,
   onToggleStar,
   density = 'comfortable',
+  onChangeDensity,
 }: Readonly<{
   run: RunData | undefined;
   priorPeriodRollforward: PriorPeriodRollforwardState;
@@ -886,6 +887,7 @@ export function ReviewSection({
   starredIds: string[];
   onToggleStar: (exceptionId: string) => void;
   density?: 'comfortable' | 'compact';
+  onChangeDensity: (density: 'comfortable' | 'compact') => void;
 }>) {
   let panelContent: ReactNode;
 
@@ -916,6 +918,7 @@ export function ReviewSection({
           starredIds={starredIds}
           onToggleStar={onToggleStar}
           density={density}
+          onChangeDensity={onChangeDensity}
         />
       ),
     };

@@ -89,6 +89,7 @@ const renderTriage = (
       decisionByTargetId={{}}
       pendingTargetId={null}
       decisionError={null}
+      onChangeDensity={() => {}}
       lastChange={null}
       onDecide={onDecide}
       onClearDecision={onClearDecision}
@@ -196,16 +197,17 @@ describe('ExceptionTriage', () => {
     expect(screen.getByText(/Unsaved note/i)).toBeInTheDocument();
   });
 
-  it('shows the keyboard shortcut legend', () => {
+  // UI-3 (#402) retired the prose legend. Inverted rather than deleted: deleting it would let the
+  // legend reappear silently, and the retirement is only defensible while the shortcuts are
+  // discoverable somewhere else -- so assert both halves, the prose gone AND the keycaps present.
+  it('has no prose shortcut legend, because the keycaps are on the buttons', () => {
     renderTriage();
 
-    expect(screen.getByText(/Shortcuts:/i)).toBeInTheDocument();
-    // R3 X3: arrows replaced J/K, and U (long implemented) is finally documented.
-    const legend = screen.getByText(/Shortcuts:/i);
-    expect(legend).toHaveTextContent('↑');
-    expect(legend).toHaveTextContent('↓');
-    expect(legend).toHaveTextContent('undo');
-    expect(legend.textContent).not.toMatch(/\bJ\b\/\bK\b/);
+    expect(screen.queryByText(/Shortcuts:/i)).not.toBeInTheDocument();
+
+    // The reason the legend could go: every decision the legend described is labelled in place.
+    expect(screen.getByRole('button', { name: /^Accept/ })).toHaveTextContent('A');
+    expect(screen.getByRole('button', { name: /^Reject/ })).toHaveTextContent('R');
   });
 
   it('ignores the retired J and K shortcuts', () => {

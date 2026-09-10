@@ -6,7 +6,9 @@
      ~35% of the viewport and every column ellipsized. */
   .exception-triage {
     display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
+    /* UI-3 (#402): 190px, not 220px -- the 30px goes to the list, which is the column
+       that was ellipsizing. */
+    grid-template-columns: 190px minmax(0, 1fr);
     grid-template-areas:
       'facets list'
       'facets detail';
@@ -205,15 +207,26 @@
     /* Single source of truth for the row grid so the header and rows can never drift. */
     /* X4: 104px fits YYYY-MM-DD at 0.82rem, 110px fits ($12,345.67) in mono, and the last column
        grows for the Research pill. The old widths ellipsized every text column at 1280px. */
-    --exception-row-grid: 12px minmax(0, 1.6fr) 104px 110px minmax(0, 1.4fr) minmax(0, 1.5fr) 96px;
+    /* UI-3 (#402): five columns, not seven. Severity's 12px track and the 104px date track are
+       gone -- both fold into the category cell, which takes their width. */
+    --exception-row-grid: minmax(0, 1.9fr) 110px minmax(0, 1.4fr) minmax(0, 1.5fr) 96px;
   }
 
   .exception-triage__list-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     margin: 0 0 0.5rem;
+  }
+
+  /* UI-3 (#402) item 4: density moved here from the run bar. `order` rather than markup position so
+     the control reads last in the row while staying early in the DOM -- the run-bar version sat
+     before the content it affected, and keeping that DOM order means a keyboard user still reaches
+     the density choice before tabbing into the table it resizes. */
+  .exception-triage__density {
+    order: 2;
+    margin-left: auto;
   }
 
   .exception-triage__position {
@@ -225,24 +238,6 @@
     white-space: nowrap;
   }
 
-  .exception-triage__shortcut-legend {
-    margin: 0;
-    font-size: 0.78rem;
-    color: var(--text-tertiary);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    align-items: center;
-  }
-
-  .exception-triage__shortcut-legend kbd {
-    font-family: 'IBM Plex Mono', ui-monospace, monospace;
-    font-size: 0.72rem;
-    padding: 0.05rem 0.3rem;
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    background: var(--bg-surface);
-  }
 
   .exception-triage__list {
     position: relative;
@@ -354,11 +349,58 @@
     background: var(--accent);
   }
 
-  .exception-row__category,
+  .exception-row__category-label,
   .exception-row__source {
     font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: var(--font-label);
     letter-spacing: 0.04em;
+  }
+
+  /* UI-3 (#402): the merged cell -- severity dot and category on the first line, date beneath. */
+  .exception-row__category {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .exception-row__category-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  /* The dot is the only carrier of severity now that its column is gone, so it must never be the
+     thing that shrinks when the category label is long. */
+  .exception-row__category .exception-row__severity {
+    flex: 0 0 auto;
+  }
+
+  .exception-row__category-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .exception-row__date {
+    font-size: 0.78rem;
+    line-height: 1.2;
+    color: var(--text-tertiary);
+  }
+
+  /* Two sort controls share this cell (Severity, Date), so it needs its own heading text and a row
+     that wraps rather than forcing the column wider. */
+  .exception-list-header__category {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.5rem;
+    min-width: 0;
+  }
+
+  .exception-list-header__label {
+    white-space: nowrap;
   }
 
   .exception-row__source[data-source='bank'] {
@@ -699,11 +741,15 @@
      under the evidence panel -- but take the family's radius, border and secondary depth. The
      press feedback is now the family's scale(0.97) rather than a translateY nudge, so a decision
      button behaves like every other control in the app. */
+  /* UI-3 (#402) item 5: aligned to the UI-0b button family. `--gradient-control` and
+     `--shadow-control` were already retired at token level by UI-0b (see tokens.css) -- what was
+     left here was the same depth expressed inline, on --active below. `--line-strong` rather than
+     `--line` is what the family's .secondary-button uses; these had drifted to the weaker line. */
   .exception-decision-button,
   .exception-facets__save-row button {
     padding: 0.4rem 0.7rem;
     border-radius: var(--radius-control);
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     background: var(--bg-raised);
     box-shadow: var(--shadow-button-secondary);
     cursor: pointer;
@@ -733,13 +779,17 @@
 
   .exception-decision-button--active {
     border-color: var(--accent-soft-border);
-    /* Keeps the tint while retaining the pressed-surface depth. */
-    background:
-      linear-gradient(180deg, var(--accent-soft), rgba(0, 0, 0, 0.25)), var(--bg-surface);
+    /* Flat tint, not a gradient. The two-stop gradient over a surface was the last remnant of the
+       R3 control-depth set that UI-0b retired everywhere else; keeping it here would have left this
+       one control reading as pressed while every other button in the app reads as flat. */
+    background: var(--accent-soft);
     color: var(--accent);
   }
 
+  /* The keycap survives the flattening deliberately: it is the only thing telling the user the
+     shortcut exists now that #402 retired the prose legend. */
   .exception-decision-button kbd {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-size: 0.7rem;
     padding: 0.05rem 0.3rem;
     border-radius: 4px;

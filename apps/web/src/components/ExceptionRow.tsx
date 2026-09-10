@@ -58,22 +58,29 @@ export function ExceptionRow({
       onClick={onSelect}
       onKeyDown={onKeyDown}
     >
-      <span
-        className="exception-row__severity"
-        data-severity={severity}
-        title={severity}
-        aria-hidden="true"
-      />
+      {/* UI-3 (#402): severity is a dot on this cell and the date sits beneath it, folding three
+          of the old seven columns into one. The dot keeps `title` and a visually-hidden label --
+          it is the only carrier of severity now, so dropping to colour alone would put the whole
+          signal in a channel a colour-blind or screen-reader user cannot read. */}
       <span className="exception-row__category">
-        {display.categoryLabel}
-        {hasNote ? (
-          <span className="exception-row__note-indicator" title="Has reviewer note">
-            <span aria-hidden="true">✎</span>
-            <span className="visually-hidden">Has reviewer note</span>
-          </span>
-        ) : null}
+        <span className="exception-row__category-line">
+          <span
+            className="exception-row__severity"
+            data-severity={severity}
+            title={severity}
+            aria-hidden="true"
+          />
+          <span className="visually-hidden">{`Severity ${severity}. `}</span>
+          <span className="exception-row__category-label">{display.categoryLabel}</span>
+          {hasNote ? (
+            <span className="exception-row__note-indicator" title="Has reviewer note">
+              <span aria-hidden="true">✎</span>
+              <span className="visually-hidden">Has reviewer note</span>
+            </span>
+          ) : null}
+        </span>
+        <span className="exception-row__date">{display.dateLabel}</span>
       </span>
-      <span className="exception-row__date">{display.dateLabel}</span>
       <span className="exception-row__amount">{display.amountLabel}</span>
       <span className="exception-row__counterpart" title={display.counterpartLabel}>
         <CounterpartCellView cell={display.counterpartCell} />

@@ -13,6 +13,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { ExceptionRow } from './ExceptionRow';
 import { ExceptionEvidencePanel } from './ExceptionEvidencePanel';
 import { ExceptionFacets } from './ExceptionFacets';
+import { DensityToggle } from './DensityToggle';
 import { ExceptionListHeader } from './ExceptionListHeader';
 import { actionByOutcome, type DecisionAction } from '../hooks/useReviewerDecisions';
 import {
@@ -54,6 +55,7 @@ export function ExceptionTriage({
   starredIds,
   onToggleStar,
   density = 'comfortable',
+  onChangeDensity,
 }: Readonly<{
   exceptions: ExceptionItem[];
   decisionByTargetId: Record<string, ReviewerDecision>;
@@ -68,6 +70,8 @@ export function ExceptionTriage({
   starredIds?: string[];
   onToggleStar?: (exceptionId: string) => void;
   density?: 'comfortable' | 'compact';
+  /** UI-3 (#402): density moved out of RunBar so the control sits with the table it resizes. */
+  onChangeDensity: (density: 'comfortable' | 'compact') => void;
 }>) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<{ key: TriageSortKey; direction: TriageSortDirection }>({
@@ -388,10 +392,14 @@ export function ExceptionTriage({
 
       <div className="exception-triage__list-pane">
         <div className="exception-triage__list-header">
-          <p className="exception-triage__shortcut-legend">
-            Shortcuts: <kbd>↑</kbd>/<kbd>↓</kbd> navigate · <kbd>A</kbd> accept · <kbd>R</kbd>{' '}
-            reject · <kbd>N</kbd> needs research · <kbd>U</kbd> undo
-          </p>
+          {/* UI-3 (#402) item 4: the density control lives here now, beside the table it resizes,
+              rather than in the run bar at the top of every screen. `useDensity` still owns the
+              value and its per-user persistence -- only the placement moved. */}
+          <DensityToggle
+            density={density}
+            onChangeDensity={onChangeDensity}
+            className="exception-triage__density"
+          />
           {/* Position is shown, not announced: the rows are a listbox, so a screen reader already
               reports "N of M" on selection -- a live region here would double-announce it. */}
           {filtered.length > 0 ? (

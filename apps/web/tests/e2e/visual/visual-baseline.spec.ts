@@ -192,8 +192,15 @@ const mockReconciliationRun = async (page: Page): Promise<void> => {
  * Deliberately not a raised `maxDiffPixelRatio`: #467 argues correctly that a 2% tolerance would
  * also absorb a row genuinely appearing or disappearing, which is what this capture exists to catch.
  */
-const settleTriageLayout = async (page: Page): Promise<void> => {
-  await expect(page.getByRole('button', { name: /^Accept/ })).toBeVisible();
+const settleTriageLayout = async (
+  page: Page,
+  options: Readonly<{ requireEvidencePanel?: boolean }> = {},
+): Promise<void> => {
+  const requireEvidencePanel = options.requireEvidencePanel ?? true;
+
+  if (requireEvidencePanel) {
+    await expect(page.getByRole('button', { name: /^Accept/ })).toBeVisible();
+  }
 
   await page.waitForFunction(
     () => {
@@ -201,9 +208,15 @@ const settleTriageLayout = async (page: Page): Promise<void> => {
       const header = document.querySelector('.exception-triage__list-header');
       const panel = document.querySelector('.exception-detail');
 
-      if (!canvas || !header || !panel) {
+      if (!canvas || !header) {
         return false;
       }
+
+      // `panel` is deliberately optional here. On the first call no row is selected yet, so there
+      // is nothing to measure and the list's own geometry is the whole question; the sample below
+      // records -1 for it. Whether a panel is REQUIRED is decided on the Node side, which asserts
+      // the decision buttons before entering this loop -- the browser side only has to tolerate
+      // both shapes.
 
       // An explicit inline height is the observable signal that `isVirtualized` has flipped true.
       // Without it the screen is still in its pre-measurement layout, whatever else has rendered.
@@ -214,8 +227,9 @@ const settleTriageLayout = async (page: Page): Promise<void> => {
       const sample = [
         Math.round(canvas.getBoundingClientRect().height),
         Math.round(header.getBoundingClientRect().top),
-        Math.round(panel.getBoundingClientRect().top),
-        Math.round(panel.getBoundingClientRect().height),
+        canvas.querySelectorAll('[role="option"]').length,
+        panel ? Math.round(panel.getBoundingClientRect().top) : -1,
+        panel ? Math.round(panel.getBoundingClientRect().height) : -1,
       ].join('|');
 
       const store = window as unknown as { __triageSettle?: { sample: string; stable: number } };
@@ -556,9 +570,33 @@ for (const width of widths) {
       // (mobile) it stays hidden until a row opens its drawer. Clicking unconditionally keeps all
       // three widths in the same state, and is what gives the shared Pill primitive (severity
       // tag, ExceptionEvidencePanel.tsx) its only real coverage in this suite.
+      // Settle BEFORE choosing a row, not only after. `.first()` resolves against whatever is
+      // rendered at that instant, and the pre-virtualization layout can present a different window
+      // than the settled one -- so clicking early could select a DIFFERENT exception, whose
+      // evidence panel is a different height, which moves everything below it.
+      //
+      // That is what made this capture look like a layout flake through two earlier fixes: the
+      // layout was being stabilised around an already-wrong selection. Settling first makes the
+      // selection itself deterministic; settling again afterwards catches the reflow the opening
+      // panel causes.
+      await settleTriageLayout(page, { requireEvidencePanel: false });
       await page.getByRole('listbox', { name: 'Exceptions' }).getByRole('option').first().click();
       await expect(page.locator('.exception-detail')).toBeVisible();
       await settleTriageLayout(page);
+
+      // UI-3 (#402) item 6, as an assertion rather than a conclusion in prose.
+      //
+      // `--exception-list-max: 560px` bounds the list so the evidence panel beneath it stays above
+      // the fold. The requirement R3 chose that cap for is "no scroll to decide", not a particular
+      // number -- so check the requirement. At 1440x900 the Accept button must sit inside the
+      // viewport without scrolling; raise the cap and this fails, which is the proof that the cap is
+      // load-bearing rather than arbitrary. #402 asks for exactly that check before anyone removes it.
+      if (width === 1440) {
+        const acceptBox = await page.getByRole('button', { name: /^Accept/ }).boundingBox();
+        expect(acceptBox).not.toBeNull();
+        expect(acceptBox!.y + acceptBox!.height).toBeLessThanOrEqual(900);
+      }
+
       await expect(page.locator('.exception-triage')).toHaveScreenshot(
         `exceptions-triage-${width}.png`,
         screenshotOptions,
