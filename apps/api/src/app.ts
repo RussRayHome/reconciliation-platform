@@ -13,7 +13,17 @@ import type {
   SeverityLevel,
   UserRole,
 } from '@recon/domain';
-import { AppError, ERROR_DEFINITIONS, OPERATIONS, rolePermissionsByRole } from '@recon/domain';
+import {
+  AppError,
+  ERROR_DEFINITIONS,
+  OPERATIONS,
+  rolePermissionsByRole,
+  MAX_FILES_PER_SUBLEDGER,
+  subledgerSourceTypeByTab,
+  subledgerUploadFieldByTab,
+  type ImportFileSourceType,
+  type SubledgerTabId,
+} from '@recon/domain';
 import type { OperationCode } from '@recon/domain';
 import {
   checkDatabaseReachable,
@@ -385,13 +395,23 @@ const getUploadedReconciliationFiles = (files: UploadFileMap): ReconciliationUpl
 type ImportRunUploadFileMap = {
   bankFiles?: Express.Multer.File[];
   glFile?: Express.Multer.File[];
-};
+} & Partial<Record<(typeof subledgerUploadFieldByTab)[SubledgerTabId], Express.Multer.File[]>>;
 
 type ImportRunUploadFiles = {
   bankFiles: Express.Multer.File[];
   glFile: Express.Multer.File;
+  /** Keyed by tab id, each an array that may legitimately be empty. Issue #463. */
+  subledgerFiles: Record<SubledgerTabId, Express.Multer.File[]>;
 };
 
+/**
+ * Bank + GL remain the floor; subledgers are ADDITIVE (product-owner ruling, #463): "as a minimum,
+ * Bank statements and GL is required. AP, AR, and Payroll is added per users desire."
+ *
+ * So the bank/GL precondition below is unchanged, and no subledger can satisfy or substitute for it.
+ * A run carrying no subledgers is complete, not degraded -- which is why their absence returns empty
+ * arrays rather than failing, and why there is no minimum to check.
+ */
 const getUploadedImportRunFiles = (files: ImportRunUploadFileMap): ImportRunUploadFiles | null => {
   const bankFiles = files.bankFiles ?? [];
   const glFile = files.glFile?.[0];
@@ -400,7 +420,19 @@ const getUploadedImportRunFiles = (files: ImportRunUploadFileMap): ImportRunUplo
     return null;
   }
 
-  return { bankFiles, glFile };
+  const subledgerTabIds = Object.keys(subledgerUploadFieldByTab) as SubledgerTabId[];
+  const subledgerFiles = subledgerTabIds.reduce(
+    (accumulator, tabId) => {
+      const uploaded = files[subledgerUploadFieldByTab[tabId]] ?? [];
+      // multer's own maxCount rejects the overflow before this runs; the slice is a second line of
+      // defence so a transport change can never quietly widen the persisted cardinality.
+      accumulator[tabId] = uploaded.slice(0, MAX_FILES_PER_SUBLEDGER);
+      return accumulator;
+    },
+    {} as Record<SubledgerTabId, Express.Multer.File[]>,
+  );
+
+  return { bankFiles, glFile, subledgerFiles };
 };
 
 const toQueuedReconciliationFiles = (
@@ -3430,7 +3462,7 @@ export const createApp = (
   // create/read surface (DRAFT status only). Submitting a run for validation is Phase 6, not built.
   const toImportRunFile = (
     role: CreateImportRunFileInput['role'],
-    sourceType: 'BANK' | 'GL',
+    sourceType: ImportFileSourceType,
     file: Express.Multer.File,
   ): CreateImportRunFileInput => ({
     role,
@@ -3446,6 +3478,13 @@ export const createApp = (
       // Issue #153: 1-4 bank accounts per run, one repeated field rather than per-slot names.
       { name: 'bankFiles', maxCount: MAX_BANK_ACCOUNTS },
       { name: 'glFile', maxCount: 1 },
+      // Issue #463. An unregistered part is an "unexpected field" to multer, which is why a staged
+      // subledger file was discarded before any handler saw it. Derived from the domain map so a new
+      // subledger tab cannot be added without also being given a transport field.
+      ...(Object.keys(subledgerUploadFieldByTab) as SubledgerTabId[]).map((tabId) => ({
+        name: subledgerUploadFieldByTab[tabId],
+        maxCount: MAX_FILES_PER_SUBLEDGER,
+      })),
     ]),
     async (request, response, next) => {
       if (!(await requireDatabase(response, 'IMPORT_RUN_CREATE'))) return;
@@ -3542,6 +3581,28 @@ export const createApp = (
               bytes: merged.bytes,
             },
             toImportRunFile('GL', 'GL', files.glFile),
+            // Issue #463. Persisted, not merely accepted: multer registering the field is only half
+            // the path, and the invariant Phase 2 established is "never stage a file the submission
+            // discards". Accepting a subledger part and then leaving it out of this array would be
+            // the same silent loss, moved one step later.
+            //
+            // Roles mirror BANK_ACCOUNT_N (`AP_1`, `AR_1`, `PAYROLL_1`); `run_source_file.role` is
+            // unconstrained TEXT by design (changeset 0045), so this needs no migration.
+            //
+            // These are STORED but NOT VALIDATED, and that is deliberate rather than an oversight:
+            // importValidationService skips any file whose role is not BANK_MERGED or GL, so a
+            // subledger is retained and re-downloadable while contributing nothing to the run's
+            // verdict. Wiring AP into validation against the entity registry is #448; AR and payroll
+            // have no rule content at all yet. A screen must not report this silence as a pass.
+            ...(Object.keys(files.subledgerFiles) as SubledgerTabId[]).flatMap((tabId) =>
+              files.subledgerFiles[tabId].map((file, index) =>
+                toImportRunFile(
+                  `${tabId.toUpperCase()}_${index + 1}`,
+                  subledgerSourceTypeByTab[tabId],
+                  file,
+                ),
+              ),
+            ),
           ],
         });
 

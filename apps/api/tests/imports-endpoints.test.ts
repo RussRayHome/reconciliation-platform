@@ -469,6 +469,45 @@ describe('imports endpoints', () => {
       expect(response.body).toMatchObject({ message: expect.stringContaining('senior analyst') });
     });
 
+    // Issue #463. Before this, `apFiles` was an unregistered multer part -- an "unexpected field"
+    // discarded before any handler saw it, which is why Phase 2 reduced the AP/AR tabs to reason
+    // panels rather than ship drop zones over a submission that silently dropped the file.
+    it('accepts and PERSISTS a subledger file alongside bank and GL', async () => {
+      const response = await authedApp(appWithPool(pool), { role: 'senior-analyst' })
+        .post('/api/imports/runs')
+        .field('label', 'Run with AP')
+        .field('frequency', 'MONTHLY')
+        .field('periodYear', '2026')
+        .field('bankAccountAssignments', JSON.stringify([{ accountId: TEST_ACCOUNT_IDS[0] }]))
+        .attach('bankFiles', bankCsvA, { filename: '1111_bank.csv', contentType: 'text/csv' })
+        .attach('glFile', bankCsvA, { filename: 'gl.csv', contentType: 'text/csv' })
+        .attach('apFiles', bankCsvA, { filename: 'ACME_ap.csv', contentType: 'text/csv' });
+
+      expect(response.status).toBe(201);
+
+      // Accepting the part is only half of it: a 201 whose run does not contain the file is the
+      // same silent discard wearing a success code. Assert it was stored, with the source type the
+      // taxonomy decision fixed (AP -> BILLING) rather than whatever the handler happened to pass.
+      const apFile = response.body.files.find(
+        (file: { originalFilename: string }) => file.originalFilename === 'ACME_ap.csv',
+      );
+      expect(apFile).toBeDefined();
+      expect(apFile).toMatchObject({ role: 'AP_1', sourceType: 'BILLING' });
+    });
+
+    // The product-owner ruling is that subledgers are ADDITIVE, never substitutes: "as a minimum,
+    // Bank statements and GL is required." A subledger must therefore not satisfy the floor.
+    it('still requires bank and GL when only a subledger is attached', async () => {
+      const response = await authedApp(appWithPool(pool), { role: 'senior-analyst' })
+        .post('/api/imports/runs')
+        .field('label', 'AP only')
+        .field('frequency', 'MONTHLY')
+        .field('periodYear', '2026')
+        .attach('apFiles', bankCsvA, { filename: 'ACME_ap.csv', contentType: 'text/csv' });
+
+      expect(response.status).toBe(400);
+    });
+
     it('returns 400 when a file is missing', async () => {
       const response = await authedApp(appWithPool(pool), { role: 'senior-analyst' })
         .post('/api/imports/runs')

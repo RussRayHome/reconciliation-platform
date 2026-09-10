@@ -143,6 +143,64 @@ export const validationSourceTypes = ['BANK', 'GL', 'BILLING'] as const;
 /** Union of sources a validation rule may target. */
 export type ValidationSourceType = (typeof validationSourceTypes)[number];
 
+/**
+ * The three subledger tabs a run may additionally carry, and the `import_file.source_type` each one
+ * writes (Issue #463).
+ *
+ * Declared once, here, because the alternative is restating it at every seam -- the multer field
+ * registration, the FormData builder, the run store -- and those drifting apart is exactly the
+ * failure `source-system-two-vocabularies` records.
+ *
+ * **Why these values and not `AP`/`AR`.** Every one is already in changeset 0044's CHECK list, which
+ * came from transaction-csv-spec.md v2 §0.5, so nothing here needs a migration. `AP` and `AR` were
+ * deliberately not added: they would duplicate what `BILLING` (vendor bills) and `RECEIPT` (customer
+ * receipts) already mean. The AP/AR distinction stays a *registry* concept -- changeset 0079 keys on
+ * `kind` so one entity id may exist in both -- and does not need restating here, because BILLING and
+ * RECEIPT already separate the two sides of the ledger.
+ *
+ * **A source type here is not a claim that rules exist for it.** `validationSourceTypes` above is
+ * that claim, and it stays `BANK`/`GL`/`BILLING`: `RECEIPT` and `PAYROLL` transport and persist
+ * correctly while validating against nothing until their rule content lands (AR deferred by the
+ * product owner; payroll ships with #408). A screen must not present that silence as a passing
+ * check.
+ */
+export const subledgerSourceTypeByTab = {
+  ap: 'BILLING',
+  ar: 'RECEIPT',
+  payroll: 'PAYROLL',
+} as const;
+
+/** The subledger tab ids, as used by the import screen's `?source=` parameter. */
+export type SubledgerTabId = keyof typeof subledgerSourceTypeByTab;
+
+/** The `import_file.source_type` values a subledger upload can write. */
+export type SubledgerSourceType = (typeof subledgerSourceTypeByTab)[SubledgerTabId];
+
+/**
+ * Multipart field name per subledger tab. Kept beside the source-type map so a new subledger cannot
+ * be given a transport field without also being given the value it persists as.
+ */
+export const subledgerUploadFieldByTab = {
+  ap: 'apFiles',
+  ar: 'arFiles',
+  payroll: 'payrollFiles',
+} as const satisfies Record<SubledgerTabId, string>;
+
+/** Upper bound per subledger, mirroring bank's 1-4. Zero is valid: subledgers are additive, and a
+ * run carrying none of them is complete rather than degraded (product-owner ruling, #463). */
+export const MAX_FILES_PER_SUBLEDGER = 4;
+
+/**
+ * Every `import_file.source_type` this build actually writes.
+ *
+ * Deliberately narrower than the column's CHECK constraint, which permits all fifteen values from
+ * transaction-csv-spec.md v2 §0.5. The schema was widened ahead of the code (changeset 0044) so the
+ * remaining source types need no migration when they arrive; this type is the subset that has a
+ * transport path today. Widen it as those land, not before -- a value here is a claim that something
+ * can produce it.
+ */
+export type ImportFileSourceType = 'BANK' | 'GL' | SubledgerSourceType;
+
 /** Authentication event kinds recorded in `reconciliation_login_event` (ISSUE-050.2). */
 export const loginEventTypes = ['LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT'] as const;
 /** Union of valid login-event kinds. */

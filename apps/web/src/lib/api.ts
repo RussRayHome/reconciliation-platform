@@ -29,7 +29,10 @@ import type {
   UpdateSavedViewInput,
   UpdateSubledgerEntityInput,
   UserRole,
+  ImportFileSourceType,
+  SubledgerTabId,
 } from '@recon/domain';
+import { subledgerUploadFieldByTab } from '@recon/domain';
 import { clearAuthToken, getAuthToken, setAuthToken } from './authToken';
 
 /** Alias for the full reconciliation run report returned by the API. */
@@ -620,6 +623,16 @@ export const suggestAccountsRequest = async (
 export interface CreateImportRunPayload {
   bankFiles: File[];
   glFile: File;
+  /**
+   * Additive subledger uploads, keyed by tab id (Issue #463). Optional, and an omitted or empty
+   * entry is a complete run rather than a deficient one -- bank + GL are the floor and these are
+   * "added per users desire" (product-owner ruling).
+   *
+   * Nothing populates this yet: the AP, AR and payroll tabs are still reason panels, and flipping
+   * them to drop zones is #448's job precisely because it must not happen before the submit path
+   * can carry the files. This is that path, landing first.
+   */
+  subledgerFiles?: Partial<Record<SubledgerTabId, File[]>>;
   /** One assignment per entry of `bankFiles`, in the same order (A-D1, Issue #338). The server
    * rejects a set whose length does not match, so the two are always built together. */
   bankAccountAssignments: BankAccountAssignment[];
@@ -660,6 +673,7 @@ export interface CreateImportRunOptions {
 export const createImportRunRequest = ({
   bankFiles,
   glFile,
+  subledgerFiles,
   bankAccountAssignments,
   label,
   accountIdentifier,
@@ -672,6 +686,12 @@ export const createImportRunRequest = ({
   const formData = new FormData();
   bankFiles.forEach((bankFile) => formData.append('bankFiles', bankFile));
   formData.append('glFile', glFile);
+  // Field names come from the domain map, the same one the server registers with multer, so a part
+  // this appends can never be one the server treats as unexpected and discards.
+  for (const [tabId, files] of Object.entries(subledgerFiles ?? {})) {
+    const fieldName = subledgerUploadFieldByTab[tabId as SubledgerTabId];
+    files?.forEach((file) => formData.append(fieldName, file));
+  }
   // Multipart carries strings only, so the assignment set travels as JSON alongside the files.
   formData.append('bankAccountAssignments', JSON.stringify(bankAccountAssignments));
   formData.append('label', label);
@@ -837,7 +857,7 @@ export interface ImportFailureGateSequenceEntry {
 export interface ImportFileFailureDetail {
   importFileId: string;
   originalFilename: string;
-  sourceType: 'BANK' | 'GL';
+  sourceType: ImportFileSourceType;
   fileFormat: 'CSV' | 'XLSX';
   validationStatus: string;
   rowCount: number | null;

@@ -104,10 +104,17 @@ const toCanonicalRecordInput = (record: NormalizedRecord): CanonicalRecordInput 
 
 const assertBankOrGl = (file: ImportRunFileSummary): 'BANK' | 'GL' => {
   if (file.sourceType !== 'BANK' && file.sourceType !== 'GL') {
-    // import_file.source_type's CHECK constraint already allows the full 14-value taxonomy
-    // (changeset 0044, for the other source types tracked as GitHub issue #121) even though this
-    // build only ever creates BANK/GL runs -- this is the seam where that gap would first bite,
-    // so it fails loudly and specifically rather than silently miscategorizing the file.
+    // Deliberately still narrow after #463 widened the submit path. A run can now carry AP, AR and
+    // payroll files, but they are excluded from this loop by ROLE (the BANK_MERGED/GL filter above),
+    // not by this assertion -- so reaching here with anything else means a file was given a
+    // BANK_MERGED or GL role while carrying a different source type, which is a real inconsistency
+    // and should still fail loudly rather than be silently miscategorized.
+    //
+    // Widening this to accept the subledger types would convert that genuine error into a silent
+    // pass, which is the opposite of what the original comment (changeset 0044's taxonomy note)
+    // asked for. The subledgers are stored and re-downloadable but contribute nothing to a run's
+    // verdict until their rules land: AP against the entity registry is #448, AR is deferred, and
+    // payroll ships with #408.
     throw new Error(
       `Import validation only supports BANK/GL source types today; got "${file.sourceType}" for import_file ${file.importFileId}.`,
     );
