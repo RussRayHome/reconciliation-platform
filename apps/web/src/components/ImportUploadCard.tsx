@@ -7,7 +7,9 @@ export type RejectedUploadCode =
   | 'UPLOAD_AP_FILENAME_INVALID'
   | 'UPLOAD_AP_ENTITY_LIMIT_REACHED'
   | 'UPLOAD_AR_FILENAME_INVALID'
-  | 'UPLOAD_AR_ENTITY_LIMIT_REACHED';
+  | 'UPLOAD_AR_ENTITY_LIMIT_REACHED'
+  | 'UPLOAD_AP_ENTITY_UNKNOWN'
+  | 'UPLOAD_AR_ENTITY_UNKNOWN';
 
 type ImportUploadCardProps =
   | {
@@ -71,6 +73,19 @@ const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }
   UPLOAD_AR_ENTITY_LIMIT_REACHED: {
     label: 'UPLOAD_AR_ENTITY_LIMIT_REACHED',
     body: 'A run supports up to 4 AR entity ledgers. Remove an AR file before adding another.',
+  },
+  // #448 item 3. Distinct from *_FILENAME_INVALID on purpose: that one means the name carries no
+  // parseable entity id at all and the fix is to rename the file. This one means the id parsed
+  // fine and simply is not registered -- a perfectly named file lands here, so telling the user to
+  // check the naming convention would send them to fix something that is not broken. The fix is to
+  // open the registry, which is what the copy points at.
+  UPLOAD_AP_ENTITY_UNKNOWN: {
+    label: 'UPLOAD_AP_ENTITY_UNKNOWN',
+    body: 'That entity id is not in the AP registry. Open AP entities to register it, then re-add the file.',
+  },
+  UPLOAD_AR_ENTITY_UNKNOWN: {
+    label: 'UPLOAD_AR_ENTITY_UNKNOWN',
+    body: 'That entity id is not in the AR registry. Open AR entities to register it, then re-add the file.',
   },
 };
 
