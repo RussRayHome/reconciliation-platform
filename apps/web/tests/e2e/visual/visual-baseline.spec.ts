@@ -10,6 +10,9 @@ import postcss from 'postcss';
 
 import { expect, test } from '../fixtures';
 import { openSetup, submitRunButton } from '../auth';
+// Imported rather than hard-coding '/open-items': a route rename should fail this capture loudly
+// instead of silently screenshotting a 404 fallback.
+import { routePaths } from '../../../src/routes/routePaths';
 import { assignBankAccounts, selectSourceTab, stageGlWorkbook } from '../reconciliationHelpers';
 import {
   bankHeaderOnlyFileValidationRows,
@@ -347,6 +350,21 @@ for (const width of widths) {
       await preloadFonts(page);
 
       await openSetup(page);
+
+      // #465. The source tab strip is NOT inside #source-upload-form, so the setup-upload capture
+      // below has never included it -- the segmented control, its five source hues and its active
+      // state shipped (#401) with no visual coverage at all, and that only surfaced when the strip
+      // was rebuilt from folder tabs and every baseline stayed green through the change.
+      //
+      // Its own capture rather than widening setup-upload's region: the strip is a distinct
+      // component with its own failure mode (a hue lost, a segment collapsing, the active state
+      // becoming indistinguishable), and widening the form's region would re-approve the form's
+      // three baselines every time the strip moves.
+      await expect(page.getByRole('tablist', { name: 'Import source type' })).toHaveScreenshot(
+        `source-tab-strip-${width}.png`,
+        screenshotOptions,
+      );
+
       // Region-scoped to the upload form itself (#source-upload-form, App.tsx) rather than the
       // full page -- excludes the nav rail/hero chrome already covered by other captures. Native
       // <select> chrome (the dropdown arrow) still renders with a few non-deterministic pixels
@@ -486,6 +504,38 @@ for (const width of widths) {
         `close-${width}.png`,
         screenshotOptions,
       );
+    });
+
+    // #465's sharp case, and the one it says is worth adding on its own rather than waiting for a
+    // rebuild phase: 8b is not scheduled for one, and it carries the interim scope notice that
+    // stops an empty schedule reading as "nothing is overdue" -- 09_AP_AR_INTERIM calls that the
+    // worst false negative in this product. Nothing catches its removal today.
+    //
+    // A unit test can assert the paragraph renders. Only a pixel diff catches it being styled into
+    // invisibility, which is the regression this is here for.
+    test(`open items schedule @${width}`, async ({ page }) => {
+      await mockReconciliationRun(page);
+      await loginAs(page, 'rray', 'P@ssw0rd');
+      await preloadFonts(page);
+      await page.goto(routePaths.openItemsSchedule);
+
+      // Located by its heading rather than by class: SectionCard renders a bare
+      // `<section class="section-card">` with no id and no accessible name, and the page holds
+      // several. Filtering by the heading is stable without needing a source change purely to make
+      // the screen testable.
+      const schedule = page
+        .locator('.section-card')
+        .filter({ has: page.getByRole('heading', { name: 'Open Items Schedule' }) });
+      await expect(schedule).toBeVisible();
+      await expect(schedule).toHaveScreenshot(`open-items-${width}.png`, {
+        ...screenshotOptions,
+        // Every native <select> in the region, not just the status filter. Their dropdown chrome
+        // renders a few non-deterministic pixels between otherwise-identical runs under headless
+        // Linux Chromium -- the same reason setup-upload masks its two. Masking the whole set
+        // rather than naming ids also means a filter added later cannot quietly reintroduce the
+        // flake. #467 is what an unmasked non-deterministic region costs.
+        mask: [schedule.locator('select')],
+      });
     });
 
     test(`docs hub and document @${width}`, async ({ page }) => {
