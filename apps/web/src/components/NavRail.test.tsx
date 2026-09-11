@@ -40,6 +40,8 @@ const defaultProps: {
   canApprove: boolean;
   approvalCounts: ApprovalCountsByGroup | null;
   matchingRuleTotalCount: number | undefined;
+  probableMatchCount: number | null;
+  activeAccountCount: number | null;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -55,6 +57,8 @@ const defaultProps: {
   canApprove: false,
   approvalCounts: null,
   matchingRuleTotalCount: undefined,
+  probableMatchCount: null,
+  activeAccountCount: null,
   username: 'test.user',
   profileLabel: 'Test User',
   roleLabel: 'Superuser',
@@ -265,6 +269,30 @@ describe('NavRail badges are absent, not zero', () => {
 
     expect(badgeFor('Exceptions')).toHaveTextContent('14');
     expect(badgeFor('Rules & variances')).toHaveTextContent('12');
+  });
+
+  // UI-1 item 4. These two read the same source their destination renders from: 7b shows
+  // `run.probableMatches`, 3a's registry is active accounts. null is the "not loaded / no run"
+  // case and must be absent, not zero -- distinct from a genuine zero, which is also absent.
+  it('renders the probable-match and bank-account counts when they load', () => {
+    renderRail({ probableMatchCount: 9, activeAccountCount: 3 });
+
+    expect(badgeFor('Probable matches')).toHaveTextContent('9');
+    expect(badgeFor('Bank accounts')).toHaveTextContent('3');
+  });
+
+  it('renders no badge for either before a run exists or the registry loads', () => {
+    renderRail({ probableMatchCount: null, activeAccountCount: null });
+
+    expect(badgeFor('Probable matches')).toBeNull();
+    expect(badgeFor('Bank accounts')).toBeNull();
+  });
+
+  it('renders no badge for either when the real count is zero', () => {
+    renderRail({ probableMatchCount: 0, activeAccountCount: 0 });
+
+    expect(badgeFor('Probable matches')).toBeNull();
+    expect(badgeFor('Bank accounts')).toBeNull();
   });
 
   // Rules & variances used a separate `count` prop that rendered its own pill whenever the value

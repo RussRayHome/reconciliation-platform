@@ -80,6 +80,8 @@ export function NavRail({
   isMobileOpen,
   onMobileClose,
   matchingRuleTotalCount,
+  probableMatchCount,
+  activeAccountCount,
 }: Readonly<{
   unreviewedExceptionCount: number | null;
   exceptions: ExceptionItem[];
@@ -98,6 +100,10 @@ export function NavRail({
   onMobileClose: () => void;
   /** Total rule count for the Matching Rules item's pill/aria-label; omitted (no pill) until the catalog loads. */
   matchingRuleTotalCount?: number;
+  /** Null before a run exists / while the registry could not be read -- an absent badge, never a
+   * zero. Both read the same source their destination screen renders from (UI-1 item 4). */
+  probableMatchCount?: number | null;
+  activeAccountCount?: number | null;
 }>) {
   const [isCollapsed, setIsCollapsed] = useState(() => loadRailCollapsed(username));
   const [isRemoveAccountOpen, setIsRemoveAccountOpen] = useState(false);
@@ -184,6 +190,8 @@ export function NavRail({
             <NavItemLink
               to={routePaths.probableMatches}
               label="Probable matches"
+              badge={probableMatchCount ?? null}
+              badgeTone="neutral"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
@@ -217,6 +225,8 @@ export function NavRail({
             to={routePaths.bankAccounts}
             label="Bank accounts"
             icon="records"
+            badge={activeAccountCount ?? null}
+            badgeTone="neutral"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
           />

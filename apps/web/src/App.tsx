@@ -1542,6 +1542,19 @@ function ReconciliationApp({
   const unreviewedExceptionCount = reportRun
     ? Math.max(reportRun.exceptions.length - reviewerDecisions.resolvedCount, 0)
     : null;
+  // UI-1 item 4: a rail count must never disagree with its screen, so each badge reads the same
+  // source its destination renders from -- not a parallel query that can drift.
+  //
+  // 7b renders `run.probableMatches` and captions it "Showing N probable matches"; there is no
+  // confirm-decision state to subtract yet (#449 builds that flow), so the whole array is the
+  // count. `null` rather than 0 before a run exists: #400's approved exception to rule 3 says a
+  // badge is absent when there is nothing to decide, never a grey zero.
+  const probableMatchCount = reportRun ? reportRun.probableMatches.length : null;
+  // 3a's registry. `useReconciliationAccounts()` above defaults to active-only, which is exactly
+  // what this badge means -- a deactivated account cannot receive a statement. Null while the
+  // registry could not be read at all: "we don't know your accounts" is not "you have none", and
+  // showing a confident count over a failed fetch would be the worse of the two errors.
+  const activeAccountCount = accounts.error === null ? accounts.accounts.length : null;
   const varianceOverrideCount = Object.keys(varianceDefaultOverrides).length;
   const thresholdSetLabel = varianceOverrideCount > 0 ? 'Custom threshold set' : 'Shipped defaults';
   const thresholdSetTimestamp =
@@ -1661,6 +1674,8 @@ function ReconciliationApp({
         isMobileOpen={isMobileNavOpen}
         onMobileClose={() => setIsMobileNavOpen(false)}
         matchingRuleTotalCount={rulesCatalogData?.rules.length}
+        probableMatchCount={probableMatchCount}
+        activeAccountCount={activeAccountCount}
       />
       <main className="app-layout app-layout--rail">
         <RunBar
