@@ -86,6 +86,16 @@ const PUBLIC_ROUTES: Readonly<Record<string, RouteAssertion>> = {
 // run"), so this landmark uses submitRunButton(page) (a stable `form`-attribute
 // locator), not a role+name pair.
 
+/** #483. The race below collapses every failure mode into `null`, so a step that lands somewhere
+ * unexpected reports only "expected null not to be null" -- which says nothing about where it
+ * actually went. Naming the landing turns a guessing game into a reading. Evaluated only on
+ * failure, so passing steps pay nothing. */
+const describeLanding = async (page: Page): Promise<string> => {
+  const headings = await page.getByRole('heading').allTextContents();
+  const shown = headings.map((text) => text.trim()).filter(Boolean);
+  return `landed on ${new URL(page.url()).pathname} showing ${shown.length ? shown.join(' | ') : 'no headings'}`;
+};
+
 const accountedForKeys = [
   // importFiles is a plain alias for importFilesBank (same string, '/', R1 WP2) -- not a
   // separate rendered route, so no dedicated test.step for it; importFilesBank's own step below
@@ -184,7 +194,9 @@ test.describe('route sweep', () => {
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'reconSummary' as const),
         ]).catch(() => null);
-        expect.soft(result).not.toBeNull();
+        expect
+          .soft(result, result === null ? await describeLanding(page) : undefined)
+          .not.toBeNull();
       });
 
       await test.step(`importFilesBilling (${routePaths.importFilesBilling})`, async () => {
@@ -234,7 +246,9 @@ test.describe('route sweep', () => {
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'reconSummary' as const),
         ]).catch(() => null);
-        expect.soft(result).not.toBeNull();
+        expect
+          .soft(result, result === null ? await describeLanding(page) : undefined)
+          .not.toBeNull();
       });
 
       await test.step(`approvalsMappingProfiles (${routePaths.approvalsMappingProfiles})`, async () => {
@@ -277,13 +291,27 @@ test.describe('route sweep', () => {
           submitRunButton(page)
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'redirectedToImportFiles' as const),
+          // #483: the third outcome, and the one this step was missing. When the route is not
+          // registered for this role the catch-all redirects to '/', and '/' has a landing effect
+          // of its own -- with a succeeded run in state it replaces straight on to reconSummary,
+          // so the import screen never paints. `hasAppliedInitialLanding` is a ref, so every
+          // page.goto() remounts and can fire it again. The importFilesBank and approvalsImports
+          // steps already race this; these two did not, which is why the failure was intermittent
+          // (it depended on whether an earlier step in the shard had left a succeeded run) and
+          // reported only as a bare "expected null not to be null".
+          page
+            .getByRole('heading', { name: 'Review' })
+            .waitFor({ state: 'visible', timeout: 60_000 })
+            .then(() => 'reconSummary' as const),
         ]).catch(() => null);
-        expect.soft(result).not.toBeNull();
+        expect
+          .soft(result, result === null ? await describeLanding(page) : undefined)
+          .not.toBeNull();
 
         if (result === 'runBook') {
-          expect.soft(new URL(page.url()).pathname).toBe(
-            expectedPathname(routePaths.documentationRunBook),
-          );
+          expect
+            .soft(new URL(page.url()).pathname)
+            .toBe(expectedPathname(routePaths.documentationRunBook));
         }
       });
 
@@ -299,13 +327,27 @@ test.describe('route sweep', () => {
           submitRunButton(page)
             .waitFor({ state: 'visible', timeout: 60_000 })
             .then(() => 'redirectedToImportFiles' as const),
+          // #483: the third outcome, and the one this step was missing. When the route is not
+          // registered for this role the catch-all redirects to '/', and '/' has a landing effect
+          // of its own -- with a succeeded run in state it replaces straight on to reconSummary,
+          // so the import screen never paints. `hasAppliedInitialLanding` is a ref, so every
+          // page.goto() remounts and can fire it again. The importFilesBank and approvalsImports
+          // steps already race this; these two did not, which is why the failure was intermittent
+          // (it depended on whether an earlier step in the shard had left a succeeded run) and
+          // reported only as a bare "expected null not to be null".
+          page
+            .getByRole('heading', { name: 'Review' })
+            .waitFor({ state: 'visible', timeout: 60_000 })
+            .then(() => 'reconSummary' as const),
         ]).catch(() => null);
-        expect.soft(result).not.toBeNull();
+        expect
+          .soft(result, result === null ? await describeLanding(page) : undefined)
+          .not.toBeNull();
 
         if (result === 'approvalPolicy') {
-          expect.soft(new URL(page.url()).pathname).toBe(
-            expectedPathname(routePaths.approvalsPolicy),
-          );
+          expect
+            .soft(new URL(page.url()).pathname)
+            .toBe(expectedPathname(routePaths.approvalsPolicy));
         }
       });
     });
