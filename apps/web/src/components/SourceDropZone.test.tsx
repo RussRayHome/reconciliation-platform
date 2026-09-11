@@ -2,12 +2,19 @@
 
 import { type Dispatch, type SetStateAction, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import userEvent from '@testing-library/user-event';
 
 import type { CanonicalField, ReconciliationAccount } from '@recon/domain';
 
 import { MAX_AP_ENTITIES, MAX_BANK_ACCOUNTS, SourceDropZone } from './SourceDropZone';
+
+/** #448: an unknown entity id is rejected with a react-router <Link> to the relevant registry, so
+ * every render in this file needs router context. Wrapping here rather than at each call site --
+ * the component is never mounted outside the app's router in production, so a bare render was
+ * always the unrealistic case. */
+const render = (ui: Parameters<typeof rtlRender>[0]) => rtlRender(ui, { wrapper: MemoryRouter });
 
 const makeFile = (name: string, contents = 'contents'): File => new File([contents], name);
 
@@ -420,6 +427,24 @@ describe('SourceDropZone (subledger: AP)', () => {
     // the naming convention would point them at something that is not broken.
     expect(screen.getByText('UPLOAD_AP_ENTITY_UNKNOWN')).toBeInTheDocument();
     expect(screen.queryByText('UPLOAD_AP_FILENAME_INVALID')).not.toBeInTheDocument();
+  });
+
+  // #448's acceptance is specifically "rejected WITH A LINK that opens the relevant registry".
+  // Prose naming the registry is not that: the rejection is on the import screen and the registry
+  // is two clicks away behind a rail disclosure, so the user has to go find it.
+  it('offers a link straight to the AP registry when the entity is unknown', async () => {
+    const user = userEvent.setup();
+    render(<ApHarness registeredEntityIds={['E100']} />);
+
+    await user.upload(
+      screen.getByLabelText('AP/Billing subledger workbooks'),
+      makeFile('E777_ap-export.csv'),
+    );
+
+    expect(screen.getByRole('link', { name: 'Open AP entities' })).toHaveAttribute(
+      'href',
+      '/entities/ap',
+    );
   });
 
   it('matches the registry case-insensitively, as changeset 0079 does', async () => {
