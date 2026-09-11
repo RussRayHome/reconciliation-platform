@@ -178,14 +178,12 @@ export function NavRail({
             <NavItemLink
               to={routePaths.reconSummary}
               label="Summary"
-              icon="reports"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
             <NavItemLink
               to={routePaths.probableMatches}
               label="Probable matches"
-              icon="match"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
@@ -203,7 +201,7 @@ export function NavRail({
           <NavItemLink
             to={routePaths.export}
             label="Reports & export"
-            icon="operations"
+            icon="reference"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
           />
@@ -218,7 +216,7 @@ export function NavRail({
           <NavItemLink
             to={routePaths.bankAccounts}
             label="Bank accounts"
-            icon="setup"
+            icon="records"
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
           />
@@ -230,21 +228,19 @@ export function NavRail({
           <CollapsibleNavSection
             sectionId="subledger-entities"
             label="Subledger entities"
-            icon="setup"
+            icon="architecture"
             username={username}
             bordered={false}
           >
             <NavItemLink
               to={routePaths.apEntities}
               label="AP entities"
-              icon="setup"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
             <NavItemLink
               to={routePaths.arEntities}
               label="AR entities"
-              icon="setup"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
@@ -268,10 +264,10 @@ export function NavRail({
             <NavItemLink
               to={routePaths.mappingRules}
               label="Rules & variances"
-              icon="rule"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
-              count={matchingRuleTotalCount}
+              badge={matchingRuleTotalCount ?? null}
+              badgeTone="neutral"
               ariaLabel={
                 matchingRuleTotalCount === undefined
                   ? 'Rules & variances'
@@ -285,7 +281,6 @@ export function NavRail({
             <NavItemLink
               to={routePaths.mappingRulesVersions}
               label="Versions"
-              icon="clock"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
@@ -392,20 +387,20 @@ function NavItemLink({
   badge,
   badgeTone = 'attention',
   caption,
-  count,
   hue,
   ariaLabel,
   onNavigate,
 }: Readonly<{
   to: string;
   label: string;
-  icon: SemanticIconName;
+  /** Omitted for disclosure children: the canonical rail draws them as label-only rows behind the
+   * guide line, which is part of how the rail fits its 900px card. */
+  icon?: SemanticIconName;
   isCollapsed: boolean;
   indented?: boolean;
   badge?: number | null;
   badgeTone?: 'attention' | 'neutral';
   caption?: string;
-  count?: number;
   /** Source-hue edge marker (e.g. the Import Files children) -- omit for items with no source
    * association. */
   hue?: 'bank' | 'ap';
@@ -426,9 +421,11 @@ function NavItemLink({
       aria-label={ariaLabel}
       onClick={onNavigate}
     >
-      <span className="nav-rail__item-icon" aria-hidden="true">
-        <SemanticIcon name={icon} />
-      </span>
+      {icon ? (
+        <span className="nav-rail__item-icon" aria-hidden="true">
+          <SemanticIcon name={icon} />
+        </span>
+      ) : null}
       <span className="nav-rail__item-label-group">
         <span className="nav-rail__item-label">{label}</span>
         {caption ? (
@@ -447,7 +444,6 @@ function NavItemLink({
           {badge}
         </span>
       ) : null}
-      {count !== undefined ? <span className="nav-rail__pill">{count}</span> : null}
     </NavLink>
   );
 
@@ -564,20 +560,22 @@ function NavRailSystemLinks({
       {canAccessDocumentation ? (
         <CollapsibleNavSection sectionId="documentation" label="Documentation" username={username}>
           <div className="nav-rail__indent">
-            {/* Real, working documentation link (full-page nav to the separate Docs shell) --
-                kept as-is under its new label rather than routed to the coming-soon placeholder,
-                so this doesn't regress existing functionality. */}
+            {/* "Run book" is the canonical documentation name as of 2026-09-11 (#397); "User
+                guide" is retired vocabulary and appears in no rail entry, heading, copy string or
+                route. This is a label change only -- nothing in code was named after "user guide",
+                which is part of why the rail was the side to move.
+
+                The href stays on the separate Docs shell, which is real and working.
+                `documentationRunBook` (/documentation/run-book) still renders ComingSoonPage, so
+                pointing the rail at it would retarget a working entry onto a placeholder. The two
+                consolidate when 10e is built -- see #450/#451. */}
             <a
               className="nav-rail__item nav-rail__item--link"
               href={docsHref}
-              title={isCollapsed ? 'User Guide' : undefined}
+              title={isCollapsed ? 'Run book' : undefined}
             >
-              <span className="nav-rail__item-icon" aria-hidden="true">
-                <SemanticIcon name="reference" />
-              </span>
-              <span className="nav-rail__item-label">User Guide</span>
+              <span className="nav-rail__item-label">Run book</span>
             </a>
-            {/* N2: Run Book rendered ComingSoonPage -- removed along with the rail entry point. */}
           </div>
         </CollapsibleNavSection>
       ) : null}

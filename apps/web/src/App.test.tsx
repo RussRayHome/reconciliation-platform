@@ -951,7 +951,7 @@ describe('App', () => {
 
     renderApp();
 
-    expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/dev/docs');
+    expect(screen.getByRole('link', { name: 'Run book' })).toHaveAttribute('href', '/dev/docs');
   });
 
   it('redirects root to /dev when the development environment path segment is configured', () => {
@@ -3497,7 +3497,7 @@ describe('App', () => {
     renderApp();
 
     expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
+    expect(screen.getByRole('link', { name: 'Run book' })).toHaveAttribute('href', '/docs');
   });
 
   it('allows admin role to adjust variance thresholds in Rules', async () => {
@@ -3526,7 +3526,7 @@ describe('App', () => {
     renderApp();
 
     expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'User Guide' })).toHaveAttribute('href', '/docs');
+    expect(screen.getByRole('link', { name: 'Run book' })).toHaveAttribute('href', '/docs');
 
     fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
 
@@ -3653,13 +3653,19 @@ describe('App', () => {
     expect(window.location.pathname).toBe(targetPath);
   });
 
-  // N2: Run Book renders ComingSoonPage, so its rail entry is removed for every role -- the route
-  // itself stays declared (per N2's own scope), this only covers the rail's own inventory.
-  it('never shows a Run Book link in the rail, for any role', () => {
+  // N2: `documentationRunBook` (/documentation/run-book) renders ComingSoonPage, so it has no rail
+  // entry -- the route itself stays declared. Since #397 the rail's documentation child is
+  // labelled "Run book" and points at the working Docs shell, so a name-only assertion would now
+  // pass against the wrong element. Assert the href instead: no rail link may target the
+  // placeholder route.
+  it('never links the rail to the coming-soon run book route, for any role', () => {
     setAuthenticatedUser('rray3');
     renderApp();
 
-    expect(screen.queryByRole('link', { name: 'Run Book' })).toBeNull();
+    const railLinks = screen.getAllByRole('link');
+    expect(
+      railLinks.filter((link) => link.getAttribute('href')?.includes('/documentation/run-book')),
+    ).toEqual([]);
   });
 });
 
