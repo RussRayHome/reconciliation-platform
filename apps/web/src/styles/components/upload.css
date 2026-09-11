@@ -580,6 +580,18 @@
     color: var(--text-primary);
   }
 
+  .import-upload-card__registry-link {
+    align-self: flex-start;
+    margin-top: 2px;
+    color: var(--accent);
+    font-size: var(--font-meta);
+    text-decoration: none;
+  }
+
+  .import-upload-card__registry-link:hover {
+    text-decoration: underline;
+  }
+
   .import-upload-card__bar {
     height: 6px;
     border-radius: var(--radius-pill);

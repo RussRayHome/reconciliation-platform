@@ -1,4 +1,6 @@
+import { Link } from 'react-router';
 import { formatFileSize } from '../lib/formatFileSize';
+import { routePaths } from '../routes/routePaths';
 
 export type RejectedUploadCode =
   | 'UPLOAD_EXTENSION_UNSUPPORTED'
@@ -41,7 +43,14 @@ type ImportUploadCardProps =
       onRetry: () => void;
     };
 
-const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }> = {
+/** `registryLink` exists only on the two *_ENTITY_UNKNOWN codes. #448 requires an unknown prefix
+ * to be rejected *with a link that opens the relevant registry* -- prose telling the user to go
+ * there is not that, because the rejection card is on the import screen and the registry is two
+ * clicks away behind a rail disclosure. */
+const REJECTION_COPY: Record<
+  RejectedUploadCode,
+  { label: string; body: string; registryLink?: { to: string; label: string } }
+> = {
   UPLOAD_EXTENSION_UNSUPPORTED: {
     label: 'UPLOAD_EXTENSION_UNSUPPORTED',
     body: 'Rejected at upload. Only .csv and .xlsx are accepted — format is detected by extension.',
@@ -81,11 +90,13 @@ const REJECTION_COPY: Record<RejectedUploadCode, { label: string; body: string }
   // open the registry, which is what the copy points at.
   UPLOAD_AP_ENTITY_UNKNOWN: {
     label: 'UPLOAD_AP_ENTITY_UNKNOWN',
-    body: 'That entity id is not in the AP registry. Open AP entities to register it, then re-add the file.',
+    body: 'That entity id is not in the AP registry. Register it, then re-add the file.',
+    registryLink: { to: routePaths.apEntities, label: 'Open AP entities' },
   },
   UPLOAD_AR_ENTITY_UNKNOWN: {
     label: 'UPLOAD_AR_ENTITY_UNKNOWN',
-    body: 'That entity id is not in the AR registry. Open AR entities to register it, then re-add the file.',
+    body: 'That entity id is not in the AR registry. Register it, then re-add the file.',
+    registryLink: { to: routePaths.arEntities, label: 'Open AR entities' },
   },
 };
 
@@ -167,6 +178,11 @@ export function ImportUploadCard(props: Readonly<ImportUploadCardProps>) {
           </span>
         </div>
         <p className="import-upload-card__body">{copy.body}</p>
+        {copy.registryLink ? (
+          <Link className="import-upload-card__registry-link" to={copy.registryLink.to}>
+            {copy.registryLink.label}
+          </Link>
+        ) : null}
       </div>
     );
   }
