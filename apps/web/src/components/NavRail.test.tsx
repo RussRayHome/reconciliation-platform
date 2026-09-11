@@ -39,6 +39,7 @@ const defaultProps: {
   canAccessDocumentation: boolean;
   canApprove: boolean;
   approvalCounts: ApprovalCountsByGroup | null;
+  matchingRuleTotalCount: number | undefined;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -53,6 +54,7 @@ const defaultProps: {
   canAccessDocumentation: true,
   canApprove: false,
   approvalCounts: null,
+  matchingRuleTotalCount: undefined,
   username: 'test.user',
   profileLabel: 'Test User',
   roleLabel: 'Superuser',
@@ -240,6 +242,39 @@ describe('NavRail Pending approvals badge (N1: summed count)', () => {
     // would need to know the count in advance. The label text itself is unambiguous.
     const link = screen.getByText('Pending').closest('a')!;
     expect(link.querySelector('.nav-rail__badge')).toBeNull();
+  });
+});
+
+// UI-1 (#400), approved exception to DESIGN_DECISIONS rule 3: a rail badge means "needs your
+// decision", so it is ABSENT when there is nothing to decide -- never a grey zero. A rail full of
+// zeros reads as broken, and 6a (a brand-new org) is specified with no badges at all rather than
+// a column of them. This is stricter than rule 3's literal "equal the destination screen's number".
+describe('NavRail badges are absent, not zero', () => {
+  const badgeFor = (label: string): Element | null =>
+    screen.getByText(label).closest('a')!.querySelector('.nav-rail__badge');
+
+  it('renders no badge when a count is zero', () => {
+    renderRail({ unreviewedExceptionCount: 0, matchingRuleTotalCount: 0 });
+
+    expect(badgeFor('Exceptions')).toBeNull();
+    expect(badgeFor('Rules & variances')).toBeNull();
+  });
+
+  it('renders the badge once a count is above zero', () => {
+    renderRail({ unreviewedExceptionCount: 14, matchingRuleTotalCount: 12 });
+
+    expect(badgeFor('Exceptions')).toHaveTextContent('14');
+    expect(badgeFor('Rules & variances')).toHaveTextContent('12');
+  });
+
+  // Rules & variances used a separate `count` prop that rendered its own pill whenever the value
+  // was defined -- so a tenant with no rules yet got a literal "0" next to it. Asserting on the
+  // rendered text rather than the retired class: "no grey zeros anywhere in the rail" is the rule
+  // the design actually states, and it keeps holding if a future count is wired some other way.
+  it('renders no zero anywhere in the rail when every count is zero', () => {
+    renderRail({ unreviewedExceptionCount: 0, matchingRuleTotalCount: 0 });
+
+    expect(screen.queryByText('0')).toBeNull();
   });
 });
 

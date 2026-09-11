@@ -373,26 +373,8 @@
     min-height: 32px;
   }
 
-  .nav-rail__pill {
-    margin-left: auto;
-    padding: 0.05rem 0.5rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--line-strong);
-    background: var(--bg-surface);
-    color: var(--text-tertiary);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: var(--font-label);
-  }
 
-  .nav-rail--collapsed .nav-rail__pill {
-    display: none;
-  }
 
-  /* Template rows offer two downloads (CSV + XLSX), so the row itself isn't a link -- only its
-     two format pills are, each pointing at that format's file. */
-  .nav-rail__item--template {
-    cursor: default;
-  }
 
   .nav-rail__template-formats {
     display: flex;
@@ -400,16 +382,7 @@
     margin-left: auto;
   }
 
-  .nav-rail__pill--link {
-    margin-left: 0;
-    text-decoration: none;
-    cursor: pointer;
-  }
 
-  .nav-rail__pill--link:hover {
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
 
   .nav-rail__footer {
     position: relative;
