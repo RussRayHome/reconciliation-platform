@@ -158,4 +158,21 @@
    A boundary statement, not a warning: nothing has gone wrong, the registry simply is not consulted
    yet. Removed with #448 item 2, in that same changeset. */
 @layer components {
+  .registry-scope-notice {
+    margin: 0;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--registry-scope-hue, var(--line-strong));
+    border-radius: var(--radius-control);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    font-size: var(--font-meta);
+    line-height: 1.5;
+  }
+
+  .registry-scope-notice strong {
+    color: var(--text-primary);
+  }
+
+  .registry-scope-notice--ap { --registry-scope-hue: var(--ap); }
+  .registry-scope-notice--ar { --registry-scope-hue: var(--ar); }
 }
