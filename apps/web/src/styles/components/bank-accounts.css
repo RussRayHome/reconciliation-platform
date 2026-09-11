@@ -27,7 +27,7 @@
     font-size: 0.85rem;
     padding: 0.4rem 0.5rem;
     border: 1px solid var(--line);
-    border-radius: 6px;
+    border-radius: var(--radius-row);
     background: var(--surface);
     color: var(--text-primary);
   }
@@ -64,7 +64,7 @@
   }
 
   .bank-accounts__table thead th {
-    font-size: 0.74rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-tertiary);

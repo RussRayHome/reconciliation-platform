@@ -104,10 +104,6 @@
     transition: all 260ms ease;
   }
 
-  .hero-card:hover .hero-brand__mascot {
-    box-shadow: var(--shadow-raised);
-  }
-
   .hero-brand__company {
     margin: 0;
     font-family: 'Space Grotesk', sans-serif;
