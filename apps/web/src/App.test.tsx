@@ -1176,6 +1176,45 @@ describe('App', () => {
     });
   });
 
+  // UI-1 item 4: "a rail count must never disagree with its screen". The unit tests in
+  // NavRail.test.tsx only prove the badge renders the prop it is handed -- the thing that actually
+  // goes wrong is the rail and the screen reading two different sources that drift apart, and only
+  // a test that renders both at once can catch that. Today's rail showed total exceptions (54)
+  // where the screen showed open ones (14); this is the guard against the next one.
+  it('shows the same probable-match count in the rail as the screen itself reports', async () => {
+    const runResponse = createRunResponse();
+    mockedApiState.latestImportRunResponse = createImportRunSummary({
+      status: 'RECONCILING',
+      matchingJobId: runResponse.id,
+    });
+    mockedApiState.matchingRunReportResponse = runResponse;
+
+    setAuthenticatedUser('rray');
+    globalThis.localStorage.setItem(
+      'reconciliation-platform:latest-report-run',
+      JSON.stringify({ version: 4, run: runResponse }),
+    );
+
+    renderApp();
+
+    const railLink = await waitFor(() => {
+      const link = screen.getByText('Probable matches').closest('a');
+      if (!link?.querySelector('.nav-rail__badge')) {
+        throw new Error('rail badge has not rendered yet');
+      }
+      return link;
+    });
+    const railCount = railLink.querySelector('.nav-rail__badge')?.textContent?.trim();
+
+    fireEvent.click(railLink);
+
+    // The screen's own caption, read back rather than hard-coded, so the two numbers are compared
+    // to each other and not both to a literal that could be updated in one place.
+    const caption = await screen.findByText(/Showing \d+ probable matches/);
+    expect(caption.textContent).toContain(`Showing ${railCount} probable matches`);
+    expect(railCount).toBe(String(runResponse.probableMatches.length));
+  });
+
   it('a stale successful persisted run does not mask a newer failed run (Issue #154 regression)', async () => {
     // The direct regression test for the reported bug: an unrelated old successful run sits in
     // localStorage (e.g. from a prior session), but the server's actual latest run failed File
