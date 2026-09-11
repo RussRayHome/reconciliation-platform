@@ -50,7 +50,7 @@
   .probable-match-virtual-card__grid span {
     display: block;
     color: var(--text-tertiary);
-    font-size: 0.74rem;
+    font-size: var(--font-label);
     letter-spacing: 0.05em;
     text-transform: uppercase;
     margin-bottom: 0.2rem;

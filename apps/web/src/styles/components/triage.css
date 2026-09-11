@@ -38,7 +38,7 @@
     width: 100%;
     min-height: var(--control-height);
     padding: 0.45rem 0.6rem;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--line);
     background: var(--bg-surface);
   }
@@ -81,7 +81,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.78rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-tertiary);
@@ -116,7 +116,7 @@
 
   .exception-facet-group legend {
     padding: 0 0.35rem;
-    font-size: 0.78rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-tertiary);
@@ -179,7 +179,7 @@
     text-align: left;
     padding: 0.35rem 0.5rem;
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     background: transparent;
     cursor: pointer;
     font-size: 0.84rem;
@@ -244,7 +244,7 @@
     max-height: var(--exception-list-max, 560px);
     overflow: auto;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: var(--radius-panel);
   }
 
   .exception-triage__list-canvas {
@@ -280,7 +280,7 @@
     padding: 0.35rem 0.65rem;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--line);
-    font-size: 0.7rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-tertiary);
@@ -464,7 +464,7 @@
   .exception-detail {
     grid-area: detail;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: var(--radius-panel);
     /* Padding moved to __header / __body so the sticky header spans the panel edge to edge and
        its background fully covers content scrolling underneath it. */
     padding: 0;
@@ -496,7 +496,7 @@
     padding: var(--module-padding);
     background: var(--bg-surface);
     border-bottom: 1px solid var(--line);
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
   }
 
   .exception-detail__identity {
@@ -592,7 +592,7 @@
 
   .exception-compare-column h4 {
     margin: 0 0 0.4rem;
-    font-size: 0.8rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-tertiary);
@@ -801,7 +801,7 @@
     min-height: 60px;
     margin-top: 0.5rem;
     padding: 0.5rem;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--line);
     resize: vertical;
   }

@@ -2,7 +2,6 @@
   .tab-shell {
     display: grid;
     gap: 0;
-    animation: fadeInUp 620ms ease-out;
   }
 
   .tabbed-workspace {

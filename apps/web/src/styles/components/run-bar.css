@@ -44,7 +44,7 @@
   }
 
   .run-bar__field-label {
-    font-size: 0.72rem;
+    font-size: var(--font-label);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-tertiary);
@@ -76,7 +76,7 @@
 
   .run-bar__copy {
     padding: 0.2rem 0.55rem;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     border: 1px solid var(--line);
     background: transparent;
     font-size: 0.75rem;
