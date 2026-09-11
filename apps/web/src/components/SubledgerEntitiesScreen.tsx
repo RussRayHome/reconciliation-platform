@@ -121,6 +121,30 @@ export function SubledgerEntitiesScreen({
         </div>
       </header>
 
+      {/* [SCREEN] 5a/5b interim scope notice (10_REGISTRY_INTERIM). The registries ship ahead of
+          the validation that consults them, so without this the screen reads as authoritative
+          when nothing checks against it -- the same false negative as an empty open-items
+          schedule, which is why 8b carries the same device.
+
+          Removed in #481 and RESTORED here. #471 built `detectSubledgerEntityRejection` and wired
+          it into SourceDropZone's subledger mode, which read as "registry validation landed" --
+          but that mode is rendered nowhere: App.tsx's only <SourceDropZone> is `mode="bank-gl"`,
+          and the AP/AR tabs are `kind: 'reason'` panels per 08_PHASE2_RULINGS Branch B. No user
+          can upload an AP or AR file, so nothing reaches the check. The notice's own condition --
+          "arrives with subledger import" -- has not been met.
+
+          The signal to remove it is a rendered subledger drop zone, not the existence of the
+          function. Take it out in the changeset that ships that drop zone.
+
+          Approved copy -- do not reword. Carries no issue number: "arrives with AP subledger
+          import" ages better than a number that has already slipped once. */}
+      <p className={`registry-scope-notice registry-scope-notice--${kind}`}>
+        Entities recorded here are <strong>not yet checked against imported files</strong> — a new
+        run validates the {copy.noun} file name’s shape only. Registry validation arrives with{' '}
+        {copy.noun} subledger import; open your entities now so file names are ready the day it
+        does.
+      </p>
+
       <div className="registry-screen__body">
         <SectionCard
           title={`Registered ${copy.noun} entities`}
