@@ -164,7 +164,8 @@
     "licenses:generate": "NODE_OPTIONS=--no-deprecation node scripts/check-licenses.mjs",
     "licenses:check": "NODE_OPTIONS=--no-deprecation node scripts/check-licenses.mjs --check",
     "verify:push": "npm run typecheck && npm run db:changesets:check && npm run lint && npm run docs:api:check && npm run docs:openapi:check && npm run security:scan && npm run security:zap:targets:check && npm run licenses:check && npm run test",
-    "db:changesets:check": "NODE_OPTIONS=--no-deprecation tsx scripts/check-changesets.ts"
+    "db:changesets:check": "NODE_OPTIONS=--no-deprecation tsx scripts/check-changesets.ts",
+    "issues:audit": "NODE_OPTIONS=--no-deprecation tsx scripts/ops/audit-merged-issues.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
