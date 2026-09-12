@@ -171,6 +171,22 @@ describe('SourceDropZone (bank panel)', () => {
     expect(bankSlot).toHaveTextContent('bank-export.csv');
   });
 
+  // #392 decision 1. A fresh organization has no registered accounts -- changeset 0059's backfill
+  // is a migration-time snapshot, so anything created after it starts empty -- and it meets this
+  // hint before it has done anything else. The text was accurate and still a dead end: it said a
+  // run needs a registered account without saying where to get one.
+  it('points a fresh organization at the registry instead of dead-ending', async () => {
+    const user = userEvent.setup();
+    render(<BankGlHarness accounts={[]} />);
+
+    await user.upload(screen.getByLabelText('Source workbooks'), makeFile('9999_bank.csv'));
+
+    expect(screen.getByRole('link', { name: 'Register one' })).toHaveAttribute(
+      'href',
+      '/accounts',
+    );
+  });
+
   it('offers an account assignment control for a staged bank file, defaulting to no selection', async () => {
     const user = userEvent.setup();
     render(

@@ -223,6 +223,11 @@
     color: var(--text-tertiary);
   }
 
+  .source-slot__account-hint-link {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
   /* Amber, matching source-slot__header-warning: a filename disagreeing with the assignment is a
      prompt to confirm, not a rejection -- the operator may legitimately be right. */
   .source-slot__account-conflict {

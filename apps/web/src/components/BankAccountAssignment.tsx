@@ -1,7 +1,10 @@
 import type { ReconciliationAccount } from '@recon/domain';
 import { formatAccountLabel, parseBankAccountLast4FromFilename } from '@recon/domain';
 
+import { Link } from 'react-router';
+
 import { candidatesForFilename } from '../lib/bankAccountSuggestion';
+import { routePaths } from '../routes/routePaths';
 
 /**
  * The account-selection control for one uploaded bank statement (A-D1, Issue #338).
@@ -70,8 +73,20 @@ export function BankAccountAssignment({
           Bank accounts couldn&apos;t be loaded, so this statement can&apos;t be assigned yet.
         </p>
       ) : accounts.length === 0 ? (
+        /* #392 decision 1. The hint was accurate and still a dead end: it said a run needs a
+           registered account without saying where to register one, and a fresh organization meets
+           it before it has done anything else -- changeset 0059's backfill is a migration-time
+           snapshot, so an organization created after it starts with none.
+
+           Safe to show unconditionally: `canManageAccounts` tracks `canSubmitImportRuns` exactly
+           (packages/domain/src/enums.ts), so anyone who can reach this control -- it only renders
+           on the submit path -- can also register the account it points at. */
         <p className="source-slot__account-hint">
-          No bank accounts are registered yet. Register one before submitting a run.
+          No bank accounts are registered yet.{' '}
+          <Link className="source-slot__account-hint-link" to={routePaths.bankAccounts}>
+            Register one
+          </Link>{' '}
+          before submitting a run.
         </p>
       ) : null}
 
