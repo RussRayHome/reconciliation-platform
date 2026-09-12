@@ -90,6 +90,7 @@ import {
   type ImportUploadTransferState,
 } from './hooks/useImportUploadTransfer';
 import { useReconciliationAccounts } from './hooks/useReconciliationAccounts';
+import { useSubledgerEntityCounts } from './hooks/useSubledgerEntityCounts';
 import { useImportPartialAccept } from './hooks/useImportPartialAccept';
 import { buildTransferCardProps } from './lib/importUploadProgress';
 import { ImportUploadCard } from './components/ImportUploadCard';
@@ -845,6 +846,9 @@ function ReconciliationApp({
   // A-D1 (Issue #338): active accounts only. A deactivated account cannot receive a statement, so
   // offering one in the assignment control would only produce a rejection at submit.
   const accounts = useReconciliationAccounts();
+  // #400: the rail's AP/AR badges. Mount-scoped by decision -- the rail renders on every in-app
+  // screen, so anything per-navigation would put two requests behind every click.
+  const subledgerEntityCounts = useSubledgerEntityCounts();
   // R2 V1: `reconciliation.data` is now `{kind:'queued', run} | {kind:'succeeded', report}` --
   // unwrap to the exact `ReconciliationRunResponse | undefined` every existing consumer of `run`/
   // `reportRun` below already expects, so this is the only place that needs to know about the new
@@ -1676,6 +1680,8 @@ function ReconciliationApp({
         matchingRuleTotalCount={rulesCatalogData?.rules.length}
         probableMatchCount={probableMatchCount}
         activeAccountCount={activeAccountCount}
+        apEntityCount={subledgerEntityCounts.ap}
+        arEntityCount={subledgerEntityCounts.ar}
       />
       <main className="app-layout app-layout--rail">
         <RunBar
