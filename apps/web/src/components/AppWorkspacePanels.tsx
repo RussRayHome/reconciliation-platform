@@ -40,6 +40,7 @@ import {
 } from './Skeleton';
 import { ExceptionTriage } from './ExceptionTriage';
 import { SemanticIcon } from './SemanticIcon';
+import { describeConfidence, groupByConfidence } from '../lib/matchConfidenceBands';
 
 /** R2 V2: one `status` field instead of two booleans -- `isComplete`/`isCurrent` couldn't express
  * a terminal failure (a failed run would sit at `isCurrent: true` forever) or a queued run.
@@ -712,6 +713,23 @@ function ProbableMatchesContent({
           <span>Virtualized view enabled for large probable-match result sets.</span>
         ) : null}
       </div>
+
+      {/* UI-10 (#449). Bands come from `confidence`, never from a score percentage -- the engine's
+          `score` is a rule-precedence rank, so a displayed "%" would imply a calibrated likelihood
+          it does not compute. Decided 2026-09-12; the reasoning lives in matchConfidenceBands.ts.
+
+          A summary rather than a regrouped list: the virtualized branch below depends on one flat
+          array, and splitting it into per-band virtualizers to avoid one extra line of reading
+          would trade a real correctness risk for a cosmetic gain. */}
+      <ul className="probable-match-bands">
+        {groupByConfidence(probableMatches).map((band) => (
+          <li key={band.confidence} className="probable-match-bands__item">
+            <span className="probable-match-bands__label">{band.label}</span>
+            <span className="probable-match-bands__count">{band.matches.length}</span>
+            <span className="probable-match-bands__meaning">{band.meaning}</span>
+          </li>
+        ))}
+      </ul>
       {shouldVirtualizeRows ? (
         <div className="probable-match-virtual-list" ref={virtualListRef}>
           <div
@@ -778,7 +796,11 @@ function ProbableMatchesContent({
               {probableMatches.map((item) => (
                 <tr key={item.id}>
                   <td>{item.disposition}</td>
-                  <td>{item.confidence}</td>
+                  <td>
+                    <span className="badge" title={describeConfidence(item.confidence).meaning}>
+                      {describeConfidence(item.confidence).label}
+                    </span>
+                  </td>
                   <td>{item.ruleName}</td>
                   <td>{item.dateDifferenceDays ?? 'N/A'}</td>
                   <td className="cell-amount">{formatCurrency(item.amountDifference)}</td>
