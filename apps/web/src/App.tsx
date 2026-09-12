@@ -32,6 +32,7 @@ import { ImportRunApprovalStatus, PendingApprovalsInbox } from './components/App
 import { ApprovalPolicyPage } from './components/ApprovalPolicyPage';
 import { VersionsPage } from './components/VersionsPage';
 import { ComingSoonPage } from './components/ComingSoonPage';
+import { RunsHomeScreen } from './components/RunsHomeScreen';
 import { CreateMappingScreen } from './components/CreateMappingScreen';
 import { SignupScreen } from './components/SignupScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
@@ -80,7 +81,6 @@ import { resolveLatestRunPhase, type LatestRunPhase } from './lib/latestRunState
 import { subscribeToRunStatus } from './lib/runStatusStream';
 import { clearAuthToken, getAuthToken } from './lib/authToken';
 import type { AuthenticatedUserSession } from './lib/authSession';
-import type { AppTab } from './lib/appCatalog';
 import { resolveEnvironmentPaths } from './lib/environmentPath';
 import { routePaths } from './routes/routePaths';
 import type { SavedTriageView } from './lib/exceptionTriage';
@@ -147,17 +147,6 @@ const roleDisplayLabels: Record<UserRole, string> = {
   superuser: 'SuperUser',
 };
 
-/** Role-aware landing tab (design doc: "Role sets the default landing view"). The two other
- * individual-contributor analyst roles land on Review like financial-analyst; the management-tier
- * roles (controller/vp-finance/cfo, and the officer roles coo/ceo added by Issue #283) land on
- * Setup alongside admin/superuser. */
-const analystTierLandingRoles = new Set<UserRole>([
-  'financial-analyst',
-  'senior-analyst',
-  'staff-accountant',
-]);
-const resolveRoleLandingTab = (role: UserRole): AppTab =>
-  analystTierLandingRoles.has(role) ? 'review' : 'setup';
 
 const monthsWithinYear = [
   'January',
@@ -736,7 +725,6 @@ function App() {
         docsHref={docsHref}
         rolePermissions={rolePermissions}
         isAdmin={activeUser.role === 'admin' || activeUser.role === 'superuser'}
-        roleDefaultTab={resolveRoleLandingTab(activeUser.role)}
         username={activeUser.username}
         profileLabel={displayName.length > 0 ? displayName : activeUser.username}
         roleLabel={roleDisplayLabels[activeUser.role]}
@@ -753,7 +741,6 @@ function ReconciliationApp({
   docsHref,
   rolePermissions,
   isAdmin,
-  roleDefaultTab,
   username,
   profileLabel,
   roleLabel,
@@ -765,7 +752,6 @@ function ReconciliationApp({
   docsHref: string;
   rolePermissions: RolePermissions;
   isAdmin: boolean;
-  roleDefaultTab: AppTab;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -1154,21 +1140,25 @@ function ReconciliationApp({
     }
     hasAppliedInitialLanding.current = true;
 
-    if (window.location.pathname !== routePaths.importFiles || window.location.search) {
+    if (window.location.pathname !== routePaths.runsHome || window.location.search) {
       return;
     }
 
-    if (phaseKind === 'succeeded') {
-      void navigate(routePaths.reconSummary, { replace: true });
-      return;
-    }
-
-    // queued/running already show their own in-progress panel on Import Files itself (the RunBar
-    // outcome panel), and validation-failed/matching-failed likewise show their own failure panel
-    // there -- neither has anywhere better to redirect to. Only the role-based default landing
-    // (analysts land on Review) applies as a fallback for a genuinely idle account.
-    if (roleDefaultTab === 'review') {
-      void navigate(routePaths.reconSummary, { replace: true });
+    // UI-4 (#403) inverted this. '/' used to be the import screen, so a returning user had to be
+    // redirected AWAY from a blank upload form to find their own work -- to reconSummary on
+    // success, or to Review for an analyst. Runs home now IS that state: the Continue card shows
+    // the run's five measures and puts "Resume exceptions" one click away, which is the thing
+    // those redirects were reaching for.
+    //
+    // So the only landing rule left is the one the phase explicitly keeps: an organization with
+    // no runs at all has nothing for Home to show, and New run is the actionable screen for
+    // someone who has not run anything yet.
+    //
+    // Gated on being able to submit. A read-only role forwarded to New run lands on a screen it
+    // cannot act on -- the same dead end #392 just fixed one door down. Home tells them honestly
+    // that nothing is waiting, which is the true and useful answer for that account.
+    if (phaseKind === 'idle' && rolePermissions.canSubmitImportRuns) {
+      void navigate(routePaths.importFiles, { replace: true });
     }
   };
 
@@ -1240,9 +1230,13 @@ function ReconciliationApp({
   /**
    * Old bookmarks/shared links encoded destination as `?tab=...&view=...` on the root path
    * rather than a distinct pathname. Translate them to real routes once on landing.
+   *
+   * UI-4 (#403): keyed on `runsHome`, not `importFiles`. Those links were written when '/' WAS the
+   * import screen, so they arrive at the root path -- which is now Home. Following `importFiles`
+   * when it moved to /runs/new would have quietly stopped honouring every one of them.
    */
   useEffect(() => {
-    if (location.pathname !== routePaths.importFiles) {
+    if (location.pathname !== routePaths.runsHome) {
       return;
     }
 
@@ -1700,6 +1694,17 @@ function ReconciliationApp({
 
         <section className="tabbed-workspace" aria-label="Reconciliation workspace">
             <Routes>
+              <Route
+                path={routePaths.runsHome}
+                element={
+                  <RunsHomeScreen
+                    profileLabel={profileLabel}
+                    run={reportRun}
+                    openExceptionCount={unreviewedExceptionCount}
+                    decidedExceptionCount={reviewerDecisions.resolvedCount}
+                  />
+                }
+              />
               <Route
                 path={routePaths.importFilesBank}
                 element={

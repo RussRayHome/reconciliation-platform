@@ -701,12 +701,19 @@ const mockImportRunSubmitFlow = (finalRun: unknown = createRunResponse()) => {
 const scrollIntoViewMock = vi.fn();
 Element.prototype.scrollIntoView = scrollIntoViewMock;
 
-const renderApp = () =>
-  render(
+/** UI-4 (#403) added the path argument. '/' used to be the import screen, so a test that wanted it
+ * just rendered; now '/' is Runs home and any test about the import screen has to say so. Tests
+ * that genuinely want the landing route, or push their own path first, call this with nothing. */
+const renderApp = (path?: string) => {
+  if (path) {
+    globalThis.history.pushState({}, '', path);
+  }
+  return render(
     <QueryClientProvider client={new QueryClient()}>
       <App />
     </QueryClientProvider>,
   );
+};
 
 /** Fills Screen 02's upload slots -- every bank filename must start with digits followed by
  * "-"/"_" (Issue #141's account-filename convention) or `SourceDropZone` rejects it before it
@@ -898,7 +905,10 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
     });
-    expect(globalThis.location.pathname).toBe('/');
+    // The point is that /login is gone, not which screen replaced it. UI-4 (#403) changed the
+    // answer: this account has no runs and can submit, so Runs home forwards it to New run rather
+    // than showing an empty Continue card.
+    expect(globalThis.location.pathname).toBe(routePaths.importFiles);
   });
 
   it('navigates from login to Forgot Password and back via the placeholder screen', async () => {
@@ -1068,7 +1078,7 @@ describe('App', () => {
 
   it('renders the rail destinations as routes and defaults to Import Files', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     expect(screen.getByRole('link', { name: 'New run' })).toHaveAttribute(
       'aria-current',
@@ -1106,7 +1116,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -1382,7 +1392,7 @@ describe('App', () => {
     });
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     // Both the RunBar's status pill and the progress-meter's current-step label render
     // "Reconciliation failed" for this phase -- legitimate, not a bug, so this asserts on the
@@ -1410,7 +1420,7 @@ describe('App', () => {
     });
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await waitFor(() => {
       expect(screen.getAllByText('Reconciliation failed').length).toBeGreaterThan(0);
@@ -1654,7 +1664,7 @@ describe('App', () => {
 
   it('shows a monthly month picker by default with twelve month options', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     const monthSelect = screen.getByLabelText(/Month/i);
     const options = Array.from((monthSelect as HTMLSelectElement).options).map(
@@ -1686,7 +1696,7 @@ describe('App', () => {
   // everything is staged (before Submit run is ever clicked), still `pending` beforehand.
   it('shows the run step as ready once files are staged, pending before', async () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     expect(screen.getByText('Process Progress')).toBeInTheDocument();
     expect(runStepChip().getByText('Pending')).toBeInTheDocument();
@@ -1698,7 +1708,7 @@ describe('App', () => {
 
   it('shows an annual year picker with the previous seven years when annual is selected', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     fireEvent.change(screen.getByLabelText('Frequency'), {
       target: { value: 'Annual' },
@@ -1725,7 +1735,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
     fireEvent.change(screen.getByPlaceholderText('OPERATING-001'), {
@@ -1751,7 +1761,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -1776,7 +1786,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -1808,7 +1818,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -1833,7 +1843,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     const bankFileA = new File(['bank-a-data'], '1111_bank.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -1881,7 +1891,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Month/i), {
@@ -1906,7 +1916,7 @@ describe('App', () => {
 
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Run label/i), {
@@ -1926,7 +1936,7 @@ describe('App', () => {
 
   it('keeps the suggested label hint visible after custom edits', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     fireEvent.change(screen.getByLabelText(/Run label/i), {
       target: { value: 'Custom Label' },
@@ -1944,7 +1954,7 @@ describe('App', () => {
 
   it('resets the reconciliation label to the suggested value', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     const labelInput = screen.getByLabelText(/Run label/i);
     fireEvent.change(labelInput, { target: { value: 'Custom Label' } });
@@ -1959,7 +1969,7 @@ describe('App', () => {
 
   it('assigns bank and GL files from the merged drop zone by file name', async () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     fireEvent.change(screen.getByLabelText('Source workbooks'), {
       target: {
@@ -1993,7 +2003,7 @@ describe('App', () => {
 
   it('accepts CSV workbooks alongside XLSX in the merged drop zone', async () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     fireEvent.change(screen.getByLabelText('Source workbooks'), {
       target: {
@@ -2025,7 +2035,7 @@ describe('App', () => {
 
   it('shows Manual override when a slot picker disagrees with filename-based detection', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     // "4321_gl-export.xlsx" auto-detects to the GL slot (and satisfies the bank account-filename
     // convention so the override check itself is what's under test here, not the filename gate);
@@ -2040,7 +2050,7 @@ describe('App', () => {
 
   it('exposes Bank and GL template downloads from the Import source files header', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     const templatesMenu = screen
       .getByText('Download templates', { selector: 'summary' })
@@ -2084,7 +2094,7 @@ describe('App', () => {
     });
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -2127,7 +2137,7 @@ describe('App', () => {
       });
 
       setAuthenticatedUser('rray');
-      renderApp();
+      renderApp(routePaths.importFiles);
 
       await fillUploadInputs();
 
@@ -2197,7 +2207,7 @@ describe('App', () => {
       });
 
       setAuthenticatedUser('rray');
-      renderApp();
+      renderApp(routePaths.importFiles);
 
       await fillUploadInputs();
 
@@ -2291,7 +2301,7 @@ describe('App', () => {
       });
 
       setAuthenticatedUser('rray');
-      renderApp();
+      renderApp(routePaths.importFiles);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
@@ -2502,7 +2512,7 @@ describe('App', () => {
 
   it('states the step counter for each phase', async () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     // Nothing staged yet -- 0 complete steps.
     expect(screen.getByText('step 0 of 4')).toBeInTheDocument();
@@ -2538,7 +2548,7 @@ describe('App', () => {
       },
     });
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
     await fillUploadInputs();
 
     await waitFor(() => {
@@ -2552,7 +2562,7 @@ describe('App', () => {
   it('disables Submit run while the run is validating or matching', async () => {
     mockedApiState.latestImportRunResponse = createImportRunSummary({ status: 'VALIDATING' });
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
     await fillUploadInputs();
 
     await waitFor(() => {
@@ -2568,7 +2578,7 @@ describe('App', () => {
       status: 'VALIDATION_FAILED',
     });
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
     await fillUploadInputs();
 
     await waitFor(() => {
@@ -2590,7 +2600,7 @@ describe('App', () => {
   it('keeps the Submit run caption after success rather than relabelling', async () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
     await fillUploadInputs();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
@@ -2616,7 +2626,7 @@ describe('App', () => {
   it('clears the upload slots after success and disables the button until files are re-added', async () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
     await fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit run' }));
@@ -2664,19 +2674,35 @@ describe('App', () => {
     expect(globalThis.location.pathname).toBe('/');
   });
 
-  it('/ renders Import Files when the phase is idle', async () => {
+  // UI-4 (#403) inverted this. '/' was the import screen, so an idle account simply stayed there.
+  // '/' is now Runs home, which has nothing to show an organization that has never run anything --
+  // so a user who can submit is forwarded to New run, the one screen that is actionable for them.
+  it('/ forwards an idle, submit-capable account to New run', async () => {
     setAuthenticatedUser('rray');
     renderApp();
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Submit run' })).toBeInTheDocument();
     });
-    expect(globalThis.location.pathname).toBe('/');
+    expect(globalThis.location.pathname).toBe(routePaths.importFiles);
+  });
+
+  // The other half of that rule, and the reason it is gated rather than unconditional: a read-only
+  // role forwarded to New run lands on a screen it cannot act on. Home tells them honestly that
+  // nothing is waiting, which is true and useful for that account.
+  it('/ keeps a read-only account on Runs home rather than forwarding it', async () => {
+    setAuthenticatedUser('bray');
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/nothing is waiting/i);
+    });
+    expect(globalThis.location.pathname).toBe(routePaths.runsHome);
   });
 
   it('names the reason for every disabled state', async () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     // A required slot is empty (nothing staged yet).
     expect(screen.getByText('Add every bank statement and the GL workbook to enable.')).toBeInTheDocument();
@@ -2716,7 +2742,7 @@ describe('App', () => {
   it('submitting twice in a row fires one request', async () => {
     mockImportRunSubmitFlow();
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
     await fillUploadInputs();
 
     // The same element reference, clicked twice back to back -- whatever label it happens to
@@ -2752,7 +2778,7 @@ describe('App', () => {
       },
     });
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await waitFor(() => {
       expect(screen.getByText('Queued for validation')).toBeInTheDocument();
@@ -2776,7 +2802,7 @@ describe('App', () => {
       },
     });
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await waitFor(() => {
       expect(
@@ -2820,7 +2846,7 @@ describe('App', () => {
     });
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -2918,7 +2944,7 @@ describe('App', () => {
     });
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -3014,7 +3040,7 @@ describe('App', () => {
     });
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -3170,7 +3196,7 @@ describe('App', () => {
     });
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -3199,7 +3225,7 @@ describe('App', () => {
 
   it('rejects an unsupported file extension at selection with the exact Screen 02 code and copy, removable without ever uploading it', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     fireEvent.change(screen.getByLabelText('Source workbooks'), {
       target: { files: [new File(['%PDF-1.4'], 'june_statement.pdf')] },
@@ -3219,7 +3245,7 @@ describe('App', () => {
 
   it('rejects a file over the 50 MB limit at selection with the exact Screen 02 code and copy', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     const oversizedFile = new File(['gl'], 'gl_full_year_2025.xlsx');
     Object.defineProperty(oversizedFile, 'size', { value: 78.4 * 1024 * 1024 });
@@ -3240,7 +3266,7 @@ describe('App', () => {
     // choice, so a filename can no longer reject an upload -- the statement is staged, and it is
     // the missing assignment (not the name) that holds submission back.
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     fireEvent.change(screen.getByLabelText('Bank workbook (Account 1)'), {
       target: { files: [new File(['bank'], 'checking-account.csv')] },
@@ -3254,7 +3280,7 @@ describe('App', () => {
 
   it('#153: starts with two bank slots, and "Add another bank statement" adds slots up to 4', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     expect(screen.getByLabelText('Bank workbook (Account 1)')).toBeInTheDocument();
     expect(screen.getByLabelText('Bank workbook (Account 2)')).toBeInTheDocument();
@@ -3276,7 +3302,7 @@ describe('App', () => {
 
   it('#153: a per-slot Remove control appears down to the minimum 1 slot, and removes a slot', () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     // Remove is available on the default 2-slot layout...
     expect(
@@ -3301,7 +3327,7 @@ describe('App', () => {
   it('#153: submits with just 1 bank file (the minimum)', async () => {
     installFakeImportRunXhr();
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs({ bankFiles: [new File(['bank-a'], '1111_bank.xlsx')] });
 
@@ -3324,7 +3350,7 @@ describe('App', () => {
   it('#153: submits with all 4 bank files (the maximum)', async () => {
     installFakeImportRunXhr();
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs({
       bankFiles: [
@@ -3353,7 +3379,7 @@ describe('App', () => {
 
   it('#153: rejects a 5th bank-shaped file dropped once all 4 slots are filled', async () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs({
       bankFiles: [
@@ -3377,7 +3403,7 @@ describe('App', () => {
     installFakeImportRunXhr({ autoRespond: false });
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     const bankFileA = new File(['bank-a'], '1111_bank-a.xlsx');
     Object.defineProperty(bankFileA, 'size', { value: 2_000_000 });
@@ -3430,7 +3456,7 @@ describe('App', () => {
     installFakeImportRunXhr({ autoRespond: false });
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -3460,31 +3486,31 @@ describe('App', () => {
     });
   });
 
-  it('lands financial analysts on the Review tab', async () => {
+  // Replaced by UI-4 (#403). This asserted `roleDefaultTab` -- an analyst landing on Review rather
+  // than the blank import form. That rule existed because '/' was the import screen and there was
+  // nowhere better to send them; Runs home is now that better place, and the prop has gone with
+  // it. The behaviour it protected (an analyst does not land on an upload form) still holds, and
+  // the test above covers it directly.
+  it('does not send a financial analyst to Review now that Runs home exists', async () => {
     setAuthenticatedUser('bray');
     renderApp();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
+      expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
     });
+    expect(globalThis.location.pathname).toBe(routePaths.runsHome);
   });
 
-  it('lets financial analysts still reach Import Files by clicking it, despite their default landing tab', async () => {
+  it('lets a financial analyst reach New run by clicking it', async () => {
     const user = userEvent.setup();
     setAuthenticatedUser('bray');
     renderApp();
 
-    await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
-    });
-
-    await user.click(screen.getByRole('link', { name: 'New run' }));
+    // Lands on Runs home -- a read-only account is not forwarded -- and New run is one click away.
+    // Scoped to the rail: Runs home renders its own "New run" CTA in the header, so an unscoped
+    // query matches two links and resolves neither.
+    const rail = await screen.findByRole('navigation', { name: 'Primary' });
+    await user.click(within(rail).getByRole('link', { name: 'New run' }));
 
     await waitFor(() => {
       expect(screen.getByRole('link', { name: 'New run' })).toHaveAttribute(
@@ -3499,7 +3525,7 @@ describe('App', () => {
     mockImportRunSubmitFlow();
 
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
 
@@ -3515,7 +3541,7 @@ describe('App', () => {
 
   it('disables submit when reconciliation label is blank', async () => {
     setAuthenticatedUser('rray');
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     await fillUploadInputs();
     fireEvent.change(screen.getByLabelText(/Run label/i), {
@@ -3534,7 +3560,7 @@ describe('App', () => {
   it('enforces financial analyst scope for bray with app and docs access', () => {
     setAuthenticatedUser('bray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Run book' })).toHaveAttribute('href', '/docs');
@@ -3563,7 +3589,7 @@ describe('App', () => {
   it('allows superuser to access all scopes and adjust slider defaults', async () => {
     setAuthenticatedUser('rray');
 
-    renderApp();
+    renderApp(routePaths.importFiles);
 
     expect(screen.getByRole('link', { name: 'New run' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Run book' })).toHaveAttribute('href', '/docs');
@@ -3680,7 +3706,9 @@ describe('App', () => {
   // N1: "every old approval URL lands on the object it shadowed" -- kept for one release as
   // redirects, not dead links, even though the rail no longer points at any of them.
   it.each([
-    ['/approvals/imports', '/'],
+    // Follows importFilesBank, which UI-4 (#403) moved off '/' to /runs/new -- the redirect still
+    // lands on the object this URL used to shadow, which is the import screen, not the root path.
+    ['/approvals/imports', '/runs/new'],
     ['/approvals/mapping-profiles', '/approvals'],
     ['/approvals/matching-rules', '/mapping/rules'],
     ['/approvals/exception-resolutions', '/exceptions'],

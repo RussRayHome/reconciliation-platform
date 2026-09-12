@@ -108,7 +108,11 @@ export const loginToApplication = async (
   // UI-1 flattened Import Files into a single "New run" leaf. That leaf is now the workspace-ready
   // signal: it is a link (not a disclosure header), it is present for every role, and it is the
   // rail's first destination -- so its appearance means the authenticated shell has rendered.
-  const workspaceReady = page.getByRole('link', { name: 'New run' });
+  // UI-4 (#403): scoped to the rail. Runs home renders its own "New run" CTA in the header, so an
+  // unscoped locator matches two links and Playwright's strict mode resolves neither.
+  const workspaceReady = page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'New run' });
 
   await page.goto('/');
   await expect(loginHeading).toBeVisible();
@@ -163,7 +167,12 @@ export const submitRunButton = (page: Page) => page.locator('button[form="source
  * dependent, so this only checks the button exists, not what it's currently labelled. */
 export const openSetup = async (page: Page): Promise<void> => {
   await page.goto('/');
-  await page.getByRole('link', { name: 'New run' }).click();
+  // Same strict-mode reason as workspaceReady above: since UI-4 (#403) the landing route is Runs
+  // home, which carries its own "New run" primary alongside the rail's.
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'New run' })
+    .click();
   await expect(submitRunButton(page)).toBeVisible();
 };
 

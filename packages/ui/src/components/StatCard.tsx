@@ -9,6 +9,9 @@ import type { ReactNode } from 'react';
  * @param helper  - Optional sub-text rendered below the value (e.g. a percentage or context note).
  * @param icon    - Optional React node rendered in the card header (decorative; aria-hidden).
  * @param iconLabel - Tooltip text for the icon shell element.
+ * @param hue   - UI-4: source-hue left edge for the Runs home KPI wells. Carries the same five
+ *                hues as the import strip and exception evidence, so a colour means one thing
+ *                across the product ([OBJECT] rule 26).
  */
 interface StatCardProps {
   label: string;
@@ -17,6 +20,7 @@ interface StatCardProps {
   helper?: string;
   icon?: ReactNode;
   iconLabel?: string;
+  hue?: 'bank' | 'gl' | 'ap' | 'ar' | 'payroll';
 }
 
 export const StatCard = ({
@@ -26,8 +30,11 @@ export const StatCard = ({
   helper,
   icon,
   iconLabel,
+  hue,
 }: StatCardProps) => (
-  <article className={`stat-card stat-card--${tone}`}>
+  <article
+    className={hue ? `stat-card stat-card--${tone} stat-card--hue-${hue}` : `stat-card stat-card--${tone}`}
+  >
     <div className="stat-card__header">
       <span className="stat-card__label">{label}</span>
       {icon ? (
