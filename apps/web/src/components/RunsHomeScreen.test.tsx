@@ -5,6 +5,8 @@ import { MemoryRouter } from 'react-router';
 
 import type { ApprovalCountsByGroup } from '@recon/domain';
 
+import * as api from '../lib/api';
+
 import type { ReconciliationRunResponse } from '../lib/api';
 import { SAVED_VIEWS_STORAGE_KEY } from '../lib/exceptionTriage';
 import { RunsHomeScreen } from './RunsHomeScreen';
@@ -200,6 +202,66 @@ describe('RunsHomeScreen (1c)', () => {
 
       await user.click(button);
       expect(onApply).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Recent runs', () => {
+    const listRow = (over: Record<string, unknown> = {}) =>
+      ({
+        id: 'r1',
+        label: 'Monthly Recon for March 2026',
+        accountIdentifier: 'OPERATING-001',
+        frequency: 'MONTHLY',
+        periodYear: 2026,
+        periodMonth: 3,
+        periodEnd: '2026-03-31',
+        status: 'CLOSED',
+        createdAt: '2026-04-01T00:00:00.000Z',
+        totalRecordsReviewed: 1284,
+        unresolvedExposure: 61940,
+        openExceptionCount: 14,
+        ...over,
+      }) as never;
+
+    it('shows a run with its measures, flagging open exceptions', async () => {
+      vi.spyOn(api, 'listReconciliationRunsRequest').mockResolvedValue([listRow()]);
+      renderHome();
+
+      const row = await screen.findByRole('row', { name: /Monthly Recon for March 2026/ });
+      expect(within(row).getByText('1,284')).toBeInTheDocument();
+      expect(within(row).getByText('$61,940')).toBeInTheDocument();
+      // "red when > 0" -- the class is the carrier, so assert it rather than the colour.
+      expect(within(row).getByText('14')).toHaveClass('runs-home__num--attention');
+    });
+
+    it('does not flag a run with nothing open', async () => {
+      vi.spyOn(api, 'listReconciliationRunsRequest').mockResolvedValue([
+        listRow({ openExceptionCount: 0 }),
+      ]);
+      renderHome();
+
+      const row = await screen.findByRole('row', { name: /Monthly Recon for March 2026/ });
+      expect(within(row).getByText('0')).not.toHaveClass('runs-home__num--attention');
+    });
+
+    // A run that never reached matching has no summary. Printing 0 would claim it reviewed
+    // nothing, which is a different and wrong statement from "we cannot say".
+    it('reads an em dash, not a zero, for a run that never matched', async () => {
+      vi.spyOn(api, 'listReconciliationRunsRequest').mockResolvedValue([
+        listRow({ totalRecordsReviewed: null, unresolvedExposure: null, openExceptionCount: null }),
+      ]);
+      renderHome();
+
+      const row = await screen.findByRole('row', { name: /Monthly Recon for March 2026/ });
+      expect(within(row).getAllByText('—')).toHaveLength(3);
+      expect(within(row).queryByText('0')).toBeNull();
+    });
+
+    it('says so plainly when there are no runs', async () => {
+      vi.spyOn(api, 'listReconciliationRunsRequest').mockResolvedValue([]);
+      renderHome();
+
+      expect(await screen.findByText('No runs yet.')).toBeInTheDocument();
     });
   });
 

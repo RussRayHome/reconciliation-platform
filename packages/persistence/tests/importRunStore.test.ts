@@ -507,6 +507,27 @@ describe('PostgresImportRunStore', () => {
       expect(forExactPeriod.map((r) => r.id)).toEqual([january.id]);
     });
 
+    // UI-4 (#403): Runs home's "Recent runs" columns. A run that never reached matching has no
+    // summary and no exceptions -- that must read as "not known" (null), not as "reviewed zero
+    // records", which is a different and wrong statement.
+    it('reports null measures for a run that never reached matching', async () => {
+      if (startupError) throw startupError;
+
+      const store = new PostgresImportRunStore(pool);
+      const run = await store.createRun(
+        buildRunInput({ accountIdentifier: 'LIST-RUNS-NOJOB', periodYear: 2026, periodMonth: 3 }),
+      );
+
+      const [row] = await store.listRuns(defaultOrganizationId, {
+        accountIdentifier: 'LIST-RUNS-NOJOB',
+      });
+
+      expect(row?.id).toBe(run.id);
+      expect(row?.totalRecordsReviewed).toBeNull();
+      expect(row?.unresolvedExposure).toBeNull();
+      expect(row?.openExceptionCount).toBeNull();
+    });
+
     it('returns an empty array when nothing matches', async () => {
       if (startupError) throw startupError;
 

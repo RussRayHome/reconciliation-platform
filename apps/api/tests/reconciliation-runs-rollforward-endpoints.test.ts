@@ -36,6 +36,11 @@ interface FakeRun {
   period_end: string | null;
   status: string;
   created_at: string;
+  /** UI-4 (#403) added these to listRuns for Runs home's Recent runs table. Returned here so the
+   * route's response shape is exercised, not just its filtering. */
+  total_records_reviewed: number | null;
+  unresolved_exposure: string | null;
+  open_exception_count: string | null;
 }
 
 interface FakeOpenItem {
@@ -76,6 +81,9 @@ const createFakePool = () => {
       period_end: '2026-01-31',
       status: 'CLOSED',
       created_at: '2026-02-01T00:00:00.000Z',
+      total_records_reviewed: 1284,
+      unresolved_exposure: '61940.00',
+      open_exception_count: '14',
     },
     {
       id: 'run-feb',
@@ -87,6 +95,11 @@ const createFakePool = () => {
       period_end: '2026-02-28',
       status: 'RECONCILED',
       created_at: '2026-03-01T00:00:00.000Z',
+      // A run that never reached matching: no summary, no exceptions. Must survive as null all
+      // the way to the response rather than becoming 0.
+      total_records_reviewed: null,
+      unresolved_exposure: null,
+      open_exception_count: null,
     },
   ];
 
@@ -116,20 +129,20 @@ const createFakePool = () => {
     text: string,
     params: unknown[] = [],
   ): Promise<{ rows: unknown[]; rowCount: number }> => {
-    if (text.includes('FROM reconciliation_run') && text.includes('ORDER BY period_year DESC')) {
+    if (text.includes('FROM reconciliation_run r') && text.includes('ORDER BY r.period_year DESC')) {
       let matches = runs;
       let paramIndex = 1; // $1 is organizationId, already implicit in this fake
-      if (text.includes(`account_identifier = $${paramIndex + 1}`)) {
+      if (text.includes(`r.account_identifier = $${paramIndex + 1}`)) {
         const accountIdentifier = params[paramIndex] as string;
         matches = matches.filter((r) => r.account_identifier === accountIdentifier);
         paramIndex += 1;
       }
-      if (text.includes(`period_year = $${paramIndex + 1}`)) {
+      if (text.includes(`r.period_year = $${paramIndex + 1}`)) {
         const periodYear = params[paramIndex] as number;
         matches = matches.filter((r) => r.period_year === periodYear);
         paramIndex += 1;
       }
-      if (text.includes(`period_month = $${paramIndex + 1}`)) {
+      if (text.includes(`r.period_month = $${paramIndex + 1}`)) {
         const periodMonth = params[paramIndex] as number;
         matches = matches.filter((r) => r.period_month === periodMonth);
       }
@@ -202,6 +215,25 @@ describe('GET /api/reconciliation/runs', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.runs.map((r: { id: string }) => r.id)).toEqual(['run-feb', 'run-jan']);
+
+    // UI-4 (#403): the Recent runs measures reach the client, and a run that never matched keeps
+    // null rather than being coerced to 0 somewhere in the store's row mapping. 0 would claim it
+    // reviewed nothing; null says we cannot tell.
+    const [feb, jan] = response.body.runs as Array<{
+      totalRecordsReviewed: number | null;
+      unresolvedExposure: number | null;
+      openExceptionCount: number | null;
+    }>;
+    expect(jan).toMatchObject({
+      totalRecordsReviewed: 1284,
+      unresolvedExposure: 61940,
+      openExceptionCount: 14,
+    });
+    expect(feb).toMatchObject({
+      totalRecordsReviewed: null,
+      unresolvedExposure: null,
+      openExceptionCount: null,
+    });
   });
 
   it('filters further by periodYear and periodMonth', async () => {

@@ -213,6 +213,75 @@
     font-variant-numeric: tabular-nums;
   }
 
+
+  .runs-home__recent {
+    display: grid;
+    gap: 12px;
+    padding: 18px 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+    min-width: 0;
+  }
+
+  .runs-home__recent-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .runs-home__recent-meta {
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-meta);
+  }
+
+  /* The table is the one thing on this screen allowed its own horizontal scroll -- a five-column
+     numeric table has a real minimum width, and squeezing it would wrap the amounts. */
+  .runs-home__recent-table {
+    width: 100%;
+    border-collapse: collapse;
+    display: block;
+    overflow-x: auto;
+  }
+
+  .runs-home__recent-table th,
+  .runs-home__recent-table td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .runs-home__recent-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .runs-home__recent-period {
+    display: block;
+  }
+
+  .runs-home__recent-account {
+    display: block;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+  }
+
+  .runs-home__num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Open exceptions read red only when there are some -- the design's "red when > 0". A zero in
+     red would say "problem" about the one state that is not one. */
+  .runs-home__num--attention {
+    color: var(--negative);
+    font-weight: 600;
+  }
+
   @media (max-width: 980px) {
     .runs-home {
       padding: 20px 16px;

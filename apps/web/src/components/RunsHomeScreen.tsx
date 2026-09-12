@@ -9,6 +9,7 @@ import { routePaths } from '../routes/routePaths';
 import { formatCompactDate } from '../lib/format';
 import type { SavedTriageView } from '../lib/exceptionTriage';
 import { useSavedViewCounts } from '../hooks/useSavedViewCounts';
+import { useRecentRuns } from '../hooks/useRecentRuns';
 
 /** Greeting by local hour -- the design's "Good morning, M." is time-of-day, not a fixed string. */
 const greetingFor = (hour: number): string => {
@@ -87,6 +88,8 @@ export function RunsHomeScreen({
   // The rail's hook, not a second implementation: a count here that disagreed with the list it
   // opens would be worse than no count. Lifted to hooks/ by this phase for exactly that reason.
   const savedViewCounts = useSavedViewCounts(run?.exceptions ?? []);
+  const recentRuns = useRecentRuns();
+  const RECENT_RUN_LIMIT = 5;
   const firstName = profileLabel.split(' ')[0] ?? profileLabel;
   const summary = run?.summary;
 
@@ -223,6 +226,82 @@ export function RunsHomeScreen({
           )}
         </section>
       </div>
+
+      <section className="runs-home__recent" aria-labelledby="runs-home-recent">
+        <header className="runs-home__recent-header">
+          <h2 className="runs-home__panel-title" id="runs-home-recent">
+            Recent runs
+          </h2>
+          <span className="runs-home__recent-meta">
+            Last {RECENT_RUN_LIMIT} periods
+            {recentRuns.runs.length > RECENT_RUN_LIMIT
+              ? ` · ${recentRuns.runs.length} runs in all`
+              : ''}
+          </span>
+        </header>
+
+        {recentRuns.error ? (
+          <p className="runs-home__panel-empty">{recentRuns.error}</p>
+        ) : recentRuns.isLoading ? (
+          <p className="runs-home__panel-empty">Loading recent runs…</p>
+        ) : recentRuns.runs.length === 0 ? (
+          <p className="runs-home__panel-empty">No runs yet.</p>
+        ) : (
+          <table className="runs-home__recent-table">
+            <thead>
+              <tr>
+                <th scope="col">Period</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="runs-home__num">
+                  Reviewed
+                </th>
+                <th scope="col" className="runs-home__num">
+                  Open
+                </th>
+                <th scope="col" className="runs-home__num">
+                  Exposure
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentRuns.runs.slice(0, RECENT_RUN_LIMIT).map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <span className="runs-home__recent-period">{item.label}</span>
+                    {item.accountIdentifier ? (
+                      <span className="runs-home__recent-account">{item.accountIdentifier}</span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <span className="badge">{item.status}</span>
+                  </td>
+                  {/* An em dash, not a zero. A run that never reached matching has no summary, and
+                      printing 0 would claim it reviewed nothing rather than that we cannot say. */}
+                  <td className="runs-home__num">
+                    {item.totalRecordsReviewed === null
+                      ? '—'
+                      : item.totalRecordsReviewed.toLocaleString('en-US')}
+                  </td>
+                  <td
+                    className={
+                      item.openExceptionCount !== null && item.openExceptionCount > 0
+                        ? 'runs-home__num runs-home__num--attention'
+                        : 'runs-home__num'
+                    }
+                  >
+                    {item.openExceptionCount === null ? '—' : item.openExceptionCount}
+                  </td>
+                  <td className="runs-home__num">
+                    {item.unresolvedExposure === null
+                      ? '—'
+                      : formatCurrency(item.unresolvedExposure)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
     </div>
   );
 }

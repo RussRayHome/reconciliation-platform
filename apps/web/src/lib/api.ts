@@ -394,6 +394,12 @@ export interface ReconciliationRunListItem {
   periodEnd: string | null;
   status: string;
   createdAt: string;
+  /** UI-4 (#403) added these three for Runs home's "Recent runs" table. Null for a run that never
+   * reached matching: it has no summary and no exceptions, which is "not known" rather than
+   * "reviewed zero records". */
+  totalRecordsReviewed: number | null;
+  unresolvedExposure: number | null;
+  openExceptionCount: number | null;
 }
 
 /** Unreconciled Item Roll-Forward PR F.1: the prior-runs endpoint the Verdict module's Prior-
