@@ -343,10 +343,13 @@ jobs:
     # still reports failure to the PR. The gate works; the reporting lies, and anyone scanning
     # Actions sees a healthy run over a failed visual check.
     #
-    # Left in place pending a decision on where the gate belongs -- see the issue linked from this
-    # commit. The two coherent end states are: required + no continue-on-error (gate on PRs,
-    # accurate reporting), or not-required + continue-on-error (restore the documented design:
-    # soak on PRs, Dev Guard gates before Stage). What must not persist is the current mixture.
+    # RESOLVED 2026-09-12 (#509): e2e-visual was removed from dev's required-status-checks, so it
+    # is once again a soak signal here and `continue-on-error: true` is honest -- a non-required
+    # job that reads neutral is exactly what this flag is for. Dev Guard gates the same lane on
+    # every push to dev with no continue-on-error, because dev is the last boundary before Stage.
+    #
+    # Worth revisiting once #497's visual flake is fixed: with a low flake rate, gating on the PR
+    # is the stronger position, and then this flag should go rather than the required check.
     continue-on-error: true
     timeout-minutes: 20
     steps:

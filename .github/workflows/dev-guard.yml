@@ -15,11 +15,13 @@ name: Dev Guard
 #   e2e-visual  `dev` is the last boundary before Stage, and this is where a visual regression is
 #               stopped without ambiguity -- no continue-on-error here.
 #
-#               NOTE (2026-09-12): this used to read "non-gating on PRs by design". That is no
-#               longer true -- e2e-visual was promoted to a required check on dev's protection,
-#               so it DOES block a PR, while docker-validate's `continue-on-error: true` was left
-#               behind and makes the workflow run still read green. This job's own reasoning is
-#               unaffected either way; the PR-side mixture is what needs settling.
+#               It is non-gating on PRs (continue-on-error in docker-validate, a soak signal), so
+#               push-to-dev is the only place a visual regression actually stops anything.
+#
+#               For a while it was ALSO a required check on dev's protection -- picked up by a
+#               drift-sync, not a decision -- which made it block PRs while its own comment said
+#               it could not, and left Actions runs reading green over a red check. Removed
+#               2026-09-12 (#509); the design below is the one that holds.
 #
 # ~814 billable minutes/month (~$4.88) against the 5,861 removed.
 #
@@ -131,9 +133,9 @@ jobs:
         # cause.
         run: docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml up -d redis --wait
       - name: Run visual E2E tests
-        # No continue-on-error, deliberately: `dev` is the last boundary before Stage, and a visual
-        # regression reaching Stage is exactly what this job exists to stop. (The PR-side lane's
-        # own gating status is currently contradictory -- see this workflow's header note.)
+        # No continue-on-error, deliberately. On PRs this lane IS non-blocking (a soak signal), but
+        # `dev` is the last boundary before Stage -- a visual regression reaching Stage is exactly
+        # what this job exists to stop.
         run: >
           npx tsx scripts/ci/run-check.ts --name "E2E visual tests" --meta .ci-out/e2e-visual/meta.json --
           docker compose --env-file .env.docker.dev.fallback -f compose.yaml -f compose.e2e.yaml --profile e2e-visual run --rm visual-e2e
