@@ -31,6 +31,11 @@ const buildRunListItem = (
   periodEnd: '2026-02-28',
   status: 'CLOSED',
   createdAt: '2026-03-01T00:00:00.000Z',
+  // UI-4 (#403) added the Recent runs measures. This hook ignores them; they are here so the
+  // builder still produces a complete row rather than a partial one.
+  totalRecordsReviewed: 1284,
+  unresolvedExposure: 61940,
+  openExceptionCount: 14,
   ...overrides,
 });
 

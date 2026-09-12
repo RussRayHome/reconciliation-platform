@@ -466,6 +466,12 @@ export class PostgresImportRunStore {
       periodEnd: string | null;
       status: string;
       createdAt: string;
+      /** UI-4 (#403): the Runs home "Recent runs" columns. Null for a run that never reached
+       * matching -- a queued or validation-failed run has no summary and no exceptions, which is
+       * a different statement from "reviewed zero records". */
+      totalRecordsReviewed: number | null;
+      unresolvedExposure: number | null;
+      openExceptionCount: number | null;
     }>
   > {
     return runInTenantScope(this.pool, organizationId, async (client) => {
@@ -485,6 +491,14 @@ export class PostgresImportRunStore {
         conditions.push(`period_month = $${params.length}`);
       }
 
+      // UI-4 (#403). Left joins, not inner: a queued or validation-failed run has no matching job
+      // and must still list -- "Recent runs" is a history, and dropping the failures would make the
+      // screen quietly claim every run succeeded.
+      //
+      // Open exceptions = raised minus decided, and "decided" is Confirmed/Dismissed only.
+      // ResearchException is deliberately NOT counted: an exception sent to research is still open
+      // and still needs the analyst, which is exactly what useReviewerDecisions' resolvedCount
+      // does on the client. The two must agree or the rail, the run and this table disagree.
       const result = await client.query<{
         id: string;
         label: string;
@@ -495,12 +509,31 @@ export class PostgresImportRunStore {
         period_end: string | null;
         status: string;
         created_at: string;
+        total_records_reviewed: number | null;
+        unresolved_exposure: string | null;
+        open_exception_count: string | null;
       }>(
-        `SELECT id, label, account_identifier, frequency, period_year, period_month,
-                period_end::text, status, created_at
-           FROM reconciliation_run
-          WHERE ${conditions.join(' AND ')}
-          ORDER BY period_year DESC, period_month DESC NULLS LAST, created_at DESC`,
+        `SELECT r.id, r.label, r.account_identifier, r.frequency, r.period_year, r.period_month,
+                r.period_end::text, r.status, r.created_at,
+                s.total_records_reviewed,
+                s.unresolved_exposure::text,
+                CASE WHEN r.matching_job_id IS NULL THEN NULL ELSE (
+                  SELECT COUNT(*)::text
+                    FROM reconciliation_exception e
+                   WHERE e.job_id = r.matching_job_id
+                     AND NOT EXISTS (
+                       SELECT 1
+                         FROM reconciliation_review_decision d
+                        WHERE d.job_id = e.job_id
+                          AND d.target_type = 'ExceptionItem'
+                          AND d.target_id = e.id
+                          AND d.outcome IN ('ConfirmedException', 'DismissedException')
+                     )
+                ) END AS open_exception_count
+           FROM reconciliation_run r
+           LEFT JOIN reconciliation_job_summary s ON s.job_id = r.matching_job_id
+          WHERE ${conditions.map((c) => `r.${c}`).join(' AND ')}
+          ORDER BY r.period_year DESC, r.period_month DESC NULLS LAST, r.created_at DESC`,
         params,
       );
 
@@ -514,6 +547,12 @@ export class PostgresImportRunStore {
         periodEnd: row.period_end,
         status: row.status,
         createdAt: row.created_at,
+        totalRecordsReviewed: row.total_records_reviewed,
+        // NUMERIC and COUNT come back as strings from pg -- parsed here rather than left for the
+        // caller, so "18 " never reaches a currency formatter as text.
+        unresolvedExposure: row.unresolved_exposure === null ? null : Number(row.unresolved_exposure),
+        openExceptionCount:
+          row.open_exception_count === null ? null : Number(row.open_exception_count),
       }));
     });
   }
