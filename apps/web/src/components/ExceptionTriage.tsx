@@ -412,10 +412,31 @@ export function ExceptionTriage({
           ) : null}
         </div>
         {filtered.length === 0 ? (
+          /* UI-10 (#449), screen 11a. Two different states were sharing one message. "No
+             exceptions match the current filters. Adjust the search text or facet filters" is
+             correct when a filter excluded everything -- and actively wrong on a CLEAN RUN, where
+             there are no filters to adjust and nothing to find. It told the user to do something
+             impossible at the exact moment the product had good news for them.
+
+             `exceptions.length` is the run's own total, so the two cases are distinguishable
+             without any new state. */
           <div className="empty-state-card table-empty-state" role="status" aria-live="polite">
-            <span className="eyebrow">No matching exceptions</span>
-            <h3>No exceptions match the current filters</h3>
-            <p>Adjust the search text or facet filters to see matching exception items again.</p>
+            {exceptions.length === 0 ? (
+              <>
+                <span className="eyebrow">Nothing to triage</span>
+                <h3>This run produced no exceptions</h3>
+                <p>
+                  Every transaction was matched or explained. There is nothing here for you to
+                  decide.
+                </p>
+              </>
+            ) : (
+              <>
+                <span className="eyebrow">No matching exceptions</span>
+                <h3>No exceptions match the current filters</h3>
+                <p>Adjust the search text or facet filters to see matching exception items again.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="exception-triage__list" ref={listRef}>

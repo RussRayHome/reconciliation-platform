@@ -391,6 +391,19 @@ function SummaryVerdict({
           </div>
         ))}
       </div>
+      {/* UI-10 (#449), screen 7d. A clean run said nothing about being clean -- it showed the same
+          four figures reading zero and left the reader to infer the verdict. State it.
+
+          The condition is the residual alone, deliberately: `difference` can be non-zero on a
+          perfectly explained run (timing items net out across sources), so gating on both would
+          withhold the verdict from runs that have earned it. The residual is what "unexplained"
+          means, and the period cannot close while it is non-zero. */}
+      {summary.unresolvedExposure === 0 ? (
+        <p className="bento-module__verdict" role="status">
+          <strong>Fully reconciled.</strong> Nothing is unexplained — every difference is either
+          matched or accounted for by a classified exception.
+        </p>
+      ) : null}
       <p className="bento-module__note">
         Balances are derived from net unmatched activity per source; the residual is the net dollar
         exposure remaining after exception classification.
