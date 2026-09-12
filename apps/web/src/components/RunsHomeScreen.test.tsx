@@ -73,13 +73,15 @@ describe('RunsHomeScreen (1c)', () => {
     renderHome();
 
     const card = screen.getByLabelText('Continue where you left off');
-    for (const [label, value] of [
+    const wells: ReadonlyArray<readonly [string, string]> = [
       ['Reviewed', '1,284'],
       ['Exact', '1,187'],
       ['Probable', '2'],
       ['Exceptions', '52'],
       ['Exposure', '$61,940'],
-    ]) {
+    ];
+
+    for (const [label, value] of wells) {
       expect(within(card).getByText(label)).toBeInTheDocument();
       expect(within(card).getByText(value)).toBeInTheDocument();
     }
