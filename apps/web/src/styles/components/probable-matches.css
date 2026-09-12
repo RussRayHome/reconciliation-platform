@@ -87,6 +87,11 @@
   }
 
   .probable-match-bands__count {
+    /* The count is the LAST track at <=980px (the item drops to `auto auto`), so it absorbs the
+       row's leftover space and the pill stretches the full width around a single digit. Above
+       980px a third minmax(0, 1fr) track absorbs it instead, which is why this only ever showed
+       at 900px. Hugging the content is correct at every width. */
+    justify-self: start;
     padding: 1px 7px;
     border: 1px solid var(--line-strong);
     border-radius: var(--radius-pill);
