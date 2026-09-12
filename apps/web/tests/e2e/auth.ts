@@ -199,7 +199,10 @@ export const registerBankAccount = async (
   // row too early reports "absent" for an account that is merely still loading, and the
   // registration below is then rejected as a duplicate. Exactly one of the empty-state paragraph
   // or the table renders once the fetch resolves, so waiting for either is deterministic.
-  await expect(page.locator('.bank-accounts__empty, .bank-accounts__table')).toBeVisible();
+  // UI-6 (#405) moved this screen onto the shared registry pattern 5a/5b established, so the
+  // class names are now `registry-*`. Same reasoning as before: exactly one of the empty-state
+  // paragraph or the table renders once the fetch resolves, so waiting for either is deterministic.
+  await expect(page.locator('.registry-screen__empty, .registry-table')).toBeVisible();
 
   // `rowheader`, not `cell`: the account label sits in a `<th scope="row">` (BankAccountsScreen),
   // which maps to role `rowheader`.
@@ -216,11 +219,13 @@ export const registerBankAccount = async (
 
   await page.locator('#account-number-input').fill(account.accountNumber);
   await page.locator('#account-name-input').fill(account.name);
-  await page.getByRole('button', { name: 'Register account' }).click();
+  // "Open account", not "Register account" -- UI-6 adopted the design's verb, matching 5a's
+  // "Open entity" and the header's "Open new account".
+  await page.getByRole('button', { name: 'Open account' }).click();
 
   // A rejected registration surfaces in the form itself; assert its absence first so the failure
   // reports the server's own reason instead of timing out on a row that was never going to appear.
-  await expect(page.locator('.bank-accounts__error')).toHaveCount(0);
+  await expect(page.locator('.registry-screen__error')).toHaveCount(0);
   await expect(row).toBeVisible();
 };
 
