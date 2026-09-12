@@ -145,16 +145,23 @@ test.describe('successful signup', () => {
     // App.tsx routes an authenticated-but-unverified session into the workspace, gated
     // separately per-feature (e.g. Create Mapping) by isFullyVerified.
     await page.getByRole('button', { name: 'Skip and enter the app' }).click();
-    await expect(page.getByRole('link', { name: 'New run' })).toBeVisible();
+    // Scoped to the rail: since UI-4 (#403) Runs home carries its own "New run" primary, so an
+    // unscoped locator matches two links and strict mode resolves neither.
+    await expect(
+      page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'New run' }),
+    ).toBeVisible();
 
-    // Lands on Review, not on Import Files. SignupScreen.tsx defaults the role select to
-    // 'financial-analyst', which resolveRoleLandingTab() maps to the 'review' tab, so App.tsx's
-    // applyInitialLanding() replaces '/' with /recon-summary for a brand-new (run-less) account.
+    // Lands on New run. This used to assert /recon-summary, via a rule UI-4 (#403) replaced: '/'
+    // was the import screen, so a run-less analyst was redirected to Review because there was
+    // nowhere better to land. '/' is now Runs home, which has nothing to show an organization
+    // that has never run anything -- so a brand-new, submit-capable account is forwarded to the
+    // one screen that is actionable for it, which is exactly what a fresh signup needs.
+    //
     // Polled rather than read once: that redirect fires from the GET-latest-run response handler,
     // so a single synchronous read of page.url() races the fetch -- it sampled '/' before the
     // response landed until a faster runner started losing that race (PR #257 CI).
     await expect
       .poll(() => new URL(page.url()).pathname)
-      .toBe(expectedPathname(routePaths.reconSummary));
+      .toBe(expectedPathname(routePaths.importFiles));
   });
 });

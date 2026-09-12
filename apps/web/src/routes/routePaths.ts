@@ -4,12 +4,16 @@ export const routePaths = {
   forgotPassword: '/forgot-password',
   signup: '/signup',
   support: '/support',
+  /** UI-4 (#403): the landing route. "Land on state, not on a blank upload form" -- a returning
+   * user sees their run and its next action here, and only an organization with no runs at all is
+   * forwarded to New run. `/` was the import screen until this phase. */
+  runsHome: '/',
   /** Alias for importFilesBank -- the two are deliberately the same string (R1 WP2), so every
-   * existing '/' call site (NavItemLink's `end` special-case, the legacy ?tab=&view= redirect
-   * guard, the initial-landing redirect, the in-app catch-all) keeps working unmodified: it just
-   * now resolves to what's explicitly the Bank Statements tab. */
-  importFiles: '/',
-  importFilesBank: '/',
+   * call site that names either keeps working when the value moves, as it did in UI-4. One of the
+   * four dependents that note used to list is already gone: NavItemLink's `end` special-case went
+   * with UI-13's exact-match rewrite. */
+  importFiles: '/runs/new',
+  importFilesBank: '/runs/new',
   importFilesBilling: '/imports/billing',
   apEntities: '/entities/ap',
   arEntities: '/entities/ar',

@@ -1,0 +1,127 @@
+/* Screen 1c -- Runs home, the landing route (UI-4, #403). */
+@layer components {
+  .runs-home {
+    display: grid;
+    gap: 18px;
+    padding: 24px 36px;
+  }
+
+  .runs-home__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .runs-home__header > * {
+    min-width: 0;
+  }
+
+  .runs-home__eyebrow {
+    margin: 0 0 4px;
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .runs-home__title {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--text-strong);
+  }
+
+  .runs-home__new-run {
+    margin-left: auto;
+    text-decoration: none;
+  }
+
+  /* `auto` on the action column, not a fraction: the three buttons size to their own text, and the
+     wells take whatever is left rather than being squeezed by the longest label. */
+  .runs-home__continue {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 20px;
+    align-items: start;
+    padding: 18px 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+  }
+
+  .runs-home__continue-body {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .runs-home__run-identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0;
+  }
+
+  .runs-home__run-period {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+
+  .runs-home__run-meta {
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-meta);
+  }
+
+  .runs-home__wells {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  /* The wells are a denser variant of the stat card: 8px control radius on the sunken ground,
+     not the 12px panel radius a standalone card carries. */
+  .runs-home__wells .stat-card {
+    padding: 0.75rem 0.85rem;
+    border-radius: var(--radius-control);
+    background: var(--bg-base);
+  }
+
+  .runs-home__actions {
+    display: grid;
+    gap: 8px;
+    justify-items: stretch;
+  }
+
+  .runs-home__actions a {
+    text-decoration: none;
+    text-align: center;
+  }
+
+  .runs-home__empty {
+    margin: 0;
+    color: var(--text-tertiary);
+  }
+
+  @media (max-width: 980px) {
+    .runs-home {
+      padding: 20px 16px;
+    }
+
+    .runs-home__continue {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .runs-home__wells {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}

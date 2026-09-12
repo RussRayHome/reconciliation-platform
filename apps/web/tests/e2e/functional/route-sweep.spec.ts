@@ -97,9 +97,13 @@ const describeLanding = async (page: Page): Promise<string> => {
 };
 
 const accountedForKeys = [
-  // importFiles is a plain alias for importFilesBank (same string, '/', R1 WP2) -- not a
-  // separate rendered route, so no dedicated test.step for it; importFilesBank's own step below
-  // covers the path both keys resolve to.
+  // UI-4 (#403): the landing route. Covered by the authenticated sweep's own navigation -- every
+  // other step reaches it, and its forwarding rule (an idle, submit-capable account goes to New
+  // run) is asserted in App.test.tsx where the role can be chosen.
+  'runsHome',
+  // importFiles is a plain alias for importFilesBank (same string -- '/runs/new' since UI-4, '/'
+  // before it, R1 WP2) -- not a separate rendered route, so no dedicated test.step for it;
+  // importFilesBank's own step below covers the path both keys resolve to.
   'importFiles',
   'importFilesBank',
   'importFilesBilling',

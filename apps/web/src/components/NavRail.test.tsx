@@ -92,6 +92,7 @@ const EXPECTED_RAIL_LINKS: Record<string, string> = {
   accountBilling: 'Billing',
   accountNotification: 'Notification',
   accountPreferences: 'Preferences',
+  runsHome: 'Home',
   importFiles: 'New run',
   bankAccounts: 'Bank accounts',
   apEntities: 'AP entities',

@@ -169,6 +169,16 @@ export function NavRail({
           {/* UI refresh decision 1: Import Files is the ONLY section that flattens, because its two
               children became source-type tabs on one New run screen. Every other disclosure stays.
               The caption is the design's sub-label; AR and payroll join it when UI-2 wires them. */}
+          {/* UI-4 (#403): Home is the first RUNS entry and the rail's landing destination. No
+              badge -- it is a place, not a queue. */}
+          <NavItemLink
+            to={routePaths.runsHome}
+            label="Home"
+            icon="overview"
+            isCollapsed={isCollapsed}
+            onNavigate={onMobileClose}
+          />
+
           <NavItemLink
             to={routePaths.importFiles}
             label="New run"

@@ -65,6 +65,29 @@
     border-left-color: var(--accent);
   }
 
+  /* UI-4 (#403): the Runs home KPI wells carry a source hue on the same 4px edge the tone
+     variants use. Hue and tone are mutually exclusive by construction -- a well says which source
+     it counts, a stat card says whether its number is good or bad, and nothing needs both. */
+  .stat-card--hue-bank {
+    border-left-color: var(--bank);
+  }
+
+  .stat-card--hue-gl {
+    border-left-color: var(--gl);
+  }
+
+  .stat-card--hue-ap {
+    border-left-color: var(--ap);
+  }
+
+  .stat-card--hue-ar {
+    border-left-color: var(--ar);
+  }
+
+  .stat-card--hue-payroll {
+    border-left-color: var(--payroll);
+  }
+
   .stat-card--warning {
     border-left-color: var(--severity-high);
   }
