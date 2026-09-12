@@ -147,6 +147,28 @@
     background: var(--bg-sunken);
   }
 
+  /* The pinned cell needs its own opaque ground, which means it does not inherit the row's hover
+     lift -- it would sit dark while the rest of its row lifted, reading as a rendering fault.
+     Not covered by any baseline: no capture in visual-baseline.spec.ts hovers. */
+  .probable-match-table-shell__table tbody tr:hover td:last-child {
+    background: var(--bg-raised);
+  }
+
+  /* Seven columns cannot fit 562px, and pinning Verdict alone only traded one loss for a worse
+     one: the pinned cell covered Evidence, hiding the basis for the decision in order to show the
+     decision's buttons. So drop the two columns that carry the least at this width.
+
+     Disposition is constant here -- this list is filtered to probable matches, so the column reads
+     "ProbableMatch" on every row and informs nothing at any width. Rule is largely restated by the
+     band heading above the table, which already names what the rule concluded. Evidence and
+     Verdict -- the basis and the action -- both stay. */
+  @media (max-width: 980px) {
+    .probable-match-col-disposition,
+    .probable-match-col-rule {
+      display: none;
+    }
+  }
+
   .match-verdict__button--on {
     border-color: var(--accent);
     color: var(--accent);

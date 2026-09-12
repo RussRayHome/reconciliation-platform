@@ -887,9 +887,9 @@ function ProbableMatchesContent({
             </caption>
             <thead>
               <tr>
-                <th>Disposition</th>
+                <th className="probable-match-col-disposition">Disposition</th>
                 <th>Confidence</th>
-                <th>Rule</th>
+                <th className="probable-match-col-rule">Rule</th>
                 <th>Date diff</th>
                 <th>Amount diff</th>
                 <th>Evidence</th>
@@ -899,13 +899,13 @@ function ProbableMatchesContent({
             <tbody>
               {probableMatches.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.disposition}</td>
+                  <td className="probable-match-col-disposition">{item.disposition}</td>
                   <td>
                     <span className="badge" title={describeConfidence(item.confidence).meaning}>
                       {describeConfidence(item.confidence).label}
                     </span>
                   </td>
-                  <td>{item.ruleName}</td>
+                  <td className="probable-match-col-rule">{item.ruleName}</td>
                   <td>{item.dateDifferenceDays ?? 'N/A'}</td>
                   <td className="cell-amount">{formatCurrency(item.amountDifference)}</td>
                   <td>{item.evidence.join(' | ')}</td>
