@@ -380,4 +380,21 @@
       grid-template-columns: repeat(6, minmax(0, 1fr));
     }
   }
+
+  /* UI-10 (#449) screen 7d: the clean-run verdict. Stated in words, not left to be inferred from
+     four figures reading zero. */
+  .bento-module__verdict {
+    margin: 0 0 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--accent-soft-border);
+    border-radius: var(--radius-control);
+    background: var(--accent-soft);
+    color: var(--text-primary);
+    font-size: var(--font-meta);
+  }
+
+  .bento-module__verdict strong {
+    color: var(--accent);
+  }
+
 }

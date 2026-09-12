@@ -201,6 +201,46 @@ describe('Verdict module Prior-period comparison (Unreconciled Item Roll-Forward
     );
   };
 
+  // UI-10 (#449), screen 7d. A clean run used to say nothing about being clean -- it showed four
+  // figures reading zero and left the reader to infer the verdict from them. State it.
+  it('states the verdict in words when nothing is unexplained', () => {
+    renderSummary({ status: 'idle', data: null });
+
+    expect(screen.getByText(/Fully reconciled/)).toBeInTheDocument();
+  });
+
+  // The load-bearing half: claiming "fully reconciled" over a real residual would be the worst
+  // possible thing this screen could say, so the absence is asserted as deliberately as the
+  // presence. The fixture's residual is 0, hence the explicit override here.
+  it('never claims fully reconciled while a residual is unexplained', () => {
+    const run = buildRun(0);
+    render(
+      <ReviewSection
+        run={{ ...run, summary: { ...run.summary, unresolvedExposure: 1250 } }}
+        priorPeriodRollforward={{ status: 'idle', data: null }}
+        onChangeDensity={() => {}}
+        activeView="summary"
+        isHydrating={false}
+        loadError={null}
+        onGoToSetup={() => {}}
+        decisionByTargetId={{}}
+        pendingTargetId={null}
+        decisionError={null}
+        lastChange={null}
+        onDecide={() => {}}
+        onClearDecision={() => {}}
+        onUndoLastDecision={() => {}}
+        pendingSavedViewId={null}
+        onPendingSavedViewApplied={() => {}}
+        onOpenExceptions={() => {}}
+        starredIds={[]}
+        onToggleStar={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText(/Fully reconciled/)).toBeNull();
+  });
+
   it('shows a loading message while the lookup is in flight', () => {
     renderSummary({ status: 'loading', data: null });
     expect(screen.getByText('Loading…')).toBeInTheDocument();

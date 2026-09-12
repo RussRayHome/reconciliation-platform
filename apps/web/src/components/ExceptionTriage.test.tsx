@@ -353,6 +353,30 @@ describe('ExceptionTriage', () => {
 
 // R3 X4: resolveCounterpartLabel collapses four situations into one string. The row renders the
 // discriminated cell instead, so a coloured BANK/GL tag can only appear where a source truly exists.
+// UI-10 (#449), screen 11a. Two different states shared one message: "No exceptions match the
+// current filters -- adjust the search text or facet filters". That is right when a filter excluded
+// everything, and actively wrong on a clean run, where there are no filters to adjust and nothing
+// to find. It told the user to do something impossible at the moment the product had good news.
+describe('clean run vs filtered to nothing (UI-10, #449)', () => {
+  it('says the run produced no exceptions when it produced none', () => {
+    renderTriage({ exceptions: [] });
+
+    expect(screen.getByText('This run produced no exceptions')).toBeInTheDocument();
+    // The filter advice must NOT appear -- there is nothing to adjust.
+    expect(screen.queryByText(/Adjust the search text/)).toBeNull();
+  });
+
+  it('still offers the filter advice when a filter is what emptied the list', async () => {
+    const user = userEvent.setup();
+    renderTriage();
+
+    await user.type(screen.getByLabelText('Search exceptions'), 'zzzz-no-such-exception');
+
+    expect(screen.getByText('No exceptions match the current filters')).toBeInTheDocument();
+    expect(screen.queryByText('This run produced no exceptions')).toBeNull();
+  });
+});
+
 describe('counterpart cell (Issue #329, X4)', () => {
   const sourceTagsIn = (cell: Element | null | undefined): number =>
     cell?.querySelectorAll('.exception-row__source').length ?? 0;
