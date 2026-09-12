@@ -112,4 +112,25 @@
     }
   }
 
+  /* UI-10 (#449): the pairing verdict. Same A/R shape as triage -- the same act of judgement on a
+     different object, so a reviewer who learned one already knows this. */
+  .match-verdict {
+    display: inline-flex;
+    gap: 6px;
+  }
+
+  .match-verdict__button--on {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .probable-match-error {
+    margin: 0 0 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--negative-soft-border);
+    border-radius: var(--radius-control);
+    background: var(--negative-soft);
+    color: var(--negative);
+    font-size: var(--font-meta);
+  }
 }
