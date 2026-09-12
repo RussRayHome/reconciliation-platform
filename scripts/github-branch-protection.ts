@@ -49,7 +49,19 @@ const requiredChecks = [
   'e2e-functional (3)',
   'e2e-functional (4)',
   'visual-path-check',
-  'e2e-visual',
+  // e2e-visual is deliberately NOT here (decided 2026-09-12, #509). It is a soak signal on PRs --
+  // `continue-on-error: true` in docker-validate.yml -- and Dev Guard gates it on every push to
+  // dev with no continue-on-error, because dev is the last boundary before Stage.
+  //
+  // It WAS in this array, but not by decision: the drift-review note above records that this list
+  // was "synced to match live reality", and e2e-visual came along with that sync. The result was a
+  // check that blocked merges while its own workflow comment said it could not, and whose failure
+  // left the Actions run reading green. Removing it restores the documented design and makes the
+  // continue-on-error honest again -- a non-required job that reads neutral is what that flag is
+  // for.
+  //
+  // Worth revisiting once #497's visual flake is fixed: with a low flake rate, gating on PRs is
+  // the stronger position.
 ];
 
 const usage = [
@@ -282,6 +294,23 @@ const getExistingProtection = (repo: string, branch: string): BranchProtectionRe
   return parseJson<BranchProtectionResponse>(response.stdout, 'gh api GET branch protection');
 };
 
+/**
+ * ADDITIVE ONLY -- this adds any required check missing from live protection and NEVER removes one.
+ *
+ * So editing `requiredChecks` alone cannot un-require a check: dropping an entry here is a no-op,
+ * and the dry-run keeps printing it because it prints the MERGED set, not the intended one. That
+ * cost a confused minute during #509 -- `e2e-visual` was removed from the array and the dry-run
+ * still listed it, which reads like the edit failed.
+ *
+ * Removal is therefore a deliberate API call, not a config edit:
+ *
+ *   gh api -X PATCH repos/<owner>/<repo>/branches/dev/protection/required_status_checks \
+ *     --input <json with the desired contexts>
+ *
+ * Kept additive on purpose. A replace-everything sync would silently drop any check added outside
+ * this file, and the drift note above records that this list has already been behind live reality
+ * once.
+ */
 const mergeContexts = (current: string[] | undefined): string[] => {
   const merged = [...(current ?? [])];
   for (const check of requiredChecks) {

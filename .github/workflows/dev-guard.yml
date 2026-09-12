@@ -12,9 +12,16 @@ name: Dev Guard
 #               measured fire times drifted from +30 min to +12 h over six days in Aug 2026, and
 #               GitHub documents that queued scheduled jobs "may be dropped" under load.
 #
-#   e2e-visual  non-gating on PRs by design (continue-on-error in docker-validate, a soak signal),
-#               so push-to-dev was the only place a visual regression could actually stop anything.
-#               `dev` is the last boundary before Stage.
+#   e2e-visual  `dev` is the last boundary before Stage, and this is where a visual regression is
+#               stopped without ambiguity -- no continue-on-error here.
+#
+#               It is non-gating on PRs (continue-on-error in docker-validate, a soak signal), so
+#               push-to-dev is the only place a visual regression actually stops anything.
+#
+#               For a while it was ALSO a required check on dev's protection -- picked up by a
+#               drift-sync, not a decision -- which made it block PRs while its own comment said
+#               it could not, and left Actions runs reading green over a red check. Removed
+#               2026-09-12 (#509); the design below is the one that holds.
 #
 # ~814 billable minutes/month (~$4.88) against the 5,861 removed.
 #

@@ -329,12 +329,27 @@ jobs:
     needs: visual-path-check
     if: needs.visual-path-check.outputs.run_visual == 'true'
     runs-on: ubuntu-latest
-    # Non-blocking (D3's soak): continue-on-error means a failure here shows as a distinct
-    # neutral indicator on the PR, not a red X -- accurately signaling "not yet a merge gate,
-    # currently being soaked" rather than looking like an ordinary broken check. Not in
-    # scripts/github-branch-protection.ts's required-checks array either (deliberately, see the
-    # P8 commit/PR), so it can't block a merge regardless -- this is belt-and-suspenders on how
-    # it's *displayed*, not what actually gates.
+    # STALE COMMENT CORRECTED 2026-09-12 -- the two claims below were both false and actively
+    # misleading, so they are recorded here rather than silently deleted:
+    #
+    #   "Not in scripts/github-branch-protection.ts's required-checks array"  -- it IS, line 52,
+    #   and it is live on dev's protection (context index 8).
+    #   "it can't block a merge regardless"  -- it blocked PR #507 today (mergeStateStatus BLOCKED
+    #   on an e2e-visual failure).
+    #
+    # The soak ended and this check was promoted to required, but `continue-on-error: true` was
+    # left behind. The combination is why a run can read `success` in the Actions list while
+    # e2e-visual failed inside it: the job's failure no longer fails the WORKFLOW, but the check
+    # still reports failure to the PR. The gate works; the reporting lies, and anyone scanning
+    # Actions sees a healthy run over a failed visual check.
+    #
+    # RESOLVED 2026-09-12 (#509): e2e-visual was removed from dev's required-status-checks, so it
+    # is once again a soak signal here and `continue-on-error: true` is honest -- a non-required
+    # job that reads neutral is exactly what this flag is for. Dev Guard gates the same lane on
+    # every push to dev with no continue-on-error, because dev is the last boundary before Stage.
+    #
+    # Worth revisiting once #497's visual flake is fixed: with a low flake rate, gating on the PR
+    # is the stronger position, and then this flag should go rather than the required check.
     continue-on-error: true
     timeout-minutes: 20
     steps:
