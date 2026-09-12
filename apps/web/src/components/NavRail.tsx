@@ -82,6 +82,8 @@ export function NavRail({
   matchingRuleTotalCount,
   probableMatchCount,
   activeAccountCount,
+  apEntityCount,
+  arEntityCount,
 }: Readonly<{
   unreviewedExceptionCount: number | null;
   exceptions: ExceptionItem[];
@@ -104,6 +106,8 @@ export function NavRail({
    * zero. Both read the same source their destination screen renders from (UI-1 item 4). */
   probableMatchCount?: number | null;
   activeAccountCount?: number | null;
+  apEntityCount?: number | null;
+  arEntityCount?: number | null;
 }>) {
   const [isCollapsed, setIsCollapsed] = useState(() => loadRailCollapsed(username));
   const [isRemoveAccountOpen, setIsRemoveAccountOpen] = useState(false);
@@ -255,12 +259,16 @@ export function NavRail({
             <NavItemLink
               to={routePaths.apEntities}
               label="AP entities"
+              badge={apEntityCount ?? null}
+              badgeTone="neutral"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />
             <NavItemLink
               to={routePaths.arEntities}
               label="AR entities"
+              badge={arEntityCount ?? null}
+              badgeTone="neutral"
               isCollapsed={isCollapsed}
               onNavigate={onMobileClose}
             />

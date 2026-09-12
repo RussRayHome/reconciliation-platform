@@ -42,6 +42,8 @@ const defaultProps: {
   matchingRuleTotalCount: number | undefined;
   probableMatchCount: number | null;
   activeAccountCount: number | null;
+  apEntityCount: number | null;
+  arEntityCount: number | null;
   username: string;
   profileLabel: string;
   roleLabel: string;
@@ -59,6 +61,8 @@ const defaultProps: {
   matchingRuleTotalCount: undefined,
   probableMatchCount: null,
   activeAccountCount: null,
+  apEntityCount: null,
+  arEntityCount: null,
   username: 'test.user',
   profileLabel: 'Test User',
   roleLabel: 'Superuser',
@@ -294,6 +298,16 @@ describe('NavRail badges are absent, not zero', () => {
 
     expect(badgeFor('Probable matches')).toBeNull();
     expect(badgeFor('Bank accounts')).toBeNull();
+  });
+
+  // #400, product owner's call: fetch the two registries once at mount rather than leave the
+  // badges absent. One registry failing must not blank the other's -- the hook uses allSettled
+  // for exactly that, and `null` reaches here for whichever one failed.
+  it('renders each subledger badge independently of the other', () => {
+    renderRail({ apEntityCount: 2, arEntityCount: null });
+
+    expect(badgeFor('AP entities')).toHaveTextContent('2');
+    expect(badgeFor('AR entities')).toBeNull();
   });
 
   // Rules & variances used a separate `count` prop that rendered its own pill whenever the value
