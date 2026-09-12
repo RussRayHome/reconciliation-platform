@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { NavLink } from 'react-router';
+import { Link, useLocation } from 'react-router';
 
 import { approvalGroupKeys, type ApprovalCountsByGroup, type ExceptionItem } from '@recon/domain';
 
@@ -258,6 +258,11 @@ export function NavRail({
 
           <NavItemLink
             to={routePaths.mappingCreate}
+            alsoActiveFor={[
+              routePaths.mappingProfiles,
+              routePaths.mappingVersions,
+              routePaths.mappingHistory,
+            ]}
             label="Mapping"
             icon="setup"
             isCollapsed={isCollapsed}
@@ -305,6 +310,7 @@ export function NavRail({
             to={routePaths.approvals}
             label="Pending"
             icon="review"
+            alsoActiveFor={[routePaths.approvalsPolicy]}
             isCollapsed={isCollapsed}
             onNavigate={onMobileClose}
             badge={summedApprovalBadgeCount(approvalCounts, canApprove)}
@@ -397,6 +403,7 @@ function NavItemLink({
   badge,
   badgeTone = 'attention',
   caption,
+  alsoActiveFor,
   hue,
   ariaLabel,
   onNavigate,
@@ -411,22 +418,39 @@ function NavItemLink({
   badge?: number | null;
   badgeTone?: 'attention' | 'neutral';
   caption?: string;
+  /** UI-13 (#456): extra paths this entry stays active for -- the rest of the screen family it
+   * opens. Deliberately an explicit list, not a `/mapping/*` prefix: `/mapping/rules` and
+   * `/mapping/rules/versions` belong to Matching rules' own children, and a prefix would light
+   * two entries at once, which is the exact rule this phase exists to enforce. */
+  alsoActiveFor?: readonly string[];
   /** Source-hue edge marker (e.g. the Import Files children) -- omit for items with no source
    * association. */
   hue?: 'bank' | 'ap';
   ariaLabel?: string;
   onNavigate: () => void;
 }>) {
+  // UI-13 (#456). Active state is computed here rather than left to NavLink, for two reasons the
+  // one-active-entry sweep in App.test.tsx found the moment it existed:
+  //
+  //   - NavLink matches by PREFIX, so `/mapping/rules/versions` lit both "Rules & variances"
+  //     (/mapping/rules) and "Versions" at once -- two highlighted entries, which the canonical
+  //     rail forbids.
+  //   - NavLink also owns `aria-current` and writes `undefined` when its own match fails, so a
+  //     prop set alongside it is silently discarded.
+  //
+  // Exact match plus an explicit `alsoActiveFor` list makes every highlight a declared fact. The
+  // `end` special-case for '/' goes away with it: exactness is now the default rather than an
+  // exception one route had to ask for.
+  const { pathname } = useLocation();
+  const isActive = pathname === to || (alsoActiveFor?.includes(pathname) ?? false);
+  const classes = ['nav-rail__item'];
+  if (isActive) classes.push('nav-rail__item--active');
+  if (hue) classes.push(`nav-rail__item--${hue}`);
   const link = (
-    <NavLink
+    <Link
       to={to}
-      end={to === routePaths.importFilesBank}
-      className={({ isActive }) => {
-        const classes = ['nav-rail__item'];
-        if (isActive) classes.push('nav-rail__item--active');
-        if (hue) classes.push(`nav-rail__item--${hue}`);
-        return classes.join(' ');
-      }}
+      aria-current={isActive ? 'page' : undefined}
+      className={classes.join(' ')}
       title={isCollapsed ? label : undefined}
       aria-label={ariaLabel}
       onClick={onNavigate}
@@ -454,7 +478,7 @@ function NavItemLink({
           {badge}
         </span>
       ) : null}
-    </NavLink>
+    </Link>
   );
 
   return indented ? <div className="nav-rail__indent">{link}</div> : link;

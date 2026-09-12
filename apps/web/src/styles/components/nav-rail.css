@@ -394,6 +394,20 @@
     border-top: 1px solid var(--line);
   }
 
+  /* UI-13 (#456): the account row is the active rail entry on all five account screens -- same
+     #1c2230 fill and teal left edge every other active entry carries, so the rule reads the same
+     wherever the user is. */
+  .nav-rail__footer--active {
+    border-radius: var(--radius-control);
+    border-left: 2px solid var(--accent);
+    padding-left: calc(0.25rem - 2px);
+    background: var(--bg-raised);
+  }
+
+  .nav-rail__footer--active .nav-rail__footer-avatar {
+    color: var(--accent);
+  }
+
   .nav-rail__footer-avatar {
     display: grid;
     flex: 0 0 auto;

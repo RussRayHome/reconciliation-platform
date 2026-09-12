@@ -17,6 +17,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import App from './App';
 import userEvent from '@testing-library/user-event';
 import { formatCompactDate } from './lib/format';
+import { routePaths } from './routes/routePaths';
 
 // vi.hoisted's callback runs before any other top-level code in this file (same hoisting
 // vi.mock factories get), so ACTIVE_RULE_VERSION_FIXTURE has to be built inside it rather than
@@ -3697,6 +3698,66 @@ describe('App', () => {
   // labelled "Run book" and points at the working Docs shell, so a name-only assertion would now
   // pass against the wrong element. Assert the href instead: no rail link may target the
   // placeholder route.
+  // UI-13 (#456), the rail's correctness pass: "every in-app screen highlights exactly one rail
+  // entry -- the one whose click produced that screen". The audit that produced this phase found
+  // 9a-9d highlighting NO entry at all, and the account family likewise. Both are the same class
+  // of bug: a screen the rail can reach but does not claim.
+  //
+  // Asserted across every in-app route at once rather than per screen, because the failure mode is
+  // a route nobody thought to check -- which is exactly what a per-screen test cannot catch.
+  describe('exactly one active rail entry per in-app route', () => {
+    // Pre-auth screens have no rail at all, and the five approvalsXxx paths are one-release
+    // redirects that resolve to another route's entry -- neither is an in-app destination with an
+    // entry of its own. Everything else in routePaths is.
+    const NOT_IN_APP_DESTINATIONS = new Set([
+      'login',
+      'forgotPassword',
+      'signup',
+      'support',
+      'importFilesBank',
+      'approvalsImports',
+      'approvalsMappingProfiles',
+      'approvalsMatchingRules',
+      'approvalsExceptionResolutions',
+      'approvalsReportDistribution',
+      // ComingSoonPage with no rail entry at all (EXPECTED_ABSENT_FROM_RAIL). The rail's "Run
+      // book" child points at the working Docs shell, not here -- see #450 for the consolidation
+      // when 10e is built. Until then this route is reachable but claimed by nothing, which is a
+      // real gap, just not one this phase can close without retargeting onto a placeholder.
+      'documentationRunBook',
+    ]);
+
+    const inAppRoutes = Object.entries(routePaths).filter(
+      ([key]) => !NOT_IN_APP_DESTINATIONS.has(key),
+    );
+
+    it.each(inAppRoutes)('%s (%s) highlights exactly one entry', (_key, path) => {
+      setAuthenticatedUser('rray');
+      globalThis.history.pushState({}, '', path);
+
+      renderApp();
+
+      // Scoped to the rail's own landmark, so a link elsewhere on the page cannot be mistaken for
+      // a rail entry. Two shapes of "active": a link carrying aria-current, and the account row,
+      // which is a container plus a menu toggle rather than a link and so carries a class. Both
+      // count -- the rule is about what the user sees highlighted, not about markup.
+      const rail = screen.getByRole('navigation', { name: 'Primary' });
+      const activeLinks = within(rail)
+        .queryAllByRole('link')
+        .filter((link) => link.getAttribute('aria-current') === 'page');
+      const activeAccountRow = within(rail).queryAllByTestId('nav-rail-account-row-active');
+
+      expect(
+        [...activeLinks, ...activeAccountRow].map((element) =>
+          element.textContent?.trim().slice(0, 40),
+        ),
+        `${path} should highlight exactly one rail entry`,
+      ).toHaveLength(1);
+
+      cleanup();
+    });
+  });
+
   it('never links the rail to the coming-soon run book route, for any role', () => {
     setAuthenticatedUser('rray3');
     renderApp();
