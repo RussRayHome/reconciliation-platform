@@ -119,7 +119,11 @@ describe('useReviewerDecisions', () => {
     });
     expect(result.current.decisionByTargetId['exception-1']).toBeUndefined();
     await waitFor(() => {
-      expect(deleteSpy).toHaveBeenCalledWith('run-1', 'exception-1');
+      // The target type is passed explicitly, not left to the request helper's default:
+      // UI-10 (#449) gave this hook a second instance for ProbableMatch targets, and the
+      // DELETE route keys on (runId, targetType, targetId) but answers 204 when nothing
+      // matched -- so a wrong type here would clear nothing and still report success.
+      expect(deleteSpy).toHaveBeenCalledWith('run-1', 'exception-1', 'ExceptionItem');
     });
 
     act(() => {
@@ -128,5 +132,87 @@ describe('useReviewerDecisions', () => {
     await waitFor(() => {
       expect(result.current.decisionByTargetId['exception-1']?.outcome).toBe('ConfirmedException');
     });
+  });
+});
+
+// UI-10 (#449) gave this hook a second target type. A pairing is APPROVED or REJECTED, not
+// CONFIRMED or DISMISSED -- and one run carries both kinds of decision at once, so the two
+// instances must not read or overwrite each other's rows.
+describe('useReviewerDecisions for probable matches (UI-10, #449)', () => {
+  const matchDecision: ReviewerDecision = {
+    id: 'decision-m1',
+    runId: 'run-1',
+    targetType: 'ProbableMatch',
+    targetId: 'match-1',
+    outcome: 'ApprovedMatch',
+    createdAt: '2026-03-31T00:00:00.000Z',
+    updatedAt: '2026-03-31T00:00:00.000Z',
+  };
+
+  it('seeds only its own target type, ignoring the exception decisions in the same run', () => {
+    const { result } = renderHook(() =>
+      useReviewerDecisions('run-1', [savedDecision, matchDecision], undefined, 'ProbableMatch'),
+    );
+
+    expect(result.current.decisionByTargetId['match-1']).toEqual(matchDecision);
+    expect(result.current.decisionByTargetId['exception-1']).toBeUndefined();
+    expect(result.current.resolvedCount).toBe(1);
+  });
+
+  it('records an approval rather than a confirmed exception', async () => {
+    const saveSpy = vi
+      .spyOn(api, 'saveReviewerDecisionRequest')
+      .mockResolvedValue({ ...matchDecision, targetId: 'match-2' });
+    const { result } = renderHook(() =>
+      useReviewerDecisions('run-1', [], undefined, 'ProbableMatch'),
+    );
+
+    act(() => {
+      result.current.decide('match-2', 'accept');
+    });
+
+    await waitFor(() => {
+      expect(saveSpy).toHaveBeenCalledWith('run-1', {
+        targetType: 'ProbableMatch',
+        targetId: 'match-2',
+        outcome: 'ApprovedMatch',
+        notes: undefined,
+        finalCategory: undefined,
+      });
+    });
+  });
+
+  // The DELETE route keys on (runId, targetType, targetId) and answers 204 when nothing matched.
+  // Sending the default ExceptionItem here would clear nothing, report success, and leave the
+  // approval in the database while the screen showed it gone.
+  it('clears against its own target type', async () => {
+    const deleteSpy = vi.spyOn(api, 'deleteReviewerDecisionRequest').mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useReviewerDecisions('run-1', [matchDecision], undefined, 'ProbableMatch'),
+    );
+
+    act(() => {
+      result.current.clearDecision('match-1');
+    });
+
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith('run-1', 'match-1', 'ProbableMatch');
+    });
+  });
+
+  // The domain has no "research this pairing" outcome. Posting one would be rejected by the API
+  // and surface as a save error the reviewer cannot act on, so the hook declines to send it.
+  it('ignores research, which has no meaning for a pairing', () => {
+    const saveSpy = vi.spyOn(api, 'saveReviewerDecisionRequest');
+    const { result } = renderHook(() =>
+      useReviewerDecisions('run-1', [], undefined, 'ProbableMatch'),
+    );
+
+    act(() => {
+      result.current.decide('match-3', 'research');
+    });
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(result.current.decisionByTargetId['match-3']).toBeUndefined();
   });
 });

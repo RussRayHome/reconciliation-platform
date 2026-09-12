@@ -1003,6 +1003,16 @@ function ReconciliationApp({
     reportRun?.reviewerDecisions,
     reportRunExceptionIds,
   );
+  // UI-10 (#449): a second instance for pairings. One run carries both kinds of decision, and they
+  // are independent verdicts -- confirming a pairing says nothing about an exception -- so they get
+  // their own map rather than sharing one keyed by id. The hook filters its seed by target type,
+  // which is what keeps the two from reading each other's decisions.
+  const matchDecisions = useReviewerDecisions(
+    reportRun?.id ?? null,
+    reportRun?.reviewerDecisions,
+    undefined,
+    'ProbableMatch',
+  );
   const { starredIds, toggleStar } = useWatchlist(reportRun?.id);
   const { density, setDensity } = useDensity(username);
 
@@ -1633,6 +1643,11 @@ function ReconciliationApp({
 
   const reviewSectionSharedProps = {
     run: reportRun,
+    matchDecisionByTargetId: matchDecisions.decisionByTargetId,
+    matchPendingTargetId: matchDecisions.pendingTargetId,
+    matchDecisionError: matchDecisions.error,
+    onDecideMatch: matchDecisions.decide,
+    onClearMatchDecision: matchDecisions.clearDecision,
     priorPeriodRollforward,
     isHydrating: isHydratingLatestBackendReport,
     loadError: latestBackendReportError,

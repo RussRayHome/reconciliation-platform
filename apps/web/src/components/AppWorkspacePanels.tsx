@@ -691,10 +691,87 @@ function OverviewCard({
   );
 }
 
+/**
+ * Confirm / Reject for one candidate pairing (UI-10, #449).
+ *
+ * The same A/R shape triage uses, because it is the same act of judgement on a different object --
+ * a reviewer who has learned one should not have to learn the other. Clicking the active verdict
+ * again clears it, so a mis-click is undone in place rather than needing a separate control.
+ */
+function MatchVerdictControls({
+  matchId,
+  decision,
+  isPending,
+  onDecide,
+  onClearDecision,
+}: Readonly<{
+  matchId: string;
+  decision: ReviewerDecision | undefined;
+  isPending: boolean;
+  onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
+  onClearDecision: (targetId: string) => void;
+}>) {
+  const current =
+    decision?.outcome === 'ApprovedMatch'
+      ? 'accept'
+      : decision?.outcome === 'RejectedMatch'
+        ? 'reject'
+        : null;
+
+  const press = (action: 'accept' | 'reject') => () => {
+    if (current === action) {
+      onClearDecision(matchId);
+      return;
+    }
+    onDecide(matchId, action);
+  };
+
+  return (
+    <span className="match-verdict" role="group" aria-label={`Verdict for ${matchId}`}>
+      <button
+        type="button"
+        className={
+          current === 'accept'
+            ? 'secondary-button button-small match-verdict__button match-verdict__button--on'
+            : 'secondary-button button-small match-verdict__button'
+        }
+        aria-pressed={current === 'accept'}
+        disabled={isPending}
+        onClick={press('accept')}
+      >
+        Confirm
+      </button>
+      <button
+        type="button"
+        className={
+          current === 'reject'
+            ? 'secondary-button button-small match-verdict__button match-verdict__button--on'
+            : 'secondary-button button-small match-verdict__button'
+        }
+        aria-pressed={current === 'reject'}
+        disabled={isPending}
+        onClick={press('reject')}
+      >
+        Reject
+      </button>
+    </span>
+  );
+}
+
 function ProbableMatchesContent({
   probableMatches,
+  decisionByTargetId,
+  pendingTargetId,
+  decisionError,
+  onDecide,
+  onClearDecision,
 }: Readonly<{
   probableMatches: RunData['probableMatches'];
+  decisionByTargetId: Record<string, ReviewerDecision>;
+  pendingTargetId: string | null;
+  decisionError: string | null;
+  onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
+  onClearDecision: (targetId: string) => void;
 }>) {
   const virtualListRef = useRef<HTMLDivElement | null>(null);
   const shouldVirtualizeRows = probableMatches.length > probableMatchVirtualizationThreshold;
@@ -734,6 +811,12 @@ function ProbableMatchesContent({
           A summary rather than a regrouped list: the virtualized branch below depends on one flat
           array, and splitting it into per-band virtualizers to avoid one extra line of reading
           would trade a real correctness risk for a cosmetic gain. */}
+      {decisionError ? (
+        <p className="probable-match-error" role="alert">
+          {decisionError}
+        </p>
+      ) : null}
+
       <ul className="probable-match-bands">
         {groupByConfidence(probableMatches).map((band) => (
           <li key={band.confidence} className="probable-match-bands__item">
@@ -784,6 +867,13 @@ function ProbableMatchesContent({
                     </div>
                   </div>
                   <p>{item.evidence.join(' | ')}</p>
+                  <MatchVerdictControls
+                    matchId={item.id}
+                    decision={decisionByTargetId[item.id]}
+                    isPending={pendingTargetId === item.id}
+                    onDecide={onDecide}
+                    onClearDecision={onClearDecision}
+                  />
                 </article>
               );
             })}
@@ -797,27 +887,37 @@ function ProbableMatchesContent({
             </caption>
             <thead>
               <tr>
-                <th>Disposition</th>
+                <th className="probable-match-col-disposition">Disposition</th>
                 <th>Confidence</th>
-                <th>Rule</th>
+                <th className="probable-match-col-rule">Rule</th>
                 <th>Date diff</th>
                 <th>Amount diff</th>
                 <th>Evidence</th>
+                <th>Verdict</th>
               </tr>
             </thead>
             <tbody>
               {probableMatches.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.disposition}</td>
+                  <td className="probable-match-col-disposition">{item.disposition}</td>
                   <td>
                     <span className="badge" title={describeConfidence(item.confidence).meaning}>
                       {describeConfidence(item.confidence).label}
                     </span>
                   </td>
-                  <td>{item.ruleName}</td>
+                  <td className="probable-match-col-rule">{item.ruleName}</td>
                   <td>{item.dateDifferenceDays ?? 'N/A'}</td>
                   <td className="cell-amount">{formatCurrency(item.amountDifference)}</td>
                   <td>{item.evidence.join(' | ')}</td>
+                  <td>
+                    <MatchVerdictControls
+                      matchId={item.id}
+                      decision={decisionByTargetId[item.id]}
+                      isPending={pendingTargetId === item.id}
+                      onDecide={onDecide}
+                      onClearDecision={onClearDecision}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -895,6 +995,11 @@ export function ReviewSection({
   onDecide,
   onClearDecision,
   onUndoLastDecision,
+  matchDecisionByTargetId,
+  matchPendingTargetId,
+  matchDecisionError,
+  onDecideMatch,
+  onClearMatchDecision,
   pendingSavedViewId,
   onPendingSavedViewApplied,
   onOpenExceptions,
@@ -916,6 +1021,13 @@ export function ReviewSection({
   onDecide: (targetId: string, action: DecisionAction, notes?: string) => void;
   onClearDecision: (targetId: string) => void;
   onUndoLastDecision: () => void;
+  /** UI-10 (#449): pairing verdicts, kept separate from exception verdicts -- one run holds both
+   * and they answer different questions. */
+  matchDecisionByTargetId: Record<string, ReviewerDecision>;
+  matchPendingTargetId: string | null;
+  matchDecisionError: string | null;
+  onDecideMatch: (targetId: string, action: DecisionAction, notes?: string) => void;
+  onClearMatchDecision: (targetId: string) => void;
   pendingSavedViewId: string | null;
   onPendingSavedViewApplied: () => void;
   onOpenExceptions: () => void;
@@ -937,7 +1049,16 @@ export function ReviewSection({
           onToggleStar={onToggleStar}
         />
       ),
-      'probable-matches': <ProbableMatchesContent probableMatches={run.probableMatches} />,
+      'probable-matches': (
+        <ProbableMatchesContent
+          probableMatches={run.probableMatches}
+          decisionByTargetId={matchDecisionByTargetId}
+          pendingTargetId={matchPendingTargetId}
+          decisionError={matchDecisionError}
+          onDecide={onDecideMatch}
+          onClearDecision={onClearMatchDecision}
+        />
+      ),
       exceptions: (
         <ExceptionTriage
           exceptions={run.exceptions}

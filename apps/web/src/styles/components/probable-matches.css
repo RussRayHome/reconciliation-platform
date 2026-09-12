@@ -87,6 +87,11 @@
   }
 
   .probable-match-bands__count {
+    /* The count is the LAST track at <=980px (the item drops to `auto auto`), so it absorbs the
+       row's leftover space and the pill stretches the full width around a single digit. Above
+       980px a third minmax(0, 1fr) track absorbs it instead, which is why this only ever showed
+       at 900px. Hugging the content is correct at every width. */
+    justify-self: start;
     padding: 1px 7px;
     border: 1px solid var(--line-strong);
     border-radius: var(--radius-pill);
@@ -112,4 +117,75 @@
     }
   }
 
+  /* UI-10 (#449): the pairing verdict. Same A/R shape as triage -- the same act of judgement on a
+     different object, so a reviewer who learned one already knows this. */
+  .match-verdict {
+    display: inline-flex;
+    gap: 6px;
+  }
+
+  /* Seven columns do not fit 562px, so at 900px the table scrolls horizontally and the Verdict
+     column lands off-screen -- the screen's primary verb, behind a scroll the reviewer has no
+     reason to suspect. Pinning it to the right edge of the scroll container keeps it reachable at
+     any scroll position. The other narrow-width option in this codebase is
+     `.table-scroll--desktop`, which hides its table below 980px with nothing rendered in its
+     place (OpenItemsScheduleSection, its only user); showing no candidates at all is worse than
+     showing them with a pinned action.
+
+     box-shadow rather than border-left: `border-collapse: collapse` merges cell borders into the
+     table's own grid, which does not travel with a sticky cell. The shadow does. */
+  .probable-match-table-shell__table th:last-child,
+  .probable-match-table-shell__table td:last-child {
+    position: sticky;
+    right: 0;
+    white-space: nowrap;
+    box-shadow: inset 1px 0 0 var(--line);
+  }
+
+  /* A sticky cell scrolls over the cells beside it, so it needs its own opaque ground -- the
+     default transparent cell would let Evidence read through it. */
+  .probable-match-table-shell__table td:last-child {
+    background: var(--bg-surface);
+  }
+
+  .probable-match-table-shell__table th:last-child {
+    background: var(--bg-sunken);
+  }
+
+  /* The pinned cell needs its own opaque ground, which means it does not inherit the row's hover
+     lift -- it would sit dark while the rest of its row lifted, reading as a rendering fault.
+     Not covered by any baseline: no capture in visual-baseline.spec.ts hovers. */
+  .probable-match-table-shell__table tbody tr:hover td:last-child {
+    background: var(--bg-raised);
+  }
+
+  /* Seven columns cannot fit 562px, and pinning Verdict alone only traded one loss for a worse
+     one: the pinned cell covered Evidence, hiding the basis for the decision in order to show the
+     decision's buttons. So drop the two columns that carry the least at this width.
+
+     Disposition is constant here -- this list is filtered to probable matches, so the column reads
+     "ProbableMatch" on every row and informs nothing at any width. Rule is largely restated by the
+     band heading above the table, which already names what the rule concluded. Evidence and
+     Verdict -- the basis and the action -- both stay. */
+  @media (max-width: 980px) {
+    .probable-match-col-disposition,
+    .probable-match-col-rule {
+      display: none;
+    }
+  }
+
+  .match-verdict__button--on {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .probable-match-error {
+    margin: 0 0 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--negative-soft-border);
+    border-radius: var(--radius-control);
+    background: var(--negative-soft);
+    color: var(--negative);
+    font-size: var(--font-meta);
+  }
 }
