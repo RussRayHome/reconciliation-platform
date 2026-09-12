@@ -5101,6 +5101,58 @@ export const createApp = (
           publishedBy: username,
         });
       }
+
+      // The mirror of the branch above, and the reason this one exists at all: without it,
+      // declining a rules draft from the Approvals inbox marked the APPROVAL REJECTED and left the
+      // VERSION sitting in DRAFT with null rejection fields. Two consequences, both silent:
+      //
+      //   1. `reconciliation_matching_config_version` allows one pending draft per organization
+      //      (the 23505 the draft route reports as "A draft version is already pending"), so a
+      //      rejected-but-still-DRAFT row blocks EVERY future draft for that org, permanently.
+      //   2. `computeRuleVersionHeaderState` keeps returning 'draft-pending', so the rules screen
+      //      goes on showing a draft awaiting approval that was already declined.
+      //
+      // Rejected before the decision is recorded, for the same reason publish goes first: a reject
+      // that cannot apply should fail loudly rather than leave a decision standing against a no-op.
+      if (
+        bodyResult.data.status === 'REJECTED' &&
+        (type === 'matchingRule' || type === 'varianceThreshold')
+      ) {
+        // The store writes rejection_note, rejected_by and rejected_at together under a DB CHECK,
+        // so there is no way to record this rejection without a reason -- and synthesising one
+        // ("rejected via approvals") would put a sentence the approver never wrote into an audit
+        // trail. Required here instead, which is also what #404 asks of the reject pathway.
+        const rationale = bodyResult.data.rationale;
+        if (!rationale) {
+          response.status(400).json({
+            message: 'Declining a matching-config version requires a reason.',
+          });
+          return;
+        }
+
+        const [record] = await listApprovalRequests(pool!, organizationId, {
+          subjectType: type,
+          status: 'PENDING',
+        }).then((records) => records.filter((candidate) => candidate.id === request.params.id));
+        if (!record) {
+          response.status(404).json({ message: 'Approval request not found.' });
+          return;
+        }
+
+        const rejected = await rejectMatchingConfigVersionDraft(pool!, {
+          organizationId,
+          versionId: record.subjectId,
+          rejectedBy: username,
+          rejectionNote: rationale,
+        });
+        // Scoped to status = 'DRAFT', so null means another approver already decided it.
+        if (!rejected) {
+          response.status(409).json({
+            message: 'That version is not a pending draft; it may already have been decided.',
+          });
+          return;
+        }
+      }
       if (bodyResult.data.status === 'APPROVED' && type === 'payeeAlias') {
         // #311: the proposal row already exists inactive; approval is what lets the engine see it.
         const [record] = await listApprovalRequests(pool!, organizationId, {

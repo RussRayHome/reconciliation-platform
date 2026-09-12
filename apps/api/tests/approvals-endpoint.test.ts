@@ -54,6 +54,9 @@ interface MatchingConfigVersionRow {
   id: string;
   version_number: number;
   status: string;
+  /** Written by the decline handler (#404); absent on seeds that never decline. */
+  rejection_note?: string | null;
+  rejected_by?: string | null;
 }
 
 /**
@@ -264,6 +267,23 @@ const createFakeApprovalsPool = (seed: {
       );
       if (!row) return Promise.resolve({ rows: [], rowCount: 0 });
       row.status = 'ACTIVE';
+      return Promise.resolve({ rows: [row], rowCount: 1 });
+    }
+
+    // The decline counterpart (#404). Scoped to DRAFT exactly like the store's own UPDATE, so a
+    // version already decided matches nothing and the route reports 409 rather than overwriting.
+    if (
+      text.includes('UPDATE reconciliation_matching_config_version') &&
+      text.includes("SET status = 'REJECTED'")
+    ) {
+      const [, versionId, note, rejectedBy] = params as [string, string, string, string];
+      const row = matchingConfigVersions.find(
+        (candidate) => candidate.id === versionId && candidate.status === 'DRAFT',
+      );
+      if (!row) return Promise.resolve({ rows: [], rowCount: 0 });
+      row.status = 'REJECTED';
+      row.rejection_note = note;
+      row.rejected_by = rejectedBy;
       return Promise.resolve({ rows: [row], rowCount: 1 });
     }
 
@@ -610,28 +630,80 @@ describe('POST /api/approvals/:type/:id/decision', () => {
     expect(response.status).toBe(404);
   });
 
+  const declinableSeed = (id: string, subjectType: 'matchingRule' | 'varianceThreshold') => ({
+    approvalRequests: [
+      {
+        id,
+        subject_type: subjectType,
+        subject_id: 'mcv-1',
+        status: 'PENDING',
+        submitted_by: 'someone-else',
+        decided_by: null,
+        rationale: null,
+        requested_at: new Date(0).toISOString(),
+        decided_at: null,
+      },
+    ],
+    matchingConfigVersions: [{ id: 'mcv-1', version_number: 9, status: 'DRAFT' }],
+  });
+
   it('rejects a varianceThreshold request without touching publish', async () => {
-    const pool = createFakeApprovalsPool({
-      approvalRequests: [
-        {
-          id: 'ar-2',
-          subject_type: 'varianceThreshold',
-          subject_id: 'mcv-1',
-          status: 'PENDING',
-          submitted_by: 'someone-else',
-          decided_by: null,
-          rationale: null,
-          requested_at: new Date(0).toISOString(),
-          decided_at: null,
-        },
-      ],
-    });
+    const pool = createFakeApprovalsPool(declinableSeed('ar-2', 'varianceThreshold'));
 
     const response = await authedApp(appWithPool(pool))
       .post('/api/approvals/varianceThreshold/ar-2/decision')
-      .send({ status: 'REJECTED' });
+      .send({ status: 'REJECTED', rationale: 'Tolerance is too loose for payroll.' });
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('REJECTED');
+  });
+
+  // The bug this pathway had: the approval request was marked REJECTED and the VERSION was left in
+  // DRAFT with null rejection fields. Because the table allows one pending draft per organization,
+  // that row then blocked every future draft for that org, and the rules screen went on showing a
+  // draft awaiting approval that had already been declined.
+  it('declines the matching config version itself, not only the approval request', async () => {
+    const seed = declinableSeed('ar-3', 'matchingRule');
+    const pool = createFakeApprovalsPool(seed);
+
+    const response = await authedApp(appWithPool(pool))
+      .post('/api/approvals/matchingRule/ar-3/decision')
+      .send({ status: 'REJECTED', rationale: 'Date window is wider than the close calendar.' });
+
+    expect(response.status).toBe(200);
+    const version = await pool.query(
+      'SELECT * FROM reconciliation_matching_config_version',
+      [],
+    );
+    expect(version.rows[0]).toMatchObject({
+      status: 'REJECTED',
+      rejection_note: 'Date window is wider than the close calendar.',
+    });
+  });
+
+  // A decline writes rejection_note, rejected_by and rejected_at together under a DB CHECK, so
+  // there is no truthful way to record one without a reason -- and synthesising text the approver
+  // never wrote would put a fabricated justification into an audit trail.
+  it('refuses to decline a matching-config version with no reason', async () => {
+    const pool = createFakeApprovalsPool(declinableSeed('ar-4', 'matchingRule'));
+
+    const response = await authedApp(appWithPool(pool))
+      .post('/api/approvals/matchingRule/ar-4/decision')
+      .send({ status: 'REJECTED' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('requires a reason');
+  });
+
+  it('reports 409 when the version was already decided by someone else', async () => {
+    const seed = declinableSeed('ar-5', 'matchingRule');
+    seed.matchingConfigVersions[0]!.status = 'ACTIVE';
+    const pool = createFakeApprovalsPool(seed);
+
+    const response = await authedApp(appWithPool(pool))
+      .post('/api/approvals/matchingRule/ar-5/decision')
+      .send({ status: 'REJECTED', rationale: 'Superseded by a wider change.' });
+
+    expect(response.status).toBe(409);
   });
 
   it('decides a mappingProfile generic request', async () => {

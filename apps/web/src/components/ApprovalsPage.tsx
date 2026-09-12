@@ -19,6 +19,15 @@ import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
  * not a queue copy" -- and is also where each type's legacy /approvals/* URL now redirects
  * (App.tsx). Only import/matchingRule are live (isLive below), so it's the only pair that ever
  * actually renders a link a user can click. */
+/**
+ * Approvable types whose decline must carry a reason (#404).
+ *
+ * Not a style preference: a declined matching-config version writes rejection_note, rejected_by
+ * and rejected_at together under a DB CHECK, so the API rejects the decision without one. The
+ * other types record a decision on the approval request alone and have no such requirement.
+ */
+const DECLINE_NEEDS_REASON: ReadonlySet<string> = new Set(['matchingRule', 'varianceThreshold']);
+
 const APPROVAL_GROUPS: ReadonlyArray<{
   key: string;
   objectPath: string;
@@ -127,6 +136,9 @@ export function PendingApprovalsInbox({
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [refreshToken, setRefreshToken] = useState(0);
+  /** The row whose decline is waiting on a reason (#404). Null when no reason is being written. */
+  const [decliningRow, setDecliningRow] = useState<ApprovalRow | null>(null);
+  const [declineNote, setDeclineNote] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -170,8 +182,36 @@ export function PendingApprovalsInbox({
 
   const handleDecision = (row: ApprovalRow, status: 'APPROVED' | 'REJECTED'): void => {
     setActionError(null);
+
+    // A declined matching-config version records rejection_note, rejected_by and rejected_at
+    // together under a DB CHECK, so the API refuses this decision without a reason. Asking for it
+    // here beats letting the request 400 after the approver has already committed to the action.
+    if (status === 'REJECTED' && DECLINE_NEEDS_REASON.has(row.type)) {
+      setDecliningRow(row);
+      setDeclineNote('');
+      return;
+    }
+
     void decideApprovalRequest(row.type, row.id, status)
       .then(refresh)
+      .catch((error: unknown) => {
+        setActionError(error instanceof Error ? error.message : 'Unable to record decision.');
+      });
+  };
+
+  const submitDecline = (): void => {
+    const row = decliningRow;
+    const note = declineNote.trim();
+    if (!row || !note) {
+      return;
+    }
+    setActionError(null);
+    void decideApprovalRequest(row.type, row.id, 'REJECTED', note)
+      .then(() => {
+        setDecliningRow(null);
+        setDeclineNote('');
+        refresh();
+      })
       .catch((error: unknown) => {
         setActionError(error instanceof Error ? error.message : 'Unable to record decision.');
       });
@@ -274,6 +314,44 @@ export function PendingApprovalsInbox({
         <p role="alert" className="approvals__error">
           {actionError}
         </p>
+      ) : null}
+
+      {decliningRow ? (
+        <div className="approvals__decline" role="group" aria-label="Decline with a reason">
+          <label htmlFor="approvals-decline-note">
+            Why are you declining <strong>{decliningRow.title}</strong>?
+          </label>
+          <p className="approvals__decline-help">
+            The proposer sees this, and it is kept with the version. A declined version is closed
+            for good — a replacement is proposed as a new version, never this number reused.
+          </p>
+          <textarea
+            id="approvals-decline-note"
+            value={declineNote}
+            onChange={(event) => setDeclineNote(event.target.value)}
+            rows={3}
+          />
+          <div className="approvals__decline-actions">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={declineNote.trim().length === 0}
+              onClick={submitDecline}
+            >
+              Decline version
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setDecliningRow(null);
+                setDeclineNote('');
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {loadError ? (
