@@ -221,7 +221,11 @@ export const registerBankAccount = async (
   await page.locator('#account-name-input').fill(account.name);
   // "Open account", not "Register account" -- UI-6 adopted the design's verb, matching 5a's
   // "Open entity" and the header's "Open new account".
-  await page.getByRole('button', { name: 'Open account' }).click();
+  //
+  // `exact: true` is load-bearing. Playwright matches an accessible name by SUBSTRING unless told
+  // otherwise, and the rail's account menu button is "Open account menu" -- so the loose form
+  // resolves to two elements and strict mode fails the click.
+  await page.getByRole('button', { name: 'Open account', exact: true }).click();
 
   // A rejected registration surfaces in the form itself; assert its absence first so the failure
   // reports the server's own reason instead of timing out on a row that was never going to appear.
