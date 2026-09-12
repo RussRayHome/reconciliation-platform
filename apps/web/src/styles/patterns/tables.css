@@ -37,10 +37,15 @@
   .table-scroll {
     overflow-x: auto;
   }
+  /* There was a `.table-scroll--desktop` modifier here that set `display: none` below 980px. Its
+     only consumer was OpenItemsScheduleSection, which renders nothing else -- so the entire open
+     items schedule silently disappeared at mobile width, leaving a heading, a scope notice and a
+     blank space. Removed rather than fixed in place: an eleven-column table cannot fit 562px, but
+     "scrolls sideways" is recoverable and "vanishes without saying so" is not.
 
-  .table-scroll--desktop {
-    display: block;
-  }
+     The visual lane could not have caught it. Its runtime has no database, so all three
+     open-items baselines photograph the "requires a database connection" message and never
+     exercise the table at any width. */
 
   table {
     width: 100%;
@@ -88,10 +93,6 @@
     .table-results-meta {
       flex-direction: column;
       align-items: stretch;
-    }
-
-    .table-scroll--desktop {
-      display: none;
     }
   }
 
