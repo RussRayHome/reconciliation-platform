@@ -119,6 +119,34 @@
     gap: 6px;
   }
 
+  /* Seven columns do not fit 562px, so at 900px the table scrolls horizontally and the Verdict
+     column lands off-screen -- the screen's primary verb, behind a scroll the reviewer has no
+     reason to suspect. Pinning it to the right edge of the scroll container keeps it reachable at
+     any scroll position. The other narrow-width option in this codebase is
+     `.table-scroll--desktop`, which hides its table below 980px with nothing rendered in its
+     place (OpenItemsScheduleSection, its only user); showing no candidates at all is worse than
+     showing them with a pinned action.
+
+     box-shadow rather than border-left: `border-collapse: collapse` merges cell borders into the
+     table's own grid, which does not travel with a sticky cell. The shadow does. */
+  .probable-match-table-shell__table th:last-child,
+  .probable-match-table-shell__table td:last-child {
+    position: sticky;
+    right: 0;
+    white-space: nowrap;
+    box-shadow: inset 1px 0 0 var(--line);
+  }
+
+  /* A sticky cell scrolls over the cells beside it, so it needs its own opaque ground -- the
+     default transparent cell would let Evidence read through it. */
+  .probable-match-table-shell__table td:last-child {
+    background: var(--bg-surface);
+  }
+
+  .probable-match-table-shell__table th:last-child {
+    background: var(--bg-sunken);
+  }
+
   .match-verdict__button--on {
     border-color: var(--accent);
     color: var(--accent);
