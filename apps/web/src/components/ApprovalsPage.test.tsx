@@ -314,11 +314,19 @@ describe('PendingApprovalsInbox (N1)', () => {
 
     mockedApi.decideApprovalRequest.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    // Declining a matching-config version goes through the reason step (#404) rather than
+    // deciding on the click -- the version's own rejection is written under a DB CHECK that
+    // requires a note, so the API refuses a decision without one.
+    fireEvent.change(await screen.findByLabelText(/Why are you declining/), {
+      target: { value: 'Window is wider than the close calendar.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Decline version' }));
     await waitFor(() =>
       expect(mockedApi.decideApprovalRequest).toHaveBeenCalledWith(
         'matchingRule',
         'row-3',
         'REJECTED',
+        'Window is wider than the close calendar.',
       ),
     );
   });
@@ -502,5 +510,95 @@ describe('ImportRunApprovalStatus (N1)', () => {
 
     await waitFor(() => expect(mockedApi.getApprovalsRequest).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+// #404. Declining a matching-config version writes rejection_note, rejected_by and rejected_at
+// together under a DB CHECK, so the API refuses the decision without a reason. The inbox therefore
+// has to collect one rather than let the request fail after the approver committed to the action.
+describe('declining a matching-config version needs a reason (#404)', () => {
+  const ruleRow: ApprovalRow = {
+    id: 'ar-rule-1',
+    type: 'matchingRule',
+    title: 'Matching rules v13',
+    meta: 'Proposed by a.chen',
+    submitter: 'a.chen',
+    approver: 'm.ortega',
+    ageHours: 3,
+    state: 'PENDING',
+  };
+
+  it('asks for a reason instead of declining straight away', async () => {
+    mockedApi.rows = [ruleRow];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+
+    expect(await screen.findByLabelText(/Why are you declining/)).toBeInTheDocument();
+    // Nothing is sent until the reason exists -- otherwise the API answers 400 and the approver is
+    // told the action failed after they already took it.
+    expect(mockedApi.decideApprovalRequest).not.toHaveBeenCalled();
+  });
+
+  it('will not submit an empty or whitespace-only reason', async () => {
+    mockedApi.rows = [ruleRow];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+
+    const decline = screen.getByRole('button', { name: 'Decline version' });
+    expect(decline).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Why are you declining/), { target: { value: '   ' } });
+    expect(decline).toBeDisabled();
+  });
+
+  it('sends the reason with the decision', async () => {
+    mockedApi.rows = [ruleRow];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+
+    fireEvent.change(screen.getByLabelText(/Why are you declining/), {
+      target: { value: '  Date window is wider than the close calendar.  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Decline version' }));
+
+    await waitFor(() => {
+      expect(mockedApi.decideApprovalRequest).toHaveBeenCalledWith(
+        'matchingRule',
+        'ar-rule-1',
+        'REJECTED',
+        'Date window is wider than the close calendar.',
+      );
+    });
+  });
+
+  it('closes without deciding when cancelled', async () => {
+    mockedApi.rows = [ruleRow];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Why are you declining/)).toBeNull();
+    });
+    expect(mockedApi.decideApprovalRequest).not.toHaveBeenCalled();
+  });
+
+  // The requirement belongs to the matching-config tables, not to declining in general -- other
+  // approvable types record a decision on the approval request alone and are unaffected.
+  it('leaves other approvable types declining in one step', async () => {
+    mockedApi.rows = [{ ...PENDING_ASSIGNED_RUN }];
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+
+    await waitFor(() => {
+      expect(mockedApi.decideApprovalRequest).toHaveBeenCalledWith(
+        'reconciliationRun',
+        PENDING_ASSIGNED_RUN.id,
+        'REJECTED',
+      );
+    });
+    expect(screen.queryByLabelText(/Why are you declining/)).toBeNull();
   });
 });

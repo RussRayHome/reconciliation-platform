@@ -369,4 +369,33 @@
     justify-content: center;
     color: var(--text-tertiary);
   }
+
+  /* #404: declining a matching-config version has to carry a reason, so the decline is a written
+     step rather than a button press. Sits with the page alerts, above the tables, because it is
+     about one row but blocks the whole decision until answered. */
+  .approvals__decline {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0 0 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-panel);
+    background: var(--bg-raised);
+  }
+
+  .approvals__decline-help {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-meta);
+  }
+
+  .approvals__decline textarea {
+    width: 100%;
+    resize: vertical;
+  }
+
+  .approvals__decline-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
 }
