@@ -908,7 +908,14 @@ describe('App', () => {
     // The point is that /login is gone, not which screen replaced it. UI-4 (#403) changed the
     // answer: this account has no runs and can submit, so Runs home forwards it to New run rather
     // than showing an empty Continue card.
-    expect(globalThis.location.pathname).toBe(routePaths.importFiles);
+    //
+    // Polled, not read once. That forward fires from the GET-latest-run response handler, so a
+    // synchronous read races the fetch -- it passed alone and failed only under the full
+    // multi-project run, which is the load that loses the race. auth-links-and-signup.spec.ts
+    // polls the same redirect for the same reason.
+    await waitFor(() => {
+      expect(globalThis.location.pathname).toBe(routePaths.importFiles);
+    });
   });
 
   it('navigates from login to Forgot Password and back via the placeholder screen', async () => {
