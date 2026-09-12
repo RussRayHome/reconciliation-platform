@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { NavLink } from 'react-router';
+import { NavLink, useLocation } from 'react-router';
 
 import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 import { routePaths } from '../routes/routePaths';
@@ -76,8 +76,24 @@ export function NavRailAccountMenu({
 
   const close = (): void => setIsOpen(false);
 
+  // UI-13 (#456): the canonical rail's rule is exactly one active entry per screen, and for the
+  // five account screens that entry is THIS ROW -- no section entry highlights. The row is a
+  // container plus a menu toggle rather than a link, so it carries the active treatment as a
+  // class; `aria-current` stays on the links inside the menu, where it belongs, and would
+  // otherwise double up whenever the menu is open.
+  const { pathname } = useLocation();
+  const isAccountScreenActive = accountItems.some((item) => item.to === pathname);
+
   return (
-    <div className="nav-rail__footer" ref={containerRef}>
+    <div
+      className={
+        isAccountScreenActive ? 'nav-rail__footer nav-rail__footer--active' : 'nav-rail__footer'
+      }
+      // The row is not a link, so it cannot carry aria-current without competing with the links
+      // inside the menu once it is open. This is how the one-active-entry sweep sees it.
+      data-testid={isAccountScreenActive ? 'nav-rail-account-row-active' : undefined}
+      ref={containerRef}
+    >
       <span className="nav-rail__footer-avatar" aria-hidden="true">
         {computeInitials(profileLabel)}
       </span>
