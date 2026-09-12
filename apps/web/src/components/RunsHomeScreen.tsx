@@ -2,9 +2,13 @@ import { Link } from 'react-router';
 
 import { StatCard } from '@recon/ui';
 
+import type { ApprovalCountsByGroup } from '@recon/domain';
+
 import type { ReconciliationRunResponse } from '../lib/api';
 import { routePaths } from '../routes/routePaths';
 import { formatCompactDate } from '../lib/format';
+import type { SavedTriageView } from '../lib/exceptionTriage';
+import { useSavedViewCounts } from '../hooks/useSavedViewCounts';
 
 /** Greeting by local hour -- the design's "Good morning, M." is time-of-day, not a fixed string. */
 const greetingFor = (hour: number): string => {
@@ -36,16 +40,53 @@ export function RunsHomeScreen({
   run,
   openExceptionCount,
   decidedExceptionCount,
+  approvalCounts,
+  onApplySavedView,
   now = new Date(),
 }: Readonly<{
   profileLabel: string;
   run: ReconciliationRunResponse | undefined;
   openExceptionCount: number | null;
   decidedExceptionCount: number;
+  approvalCounts: ApprovalCountsByGroup | null;
+  onApplySavedView: (view: SavedTriageView) => void;
   /** Injected so the greeting is testable without freezing the system clock. */
   now?: Date;
 }>) {
   const greeting = greetingFor(now.getHours());
+  // "Needs you" is not a count of everything pending -- it is the subset that is waiting on THIS
+  // user to act. A rejected profile is back in the submitter's court; a pending resolution or rule
+  // is waiting on an approver. Each row states who it waits on, because "3 pending" without that
+  // is the kind of number people learn to ignore.
+  const needsYou = approvalCounts
+    ? [
+        {
+          key: 'mappingProfile',
+          count: approvalCounts.mappingProfile.rejected,
+          label: 'mapping profile rejected',
+          detail: 'Returned to you — reopen it as a draft',
+          to: routePaths.mappingProfiles,
+        },
+        {
+          key: 'exceptionResolution',
+          count: approvalCounts.exceptionResolution.pending,
+          label: 'resolutions awaiting an approver',
+          detail: 'Submitted and not yet decided',
+          to: routePaths.approvals,
+        },
+        {
+          key: 'matchingRule',
+          count: approvalCounts.matchingRule.pending,
+          label: 'rule versions awaiting activation',
+          detail: 'A draft is submitted but not active',
+          to: routePaths.mappingRules,
+        },
+      ].filter((row) => row.count > 0)
+    : [];
+
+  // The rail's hook, not a second implementation: a count here that disagreed with the list it
+  // opens would be worse than no count. Lifted to hooks/ by this phase for exactly that reason.
+  const savedViewCounts = useSavedViewCounts(run?.exceptions ?? []);
   const firstName = profileLabel.split(' ')[0] ?? profileLabel;
   const summary = run?.summary;
 
@@ -130,6 +171,58 @@ export function RunsHomeScreen({
            for a skeleton would make the page flash on every visit. */
         <p className="runs-home__empty">Loading your most recent run…</p>
       )}
+
+      <div className="runs-home__panels">
+        <section className="runs-home__panel" aria-labelledby="runs-home-needs-you">
+          <h2 className="runs-home__panel-title" id="runs-home-needs-you">
+            Needs you
+          </h2>
+          {needsYou.length > 0 ? (
+            <ul className="runs-home__needs-list">
+              {needsYou.map((row) => (
+                <li key={row.key} className="runs-home__needs-row">
+                  <Link className="runs-home__needs-link" to={row.to}>
+                    <span className="runs-home__needs-count">{row.count}</span>
+                    <span className="runs-home__needs-label">{row.label}</span>
+                  </Link>
+                  <span className="runs-home__needs-detail">{row.detail}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            /* Absent, not a row of zeros -- the same rule the rail badges follow. "Nothing is
+               waiting on you" is a real answer; three zeros is noise that teaches the user to
+               stop reading the panel. */
+            <p className="runs-home__panel-empty">Nothing is waiting on your decision.</p>
+          )}
+        </section>
+
+        <section className="runs-home__panel" aria-labelledby="runs-home-saved-views">
+          <h2 className="runs-home__panel-title" id="runs-home-saved-views">
+            Saved views
+          </h2>
+          {savedViewCounts.length > 0 ? (
+            <ul className="runs-home__views-list">
+              {savedViewCounts.map(({ view, count }) => (
+                <li key={view.id}>
+                  <button
+                    type="button"
+                    className="runs-home__view-button"
+                    onClick={() => onApplySavedView(view)}
+                  >
+                    <span className="runs-home__view-name">{view.name}</span>
+                    <span className="runs-home__view-count">{count}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="runs-home__panel-empty">
+              Save a filter on the Exceptions screen and it appears here.
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

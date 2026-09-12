@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Link, useLocation } from 'react-router';
 
@@ -9,15 +9,9 @@ import { SemanticIcon, type SemanticIconName } from './SemanticIcon';
 import { RemoveAccountDialog } from './RemoveAccountDialog';
 import { NavRailAccountMenu } from './NavRailAccountMenu';
 import { routePaths } from '../routes/routePaths';
+import { useSavedViewCounts } from '../hooks/useSavedViewCounts';
 import { useNavSectionCollapse } from '../hooks/useNavSectionCollapse';
-import {
-  loadSavedViews,
-  matchesFacets,
-  matchesQuery,
-  SAVED_VIEWS_CHANGED_EVENT,
-  toExceptionDisplay,
-  type SavedTriageView,
-} from '../lib/exceptionTriage';
+import type { SavedTriageView } from '../lib/exceptionTriage';
 
 const RAIL_COLLAPSED_STORAGE_PREFIX = 'reconciliation-platform:nav-rail-collapsed';
 
@@ -556,39 +550,6 @@ function CollapsibleNavSection({
   );
 }
 
-/** Loads saved triage views, keeps them fresh across changes, and annotates each with its match count. */
-function useSavedViewCounts(
-  exceptions: ExceptionItem[],
-): Array<{ view: SavedTriageView; count: number }> {
-  const [savedViews, setSavedViews] = useState<SavedTriageView[]>(() => loadSavedViews());
-
-  useEffect(() => {
-    const refreshSavedViews = (): void => {
-      setSavedViews(loadSavedViews());
-    };
-
-    globalThis.addEventListener?.(SAVED_VIEWS_CHANGED_EVENT, refreshSavedViews);
-
-    return () => {
-      globalThis.removeEventListener?.(SAVED_VIEWS_CHANGED_EVENT, refreshSavedViews);
-    };
-  }, []);
-
-  const displays = useMemo(() => exceptions.map(toExceptionDisplay), [exceptions]);
-
-  return useMemo(
-    () =>
-      savedViews.map((view) => ({
-        view,
-        count: displays.filter(
-          (display) =>
-            matchesFacets(display, view.facets) &&
-            matchesQuery(display, view.query.trim().toUpperCase()),
-        ).length,
-      })),
-    [displays, savedViews],
-  );
-}
 
 /** Permission-gated system links; unpermitted items are never rendered. */
 function NavRailSystemLinks({

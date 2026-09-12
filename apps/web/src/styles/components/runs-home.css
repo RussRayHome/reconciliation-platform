@@ -111,6 +111,108 @@
     color: var(--text-tertiary);
   }
 
+
+  /* Needs you | Saved views -- the design's 1.35fr / 1fr split: the left panel carries sentences,
+     the right carries names and counts, so they do not want equal room. */
+  .runs-home__panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+
+  .runs-home__panel {
+    display: grid;
+    gap: 10px;
+    padding: 18px 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--bg-surface);
+    min-width: 0;
+  }
+
+  .runs-home__panel-title {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+
+  .runs-home__panel-empty {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-meta);
+  }
+
+  .runs-home__needs-list,
+  .runs-home__views-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .runs-home__needs-row {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .runs-home__needs-link {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .runs-home__needs-link:hover .runs-home__needs-label {
+    text-decoration: underline;
+  }
+
+  .runs-home__needs-count {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--severity-high);
+  }
+
+  .runs-home__needs-detail {
+    color: var(--text-tertiary);
+    font-size: var(--font-meta);
+  }
+
+  .runs-home__view-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: var(--control-height);
+    text-align: left;
+  }
+
+  .runs-home__view-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .runs-home__view-count {
+    flex: none;
+    padding: 1px 7px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    color: var(--text-tertiary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--font-label);
+    font-variant-numeric: tabular-nums;
+  }
+
   @media (max-width: 980px) {
     .runs-home {
       padding: 20px 16px;
@@ -122,6 +224,10 @@
 
     .runs-home__wells {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .runs-home__panels {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 }

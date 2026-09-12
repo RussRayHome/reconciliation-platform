@@ -1708,6 +1708,8 @@ function ReconciliationApp({
                     run={reportRun}
                     openExceptionCount={unreviewedExceptionCount}
                     decidedExceptionCount={reviewerDecisions.resolvedCount}
+                    approvalCounts={approvalCounts}
+                    onApplySavedView={handleApplySavedView}
                   />
                 }
               />
