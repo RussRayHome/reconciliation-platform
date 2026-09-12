@@ -83,6 +83,18 @@
     font-size: var(--font-label);
   }
 
+  /* 3a dims a deactivated account's name rather than hiding the row: the account still holds
+     history, and a reader scanning the registry needs to see it is there and why it is quiet. */
+  .registry-table__name--inactive {
+    color: var(--text-tertiary);
+  }
+
+  /* An unset optional field reads dimmer than a set one, so "not filled in" and "filled in with a
+     dash" cannot look the same. */
+  .registry-table__unset {
+    color: var(--text-disabled);
+  }
+
   .registry-screen__rule,
   .registry-screen__empty {
     margin: 0.9rem 0 0;
