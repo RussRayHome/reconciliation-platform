@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -147,5 +150,37 @@ describe('OpenItemsScheduleSection', () => {
     render(<OpenItemsScheduleSection username="rray" />);
 
     expect(screen.getByText('Not set')).toBeInTheDocument();
+  });
+});
+
+// The schedule used to disappear entirely below 980px: its only rendering was wrapped in
+// `.table-scroll--desktop`, which set `display: none` at that breakpoint, and nothing took its
+// place -- a heading, a scope notice, and then blank space where the whole feature should be.
+//
+// Neither existing lane could catch it. jsdom does not evaluate media queries, and the visual
+// lane's runtime has no database, so all three open-items baselines photograph the "requires a
+// database connection" message and never exercise the table at any width. So the guard is static.
+describe('the schedule is reachable at every width', () => {
+  // __dirname rather than import.meta.url -- the same resolution tokens.test.ts uses for its
+  // static CSS guards, and the one that works under this vitest environment.
+  const componentSource = readFileSync(join(__dirname, 'OpenItemsScheduleSection.tsx'), 'utf-8');
+  const tablePatterns = readFileSync(
+    join(__dirname, '..', 'styles', 'patterns', 'tables.css'),
+    'utf-8',
+  );
+
+  it('does not wrap its only rendering in a modifier that hides it', () => {
+    expect(componentSource).not.toContain('table-scroll--desktop');
+  });
+
+  // Removed rather than left unused: a modifier that hides a table is a loaded gun for the next
+  // eleven-column screen. An eleven-column table cannot fit 562px, but "scrolls sideways" is
+  // recoverable and "vanishes without saying so" is not.
+  it('no longer defines the hiding modifier at all', () => {
+    expect(tablePatterns).not.toMatch(/\.table-scroll--desktop\s*\{/);
+  });
+
+  it('keeps the table horizontally scrollable so no column is unreachable', () => {
+    expect(tablePatterns).toMatch(/\.table-scroll\s*\{[^}]*overflow-x:\s*auto/);
   });
 });

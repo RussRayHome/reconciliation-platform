@@ -127,10 +127,11 @@
   /* Seven columns do not fit 562px, so at 900px the table scrolls horizontally and the Verdict
      column lands off-screen -- the screen's primary verb, behind a scroll the reviewer has no
      reason to suspect. Pinning it to the right edge of the scroll container keeps it reachable at
-     any scroll position. The other narrow-width option in this codebase is
-     `.table-scroll--desktop`, which hides its table below 980px with nothing rendered in its
-     place (OpenItemsScheduleSection, its only user); showing no candidates at all is worse than
-     showing them with a pinned action.
+     any scroll position. The alternative considered was
+     `.table-scroll--desktop`, which hid its table below 980px with nothing rendered in its place;
+     that modifier has since been removed for exactly this reason -- its only consumer,
+     OpenItemsScheduleSection, vanished entirely at mobile width. Showing no candidates at all is
+     worse than showing them with a pinned action.
 
      box-shadow rather than border-left: `border-collapse: collapse` merges cell borders into the
      table's own grid, which does not travel with a sticky cell. The shadow does. */

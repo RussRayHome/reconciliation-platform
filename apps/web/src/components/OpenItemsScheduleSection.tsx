@@ -54,7 +54,7 @@ export function OpenItemsScheduleSection({
   } else {
     content = (
       <div className="table-shell">
-        <div className="table-scroll table-scroll--desktop">
+        <div className="table-scroll">
           <table>
             <thead>
               <tr>
