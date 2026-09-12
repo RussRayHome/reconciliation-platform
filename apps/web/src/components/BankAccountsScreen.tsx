@@ -73,11 +73,28 @@ export function BankAccountsScreen({ canManage }: Readonly<{ canManage: boolean 
     }
   };
 
+  const activeCount = accounts.filter((account) => account.isActive).length;
+  // #405: the PREVIEW row renders formatAccountLabel's REAL output, never a hand-assembled
+  // lookalike. It is this screen's promise about how the account will read in slot pickers,
+  // exception evidence and the audit workbook -- a preview built from a different string would be
+  // a promise the product does not keep. Same rule 5a's preview follows.
+  const previewLabel = formatAccountLabel({
+    accountIdentifier: accountIdentifier.trim() || '4321',
+    displayName: displayName.trim() || 'Operating',
+    lastFour: previewLastFour ?? '4321',
+  });
+
   return (
-    <SectionCard
-      title="Bank accounts"
-      description="Every bank statement is assigned to one of these accounts. Last-four digits and file names help you pick the right one, but they never decide it."
-    >
+    <div className="registry-screen">
+      <header>
+        <p className="registry-screen__eyebrow">Configure / Bank accounts</p>
+        <h1 className="registry-screen__title">Bank accounts</h1>
+        <p className="registry-screen__subtitle">
+          Every statement is assigned to an account opened here. File names and last-four digits
+          help you pick the right one — they never decide it.
+        </p>
+      </header>
+
       {error ? (
         <div className="error-banner" role="alert">
           <p>{error}</p>
@@ -87,113 +104,156 @@ export function BankAccountsScreen({ canManage }: Readonly<{ canManage: boolean 
         </div>
       ) : null}
 
-      {canManage ? (
-        <form className="bank-accounts__form" onSubmit={handleRegister}>
-          <div className="bank-accounts__field">
-            <label htmlFor="account-number-input">Account number</label>
-            <input
-              id="account-number-input"
-              value={accountIdentifier}
-              onChange={(event) => setAccountIdentifier(event.target.value)}
-              autoComplete="off"
-            />
-            {previewLastFour ? (
-              <p className="bank-accounts__hint">Shown as “ending in {previewLastFour}”.</p>
-            ) : null}
-          </div>
-
-          <div className="bank-accounts__field">
-            <label htmlFor="account-name-input">Name</label>
-            <input
-              id="account-name-input"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="Operating"
-              autoComplete="off"
-            />
-          </div>
-
-          <div className="bank-accounts__field">
-            <label htmlFor="account-institution-input">Institution</label>
-            <input
-              id="account-institution-input"
-              value={institutionName}
-              onChange={(event) => setInstitutionName(event.target.value)}
-              placeholder="Truist"
-              autoComplete="off"
-            />
-          </div>
-
-          <div className="bank-accounts__field">
-            <label htmlFor="account-gl-code-input">GL cash account</label>
-            <input
-              id="account-gl-code-input"
-              value={glCashAccountCode}
-              onChange={(event) => setGlCashAccountCode(event.target.value)}
-              autoComplete="off"
-            />
-            {/* A-D2 (Issue #339) declares this binding on the account rather than inferring it.
-                Nothing consumes it until matching is partitioned per account pair (Issue #344),
-                so it is captured but optional -- an account registered without it still works. */}
-            <p className="bank-accounts__hint">
-              Optional today. Used once matching is partitioned per account.
+      <div className="registry-screen__body">
+        <SectionCard
+          title="Registered accounts"
+          description={`${activeCount} active · ${accounts.length - activeCount} deactivated`}
+        >
+          {isLoading ? (
+            <p>Loading bank accounts…</p>
+          ) : accounts.length === 0 ? (
+            <p className="registry-screen__empty">
+              No bank accounts are registered yet.
+              {canManage ? ' Open one to start assigning statements.' : null}
             </p>
-          </div>
+          ) : (
+            <table className="registry-table">
+              <caption className="sr-only">Registered bank accounts</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Account</th>
+                  <th scope="col">Institution</th>
+                  <th scope="col">GL cash account</th>
+                  <th scope="col">Status</th>
+                  {canManage ? <th scope="col">Action</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((account) => (
+                  <tr key={account.id}>
+                    <th scope="row">
+                      {/* Name over last-four, not one concatenated label: the design dims a
+                          deactivated account's name, which needs the two to be separate elements. */}
+                      <span
+                        className={
+                          account.isActive
+                            ? 'registry-table__name'
+                            : 'registry-table__name registry-table__name--inactive'
+                        }
+                      >
+                        {account.displayName?.trim() || account.accountIdentifier}
+                      </span>
+                      {account.lastFour ? (
+                        <span className="registry-table__id">ending in {account.lastFour}</span>
+                      ) : null}
+                    </th>
+                    <td>{account.institutionName ?? '—'}</td>
+                    <td className={account.glCashAccountCode ? undefined : 'registry-table__unset'}>
+                      {account.glCashAccountCode ?? '—'}
+                    </td>
+                    <td>
+                      <span className={account.isActive ? 'badge' : 'badge badge--muted'}>
+                        {account.isActive ? 'Active' : 'Deactivated'}
+                      </span>
+                    </td>
+                    {canManage ? (
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary-button button-small"
+                          onClick={() => void handleToggleActive(account)}
+                        >
+                          {account.isActive ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
 
-          {formError ? (
-            <p className="bank-accounts__error" role="alert">
-              {formError}
-            </p>
-          ) : null}
+          {/* #405 item 3. This rule existed only as a comment on this component and in
+              packages/domain/src/reconciliationAccount.ts -- invisible to the person it
+              constrains. An operator who cannot find a delete button needs to be told it is
+              deliberate, not missing. 5a says the same thing about entities and cites this screen. */}
+          <p className="registry-screen__rule">
+            Deactivating keeps every statement, run and open item already attributed to the account
+            and stops it being offered for new assignments. <strong>There is no delete</strong> — an
+            account with history must always be able to prove that history.
+          </p>
+        </SectionCard>
 
-          <button type="submit" className="primary-button" disabled={isSaving}>
-            {isSaving ? 'Registering…' : 'Register account'}
-          </button>
-        </form>
-      ) : null}
+        {/* Non-admins get the table alone. `registry-screen__body:has(> :only-child)` collapses to
+            one column, so the layout does not leave a gap where a control used to be. */}
+        {canManage ? (
+          <SectionCard title="Open new account">
+            <form className="registry-form" onSubmit={(event) => void handleRegister(event)}>
+              <label htmlFor="account-number-input">Account number</label>
+              <input
+                id="account-number-input"
+                value={accountIdentifier}
+                onChange={(event) => setAccountIdentifier(event.target.value)}
+                autoComplete="off"
+                placeholder="4321"
+              />
+              <p className="registry-form__hint">
+                Stored once, shown only as &ldquo;ending in 4321&rdquo;. Never used as identity.
+              </p>
 
-      {isLoading ? (
-        <p>Loading bank accounts…</p>
-      ) : accounts.length === 0 ? (
-        <p className="bank-accounts__empty">
-          No bank accounts are registered yet.
-          {canManage ? ' Register one above to start assigning statements.' : null}
-        </p>
-      ) : (
-        <table className="bank-accounts__table">
-          <caption className="sr-only">Registered bank accounts</caption>
-          <thead>
-            <tr>
-              <th scope="col">Account</th>
-              <th scope="col">Institution</th>
-              <th scope="col">GL cash account</th>
-              <th scope="col">Status</th>
-              {canManage ? <th scope="col">Actions</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((account) => (
-              <tr key={account.id}>
-                <th scope="row">{formatAccountLabel(account)}</th>
-                <td>{account.institutionName ?? '—'}</td>
-                <td>{account.glCashAccountCode ?? '—'}</td>
-                <td>{account.isActive ? 'Active' : 'Deactivated'}</td>
-                {canManage ? (
-                  <td>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => void handleToggleActive(account)}
-                    >
-                      {account.isActive ? 'Deactivate' : 'Reactivate'}
-                    </button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </SectionCard>
+              <label htmlFor="account-name-input">Name</label>
+              <input
+                id="account-name-input"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                autoComplete="off"
+                placeholder="Operating"
+              />
+
+              <label htmlFor="account-institution-input">Institution</label>
+              <input
+                id="account-institution-input"
+                value={institutionName}
+                onChange={(event) => setInstitutionName(event.target.value)}
+                autoComplete="off"
+                placeholder="Truist"
+              />
+
+              <label htmlFor="account-gl-input">GL cash account</label>
+              <input
+                id="account-gl-input"
+                value={glCashAccountCode}
+                onChange={(event) => setGlCashAccountCode(event.target.value)}
+                autoComplete="off"
+              />
+              {/* Issue #339's rationale, kept: optional *today* because nothing consumes it yet,
+                  not because it does not matter. */}
+              <p className="registry-form__hint">
+                Optional today. Used once matching is partitioned per account.
+              </p>
+
+              {formError ? (
+                <p role="alert" className="registry-screen__error">
+                  {formError}
+                </p>
+              ) : null}
+
+              <button type="submit" className="primary-button" disabled={isSaving}>
+                {isSaving ? 'Opening…' : 'Open account'}
+              </button>
+
+              <div className="registry-form__preview">
+                <span className="registry-form__preview-label">Preview</span>
+                <span className="registry-form__preview-value">{previewLabel}</span>
+                <p className="registry-form__hint">
+                  Exactly how this account reads in slot pickers, exception evidence and the audit
+                  workbook.
+                </p>
+              </div>
+            </form>
+          </SectionCard>
+        ) : null}
+      </div>
+    </div>
   );
 }
