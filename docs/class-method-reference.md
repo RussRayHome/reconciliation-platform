@@ -1,5 +1,7 @@
 # Class and Method Reference
 
+> **Status: historical, frozen (2026-09-13).** This document describes the architecture before Issue #137: a six-route `createApp(repository?)` and a `parseWorkbook` / `excelParser.ts` bridge that no longer exist (`apps/api/src/app.ts` registers seventy routes; `packages/core/src/parsers/` is gone). It is not maintained and must not be extended. The current class and method reference is generated — `generated/api-reference-generated.md` via `npm run docs:api:generate`, gated in CI by `docs:api:check` — and the route inventory is `generated/openapi.generated.json`. The file is kept for its state-object notation and sequence diagrams only.
+
 This reference documents the executable architecture (classes and exported methods) used by the reconciliation platform.
 
 For each method, the documentation includes:

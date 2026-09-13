@@ -184,7 +184,7 @@ Important flags:
 
 - `RECON_PERSISTENCE_BACKEND=postgres` enables PostgreSQL-backed persistence.
 - `DATABASE_URL` (local) / `API_DATABASE_URL` (compose) controls DB connection.
-- `RUN_DB_MIGRATIONS_ON_BOOT` controls API boot-time migration behavior.
+- Migrations run only through the `migrate` compose service (`npm run docker:migrate`); the API process never migrates.
 
 ## Documentation map
 
@@ -203,7 +203,9 @@ Important flags:
 - `design/persistence/postgresql-persistence-architecture.md`: durable lifecycle model.
 - `docs/test-strategy.md`: unit/integration/e2e and quality-gate strategy.
 - `design/github_design/branch-protection.md`: recommended required checks.
-- `docs/class-method-reference.md`: method-level behavioral reference.
+- `generated/api-reference-generated.md`: generated class and method reference (`docs/class-method-reference.md` is a frozen historical snapshot).
+- `generated/openapi.generated.json`: router-derived route inventory, served at `GET /api/openapi.json`.
+- `docs/architecture.md` §12: architecture conventions (ADR-0020) new code follows.
 
 ## Release and change tracking
 

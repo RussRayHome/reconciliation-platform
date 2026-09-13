@@ -245,7 +245,7 @@ When more than one category could apply to the same transaction key, the lower p
 | Level | Categories                                                                                                                                                                                                    |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | `InvalidOrMissingData`                                                                                                                                                                                        |
-| 2     | `DuplicateInBank`, `DuplicateInGL`                                                                                                                                                                           |
+| 2     | `DuplicateInBank`, `DuplicateInGL`                                                                                                                                                                            |
 | 3     | `AmountMismatch`, `ACHReturn`, `NSFReturnedDeposit`, `ChargebackReturn`                                                                                                                                       |
 | 4     | `FeeNettingMatch`, `PartialPaymentMatch`, `PayrollBatchMatch`, `BankServiceChargeAmortization`, `LoanPaymentSplit`, `LikelySplitCombineIssue`, `DepositGroupingIssue`, `ReversalVoid`, `IntercompanyMismatch` |
 | 5     | `LikelyMiscoding`                                                                                                                                                                                             |
@@ -256,7 +256,7 @@ When more than one category could apply to the same transaction key, the lower p
 | 10    | `AmbiguousMatchRequiringReview`                                                                                                                                                                               |
 | 11    | `StaleOutstandingCheck`                                                                                                                                                                                       |
 | 12    | `OutstandingCheck`, `DepositInTransit`, `VoidedCheckCleared`                                                                                                                                                  |
-| 13    | `MissingFromGL`, `MissingFromBank`, `InterestIncome`                                                                                                                                                         |
+| 13    | `MissingFromGL`, `MissingFromBank`, `InterestIncome`                                                                                                                                                          |
 
 ## 7. Severity, messaging, and sort order
 
@@ -325,13 +325,13 @@ Bank-to-GL reconciliation is governed primarily by **ASC 305 (Cash and Cash Equi
 | Amount mismatch                             | ASC 305-10 | `AmountMismatch`                                  | Matched pair where amounts differ beyond `amountTolerance` with high description similarity                          |
 | Likely miscoding                            | ASC 820-10 | `LikelyMiscoding`                                 | Distinctive same-amount near-date pair where description/reference conflict suggests wrong account                   |
 | Duplicate bank posting                      | ASC 305-10 | `DuplicateInBank`                                 | Same-source same-amount duplicate within `duplicateDateWindowDays`                                                   |
-| Duplicate book entry                        | ASC 305-10 | `DuplicateInGL`                                  | Same-source same-amount duplicate in GL within duplicate window                                                      |
+| Duplicate book entry                        | ASC 305-10 | `DuplicateInGL`                                   | Same-source same-amount duplicate in GL within duplicate window                                                      |
 | Split transaction / grouped deposit         | ASC 230-10 | `LikelySplitCombineIssue`, `DepositGroupingIssue` | Balanced residual grouped sets where split or batched posting is likely                                              |
 | Check number mismatch                       | ASC 305-10 | `CheckNumberMismatch`                             | Amount and text align but check numbers differ                                                                       |
 | Reference number mismatch                   | ASC 305-10 | `ReferenceNumberMismatch`                         | Amount and text align but reference numbers differ                                                                   |
 | Description / merchant variance             | ASC 305-10 | `DescriptionMerchantVariance`                     | Amount and date match but description similarity is in the grey zone                                                 |
 | Ambiguous match requiring review            | ASC 305-10 | `AmbiguousMatchRequiringReview`                   | Multiple near-equal candidates exist for the same transaction                                                        |
-| Missing from GL (book)                      | ASC 305-10 | `MissingFromGL`                                  | Bank transaction has no book counterpart after all other stages                                                      |
+| Missing from GL (book)                      | ASC 305-10 | `MissingFromGL`                                   | Bank transaction has no book counterpart after all other stages                                                      |
 | Missing from bank                           | ASC 305-10 | `MissingFromBank`                                 | GL transaction has no bank counterpart after all other stages                                                        |
 | Invalid or missing data                     | ASC 855-10 | `InvalidOrMissingData`                            | Amount, date, or other required field is absent or malformed                                                         |
 
@@ -340,8 +340,8 @@ Bank-to-GL reconciliation is governed primarily by **ASC 305 (Cash and Cash Equi
 | GAAP assertion (ASC 315-10 / PCAOB AS 2315) | Coverage status   | Supporting categories                                                                                                                            |
 | ------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Existence — recorded cash events occurred   | Covered           | `ExactMatch`, `ProbableMatch`, all grouped categories                                                                                            |
-| Completeness — all cash events are recorded | Covered           | `MissingFromGL`, `MissingFromBank`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck`                                             |
-| Accuracy — amounts and periods are correct  | Covered           | `AmountMismatch`, `DateVariance`, `TimingDifference`, `InvalidOrMissingData`, `DuplicateInBank`, `DuplicateInGL`                                |
+| Completeness — all cash events are recorded | Covered           | `MissingFromGL`, `MissingFromBank`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck`                                              |
+| Accuracy — amounts and periods are correct  | Covered           | `AmountMismatch`, `DateVariance`, `TimingDifference`, `InvalidOrMissingData`, `DuplicateInBank`, `DuplicateInGL`                                 |
 | Cutoff — transactions in the right period   | Covered           | `DateVariance`, `TimingDifference`, `DepositInTransit`, `OutstandingCheck`, `StaleOutstandingCheck`                                              |
 | Classification — correct account assignment | Partially covered | `LikelyMiscoding`, `IntercompanyMismatch`, `LoanPaymentSplit`, `BankServiceChargeAmortization`, `CheckNumberMismatch`, `ReferenceNumberMismatch` |
 | Presentation — output is auditable          | Partially covered | Summary metrics, exception export workbook, reviewer observations, rule traces stored per exception                                              |
@@ -356,8 +356,8 @@ When rule behavior changes, update these artifacts together:
 1. matching/classification implementation and tests in `packages/core`
 2. config defaults and overrides in `packages/config`
 3. shared category/messages/types in `packages/domain`
-4. database schema migration in `packages/persistence/src/schema.ts` (new migration to update the `reconciliation_exception_category_check` constraint)
+4. a new Liquibase changeset under `packages/persistence/liquibase/changesets/` widening every CHECK constraint that enumerates exception categories (and the pgTap baseline that follows it)
 5. API contract docs in `docs/api.md`
 6. test strategy and fixtures in `docs/test-strategy.md` and `packages/test-fixtures`
 
-Implementation-level class and method details are maintained in `docs/class-method-reference.md`.
+Implementation-level class and method details are generated into `generated/api-reference-generated.md` (`npm run docs:api:generate`, gated by `docs:api:check`). `docs/class-method-reference.md` is a frozen historical snapshot and is not updated.

@@ -213,4 +213,4 @@ When introducing new behavior:
 - `docs/api.md`
 - `docs/developer-setup.md`
 - `docs/local-docker-platform.md`
-- `docs/class-method-reference.md`
+- `generated/api-reference-generated.md` (generated; `docs/class-method-reference.md` is a frozen historical snapshot)
