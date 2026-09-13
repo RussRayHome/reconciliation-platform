@@ -46,6 +46,81 @@ const widths = [1440, 1100, 900] as const;
 test.describe.configure({ mode: 'parallel' });
 const MOCK_MATCHING_JOB_ID = 'e2e-mock-matching-job';
 
+/**
+ * The open-items schedule (#535).
+ *
+ * Without this the three `open-items` baselines photographed the "requires a database connection"
+ * message and never exercised the table at any width -- three captures at `maxDiffPixelRatio: 0`
+ * guarding an error string. That is not hypothetical: #534 deleted the entire table from mobile
+ * width (its only rendering sat inside a modifier that is `display: none` below 980px) and all
+ * three baselines stayed green through it.
+ *
+ * The rows are chosen to exercise what the screen actually renders rather than to be minimal: more
+ * than one status, ages that fall in different aging bands, an owner and due date present on one
+ * row and absent on another (the always-unassigned columns), and both a check number and a
+ * reference number, since the Check / Reference column falls back between them.
+ *
+ * Frozen values, never `Date.now()`-relative: `ageInDays` is served rather than derived, so the
+ * capture stays stable at zero tolerance.
+ */
+const mockOpenItemsSchedule = async (page: Page): Promise<void> => {
+  const items = [
+    {
+      id: 'oi-1',
+      accountIdentifier: 'OPERATING-001',
+      sourceSystem: 'bank',
+      category: 'MissingFromGL',
+      status: 'OPEN',
+      naturalKey: 'bank|1042|1350.00',
+      naturalKeyTier: 1,
+      originalTransactionDate: '2026-01-08',
+      amount: 1350,
+      checkNumber: '1042',
+      descriptionSnapshot: 'Northwind Traders — supplier payment',
+      ageInDays: 12,
+      ownerUsername: 'm.ortega',
+      dueDate: '2026-02-15',
+    },
+    {
+      id: 'oi-2',
+      accountIdentifier: 'OPERATING-001',
+      sourceSystem: 'gl',
+      category: 'TimingDifference',
+      status: 'OPEN',
+      naturalKey: 'gl|INV-8841|-420.55',
+      naturalKeyTier: 2,
+      originalTransactionDate: '2025-11-19',
+      amount: -420.55,
+      referenceNumber: 'INV-8841',
+      descriptionSnapshot: 'Deposit in transit at period end',
+      ageInDays: 62,
+    },
+    {
+      id: 'oi-3',
+      accountIdentifier: 'PAYROLL-002',
+      sourceSystem: 'bank',
+      category: 'StaleOutstandingCheck',
+      status: 'CLEARED',
+      naturalKey: 'bank|0987|75.00',
+      naturalKeyTier: 1,
+      originalTransactionDate: '2025-07-02',
+      amount: 75,
+      checkNumber: '0987',
+      descriptionSnapshot: 'Uncashed reimbursement cheque',
+      ageInDays: 201,
+      ownerUsername: 'a.chen',
+    },
+  ];
+
+  await page.route('**/api/reconciliation/open-items*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items }),
+    }),
+  );
+};
+
 const mockReconciliationRun = async (page: Page): Promise<void> => {
   const fixture = reconciliationRunReportFixture as unknown as ReconciliationRunReport;
   const body = JSON.stringify(fixture);
@@ -626,6 +701,7 @@ for (const width of widths) {
     // invisibility, which is the regression this is here for.
     test(`open items schedule @${width}`, async ({ page }) => {
       await mockReconciliationRun(page);
+      await mockOpenItemsSchedule(page);
       await loginAs(page, 'rray', 'P@ssw0rd');
       await preloadFonts(page);
       await page.goto(routePaths.openItemsSchedule);
