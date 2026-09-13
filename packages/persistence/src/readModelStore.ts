@@ -18,6 +18,7 @@ import type {
   MatchingConfigVersion,
   MatchResult,
   OutputWorkbookManifest,
+  NormalizedTransaction,
   PayeeAlias,
   ReplayEstimate,
   ReconciliationRunReport,
@@ -1201,6 +1202,127 @@ type MatchingConfigVersionRow = {
   rejection_note: string | null;
   rejected_by: string | null;
   rejected_at: string | null;
+};
+
+/** One `reconciliation_canonical_row`, as node-postgres returns it. */
+interface CanonicalRowRecord {
+  id: string;
+  raw_row_id: string;
+  source_file_id: string;
+  source_system: string;
+  spreadsheet_file_name: string;
+  worksheet_name: string;
+  line_number: number;
+  transaction_date: string | null;
+  posting_date: string | null;
+  transaction_type: string | null;
+  check_number: string | null;
+  serial_number: string | null;
+  reference_number: string | null;
+  description: string | null;
+  merchant_name: string | null;
+  payee_name: string | null;
+  /** NUMERIC columns arrive as strings; Number() is applied at the mapping boundary. */
+  amount: string | number | null;
+  debit: string | number | null;
+  credit: string | number | null;
+  running_balance: string | number | null;
+  normalized_comparison_text: string | null;
+  normalized_comparison_tokens: string[] | null;
+  normalized_reference_tokens: string[] | null;
+  raw_source_values_json: unknown;
+  data_quality_issues_json: unknown;
+  is_excluded: boolean;
+  exclusion_reason: string | null;
+  is_zero_amount: boolean;
+  context_fingerprint: string | null;
+  account_identifier: string | null;
+  reviewer_notes: string | null;
+}
+
+/**
+ * Every normalized transaction a run matched on, rebuilt from `reconciliation_canonical_row`.
+ *
+ * This is the input side of the replay estimate (ADR-0018, #531): to show an approver what a DRAFT
+ * rule version would have produced against a closed period, the engine has to be handed exactly
+ * what that period was matched on, twice.
+ *
+ * `reconciliation_canonical_row` is the right source and two nearby tables are not, which is worth
+ * recording because all three sound plausible:
+ *
+ *   - `canonical_record` (formerly `normalized_record`, renamed by changeset 0046) is the FILE
+ *     IMPORT projection. It has no checkNumber, serialNumber, merchantName, payeeName or
+ *     transactionType columns -- all of which the engine matches on -- so rebuilding from it would
+ *     make a replay diverge from the original run for reasons unrelated to the proposed rule.
+ *   - `reconciliation_staged_transaction` is pre-promotion and keyed to a mapping version.
+ *
+ * This table is written by `persistNormalizedRows` from the `NormalizedTransaction[]` the engine
+ * was actually given, so it round-trips rather than approximates.
+ */
+export const listNormalizedTransactionsForRun = async (
+  pool: Pool,
+  organizationId: string,
+  runId: string,
+): Promise<NormalizedTransaction[]> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<CanonicalRowRecord>(
+      `SELECT id, raw_row_id, source_file_id, source_system, spreadsheet_file_name, worksheet_name,
+              line_number, transaction_date, posting_date, transaction_type, check_number,
+              serial_number, reference_number, description, merchant_name, payee_name, amount,
+              debit, credit, running_balance, normalized_comparison_text,
+              normalized_comparison_tokens, normalized_reference_tokens, raw_source_values_json,
+              data_quality_issues_json, is_excluded, exclusion_reason, is_zero_amount,
+              context_fingerprint, account_identifier, reviewer_notes
+         FROM reconciliation_canonical_row
+        WHERE organization_id = $1 AND job_id = $2
+        ORDER BY line_number ASC, id ASC`,
+      [organizationId, runId],
+    );
+
+    const text = (value: string | null): string | undefined => value ?? undefined;
+    const num = (value: string | number | null): number | null =>
+      value === null ? null : Number(value);
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      runId,
+      rawRowId: row.raw_row_id,
+      sourceFileId: row.source_file_id,
+      source: row.source_system as NormalizedTransaction['source'],
+      spreadsheetFileName: row.spreadsheet_file_name,
+      worksheetName: row.worksheet_name,
+      lineNumber: Number(row.line_number),
+      transactionDate: text(row.transaction_date),
+      postingDate: text(row.posting_date),
+      transactionType: text(row.transaction_type),
+      checkNumber: text(row.check_number),
+      serialNumber: text(row.serial_number),
+      referenceNumber: text(row.reference_number),
+      description: text(row.description),
+      merchantName: text(row.merchant_name),
+      payeeName: text(row.payee_name),
+      amount: num(row.amount),
+      // Never persisted, and never populated on this path either: the File-Validation adapter sets
+      // splitAmount to null unconditionally (toNormalizedTransactions.ts), and nothing in the
+      // matching engine reads it. Null here is the value the run itself carried, not a loss.
+      splitAmount: null,
+      debit: num(row.debit),
+      credit: num(row.credit),
+      runningBalance: num(row.running_balance),
+      normalizedComparisonText: row.normalized_comparison_text ?? '',
+      normalizedComparisonTokens: row.normalized_comparison_tokens ?? [],
+      normalizedReferenceTokens: row.normalized_reference_tokens ?? [],
+      rawSourceValues: (row.raw_source_values_json ?? {}) as Record<string, unknown>,
+      dataQualityIssues: (row.data_quality_issues_json ??
+        []) as NormalizedTransaction['dataQualityIssues'],
+      isExcluded: Boolean(row.is_excluded),
+      exclusionReason: text(row.exclusion_reason),
+      isZeroAmount: Boolean(row.is_zero_amount),
+      contextFingerprint: row.context_fingerprint ?? '',
+      accountIdentifier: text(row.account_identifier),
+      reviewerNotes: text(row.reviewer_notes),
+    })) as NormalizedTransaction[];
+  });
 };
 
 interface ReplayEstimateRow {
