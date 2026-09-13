@@ -91,15 +91,17 @@ describe('Liquibase rollback', () => {
       // statement assignment, #338 -- different tables again), 0078/0079 (create
       // reconciliation_saved_view and reconciliation_subledger_entity -- new tables) and 0080 (adds
       // draft_reason/rejection columns and a REJECTED status to
-      // reconciliation_matching_config_version, #404 -- a different table again) all sit on top of
-      // it without touching the schema this test cares about, so rolling back 0080 down through 0050
+      // reconciliation_matching_config_version, #404 -- a different table again) and 0081 (creates
+      // reconciliation_replay_estimate for the approver sheet's replay, ADR-0018/#530 -- a new
+      // table) all sit on top of
+      // it without touching the schema this test cares about, so rolling back 0081 down through 0050
       // lands on the same DDL diff a --count=1 rollback used to produce when 0050 was HEAD. When a
       // future changeset lands here, extend the count again rather than re-pinning this test to a
       // single changeset number. If two branches each add a changeset, they will each bump this
       // by one to the SAME value, git will treat those identical edits as agreement and merge them
       // without a conflict, and the result is one short. Re-derive the count from the changeset
       // files on disk after any merge; do not trust a clean auto-merge here.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=31');
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=32');
       rolledBackSchema = await generateSchemaBaseline(database.pool);
 
       runLiquibase(containerId, database.name, 'update');
@@ -213,8 +215,9 @@ describe('Liquibase rollback', () => {
       // assertions below read only the password/password_hash/role *columns*, which it leaves
       // alone, so its presence in the range is correct and unobserved rather than benign by luck.
       // 0077 (A-D1's account registry columns, #338) likewise touches neither reconciliation_user
-      // nor the columns asserted below.
-      runLiquibase(containerId, database.name, 'rollback-count', '--count=55');
+      // nor the columns asserted below, and neither does 0081 (reconciliation_replay_estimate, a
+      // new table, ADR-0018/#530).
+      runLiquibase(containerId, database.name, 'rollback-count', '--count=56');
       rolledBackTwoSchema = await generateSchemaBaseline(database.pool);
     }, 180000);
 

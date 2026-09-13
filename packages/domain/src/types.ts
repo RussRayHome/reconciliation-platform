@@ -408,6 +408,39 @@ export interface ReviewerDecision {
   updatedAt: string;
 }
 
+/**
+ * What a DRAFT matching-config version would have produced against one already-closed period
+ * (ADR-0018, #530).
+ *
+ * **Every delta is `draft - active`.** "12 fewer exceptions" is `-12`. The convention cannot be
+ * recovered from the field names, and reading it backwards would invert the approver sheet's
+ * meaning while looking entirely plausible.
+ *
+ * Not a forecast. A dry run against historical data, which carries different transactions from the
+ * next run -- which is why `replayedRunId` is part of the record rather than an implementation
+ * detail: the sheet names the period it used so a reader can see it is history.
+ */
+export interface ReplayEstimate {
+  id: string;
+  organizationId: string;
+  /** The DRAFT being judged. */
+  matchingConfigVersionId: string;
+  /** The closed period replayed against. */
+  replayedRunId: string;
+  exceptionsDelta: number;
+  probableMatchesDelta: number;
+  /** Signed amount. Carried as a string end to end -- this is money an approver signs against, and
+   * a JS number cannot hold NUMERIC(20,4) faithfully. */
+  unresolvedExposureDelta: string;
+  /** Which engine build computed it. Both sides of the diff run in the same build (ADR-0018
+   * decision 1); this is what tells a later reader whether two estimates are comparable. */
+  engineBuild: string;
+  /** The draft's varianceOverrides as they stood when this was computed. An estimate whose
+   * fingerprint no longer matches the draft must never display. */
+  draftOverridesFingerprint: string;
+  computedAt: string;
+}
+
 /** Reporting period cadence used to interpret date-tolerance and stale-check thresholds. */
 export type ReconciliationFrequency = 'Monthly' | 'Annual';
 
