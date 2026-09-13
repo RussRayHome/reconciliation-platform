@@ -573,4 +573,105 @@
       grid-template-columns: 1fr;
     }
   }
+
+  /* Screen 9a (#450): the saved mapping profiles registry. Master-detail rather than a table --
+     the list endpoint returns names only, so a table would cost one request per row on load. */
+  .mapping-profiles__lede {
+    margin: 0 0 1rem;
+    color: var(--text-tertiary);
+    font-size: var(--font-meta);
+    max-width: 60ch;
+  }
+
+  .mapping-profiles__body {
+    display: grid;
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .mapping-profiles__list ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 2px;
+  }
+
+  .mapping-profiles__item {
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .mapping-profiles__item--active {
+    border-color: var(--line-strong);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+  }
+
+  .mapping-profiles__detail-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .mapping-profiles__side {
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .mapping-profiles__side h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem;
+  }
+
+  .mapping-profiles__side-meta,
+  .mapping-profiles__empty {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-meta);
+  }
+
+  .mapping-profiles__columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.5rem 1rem;
+    margin: 0.75rem 0 0;
+  }
+
+  .mapping-profiles__columns dt {
+    color: var(--text-tertiary);
+    font-size: var(--font-label);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .mapping-profiles__columns dd {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .mapping-profiles__error {
+    margin: 0 0 0.75rem;
+    color: var(--negative);
+    font-size: var(--font-meta);
+  }
+
+  /* One column below the rail breakpoint: a 14rem list beside detail leaves neither usable. */
+  @media (max-width: 980px) {
+    .mapping-profiles__body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 }

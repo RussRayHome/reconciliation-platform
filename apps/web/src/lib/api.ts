@@ -31,7 +31,7 @@ import type {
   UserRole,
   ImportFileSourceType,
   SubledgerTabId,
-} from '@recon/domain';
+  MappingProfileDetail,} from '@recon/domain';
 import { subledgerUploadFieldByTab } from '@recon/domain';
 import { clearAuthToken, getAuthToken, setAuthToken } from './authToken';
 
@@ -1100,6 +1100,26 @@ export const getCanonicalFieldsRequest = async (): Promise<CanonicalField[]> => 
 export const getMappingProfilesRequest = async (): Promise<string[]> => {
   const response = await apiFetch('/api/mapping/profiles');
   return parseResponse<string[]>(response);
+};
+
+/** One saved mapping profile, both sides, with their version history (9a, #450). */
+export const getMappingProfileDetailRequest = async (
+  name: string,
+): Promise<MappingProfileDetail> => {
+  const response = await apiFetch(`/api/mapping/profiles/${encodeURIComponent(name)}`);
+  return parseResponse<MappingProfileDetail>(response);
+};
+
+/**
+ * Retires a profile. Deprecated, never deleted — the same rule bank accounts and saved views
+ * follow: a retired profile keeps every run already mapped under it and stops being offered for
+ * new ones.
+ */
+export const retireMappingProfileRequest = async (name: string): Promise<void> => {
+  const response = await apiFetch(`/api/mapping/profiles/${encodeURIComponent(name)}/retire`, {
+    method: 'POST',
+  });
+  await parseResponse<unknown>(response);
 };
 
 /** Fetches the organization's active/draft matching-config versions and publish history. */
