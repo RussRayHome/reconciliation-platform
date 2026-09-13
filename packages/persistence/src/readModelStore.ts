@@ -19,6 +19,7 @@ import type {
   MatchResult,
   OutputWorkbookManifest,
   PayeeAlias,
+  ReplayEstimate,
   ReconciliationRunReport,
   ReviewerDecision,
   ReviewerObservation,
@@ -1200,6 +1201,145 @@ type MatchingConfigVersionRow = {
   rejection_note: string | null;
   rejected_by: string | null;
   rejected_at: string | null;
+};
+
+interface ReplayEstimateRow {
+  id: string;
+  organization_id: string;
+  matching_config_version_id: string;
+  reconciliation_run_id: string;
+  exceptions_delta: number;
+  probable_matches_delta: number;
+  unresolved_exposure_delta: string;
+  engine_build: string;
+  draft_overrides_fingerprint: string;
+  computed_at: string;
+}
+
+const REPLAY_ESTIMATE_COLUMNS =
+  'id, organization_id, matching_config_version_id, reconciliation_run_id, exceptions_delta, ' +
+  'probable_matches_delta, unresolved_exposure_delta, engine_build, ' +
+  'draft_overrides_fingerprint, computed_at';
+
+const mapReplayEstimate = (row: ReplayEstimateRow): ReplayEstimate => ({
+  id: row.id,
+  organizationId: row.organization_id,
+  matchingConfigVersionId: row.matching_config_version_id,
+  replayedRunId: row.reconciliation_run_id,
+  // node-postgres returns INTEGER as a number and NUMERIC as a string. The counts are genuinely
+  // numbers; the amount stays a string deliberately -- see ReplayEstimate.unresolvedExposureDelta.
+  exceptionsDelta: Number(row.exceptions_delta),
+  probableMatchesDelta: Number(row.probable_matches_delta),
+  unresolvedExposureDelta: row.unresolved_exposure_delta,
+  engineBuild: row.engine_build,
+  draftOverridesFingerprint: row.draft_overrides_fingerprint,
+  computedAt: row.computed_at,
+});
+
+/**
+ * The estimate for one (draft version, replayed period) pair, or null if it has not been computed.
+ *
+ * The caller compares `draftOverridesFingerprint` against the draft's current overrides before
+ * displaying it -- a stale estimate is not returned as an error here, because "stale" is a question
+ * about the draft, which this store does not read.
+ */
+export const getReplayEstimate = async (
+  pool: Pool,
+  organizationId: string,
+  matchingConfigVersionId: string,
+  replayedRunId: string,
+): Promise<ReplayEstimate | null> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ReplayEstimateRow>(
+      `SELECT ${REPLAY_ESTIMATE_COLUMNS}
+         FROM reconciliation_replay_estimate
+        WHERE organization_id = $1
+          AND matching_config_version_id = $2
+          AND reconciliation_run_id = $3`,
+      [organizationId, matchingConfigVersionId, replayedRunId],
+    );
+    const row = result.rows[0];
+    return row ? mapReplayEstimate(row) : null;
+  });
+};
+
+/** Every estimate computed for one draft, newest first -- the approver sheet's period list. */
+export const listReplayEstimatesForVersion = async (
+  pool: Pool,
+  organizationId: string,
+  matchingConfigVersionId: string,
+): Promise<ReplayEstimate[]> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ReplayEstimateRow>(
+      `SELECT ${REPLAY_ESTIMATE_COLUMNS}
+         FROM reconciliation_replay_estimate
+        WHERE organization_id = $1 AND matching_config_version_id = $2
+        ORDER BY computed_at DESC`,
+      [organizationId, matchingConfigVersionId],
+    );
+    return result.rows.map(mapReplayEstimate);
+  });
+};
+
+/**
+ * Records an estimate, replacing any earlier one for the same (version, period).
+ *
+ * Upsert rather than insert-or-fail: recomputation is expected. A draft's overrides can change,
+ * which invalidates the estimate that described them, and the honest response is to replace the
+ * row rather than accumulate rows a reader has to date-sort to interpret. `computed_at` is reset
+ * on replace so staleness stays truthful.
+ */
+export const upsertReplayEstimate = async (
+  pool: Pool,
+  input: Readonly<{
+    id: string;
+    organizationId: string;
+    matchingConfigVersionId: string;
+    replayedRunId: string;
+    exceptionsDelta: number;
+    probableMatchesDelta: number;
+    unresolvedExposureDelta: string;
+    engineBuild: string;
+    draftOverridesFingerprint: string;
+  }>,
+): Promise<ReplayEstimate> => {
+  return runInTenantScope(pool, input.organizationId, async (client) => {
+    const result = await client.query<ReplayEstimateRow>(
+      `INSERT INTO reconciliation_replay_estimate (
+         id, organization_id, matching_config_version_id, reconciliation_run_id,
+         exceptions_delta, probable_matches_delta, unresolved_exposure_delta,
+         engine_build, draft_overrides_fingerprint
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (organization_id, matching_config_version_id, reconciliation_run_id)
+       DO UPDATE SET
+         exceptions_delta = EXCLUDED.exceptions_delta,
+         probable_matches_delta = EXCLUDED.probable_matches_delta,
+         unresolved_exposure_delta = EXCLUDED.unresolved_exposure_delta,
+         engine_build = EXCLUDED.engine_build,
+         draft_overrides_fingerprint = EXCLUDED.draft_overrides_fingerprint,
+         computed_at = NOW()
+       RETURNING ${REPLAY_ESTIMATE_COLUMNS}`,
+      [
+        input.id,
+        input.organizationId,
+        input.matchingConfigVersionId,
+        input.replayedRunId,
+        input.exceptionsDelta,
+        input.probableMatchesDelta,
+        input.unresolvedExposureDelta,
+        input.engineBuild,
+        input.draftOverridesFingerprint,
+      ],
+    );
+
+    const row = result.rows[0];
+    // RLS makes a mis-scoped write match zero rows and report success. An upsert that returns
+    // nothing means the tenant scope did not take, not that the row is merely unchanged.
+    if (!row) {
+      throw new Error('upsertReplayEstimate: wrote no row -- tenant scope did not apply');
+    }
+    return mapReplayEstimate(row);
+  });
 };
 
 const MATCHING_CONFIG_VERSION_COLUMNS =

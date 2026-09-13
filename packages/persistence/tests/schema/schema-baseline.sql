@@ -6,9 +6,9 @@
 --   npm run test:postgres:update-baseline
 --
 -- and review the diff: every line that moves is a schema change someone is shipping.
-SELECT plan(2465);
+SELECT plan(2506);
 
-SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_saved_view', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_subledger_entity', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
+SELECT tables_are('public', ARRAY['canonical_record', 'dashboard_secret_change_log', 'dashboard_secret_finding_snapshot', 'dashboard_secret_scan_run', 'databasechangelog', 'databasechangeloglock', 'import_file', 'import_file_content', 'import_job', 'mapping_rule_version', 'reconciliation_account', 'reconciliation_approval_history', 'reconciliation_approval_request', 'reconciliation_approval_request_history', 'reconciliation_audit_event', 'reconciliation_canonical_row', 'reconciliation_exception', 'reconciliation_export', 'reconciliation_import_approval', 'reconciliation_import_batch', 'reconciliation_job', 'reconciliation_job_summary', 'reconciliation_login_event', 'reconciliation_mapping_profile', 'reconciliation_mapping_profile_version', 'reconciliation_match_group', 'reconciliation_match_result', 'reconciliation_matching_config_version', 'reconciliation_open_item', 'reconciliation_open_item_event', 'reconciliation_organization', 'reconciliation_payee_alias', 'reconciliation_period_rollforward', 'reconciliation_raw_row', 'reconciliation_replay_estimate', 'reconciliation_review_decision', 'reconciliation_review_observation', 'reconciliation_rule_result', 'reconciliation_run', 'reconciliation_run_account', 'reconciliation_run_event', 'reconciliation_saved_view', 'reconciliation_source_file', 'reconciliation_source_file_content', 'reconciliation_staged_transaction', 'reconciliation_subledger_entity', 'reconciliation_template_definition', 'reconciliation_user', 'run_source_file', 'validation_issue', 'validation_rule_version']::name[], 'public schema contains exactly the expected tables');
 SELECT columns_are('public', 'canonical_record', ARRAY['id', 'organization_id', 'import_job_id', 'import_file_id', 'reconciliation_run_id', 'source_type', 'record_id', 'source_line_number', 'account', 'txn_date', 'currency_code', 'signed_amount', 'direction', 'magnitude', 'excluded', 'exclusion_reason', 'description', 'raw', 'created_at', 'reference_ids', 'counterparty_type', 'counterparty_id', 'counterparty_name', 'value_date', 'effective_date', 'evidence']::name[], 'canonical_record has exactly the expected columns');
 SELECT col_is_pk('public', 'canonical_record', ARRAY['id']::name[], 'canonical_record primary key');
 SELECT indexes_are('public', 'canonical_record', ARRAY['canonical_record_counterparty_id_idx', 'normalized_record_account_txn_date_idx', 'normalized_record_organization_idx', 'normalized_record_pkey', 'normalized_record_reconciliation_run_idx', 'normalized_record_signed_amount_idx']::name[], 'canonical_record has exactly the expected indexes');
@@ -5319,6 +5319,132 @@ SELECT is(
   'reconciliation_raw_row row-level security policies'
 );
 SELECT triggers_are('public', 'reconciliation_raw_row', ARRAY[]::name[], 'reconciliation_raw_row has exactly the expected triggers');
+SELECT columns_are('public', 'reconciliation_replay_estimate', ARRAY['id', 'organization_id', 'matching_config_version_id', 'reconciliation_run_id', 'exceptions_delta', 'probable_matches_delta', 'unresolved_exposure_delta', 'engine_build', 'draft_overrides_fingerprint', 'computed_at']::name[], 'reconciliation_replay_estimate has exactly the expected columns');
+SELECT col_is_pk('public', 'reconciliation_replay_estimate', ARRAY['id']::name[], 'reconciliation_replay_estimate primary key');
+SELECT indexes_are('public', 'reconciliation_replay_estimate', ARRAY['reconciliation_replay_estimate_pkey', 'reconciliation_replay_estimate_version_idx', 'reconciliation_replay_estimate_version_run_key']::name[], 'reconciliation_replay_estimate has exactly the expected indexes');
+SELECT is(
+  (SELECT relrowsecurity FROM pg_class WHERE relname = 'reconciliation_replay_estimate' AND relnamespace = 'public'::regnamespace),
+  true,
+  'reconciliation_replay_estimate has row-level security enabled'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'id', 'uuid', 'reconciliation_replay_estimate.id is uuid');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'id', 'reconciliation_replay_estimate.id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'id'),
+  NULL,
+  'reconciliation_replay_estimate.id default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'organization_id', 'uuid', 'reconciliation_replay_estimate.organization_id is uuid');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'organization_id', 'reconciliation_replay_estimate.organization_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'organization_id'),
+  NULL,
+  'reconciliation_replay_estimate.organization_id default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'matching_config_version_id', 'uuid', 'reconciliation_replay_estimate.matching_config_version_id is uuid');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'matching_config_version_id', 'reconciliation_replay_estimate.matching_config_version_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'matching_config_version_id'),
+  NULL,
+  'reconciliation_replay_estimate.matching_config_version_id default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'reconciliation_run_id', 'uuid', 'reconciliation_replay_estimate.reconciliation_run_id is uuid');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'reconciliation_run_id', 'reconciliation_replay_estimate.reconciliation_run_id is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'reconciliation_run_id'),
+  NULL,
+  'reconciliation_replay_estimate.reconciliation_run_id default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'exceptions_delta', 'integer', 'reconciliation_replay_estimate.exceptions_delta is integer');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'exceptions_delta', 'reconciliation_replay_estimate.exceptions_delta is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'exceptions_delta'),
+  NULL,
+  'reconciliation_replay_estimate.exceptions_delta default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'probable_matches_delta', 'integer', 'reconciliation_replay_estimate.probable_matches_delta is integer');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'probable_matches_delta', 'reconciliation_replay_estimate.probable_matches_delta is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'probable_matches_delta'),
+  NULL,
+  'reconciliation_replay_estimate.probable_matches_delta default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'unresolved_exposure_delta', 'numeric(20,4)', 'reconciliation_replay_estimate.unresolved_exposure_delta is numeric(20,4)');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'unresolved_exposure_delta', 'reconciliation_replay_estimate.unresolved_exposure_delta is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'unresolved_exposure_delta'),
+  NULL,
+  'reconciliation_replay_estimate.unresolved_exposure_delta default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'engine_build', 'text', 'reconciliation_replay_estimate.engine_build is text');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'engine_build', 'reconciliation_replay_estimate.engine_build is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'engine_build'),
+  NULL,
+  'reconciliation_replay_estimate.engine_build default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'draft_overrides_fingerprint', 'text', 'reconciliation_replay_estimate.draft_overrides_fingerprint is text');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'draft_overrides_fingerprint', 'reconciliation_replay_estimate.draft_overrides_fingerprint is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'draft_overrides_fingerprint'),
+  NULL,
+  'reconciliation_replay_estimate.draft_overrides_fingerprint default'
+);
+SELECT col_type_is('public', 'reconciliation_replay_estimate', 'computed_at', 'timestamp with time zone', 'reconciliation_replay_estimate.computed_at is timestamp with time zone');
+SELECT col_not_null('public', 'reconciliation_replay_estimate', 'computed_at', 'reconciliation_replay_estimate.computed_at is NOT NULL');
+SELECT is(
+  (SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d
+     JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+    WHERE d.adrelid = 'public.reconciliation_replay_estimate'::regclass AND a.attname = 'computed_at'),
+  $dflt$now()$dflt$,
+  'reconciliation_replay_estimate.computed_at default'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(con.conname || ' => ' || pg_get_constraintdef(con.oid), E'\n' ORDER BY con.conname), '')
+     FROM pg_constraint con
+    WHERE con.conrelid = 'public.reconciliation_replay_estimate'::regclass AND con.contype IN ('c', 'u', 'x')),
+  $chk$$chk$,
+  'reconciliation_replay_estimate check/unique/exclusion constraints'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(p.grantee || ' => ' || p.privs, E'\n' ORDER BY p.grantee), '')
+     FROM (
+       SELECT grantee, string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type) AS privs
+         FROM information_schema.table_privileges
+        WHERE table_schema = 'public' AND table_name = 'reconciliation_replay_estimate'
+          AND grantee <> (SELECT rolname FROM pg_roles WHERE oid = (SELECT relowner FROM pg_class WHERE relname = 'reconciliation_replay_estimate' AND relnamespace = 'public'::regnamespace))
+        GROUP BY grantee
+     ) p),
+  $grants$app_user => DELETE,INSERT,SELECT,UPDATE
+recon_app_runtime => DELETE,INSERT,SELECT,UPDATE$grants$,
+  'reconciliation_replay_estimate grants'
+);
+SELECT is(
+  (SELECT COALESCE(string_agg(policyname || ' => cmd=' || cmd || ' roles=' || array_to_string(roles, ',') || ' using=' || COALESCE(qual, '') || ' check=' || COALESCE(with_check, ''), E'\n' ORDER BY policyname), '')
+     FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'reconciliation_replay_estimate'),
+  $policy$reconciliation_replay_estimate_tenant_isolation => cmd=ALL roles=public using=(organization_id = (current_setting('app.current_organization_id'::text, true))::uuid) check=$policy$,
+  'reconciliation_replay_estimate row-level security policies'
+);
+SELECT triggers_are('public', 'reconciliation_replay_estimate', ARRAY[]::name[], 'reconciliation_replay_estimate has exactly the expected triggers');
 SELECT columns_are('public', 'reconciliation_review_decision', ARRAY['id', 'job_id', 'target_type', 'target_id', 'outcome', 'final_category', 'notes', 'reviewer_id', 'reviewer_name', 'record_version', 'created_at', 'updated_at', 'organization_id']::name[], 'reconciliation_review_decision has exactly the expected columns');
 SELECT col_is_pk('public', 'reconciliation_review_decision', ARRAY['id']::name[], 'reconciliation_review_decision primary key');
 SELECT indexes_are('public', 'reconciliation_review_decision', ARRAY['reconciliation_review_decision_job_created_idx', 'reconciliation_review_decision_job_id_target_type_target_id_key', 'reconciliation_review_decision_job_idx', 'reconciliation_review_decision_organization_idx', 'reconciliation_review_decision_pkey']::name[], 'reconciliation_review_decision has exactly the expected indexes');
@@ -7760,6 +7886,9 @@ SELECT fk_ok('public', 'reconciliation_raw_row', ARRAY['import_batch_id']::name[
 SELECT fk_ok('public', 'reconciliation_raw_row', ARRAY['job_id']::name[], 'public', 'reconciliation_job', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_raw_row', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_raw_row', ARRAY['source_file_id']::name[], 'public', 'reconciliation_source_file', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_replay_estimate', ARRAY['matching_config_version_id']::name[], 'public', 'reconciliation_matching_config_version', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_replay_estimate', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
+SELECT fk_ok('public', 'reconciliation_replay_estimate', ARRAY['reconciliation_run_id']::name[], 'public', 'reconciliation_run', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_review_decision', ARRAY['job_id']::name[], 'public', 'reconciliation_job', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_review_decision', ARRAY['organization_id']::name[], 'public', 'reconciliation_organization', ARRAY['id']::name[]);
 SELECT fk_ok('public', 'reconciliation_review_observation', ARRAY['job_id']::name[], 'public', 'reconciliation_job', ARRAY['id']::name[]);
