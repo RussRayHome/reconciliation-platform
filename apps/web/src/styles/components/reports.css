@@ -89,4 +89,18 @@
     gap: 1rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  /* 8a (#450): the export is provisional while exceptions are open. The severity-medium family
+     rather than --negative: nothing has gone wrong, the run is simply not finished, and an error
+     colour would overstate that as much as silence understates it. (There is no --warning token
+     in this palette; medium severity is what it has.) */
+  .export-provisional {
+    margin: 0;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--severity-medium-soft-border);
+    border-radius: var(--radius-control);
+    background: var(--severity-medium-soft);
+    color: var(--text-secondary);
+    font-size: var(--font-meta);
+  }
 }
