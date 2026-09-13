@@ -3,11 +3,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 
 import type { MappingProfileDetail } from '@recon/domain';
 
 import * as api from '../lib/api';
 import { MappingProfilesScreen } from './MappingProfilesScreen';
+import { routePaths } from '../routes/routePaths';
+
+// The screen carries the 9a-9d tab strip, which reads the current route -- so these renders need a
+// router. Entered at the profiles route so the Profiles tab is the selected one, matching what an
+// operator on this screen actually sees.
+const withRouter = (node: React.ReactNode) => (
+  <MemoryRouter initialEntries={[routePaths.mappingProfiles]}>{node}</MemoryRouter>
+);
 
 afterEach(() => {
   cleanup();
@@ -62,7 +71,7 @@ const renderScreen = async (
   if (found) {
     vi.spyOn(api, 'getMappingProfileDetailRequest').mockResolvedValue(found);
   }
-  render(<MappingProfilesScreen canManage={canManage} />);
+  render(withRouter(<MappingProfilesScreen canManage={canManage} />));
   if (names.length > 0) await screen.findByRole('heading', { name: names[0]! });
 };
 
@@ -158,7 +167,7 @@ describe('MappingProfilesScreen (9a, #450)', () => {
 
   it('surfaces a load failure instead of rendering as empty', async () => {
     vi.spyOn(api, 'getMappingProfilesRequest').mockRejectedValue(new Error('database unavailable'));
-    render(<MappingProfilesScreen canManage />);
+    render(withRouter(<MappingProfilesScreen canManage />));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('database unavailable');
   });

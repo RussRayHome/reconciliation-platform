@@ -97,6 +97,8 @@ import { ImportUploadCard } from './components/ImportUploadCard';
 import { ImportValidationFailureView } from './components/ImportValidationFailure';
 import { BankAccountsScreen } from './components/BankAccountsScreen';
 import { MappingProfilesScreen } from './components/MappingProfilesScreen';
+import { MappingVersionsScreen } from './components/MappingVersionsScreen';
+import { MappingHistoryScreen } from './components/MappingHistoryScreen';
 import {
   BANK_TEMPLATE_URL,
   BANK_TEMPLATE_XLSX_URL,
@@ -1914,24 +1916,8 @@ function ReconciliationApp({
                   )
                 }
               />
-              <Route
-                path={routePaths.mappingHistory}
-                element={
-                  <ComingSoonPage
-                    title="Mapping History"
-                    description="A history of past mapping profile changes is coming soon."
-                  />
-                }
-              />
-              <Route
-                path={routePaths.mappingVersions}
-                element={
-                  <ComingSoonPage
-                    title="Mapping Profile Versions"
-                    description="Depends on the Mapping Profiles screen itself, which isn't built yet -- coming soon."
-                  />
-                }
-              />
+              <Route path={routePaths.mappingHistory} element={<MappingHistoryScreen />} />
+              <Route path={routePaths.mappingVersions} element={<MappingVersionsScreen />} />
               <Route path={routePaths.mappingRulesVersions} element={<VersionsPage />} />
               <Route
                 path={routePaths.approvals}
