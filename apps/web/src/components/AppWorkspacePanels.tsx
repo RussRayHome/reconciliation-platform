@@ -42,6 +42,7 @@ import {
 import { ExceptionTriage } from './ExceptionTriage';
 import { SemanticIcon } from './SemanticIcon';
 import { describeConfidence, groupByConfidence } from '../lib/matchConfidenceBands';
+import { openExceptions } from '../lib/openExceptions';
 
 /** R2 V2: one `status` field instead of two booleans -- `isComplete`/`isCurrent` couldn't express
  * a terminal failure (a failed run would sit at `isCurrent: true` forever) or a queued run.
@@ -1125,6 +1126,34 @@ export function ReviewSection({
 }
 
 /** Panel that renders the Export stage: workbook and JSON outputs plus a close summary. */
+/**
+ * Says so when the workbook is not final yet (UI-11, #450, screen 8a).
+ *
+ * An export taken while exceptions are still open is a snapshot of an unfinished reconciliation.
+ * The file itself looks identical to a final one — same sheets, same totals — so nothing about it
+ * tells a recipient which they are holding. That matters beyond tidiness: this is the artifact a
+ * reviewer files, sends on, or attaches to a close package, and an overstated one is worse than an
+ * obviously incomplete one.
+ *
+ * Absent, not zero: when nothing is open there is no banner at all, rather than a green "0 open"
+ * badge. The same rule the rail badges follow — a reassurance nobody asked for is noise, and it
+ * would dilute the notice that matters.
+ */
+function ProvisionalExportNotice({ run }: Readonly<{ run: RunData }>) {
+  const open = openExceptions(run.exceptions, run.reviewerDecisions ?? []);
+  if (open.length === 0) {
+    return null;
+  }
+
+  return (
+    <p className="export-provisional" role="status">
+      <strong>Provisional.</strong> {open.length}{' '}
+      {open.length === 1 ? 'exception is' : 'exceptions are'} still open, so these figures can still
+      change. The workbook exports the run as it stands now, not a closed period.
+    </p>
+  );
+}
+
 export function CloseExportSection({
   run,
   isHydrating,
@@ -1150,6 +1179,7 @@ export function CloseExportSection({
           <span>{formatCurrency(run.summary.unresolvedExposure)} exposure</span>
           <span>{run.sourceFiles.map((item) => item.fileName).join(' + ')}</span>
         </div>
+        <ProvisionalExportNotice run={run} />
         <ExportArtifactsContent
           run={run}
           onDownloadWorkbook={onDownloadWorkbook}

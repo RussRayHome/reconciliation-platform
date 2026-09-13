@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { MatchResult, ReconciliationRunReport, ReviewerDecision } from '@recon/domain';
-import { ReviewSection } from './AppWorkspacePanels';
+import { CloseExportSection, ReviewSection } from './AppWorkspacePanels';
 import userEvent from '@testing-library/user-event';
 
 const buildProbableMatches = (count: number): MatchResult[] =>
@@ -404,5 +404,73 @@ describe('Verdict module Prior-period comparison (Unreconciled Item Roll-Forward
     expect(screen.getByText('February 2026', { exact: false })).toBeInTheDocument();
     expect(screen.getByText(/1 item still open/i)).toBeInTheDocument();
     expect(screen.getByText(/2 items cleared/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * 8a's provisional notice (#450). An export taken while exceptions are open is a snapshot of an
+ * unfinished reconciliation, and the file itself looks identical to a final one -- same sheets,
+ * same totals. Nothing about the artifact tells a recipient which they are holding, so the screen
+ * has to.
+ */
+describe('provisional export notice (UI-11, #450)', () => {
+  const renderExport = (over: Partial<ReconciliationRunReport> = {}) =>
+    render(
+      <CloseExportSection
+        run={{ ...buildRun(0), ...over }}
+        isHydrating={false}
+        loadError={null}
+        onDownloadWorkbook={() => {}}
+        onExportJson={() => {}}
+        onGoToSetup={() => {}}
+      />,
+    );
+
+  const exceptionItem = (id: string) => ({ id }) as ReconciliationRunReport['exceptions'][number];
+  const decisionFor = (targetId: string, outcome: string) =>
+    ({ id: `d-${targetId}`, targetId, targetType: 'ExceptionItem', outcome }) as ReviewerDecision;
+
+  it('says the export is provisional while an exception is open', () => {
+    renderExport({ exceptions: [exceptionItem('e1')], reviewerDecisions: [] });
+
+    expect(screen.getByText(/Provisional/)).toBeInTheDocument();
+    expect(screen.getByText(/still open, so these figures can still change/)).toBeInTheDocument();
+  });
+
+  // Absent, not zero -- the same rule the rail badges follow. A green "0 open" reassurance nobody
+  // asked for is noise, and it would dilute the notice that matters.
+  it('says nothing at all once every exception is closed', () => {
+    renderExport({
+      exceptions: [exceptionItem('e1')],
+      reviewerDecisions: [decisionFor('e1', 'ConfirmedException')],
+    });
+
+    expect(screen.queryByText(/Provisional/)).toBeNull();
+  });
+
+  // "Needs research" is not a resolution: someone looked and could not decide, so the break is
+  // still unexplained and the export is still provisional.
+  it('stays provisional when the only decision is needs-research', () => {
+    renderExport({
+      exceptions: [exceptionItem('e1')],
+      reviewerDecisions: [decisionFor('e1', 'ResearchException')],
+    });
+
+    expect(screen.getByText(/Provisional/)).toBeInTheDocument();
+  });
+
+  it('counts only what is still open, not every exception', () => {
+    renderExport({
+      exceptions: [exceptionItem('e1'), exceptionItem('e2'), exceptionItem('e3')],
+      reviewerDecisions: [decisionFor('e1', 'ConfirmedException')],
+    });
+
+    expect(screen.getByText(/2 exceptions are/)).toBeInTheDocument();
+  });
+
+  it('reads singular for one open exception', () => {
+    renderExport({ exceptions: [exceptionItem('e1')], reviewerDecisions: [] });
+
+    expect(screen.getByText(/1 exception is/)).toBeInTheDocument();
   });
 });
