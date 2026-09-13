@@ -1127,6 +1127,84 @@ export const createRuleVersionDraftRequest = async (
 };
 
 /** Publishes a draft matching-config version, superseding the previous active version. Admin-only. */
+/** A closed period the approver may replay a draft against (ADR-0018, #533). */
+export interface ReplayablePeriodItem {
+  runId: string;
+  matchingJobId: string;
+  label: string;
+  accountIdentifier: string | null;
+  frequency: string;
+  periodYear: number;
+  periodMonth: number | null;
+  closedAt: string | null;
+  /** Whether an estimate is already stored, so the screen can switch instantly rather than wait. */
+  hasEstimate: boolean;
+}
+
+/**
+ * What a draft would have produced against one closed period.
+ *
+ * Deltas are **draft minus active**: "12 fewer exceptions" is `-12`. The exposure stays a string
+ * all the way to the screen -- it is money an approver signs against, and a JS number cannot hold
+ * the column's NUMERIC(20,4) faithfully.
+ */
+export interface ReplayEstimateItem {
+  matchingConfigVersionId: string;
+  replayedRunId: string;
+  exceptionsDelta: number;
+  probableMatchesDelta: number;
+  unresolvedExposureDelta: string;
+  engineBuild: string;
+  computedAt: string;
+}
+
+/** Raised when the replay itself cannot happen, as distinct from happening and finding no
+ * difference. The screen states the reason rather than rendering zeros. */
+export class ReplayUnavailableError extends Error {
+  /**
+   * @param message Operator-facing reason, shown on the panel rather than logged.
+   * @param reason The API's machine-readable case (`no-draft`, `not-replayable`, `no-records`), so
+   * the screen can branch without parsing the message.
+   */
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+    this.name = 'ReplayUnavailableError';
+  }
+}
+
+export const listReplayPeriodsRequest = async (
+  versionId: string,
+): Promise<ReplayablePeriodItem[]> => {
+  const response = await apiFetch(
+    `/api/rules/versions/${encodeURIComponent(versionId)}/replay/periods`,
+  );
+  const parsed = await parseResponse<{ periods: ReplayablePeriodItem[] }>(response);
+  return parsed.periods;
+};
+
+export const getReplayEstimateRequest = async (
+  versionId: string,
+  runId: string,
+): Promise<ReplayEstimateItem> => {
+  const response = await apiFetch(
+    `/api/rules/versions/${encodeURIComponent(versionId)}/replay?runId=${encodeURIComponent(runId)}`,
+  );
+  if (response.status === 422) {
+    // 422 is a real answer, not a transport failure: the version and period both exist and the
+    // replay cannot run. Surfaced as its own error so the panel can state the reason.
+    const body = (await response.json()) as { message?: string; reason?: string };
+    throw new ReplayUnavailableError(
+      body.message ?? 'This period cannot be replayed.',
+      body.reason ?? 'unknown',
+    );
+  }
+  const parsed = await parseResponse<{ estimate: ReplayEstimateItem }>(response);
+  return parsed.estimate;
+};
+
 export const publishRuleVersionRequest = async (
   versionId: string,
 ): Promise<MatchingConfigVersion> => {
