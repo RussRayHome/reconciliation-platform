@@ -236,8 +236,8 @@ Validates migration coverage and DB safety before schema-affecting changes are p
 Coverage includes:
 
 - Docker/env resolution and postgres readiness
-- migration tracking table presence
-- schema patch parity against `packages/persistence/src/schema.ts`
+- migration tracking table presence (Liquibase's `databasechangelog`)
+- changeset coverage: every id declared in `packages/persistence/liquibase/changesets/` is present in `databasechangelog` (check DB6)
 - required table/index/constraint sweep
 - pgAudit extension verification
 - expected database user existence and role attribute check
@@ -294,7 +294,6 @@ Important keys in `.env.docker`:
 - `NGINX_UI_HTTP_PORT`
 - `API_DATABASE_URL`
 - `RECON_PERSISTENCE_BACKEND`
-- `RUN_DB_MIGRATIONS_ON_BOOT`
 
 Always validate env before deploy:
 

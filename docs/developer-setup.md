@@ -304,8 +304,9 @@ Common flags:
 
 - `API_DATABASE_URL=postgresql://...@postgres:5432/...`
 - `ENABLE_PGAUDIT=true` (dev/stage), `false` (production/default)
-- `RUN_DB_MIGRATIONS_ON_BOOT=false`
 - `RECONCILIATION_RUN_STORE_PATH=/var/lib/reconciliation/latest-reconciliation-run.json`
+
+Migrations are not an API setting: the `migrate` compose service applies the Liquibase changesets before the API starts (`npm run docker:migrate` runs the same step by hand).
 
 ## 9. Troubleshooting
 
