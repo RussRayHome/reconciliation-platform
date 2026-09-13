@@ -96,6 +96,7 @@ import { buildTransferCardProps } from './lib/importUploadProgress';
 import { ImportUploadCard } from './components/ImportUploadCard';
 import { ImportValidationFailureView } from './components/ImportValidationFailure';
 import { BankAccountsScreen } from './components/BankAccountsScreen';
+import { MappingProfilesScreen } from './components/MappingProfilesScreen';
 import {
   BANK_TEMPLATE_URL,
   BANK_TEMPLATE_XLSX_URL,
@@ -1859,10 +1860,7 @@ function ReconciliationApp({
               <Route
                 path={routePaths.mappingProfiles}
                 element={
-                  <ComingSoonPage
-                    title="Mapping Profiles"
-                    description="Browsing and managing saved mapping profiles is coming soon."
-                  />
+                  <MappingProfilesScreen canManage={rolePermissions.canAdjustSliderDefaults} />
                 }
               />
               <Route

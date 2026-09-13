@@ -118,8 +118,12 @@ const EXPECTED_ABSENT_FROM_RAIL: Record<string, string> = {
   signup: 'pre-auth screen',
   support: 'pre-auth screen',
   approvalsPolicy: 'Reached via the Approvals page header\'s "Approval policy" button, not the rail',
-  // N2: these four routes all render ComingSoonPage -- the rail entry is removed, the route stays.
-  mappingProfiles: 'N2: renders ComingSoonPage; rail entry removed, route stays',
+  // N2: these routes have no rail entry; the route stays. Three still render ComingSoonPage.
+  // mappingProfiles no longer does -- 9a (#450) built the registry -- but it stays absent from the
+  // rail for N2's own reason: Mapping is a rail LEAF pointing at the canvas, and a disclosure for
+  // the mapping family was built and reverted (it broke rail identity and pushed the account row
+  // off the 900px card). The four mapping screens are in-screen tabs, not rail children.
+  mappingProfiles: '9a registry (#450); absent from the rail by N2 -- Mapping is a leaf, not a disclosure',
   mappingVersions: 'N2: renders ComingSoonPage; rail entry removed, route stays',
   mappingHistory: 'N2: renders ComingSoonPage; rail entry removed, route stays',
   documentationRunBook: 'N2: renders ComingSoonPage; rail entry removed, route stays',
