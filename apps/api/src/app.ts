@@ -63,7 +63,11 @@ import {
   PostgresImportRunStore,
   PostgresImportValidationStore,
   PostgresOpenItemStore,
+  getReplayEstimate,
+  listReplayablePeriods,
+  listReplayEstimatesForVersion,
   publishMatchingConfigVersion,
+  upsertReplayEstimate,
   recordApprovalDecision,
   recordApprovalRequestDecision,
   recordLoginEvent,
@@ -201,6 +205,11 @@ import {
 import { InMemoryRunRepository } from './services/runRepository';
 import cors from 'cors';
 import { executeReconciliationFromNormalized } from './services/reconciliationService';
+import {
+  computeReplayEstimate,
+  fingerprintOverrides,
+  ReplayNotPossibleError,
+} from './services/replayService';
 import type { QueueProgressMessage, QueueStepReporter } from './services/queueProgress';
 import { defaultReconciliationConfig } from '@recon/config';
 import { proposeAliasFromConfirmedMatch } from './services/payeeAliasProposalService';
@@ -4806,6 +4815,101 @@ export const createApp = (
         error.message === 'publishMatchingConfigVersion: no matching DRAFT version to publish'
       ) {
         response.status(404).json({ message: 'No matching draft version to publish.' });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * The closed periods a draft can be replayed against (ADR-0018, #532).
+   *
+   * Only periods that can ACTUALLY be replayed are listed -- the store requires retained canonical
+   * rows -- so an approver is never offered one that would then fail.
+   */
+  app.get('/api/rules/versions/:id/replay/periods', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'RULE_VERSION_REPLAY_PERIODS'))) return;
+    if (!rolePermissionsByRole[request.auth!.role].canAdjustSliderDefaults) {
+      response.status(403).json({ message: 'Only admins can replay a matching-config version.' });
+      return;
+    }
+
+    try {
+      const { organizationId } = request.auth!;
+      const periods = await listReplayablePeriods(pool!, organizationId);
+      const estimates = await listReplayEstimatesForVersion(pool!, organizationId, request.params.id);
+      const computed = new Set(estimates.map((estimate) => estimate.replayedRunId));
+
+      response.json({
+        // Absent, not zero: a caller distinguishes "no closed period yet" from "replayed, no
+        // difference" by the list being empty, never by three zero deltas.
+        periods: periods.map((period) => ({ ...period, hasEstimate: computed.has(period.runId) })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * The estimate for one (draft, period), computing and storing it when absent (ADR-0018, #532).
+   *
+   * A stored estimate whose fingerprint no longer matches the draft's current overrides is not
+   * returned -- it is recomputed. A draft is one mutable row, so an estimate can describe overrides
+   * that no longer exist, and showing those numbers would misrepresent what is being approved.
+   */
+  app.get('/api/rules/versions/:id/replay', async (request, response, next) => {
+    if (!(await requireDatabase(response, 'RULE_VERSION_REPLAY'))) return;
+    if (!rolePermissionsByRole[request.auth!.role].canAdjustSliderDefaults) {
+      response.status(403).json({ message: 'Only admins can replay a matching-config version.' });
+      return;
+    }
+
+    try {
+      const { organizationId } = request.auth!;
+      const versionId = request.params.id;
+      const runId = typeof request.query.runId === 'string' ? request.query.runId : undefined;
+      if (!runId) {
+        response.status(400).json({ message: 'A runId query parameter is required.' });
+        return;
+      }
+
+      const versions = await listMatchingConfigVersions(pool!, organizationId);
+      const version = versions.find((candidate) => candidate.id === versionId);
+      if (!version) {
+        response.status(404).json({ message: 'Matching-config version not found.' });
+        return;
+      }
+
+      const currentFingerprint = fingerprintOverrides(version.varianceOverrides ?? {});
+      const cached = await getReplayEstimate(pool!, organizationId, versionId, runId);
+      if (cached && cached.draftOverridesFingerprint === currentFingerprint) {
+        response.json({ estimate: cached, recomputed: false });
+        return;
+      }
+
+      const deltas = await computeReplayEstimate({
+        pool: pool!,
+        organizationId,
+        draftVersionId: versionId,
+        replayedRunId: runId,
+        correlationId: request.header('x-correlation-id') ?? undefined,
+      });
+
+      const estimate = await upsertReplayEstimate(pool!, {
+        id: cached?.id ?? randomUUID(),
+        organizationId,
+        matchingConfigVersionId: versionId,
+        replayedRunId: runId,
+        ...deltas,
+      });
+
+      response.json({ estimate, recomputed: true });
+    } catch (error) {
+      if (error instanceof ReplayNotPossibleError) {
+        // 422, not 404: the version and the period both exist, and the request was well formed --
+        // what cannot happen is the replay. The reason travels so the screen can state it rather
+        // than render three zeros, which would read as "this change does nothing".
+        response.status(422).json({ message: error.message, reason: error.reason });
         return;
       }
       next(error);

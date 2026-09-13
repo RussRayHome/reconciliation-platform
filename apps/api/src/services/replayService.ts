@@ -3,8 +3,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { MatchingConfigVersion, SourceFile } from '@recon/domain';
 import {
+  getReplayablePeriod,
   listMatchingConfigVersions,
-  listNormalizedTransactionsForRun,
+  listNormalizedTransactionsForJob,
 } from '@recon/persistence';
 
 import { executeReconciliationFromNormalized } from './reconciliationService';
@@ -33,12 +34,13 @@ export interface ReplayDeltas {
 export class ReplayNotPossibleError extends Error {
   /**
    * @param message Operator-facing reason, shown rather than logged.
-   * @param reason Which case this is, so a caller can distinguish a missing draft from a period
-   * with no retained rows without parsing the message.
+   * @param reason Which case this is, so a caller can distinguish a missing draft, a period that
+   * is not replayable at all, and a period that is replayable but has no retained rows -- without
+   * parsing the message.
    */
   constructor(
     message: string,
-    readonly reason: 'no-draft' | 'no-records',
+    readonly reason: 'no-draft' | 'no-records' | 'not-replayable',
   ) {
     super(message);
     this.name = 'ReplayNotPossibleError';
@@ -119,10 +121,23 @@ export const computeReplayEstimate = async (input: {
   const activeOverrides = active?.varianceOverrides ?? {};
   const draftOverrides = draft.varianceOverrides ?? {};
 
-  const normalizedTransactions = await listNormalizedTransactionsForRun(
+  // The period an approver picks is a RUN; canonical rows key on the MATCHING JOB. Resolving the
+  // link here rather than assuming they are the same id is load-bearing: passing a run id straight
+  // to the row query returns zero rows, which is indistinguishable from a period whose rows were
+  // never retained -- so the bug would have surfaced as "nothing to replay against" on every real
+  // closed period, and looked like missing data rather than a wrong key.
+  const period = await getReplayablePeriod(input.pool, input.organizationId, input.replayedRunId);
+  if (!period) {
+    throw new ReplayNotPossibleError(
+      'That period cannot be replayed: it is not closed, has no matching job, or its rows are no longer retained.',
+      'not-replayable',
+    );
+  }
+
+  const normalizedTransactions = await listNormalizedTransactionsForJob(
     input.pool,
     input.organizationId,
-    input.replayedRunId,
+    period.matchingJobId,
   );
   if (normalizedTransactions.length === 0) {
     // Distinct from "no difference". A period with no retained rows cannot be replayed at all, and

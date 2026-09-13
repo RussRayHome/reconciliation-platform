@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  getReplayablePeriod: vi.fn(),
   listMatchingConfigVersions: vi.fn(),
-  listNormalizedTransactionsForRun: vi.fn(),
+  listNormalizedTransactionsForJob: vi.fn(),
   executeReconciliationFromNormalized: vi.fn(),
 }));
 
 vi.mock('@recon/persistence', () => ({
+  getReplayablePeriod: mocks.getReplayablePeriod,
   listMatchingConfigVersions: mocks.listMatchingConfigVersions,
-  listNormalizedTransactionsForRun: mocks.listNormalizedTransactionsForRun,
+  listNormalizedTransactionsForJob: mocks.listNormalizedTransactionsForJob,
 }));
 
 vi.mock('../src/services/reconciliationService', () => ({
@@ -64,15 +66,26 @@ const callWith = () =>
   });
 
 beforeEach(() => {
+  mocks.getReplayablePeriod.mockReset();
   mocks.listMatchingConfigVersions.mockReset();
-  mocks.listNormalizedTransactionsForRun.mockReset();
+  mocks.listNormalizedTransactionsForJob.mockReset();
   mocks.executeReconciliationFromNormalized.mockReset();
 
   mocks.listMatchingConfigVersions.mockResolvedValue([
     version(),
     version({ id: 'active-1', status: 'ACTIVE', varianceOverrides: { amountTolerance: 0.01 } }),
   ]);
-  mocks.listNormalizedTransactionsForRun.mockResolvedValue([{ id: 't-1' }, { id: 't-2' }]);
+  mocks.getReplayablePeriod.mockResolvedValue({
+    runId: 'run-1',
+    matchingJobId: 'job-1',
+    label: 'August 2026',
+    accountIdentifier: 'OPERATING-001',
+    frequency: 'MONTHLY',
+    periodYear: 2026,
+    periodMonth: 8,
+    closedAt: '2026-09-03T00:00:00.000Z',
+  });
+  mocks.listNormalizedTransactionsForJob.mockResolvedValue([{ id: 't-1' }, { id: 't-2' }]);
 });
 
 afterEach(() => {
@@ -141,9 +154,34 @@ describe('computeReplayEstimate', () => {
   // Not zeros: a period with nothing retained cannot be replayed at all, and three zeros would
   // read as "this change does nothing".
   it('refuses a period with no retained rows rather than reporting zeros', async () => {
-    mocks.listNormalizedTransactionsForRun.mockResolvedValue([]);
+    mocks.listNormalizedTransactionsForJob.mockResolvedValue([]);
 
     await expect(callWith()).rejects.toBeInstanceOf(ReplayNotPossibleError);
+    expect(mocks.executeReconciliationFromNormalized).not.toHaveBeenCalled();
+  });
+
+
+  // The defect this resolution exists for: the period an approver picks is a RUN, while canonical
+  // rows key on the MATCHING JOB. Passing the run id straight through returns zero rows, which is
+  // indistinguishable from a period whose rows were never retained -- so a wrong key would have
+  // surfaced as "nothing to replay against" on every real closed period and looked like missing
+  // data.
+  it('reads rows by the matching job id, not the run id it was given', async () => {
+    mocks.executeReconciliationFromNormalized.mockResolvedValue(runResult(1, 1, 1));
+
+    await callWith();
+
+    expect(mocks.listNormalizedTransactionsForJob).toHaveBeenCalledWith(
+      expect.anything(),
+      'org-1',
+      'job-1',
+    );
+  });
+
+  it('refuses a period that is not closed, has no matching job, or has aged out', async () => {
+    mocks.getReplayablePeriod.mockResolvedValue(null);
+
+    await expect(callWith()).rejects.toMatchObject({ reason: 'not-replayable' });
     expect(mocks.executeReconciliationFromNormalized).not.toHaveBeenCalled();
   });
 

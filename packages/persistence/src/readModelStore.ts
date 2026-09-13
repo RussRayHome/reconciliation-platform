@@ -1204,6 +1204,95 @@ type MatchingConfigVersionRow = {
   rejected_at: string | null;
 };
 
+/**
+ * A closed period an approver may replay a draft rule version against (ADR-0018, #532).
+ *
+ * `matchingJobId` is carried deliberately rather than derived by the caller: canonical rows key on
+ * the matching job while the period an approver picks is a run, and conflating the two returns zero
+ * rows -- indistinguishable from a period whose rows were never retained.
+ */
+export interface ReplayablePeriod {
+  runId: string;
+  matchingJobId: string;
+  label: string;
+  accountIdentifier: string | null;
+  frequency: string;
+  periodYear: number;
+  periodMonth: number | null;
+  closedAt: string | null;
+}
+
+const REPLAYABLE_PERIOD_SELECT = `
+  SELECT r.id, r.matching_job_id, r.label, r.account_identifier, r.frequency,
+         r.period_year, r.period_month, r.closed_at
+    FROM reconciliation_run r
+   WHERE r.organization_id = $1
+     AND r.status = 'CLOSED'
+     AND r.matching_job_id IS NOT NULL
+     AND EXISTS (
+           SELECT 1 FROM reconciliation_canonical_row c
+            WHERE c.organization_id = r.organization_id AND c.job_id = r.matching_job_id
+         )`;
+
+interface ReplayablePeriodRow {
+  id: string;
+  matching_job_id: string;
+  label: string;
+  account_identifier: string | null;
+  frequency: string;
+  period_year: number;
+  period_month: number | null;
+  closed_at: string | null;
+}
+
+const mapReplayablePeriod = (row: ReplayablePeriodRow): ReplayablePeriod => ({
+  runId: row.id,
+  matchingJobId: row.matching_job_id,
+  label: row.label,
+  accountIdentifier: row.account_identifier,
+  frequency: row.frequency,
+  periodYear: row.period_year,
+  periodMonth: row.period_month,
+  closedAt: row.closed_at,
+});
+
+/**
+ * The closed periods this organization can replay against, newest close first.
+ *
+ * Only periods that can ACTUALLY be replayed are listed: the EXISTS clause requires retained
+ * canonical rows, so an approver is never offered a period that would then fail. A period whose
+ * rows have aged out is absent from the list rather than present and broken.
+ */
+export const listReplayablePeriods = async (
+  pool: Pool,
+  organizationId: string,
+): Promise<ReplayablePeriod[]> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ReplayablePeriodRow>(
+      `${REPLAYABLE_PERIOD_SELECT} ORDER BY r.closed_at DESC NULLS LAST, r.id`,
+      [organizationId],
+    );
+    return result.rows.map(mapReplayablePeriod);
+  });
+};
+
+/** One replayable period by its run id, or null when it is not closed, not linked to a matching
+ * job, or has no retained rows -- the three ways a period can exist and still not be replayable. */
+export const getReplayablePeriod = async (
+  pool: Pool,
+  organizationId: string,
+  runId: string,
+): Promise<ReplayablePeriod | null> => {
+  return runInTenantScope(pool, organizationId, async (client) => {
+    const result = await client.query<ReplayablePeriodRow>(
+      `${REPLAYABLE_PERIOD_SELECT} AND r.id = $2`,
+      [organizationId, runId],
+    );
+    const row = result.rows[0];
+    return row ? mapReplayablePeriod(row) : null;
+  });
+};
+
 /** One `reconciliation_canonical_row`, as node-postgres returns it. */
 interface CanonicalRowRecord {
   id: string;
@@ -1258,11 +1347,17 @@ interface CanonicalRowRecord {
  *
  * This table is written by `persistNormalizedRows` from the `NormalizedTransaction[]` the engine
  * was actually given, so it round-trips rather than approximates.
+ *
+ * **Keyed by the MATCHING JOB, not the reconciliation run.** `reconciliationService` passes its own
+ * `runId` through as `jobId` (see `jobId: runId` there), so `job_id` here is
+ * `reconciliation_run.matching_job_id`. A caller holding a closed period's run id must resolve that
+ * column first -- passing the run id straight in returns zero rows, which reads identically to a
+ * period whose rows were never retained.
  */
-export const listNormalizedTransactionsForRun = async (
+export const listNormalizedTransactionsForJob = async (
   pool: Pool,
   organizationId: string,
-  runId: string,
+  matchingJobId: string,
 ): Promise<NormalizedTransaction[]> => {
   return runInTenantScope(pool, organizationId, async (client) => {
     const result = await client.query<CanonicalRowRecord>(
@@ -1276,7 +1371,7 @@ export const listNormalizedTransactionsForRun = async (
          FROM reconciliation_canonical_row
         WHERE organization_id = $1 AND job_id = $2
         ORDER BY line_number ASC, id ASC`,
-      [organizationId, runId],
+      [organizationId, matchingJobId],
     );
 
     const text = (value: string | null): string | undefined => value ?? undefined;
@@ -1285,7 +1380,7 @@ export const listNormalizedTransactionsForRun = async (
 
     return result.rows.map((row) => ({
       id: row.id,
-      runId,
+      runId: matchingJobId,
       rawRowId: row.raw_row_id,
       sourceFileId: row.source_file_id,
       source: row.source_system as NormalizedTransaction['source'],

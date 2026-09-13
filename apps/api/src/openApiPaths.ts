@@ -319,6 +319,28 @@ export const additionalOpenApiPaths: Record<string, unknown> = {
       },
     },
   }),
+  ...describe('/api/rules/versions/{id}/replay/periods', {
+    get: {
+      summary: 'List the closed periods this version can be replayed against',
+      description:
+        'Only periods that can actually be replayed are listed — closed, linked to a matching job, and still holding retained canonical rows — so an approver is never offered one that would then fail. An empty list means there is no closed period yet, which is a different statement from a replay that found no difference.',
+      responses: { 200: 'Replayable periods, newest close first', 403: FORBIDDEN },
+    },
+  }),
+  ...describe('/api/rules/versions/{id}/replay', {
+    get: {
+      summary: 'Fetch or compute the replay estimate for one closed period',
+      description:
+        'Returns the stored estimate for (version, runId), or computes and stores it. An estimate whose fingerprint no longer matches the draft’s current overrides is recomputed rather than returned — a draft is one mutable row, so a stale estimate would misrepresent what is being approved. 422 means the version and period both exist but the replay itself cannot happen; its reason distinguishes a missing draft, a period that is not replayable, and a period with no retained rows.',
+      responses: {
+        200: 'Estimate, with recomputed indicating whether it was just computed',
+        400: 'A runId query parameter is required',
+        403: FORBIDDEN,
+        404: 'Matching-config version not found',
+        422: 'The replay cannot be computed for this period',
+      },
+    },
+  }),
   ...describe('/api/rules/versions/{id}/publish', {
     post: {
       summary: 'Publish a draft matching-config version',
