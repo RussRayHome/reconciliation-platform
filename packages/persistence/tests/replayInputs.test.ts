@@ -3,7 +3,7 @@ import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 
 import type { NormalizedTransaction, RawTransactionRow, SourceFile } from '@recon/domain';
-import { PostgresReconciliationLifecycleStore, listNormalizedTransactionsForRun } from '../src';
+import { PostgresReconciliationLifecycleStore, listNormalizedTransactionsForJob } from '../src';
 import { createDatabaseFromTemplate } from './testHelpers/database';
 import type { TestDatabase } from './testHelpers/database';
 
@@ -12,7 +12,7 @@ import type { TestDatabase } from './testHelpers/database';
  *
  * To show an approver what a DRAFT rule version would have produced against a closed period, the
  * engine has to be handed exactly what that period matched on. This proves the round trip: what
- * `persistNormalizedRows` wrote is what `listNormalizedTransactionsForRun` returns, field for
+ * `persistNormalizedRows` wrote is what `listNormalizedTransactionsForJob` returns, field for
  * field -- because a replay rebuilt from a lossy projection would diverge from the original run for
  * reasons unrelated to the proposed rule, and every delta would be untrustworthy while looking
  * entirely plausible.
@@ -178,10 +178,10 @@ describe('Replay inputs (against the Liquibase-migrated database)', () => {
   it('round-trips every field the matching engine reads', async () => {
     const { runId, rows } = await seedRun();
 
-    const read = await listNormalizedTransactionsForRun(pool, organizationId, runId);
+    const read = await listNormalizedTransactionsForJob(pool, organizationId, runId);
 
     expect(read).toHaveLength(rows.length);
-    const first = read.find((row) => row.id === rows[0]!.id);
+    const first = read.find((row: NormalizedTransaction) => row.id === rows[0]!.id);
     expect(first).toBeDefined();
     expect(first).toMatchObject({
       checkNumber: rows[0]!.checkNumber,
@@ -202,8 +202,8 @@ describe('Replay inputs (against the Liquibase-migrated database)', () => {
   it('preserves the comparison and reference tokens the similarity rules use', async () => {
     const { runId, rows } = await seedRun();
 
-    const read = await listNormalizedTransactionsForRun(pool, organizationId, runId);
-    const first = read.find((row) => row.id === rows[0]!.id)!;
+    const read = await listNormalizedTransactionsForJob(pool, organizationId, runId);
+    const first = read.find((row: NormalizedTransaction) => row.id === rows[0]!.id)!;
 
     expect(first.normalizedComparisonTokens).toEqual(rows[0]!.normalizedComparisonTokens);
     expect(first.normalizedReferenceTokens).toEqual(rows[0]!.normalizedReferenceTokens);
@@ -214,20 +214,20 @@ describe('Replay inputs (against the Liquibase-migrated database)', () => {
     const first = await seedRun();
     const second = await seedRun();
 
-    const read = await listNormalizedTransactionsForRun(pool, organizationId, first.runId);
-    expect(read.map((row) => row.id).sort()).toEqual(first.rows.map((row) => row.id).sort());
+    const read = await listNormalizedTransactionsForJob(pool, organizationId, first.runId);
+    expect(read.map((row: NormalizedTransaction) => row.id).sort()).toEqual(first.rows.map((row) => row.id).sort());
 
     const other = await pool.query<{ id: string }>(
       "INSERT INTO reconciliation_organization (id, name) VALUES (gen_random_uuid(), 'Replay Inputs Other Org') RETURNING id",
     );
     expect(
-      await listNormalizedTransactionsForRun(pool, other.rows[0]!.id, second.runId),
+      await listNormalizedTransactionsForJob(pool, other.rows[0]!.id, second.runId),
     ).toEqual([]);
   });
 
   // Distinct from "no difference": a period with no retained rows cannot be replayed at all, and
   // the caller turns this into a stated reason rather than three zeros.
   it('returns an empty set for a run with no retained rows', async () => {
-    expect(await listNormalizedTransactionsForRun(pool, organizationId, randomUUID())).toEqual([]);
+    expect(await listNormalizedTransactionsForJob(pool, organizationId, randomUUID())).toEqual([]);
   });
 });

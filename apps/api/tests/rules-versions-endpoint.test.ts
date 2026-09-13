@@ -51,6 +51,8 @@ const createFakePool = (
     listRows: unknown[];
     insertErrorCode: string;
     approvalRequestRows: unknown[];
+    periodRows: unknown[];
+    estimateRows: unknown[];
   }> = {},
 ): Pool => {
   const clientQuery = (text: string, _params?: unknown[]) => {
@@ -99,6 +101,17 @@ const createFakePool = (
     }
     if (text.includes('SELECT') && text.includes('FROM reconciliation_approval_request')) {
       return Promise.resolve({ rows: overrides.approvalRequestRows ?? [] });
+    }
+    // Replay (ADR-0018, #532). Ordered before the generic reconciliation_run shapes because the
+    // periods query joins on retained canonical rows.
+    if (text.includes('FROM reconciliation_run r')) {
+      return Promise.resolve({ rows: overrides.periodRows ?? [] });
+    }
+    if (text.includes('FROM reconciliation_replay_estimate')) {
+      return Promise.resolve({ rows: overrides.estimateRows ?? [] });
+    }
+    if (text.includes('INSERT INTO reconciliation_replay_estimate')) {
+      return Promise.resolve({ rows: overrides.estimateRows ?? [] });
     }
     if (text === 'SELECT 1') {
       // error-handling-build-plan.md EH7: requireDatabase now probes liveness on every guarded
@@ -261,5 +274,84 @@ describe('POST /api/rules/versions/:id/publish', () => {
       .send({})
       .expect(ERROR_DEFINITIONS['RCN-DB-001'].httpStatus);
     expectNoPoolError(response.body, 'RULE_VERSION_PUBLISH');
+  });
+});
+
+const PERIOD_ROW = {
+  id: 'run-1',
+  matching_job_id: 'job-1',
+  label: 'August 2026',
+  account_identifier: 'OPERATING-001',
+  frequency: 'MONTHLY',
+  period_year: 2026,
+  period_month: 8,
+  closed_at: '2026-09-03T00:00:00.000Z',
+};
+
+describe('replay endpoints (ADR-0018, #532)', () => {
+  it('lists replayable periods and marks which already have an estimate', async () => {
+    const pool = createFakePool({
+      listRows: [DRAFT_ROW],
+      periodRows: [PERIOD_ROW],
+      estimateRows: [],
+    });
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    const response = await authedApp(app)
+      .get('/api/rules/versions/mcv-1/replay/periods')
+      .expect(200);
+
+    expect(response.body.periods).toHaveLength(1);
+    expect(response.body.periods[0]).toMatchObject({
+      runId: 'run-1',
+      // Carried so a caller never has to guess that canonical rows key on the matching job while
+      // the period it picked is a run.
+      matchingJobId: 'job-1',
+      label: 'August 2026',
+      hasEstimate: false,
+    });
+  });
+
+  // Absent, not zero: an organization with no closed period gets an empty list, which a screen
+  // states in words. Three zero deltas would read as "this change does nothing".
+  it('returns an empty list rather than a placeholder when nothing is closed', async () => {
+    const pool = createFakePool({ listRows: [DRAFT_ROW], periodRows: [] });
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    const response = await authedApp(app)
+      .get('/api/rules/versions/mcv-1/replay/periods')
+      .expect(200);
+
+    expect(response.body.periods).toEqual([]);
+  });
+
+  it('requires a runId', async () => {
+    const pool = createFakePool({ listRows: [DRAFT_ROW] });
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    const response = await authedApp(app).get('/api/rules/versions/mcv-1/replay').expect(400);
+    expect(response.body.message).toContain('runId');
+  });
+
+  it('404s for a version this organization does not have', async () => {
+    const pool = createFakePool({ listRows: [] });
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    await authedApp(app).get('/api/rules/versions/nope/replay?runId=run-1').expect(404);
+  });
+
+  // 422, not 404: the version and the period both exist and the request was well formed -- what
+  // cannot happen is the replay. The reason travels so the screen states it rather than rendering
+  // zeros.
+  it('reports 422 with a reason when the period cannot be replayed', async () => {
+    const pool = createFakePool({ listRows: [DRAFT_ROW], periodRows: [] });
+    const app = createApp(undefined, undefined, undefined, pool);
+
+    const response = await authedApp(app)
+      .get('/api/rules/versions/mcv-1/replay?runId=run-1')
+      .expect(422);
+
+    expect(response.body.reason).toBe('not-replayable');
+    expect(response.body.message).toBeTruthy();
   });
 });

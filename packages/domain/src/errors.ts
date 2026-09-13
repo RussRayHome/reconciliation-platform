@@ -113,6 +113,8 @@ export const OPERATIONS = {
   SAVED_VIEWS_CREATE: 'save this view',
   SAVED_VIEWS_UPDATE: 'update this saved view',
   RULE_VERSION_REJECT: 'reject this matching-config version',
+  RULE_VERSION_REPLAY_PERIODS: 'list the closed periods this version can be replayed against',
+  RULE_VERSION_REPLAY: 'replay this matching-config version against a closed period',
 } as const satisfies Record<string, string>;
 
 export type OperationCode = keyof typeof OPERATIONS;
