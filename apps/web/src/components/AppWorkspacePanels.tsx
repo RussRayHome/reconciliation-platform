@@ -18,6 +18,7 @@ import type { DecisionAction } from '../hooks/useReviewerDecisions';
 import type { PriorPeriodRollforward } from '../hooks/usePriorPeriodRollforward';
 import { formatCompactDate, formatCurrency, formatCurrencyWhole, formatShortDate } from '../lib/format';
 import { computeRuleVersionHeaderState, type RuleVersionHeaderState } from '../lib/ruleVersionState';
+import { ReplayEstimatePanel } from './ReplayEstimatePanel';
 import {
   deriveMetricStep,
   describeActiveFilters,
@@ -1304,6 +1305,13 @@ export function RuleVersionHeader({
             </button>
           ) : null}
         </div>
+      ) : null}
+
+      {/* ADR-0018 #533. Only while a draft is pending: this is the 2b approver moment, and the only
+          point where the numbers can still change a decision. The change applies next run onward
+          with no retro-matching, so the replay is the only view of its consequences anyone gets. */}
+      {state === 'draft-pending' && viewingVersion ? (
+        <ReplayEstimatePanel versionId={viewingVersion.id} />
       ) : null}
 
       {state === 'superseded' ? (
