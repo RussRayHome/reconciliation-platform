@@ -86,9 +86,10 @@ Shared fixtures: packages/test-fixtures
 
 ### `packages/persistence`
 
-- PostgreSQL migrations
-- Lifecycle write model store
-- Read model projections for run report, summary, exceptions, and reviewer decisions
+- PostgreSQL migrations (Liquibase changesets under `packages/persistence/liquibase/changesets/`)
+- Lifecycle write model store (`reconciliationLifecycleStore.ts`)
+- Query-side store (`readModelStore.ts`) that assembles the run report, summary, exceptions and reviewer decisions from the base tables; there is no projection step, and the module also carries the write paths for payee aliases, matching-config versions, mapping profiles, approvals and replay estimates
+- Per-aggregate stores on the same shape (`accountStore.ts`, `openItemStore.ts`, `importRunStore.ts`, `importValidationStore.ts`, `savedViewStore.ts`, `subledgerEntityStore.ts`), all tenant-scoped through `runInTenantScope`
 - Connection/pool configuration via environment
 
 ### `packages/domain`
@@ -137,11 +138,11 @@ When `RECON_PERSISTENCE_BACKEND=postgres` and DB connectivity are configured:
 - lifecycle stages and audit events are durable
 - read-model queries power run report, summary, exceptions, and decisions
 
-Database DDL and bootstrap assets are maintained under `database/postgresql/ddl`; the repository does not keep parallel MSSQL scaffolding.
+Schema changes are Liquibase formatted-SQL changesets under `packages/persistence/liquibase/changesets/`, applied by the one-shot `migrate` compose service before the API starts and locally by `npm run docker:migrate`. The API process never migrates. The committed pgTap baseline (`packages/persistence/tests/schema/schema-baseline.sql`) is the authoritative snapshot of the current schema; the repository keeps no other DDL tree.
 
 ## Compatibility snapshot
 
-API still keeps a file-backed latest-run snapshot (`RECONCILIATION_RUN_STORE_PATH`) for restart compatibility and local run continuity.
+API still keeps a file-backed latest-run snapshot (`RECONCILIATION_RUN_STORE_PATH`) for restart compatibility and local run continuity in the no-Postgres mode. When Postgres is enabled the snapshot is still written but never read (reads go to the read model, which is authoritative once configured); confining the snapshot to the no-Postgres path is issue #551.
 
 ## 7. API architecture notes
 
@@ -187,8 +188,10 @@ This keeps operational risk checks explicit and repeatable outside the request p
 When changing these areas, expect these follow-up updates:
 
 - matching/classification logic -> update `docs/reconciliation-rules.md` and tests
-- endpoint contracts -> update `docs/api.md` and integration tests
-- persistence schema/stores -> update `design/persistence/postgresql-persistence-architecture.md` and DB tests
+- endpoint contracts -> update `docs/api.md` and integration tests; add the route to `apps/api/src/openApiPaths.ts` (the router-derived `docs:openapi:check` fails on any registered route without an entry)
+- a new route family -> a router module under `apps/api/src/routes/` with its rules in a service, never new handler bodies in `app.ts` (section 12, C1)
+- persistence schema/stores -> a new Liquibase changeset, update `design/persistence/postgresql-persistence-architecture.md` and DB tests; a new status column ships with its transition graph in `packages/persistence/src/stateMachine.ts` and an enumeration test (section 12, C3)
+- a response shape the web consumes -> declare it in `packages/domain` and import it on both sides (section 12, C6)
 - deployment behavior/scripts -> update `docs/local-docker-platform.md` and preflight checks
 - setup workflows -> update `docs/developer-setup.md`
 
@@ -198,12 +201,12 @@ Self-registration is defended in four layers. See
 `design/adr/0004-signup-abuse-controls.md` for the decisions and
 `design/create-account/signup-abuse-defense-work-plan.md` for sizing.
 
-| Layer | Control | Runs | Establishes |
-| ----- | ------- | ---- | ----------- |
-| 1 | Cloudflare Turnstile | signup form + server-side `siteverify` | The client passed a browser-integrity check |
-| 2 | Email: normalize, disposable blocklist, role list, MX | in-process, `validation.ts` | The address is well-formed, not throwaway, and reachable |
-| 3 | Phone: E.164 parse, Twilio Lookup line type, Twilio Verify | `phoneVerificationService.ts`, last in the handler | Someone received a code at a number of a known line type |
-| 4 | Rate limiting (app) and edge rate limiting | `app.ts` limiter; AWS WAF or Cloudflare | Bounds attack rate and vendor spend |
+| Layer | Control                                                    | Runs                                               | Establishes                                              |
+| ----- | ---------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------- |
+| 1     | Cloudflare Turnstile                                       | signup form + server-side `siteverify`             | The client passed a browser-integrity check              |
+| 2     | Email: normalize, disposable blocklist, role list, MX      | in-process, `validation.ts`                        | The address is well-formed, not throwaway, and reachable |
+| 3     | Phone: E.164 parse, Twilio Lookup line type, Twilio Verify | `phoneVerificationService.ts`, last in the handler | Someone received a code at a number of a known line type |
+| 4     | Rate limiting (app) and edge rate limiting                 | `app.ts` limiter; AWS WAF or Cloudflare            | Bounds attack rate and vendor spend                      |
 
 Ordering is a hard constraint, not a preference: free in-process checks (layers 1 and 2) run before
 any paid network call (layer 3), and layer 4 must bind before layer 3 is reachable — a paid lookup
@@ -219,13 +222,44 @@ Entity verification (`EntityVerificationProvider`) is retained as optional enric
 being removed from `isFullyVerified`; Secretary of State filing numbers are public records and
 stop no one.
 
-## 12. Related references
+## 12. Architecture conventions (ADR-0020)
+
+A design-pattern evaluation of the codebase on 2026-09-13 (design repo,
+`design/adr/design_patterns/design-pattern-evaluation-2026-09-13.md`) found the adopted rules met and a
+set of patterns started but not finished: an incomplete service layer behind a 5,538-line `app.ts`, a
+state transition table on `reconciliation_job` only, per-store rather than per-use-case transactions, a
+half-registry for source-type dispatch, a never-compared `record_version`, and a web shell that
+hand-mirrors persistence types. ADR-0020 (`design/adr/0020-application-architecture-conventions.md`)
+turns the target shape into conventions for new and touched code; the roadmap beside it
+(`design-pattern-roadmap-2026-09-13.md`, tracking issue #547) retires the existing sites one PR at a
+time. Existing code that a change does not touch is grandfathered.
+
+The conventions, in short:
+
+| #   | Rule                                                                                                                                                                                                                 | Guard                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| C1  | New route families are `express.Router` modules under `apps/api/src/routes/`; handlers validate, authorize, call one service and map errors. `app.ts` gains no handler bodies.                                       | route-count and line-count ratchet on `app.ts` (#549) |
+| C2  | Writes across stores that must succeed together run in one `runInTenantScope`; stores accept a caller-supplied client (the `BlobStorage` precedent). No `try/catch` swallows a write that follows a committed write. | review; #393 retrofits the finalize path              |
+| C3  | Every status column has a declared transition graph, asserted `FOR UPDATE` at every write, with an enumeration test.                                                                                                 | enumeration tests; #550 adds the run graph            |
+| C4  | One definition per business predicate (`isCleared`, carry-eligible, approvable) in `packages/domain`.                                                                                                                | #374                                                  |
+| C5  | Dispatch on a type is a registry entry, never an `if/else` chain (`HEADERS_BY_FILE_TYPE` is the model).                                                                                                              | review; #266                                          |
+| C6  | Shapes that cross the API boundary are declared in `packages/domain` and imported by both apps; no `string` where a domain union exists.                                                                             | typecheck; #553                                       |
+| C7  | Rows a person edits use an append-only event table or a `record_version` compare; no silent last-writer-wins upsert.                                                                                                 | review; #354 / #421 decide the reviewer-decision case |
+| C8  | Matching pre-passes plug into `reconcileMatches` through one typed pre-pass contract, not new positional parameters.                                                                                                 | review                                                |
+| C9  | Web: server reads through TanStack Query hooks with a key factory; session and permissions from a context provider; storage keys in one module; domain computation in `lib/` or `packages/domain`.                   | #490, #484 tree                                       |
+| C10 | Until #363 lands integer minor units, amount comparisons go through `currencyEquals` or a shared helper; no new `Map`/`Set` keyed on a raw amount.                                                                   | review                                                |
+| C11 | Each mechanically checkable rule gets a guard test on the `errorHandlingArchitecture.test.ts` pattern; pinned numbers only go down.                                                                                  | the guards themselves                                 |
+| C12 | The change-impact guide above is binding; generated references are authoritative; `docs/class-method-reference.md` is frozen.                                                                                        | `docs:api:check`, `docs:openapi:check`                |
+
+## 13. Related references
 
 - `docs/api.md`
+- `generated/openapi.generated.json` (router-derived; the authoritative route inventory)
+- `generated/api-reference-generated.md` (generated class and method reference; `docs/class-method-reference.md` is a frozen historical snapshot)
 - `docs/reconciliation-rules.md`
 - `design/persistence/postgresql-persistence-architecture.md`
 - `docs/local-docker-platform.md`
 - `docs/test-strategy.md`
-- `docs/class-method-reference.md`
+- `design/adr/0020-application-architecture-conventions.md` and `design/adr/design_patterns/` (design repo)
 - `design/adr/0004-signup-abuse-controls.md`
 - `design/create-account/signup-abuse-defense-work-plan.md`

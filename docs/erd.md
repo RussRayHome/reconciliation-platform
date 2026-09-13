@@ -1,12 +1,12 @@
 # Entity Relationship Diagram — PostgreSQL Schema
 
-Generated from `packages/persistence/src/schema.ts`.
+The schema is defined by Liquibase formatted-SQL changesets under `packages/persistence/liquibase/changesets/`; the committed pgTap baseline `packages/persistence/tests/schema/schema-baseline.sql` is the authoritative snapshot of the current structure. The diagram and table below describe the original fourteen-table reconciliation-job schema and are retained as orientation; tables added since (import runs and files, canonical records, accounts, open items, roll-forward, approvals, matching-config versions, saved views, subledger entities, replay estimates) appear in the baseline, not here.
 
 ## Diagram
 
 ![PostgreSQL entity relationship diagram](images/erd-schema.svg)
 
-_Rendered ERD generated from the schema definition in `packages/persistence/src/schema.ts`._
+_Rendered ERD of the original job-centred schema. Regenerate from the pgTap baseline, not from a TypeScript schema module; `packages/persistence/src/schema.ts` no longer exists._
 
 ## Table reference
 
@@ -26,7 +26,7 @@ _Rendered ERD generated from the schema definition in `packages/persistence/src/
 | `reconciliation_export`             | Workbook/JSON export metadata                                         | UNIQUE `(job_id, export_type)`                                  |
 | `reconciliation_review_decision`    | Durable reviewer outcomes per target                                  | UNIQUE `(job_id, target_type, target_id)`                       |
 | `reconciliation_audit_event`        | Full audit trail of every state transition and operation              | BIGSERIAL PK for insertion order                                |
-| `schema_migrations`                 | Migration version tracking                                            | —                                                               |
+| `databasechangelog`                 | Liquibase changeset tracking                                          | —                                                               |
 
 ## Cascade and nullability notes
 
@@ -34,11 +34,6 @@ _Rendered ERD generated from the schema definition in `packages/persistence/src/
 - `reconciliation_match_result.bank_transaction_id`, `reconciliation_match_result.gl_transaction_id`, `reconciliation_rule_result.candidate_transaction_id`, and `reconciliation_exception.canonical_row_id` are nullable with `ON DELETE SET NULL` — exception and match records survive canonical row deletion.
 - `reconciliation_rule_result.target_id` and `reconciliation_review_decision.target_id` are polymorphic references (no enforced FK) — `target_kind` / `target_type` discriminates the referenced table.
 
-## Migration history
+## Migrations
 
-| Version | Name                                                 |
-| ------- | ---------------------------------------------------- |
-| 1       | `create_reconciliation_persistence_tables`           |
-| 2       | `add_foreign_keys_for_scalar_transaction_references` |
-| 3       | `add_read_model_access_indexes`                      |
-| 4       | `enable_pgaudit_extension_when_preloaded`            |
+Every schema change is one numbered changeset file under `packages/persistence/liquibase/changesets/` (`0001_…` onward), applied by the `migrate` compose service and tracked in `databasechangelog`. `scripts/pre-flight/db-preflight-checks.sh` (check DB6) verifies that every declared changeset id has been applied. Rules that bite: never edit an applied changeset, even a comment; `--rollback` blocks need their own statements; every new changeset moves the rollback-count tests and the pgTap baseline (`npm run test:postgres:update-baseline`).
