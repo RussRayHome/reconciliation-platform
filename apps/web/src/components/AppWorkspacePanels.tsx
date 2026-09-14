@@ -9,6 +9,7 @@ import {
   type RuleCatalogEntry,
   type RuleFamily,
   type RuleVarianceMetric,
+  type SummaryMetrics,
 } from '@recon/domain';
 import { SectionCard, StatCard } from '@recon/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -40,6 +41,7 @@ import {
   TriageSkeleton,
 } from './Skeleton';
 import { ExceptionTriage } from './ExceptionTriage';
+import { ProbableMatchesEmptyState } from './ProbableMatchesEmptyState';
 import { SemanticIcon } from './SemanticIcon';
 import { describeConfidence, groupByConfidence } from '../lib/matchConfidenceBands';
 import { openExceptions } from '../lib/openExceptions';
@@ -762,6 +764,7 @@ function MatchVerdictControls({
 
 function ProbableMatchesContent({
   probableMatches,
+  summary,
   decisionByTargetId,
   pendingTargetId,
   decisionError,
@@ -769,6 +772,7 @@ function ProbableMatchesContent({
   onClearDecision,
 }: Readonly<{
   probableMatches: RunData['probableMatches'];
+  summary: SummaryMetrics;
   decisionByTargetId: Record<string, ReviewerDecision>;
   pendingTargetId: string | null;
   decisionError: string | null;
@@ -787,14 +791,13 @@ function ProbableMatchesContent({
   });
   const virtualRows = virtualizer.getVirtualItems();
 
+  // UI-10 (#449), screen 11b. The card this replaces said only "No probable matches to review",
+  // which an analyst about to close cannot distinguish from a queue that failed to populate. Its
+  // copy was also wrong on the domain: it called candidates "low-confidence", but the band a
+  // candidate lands in is the engine's `confidence`, and Probable is a deliberate judgement rather
+  // than a weak one.
   if (probableMatches.length === 0) {
-    return (
-      <EmptyStateCard
-        eyebrow="No candidates"
-        title="No probable matches to review"
-        description="This run did not produce any low-confidence candidate pairings that need manual confirmation."
-      />
-    );
+    return <ProbableMatchesEmptyState summary={summary} />;
   }
 
   return (
@@ -1054,6 +1057,7 @@ export function ReviewSection({
       'probable-matches': (
         <ProbableMatchesContent
           probableMatches={run.probableMatches}
+          summary={run.summary}
           decisionByTargetId={matchDecisionByTargetId}
           pendingTargetId={matchPendingTargetId}
           decisionError={matchDecisionError}

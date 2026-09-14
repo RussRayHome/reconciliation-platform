@@ -397,4 +397,69 @@
     color: var(--accent);
   }
 
+  /* UI-10 (#449) screen 11b: Probable matches when a clean run left nothing to confirm. */
+  .probable-matches-empty {
+    display: grid;
+    gap: 1rem;
+  }
+
+  /* The wells here carry a third line the 7d wells do not: a well reading "0" has to say what the
+     zero means, or it reads as a figure that failed to load. */
+  .probable-matches-empty .kpi-well small {
+    font-size: var(--font-label);
+    line-height: 1.35;
+    color: var(--text-tertiary);
+  }
+
+  .probable-matches-empty__verdict {
+    display: grid;
+    justify-items: center;
+    gap: 0.6rem;
+    padding: 2rem 1.25rem;
+    text-align: center;
+    background: var(--bg-base);
+    border: 1px solid var(--accent-soft-border);
+    border-radius: var(--radius-panel);
+  }
+
+  .probable-matches-empty__verdict h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    color: var(--text-primary);
+  }
+
+  .probable-matches-empty__verdict p {
+    max-width: 52ch;
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .probable-matches-empty__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 0.35rem;
+  }
+
+  .probable-matches-empty__notes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: 0.75rem;
+  }
+
+  .probable-matches-empty__notes article {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.85rem;
+    background: var(--bg-base);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+  }
+
+  .probable-matches-empty__notes p {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
 }
