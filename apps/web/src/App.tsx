@@ -97,6 +97,13 @@ import { ImportUploadCard } from './components/ImportUploadCard';
 import { ImportValidationFailureView } from './components/ImportValidationFailure';
 import { BankAccountsScreen } from './components/BankAccountsScreen';
 import { MappingProfilesScreen } from './components/MappingProfilesScreen';
+import {
+  AccountBillingScreen,
+  AccountNotificationScreen,
+  AccountPreferencesScreen,
+  AccountProfileScreen,
+  AccountSecurityScreen,
+} from './components/AccountScreens';
 import { MappingVersionsScreen } from './components/MappingVersionsScreen';
 import { MappingHistoryScreen } from './components/MappingHistoryScreen';
 import {
@@ -1961,41 +1968,24 @@ function ReconciliationApp({
               <Route
                 path={routePaths.accountProfile}
                 element={
-                  <ComingSoonPage title="Profile" description="Profile settings are coming soon." />
-                }
-              />
-              <Route
-                path={routePaths.accountSecurity}
-                element={
-                  <ComingSoonPage
-                    title="Security"
-                    description="Security settings are coming soon."
+                  <AccountProfileScreen
+                    username={username}
+                    roleLabel={roleLabel}
+                    displayName={profileLabel}
+                    identityVerificationStatus={identityVerificationStatus}
+                    entityVerificationStatus={entityVerificationStatus}
                   />
                 }
               />
-              <Route
-                path={routePaths.accountBilling}
-                element={
-                  <ComingSoonPage title="Billing" description="Billing details are coming soon." />
-                }
-              />
+              <Route path={routePaths.accountSecurity} element={<AccountSecurityScreen />} />
+              <Route path={routePaths.accountBilling} element={<AccountBillingScreen />} />
               <Route
                 path={routePaths.accountNotification}
-                element={
-                  <ComingSoonPage
-                    title="Notification"
-                    description="Notification preferences are coming soon."
-                  />
-                }
+                element={<AccountNotificationScreen />}
               />
               <Route
                 path={routePaths.accountPreferences}
-                element={
-                  <ComingSoonPage
-                    title="Preferences"
-                    description="Workspace preferences are coming soon."
-                  />
-                }
+                element={<AccountPreferencesScreen username={username} />}
               />
               {rolePermissions.canAccessRunBook ? (
                 <Route

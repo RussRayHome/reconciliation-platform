@@ -3642,7 +3642,10 @@ describe('App', () => {
     expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
   });
 
-  it('routes placeholder destinations to the shared coming-soon page', async () => {
+  // Was "routes placeholder destinations to the shared coming-soon page". #451 built the account
+  // family, so Profile is a real screen now; what still matters is that the account menu reaches
+  // it and that it arrives with the family's tab strip rather than as an isolated page.
+  it('opens the account family from the account menu, with its tab strip', () => {
     setAuthenticatedUser('rray');
     renderApp();
 
@@ -3650,14 +3653,14 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Profile' }));
 
     expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
-    expect(screen.getByText('Placeholder')).toBeInTheDocument();
-    expect(screen.getByText('Profile settings are coming soon.')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '← Back' }));
-
-    await waitFor(() => {
-      expect(globalThis.location.pathname).toBe('/');
-    });
+    // "Signed in as" rather than the username: `rray` also appears in the header's account menu,
+    // so asserting on it would pass even if the profile screen rendered nothing.
+    expect(screen.getByText('Signed in as')).toBeInTheDocument();
+    // Five routes, one strip -- so none of the account screens is a dead end.
+    for (const label of ['Profile', 'Security', 'Preferences', 'Notifications', 'Billing']) {
+      expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
+    }
+    expect(screen.queryByText('Placeholder')).toBeNull();
   });
 
   it('opens the Remove account confirmation dialog and requires typing the username to confirm', () => {

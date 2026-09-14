@@ -741,4 +741,51 @@
     font-style: normal;
     color: var(--text-primary);
   }
+
+  /* Account family (10c, 12a-12c, #451). Reuses the mapping tab strip's classes -- one strip
+     pattern, not two that drift. */
+  .account-screen__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: 0.75rem 1.5rem;
+    margin: 0 0 1rem;
+  }
+
+  .account-screen__facts dt {
+    color: var(--text-tertiary);
+    font-size: var(--font-label);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .account-screen__facts dd {
+    margin: 0.15rem 0 0;
+    color: var(--text-primary);
+  }
+
+  .account-screen__field {
+    display: grid;
+    gap: 0.3rem;
+    max-width: 34rem;
+    margin: 0 0 1.25rem;
+  }
+
+  .account-screen__note {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-meta);
+    max-width: 60ch;
+  }
+
+  /* Not an error tone: these screens describe work that has not happened, which is different from
+     something having gone wrong. */
+  .account-screen__unbuilt {
+    margin: 0 0 0.5rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    max-width: 60ch;
+  }
 }
