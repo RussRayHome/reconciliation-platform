@@ -124,8 +124,8 @@ const EXPECTED_ABSENT_FROM_RAIL: Record<string, string> = {
   // the mapping family was built and reverted (it broke rail identity and pushed the account row
   // off the 900px card). The four mapping screens are in-screen tabs, not rail children.
   mappingProfiles: '9a registry (#450); absent from the rail by N2 -- Mapping is a leaf, not a disclosure',
-  mappingVersions: 'N2: renders ComingSoonPage; rail entry removed, route stays',
-  mappingHistory: 'N2: renders ComingSoonPage; rail entry removed, route stays',
+  mappingVersions: '9c version history (#450); absent from the rail by N2 -- reached as a mapping tab',
+  mappingHistory: '9d change history (#450); absent from the rail by N2 -- reached as a mapping tab',
   documentationRunBook: 'N2: renders ComingSoonPage; rail entry removed, route stays',
   // N1: the five per-type approval routes are superseded by the one consolidated "Pending
   // approvals" destination above -- each stays declared as a one-release redirect to the object

@@ -8,6 +8,7 @@ import {
   retireMappingProfileRequest,
 } from '../lib/api';
 import { formatShortDate } from '../lib/format';
+import { MappingTabs } from './MappingTabs';
 
 /**
  * Screen 9a — the saved mapping profiles registry (UI-11, #450).
@@ -98,6 +99,7 @@ export function MappingProfilesScreen({
     <section className="section-card mapping-profiles">
       <header className="mapping-profiles__header">
         <h2>Mapping Profiles</h2>
+        <MappingTabs />
         <p className="mapping-profiles__lede">
           Saved column mappings, one per named profile. A profile is{' '}
           <strong>retired, never deleted</strong> — every run already mapped under it keeps its
