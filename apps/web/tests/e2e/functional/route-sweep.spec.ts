@@ -47,7 +47,9 @@ const AUTHENTICATED_ROUTES: Readonly<Record<string, RouteAssertion>> = {
   accountProfile: { heading: 'Profile' },
   accountSecurity: { heading: 'Security' },
   accountBilling: { heading: 'Billing' },
-  accountNotification: { heading: 'Notification' },
+  // Plural: the screen is a settings page for notifications, not one notification. The route
+  // id stays singular -- renaming a route to match a heading would be the tail wagging the dog.
+  accountNotification: { heading: 'Notifications' },
   accountPreferences: { heading: 'Preferences' },
 };
 
