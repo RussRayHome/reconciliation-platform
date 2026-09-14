@@ -1486,8 +1486,11 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Variance thresholds' })).toBeInTheDocument();
 
     expect(screen.queryByRole('slider')).toBeNull();
-    // One whole-screen affordance, not a repeated per-row line -- exactly one occurrence.
-    expect(screen.getByText('Read-only — admins set thresholds.')).toBeInTheDocument();
+    // 13c (#451) changed this contract deliberately. The banner used to state only the
+    // restriction ("Read-only — admins set thresholds"); it now states the REASON, which is what
+    // sends an analyst to an admin rather than to support. Still one whole-screen affordance, not
+    // a repeated per-row line.
+    expect(screen.getByText(/Changing a rule needs admin/)).toBeInTheDocument();
     expect(screen.getAllByText('21 days').length).toBeGreaterThan(0);
   });
 

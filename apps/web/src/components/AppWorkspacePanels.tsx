@@ -9,6 +9,7 @@ import {
   type RuleCatalogEntry,
   type RuleFamily,
   type RuleVarianceMetric,
+  type SummaryMetrics,
 } from '@recon/domain';
 import { SectionCard, StatCard } from '@recon/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -17,7 +18,11 @@ import { downloadWorkbookRequest } from '../lib/api';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
 import type { PriorPeriodRollforward } from '../hooks/usePriorPeriodRollforward';
 import { formatCompactDate, formatCurrency, formatCurrencyWhole, formatShortDate } from '../lib/format';
-import { computeRuleVersionHeaderState, type RuleVersionHeaderState } from '../lib/ruleVersionState';
+import {
+  computeRuleVersionHeaderState,
+  diffVarianceOverrides,
+  type RuleVersionHeaderState,
+} from '../lib/ruleVersionState';
 import { ReplayEstimatePanel } from './ReplayEstimatePanel';
 import {
   deriveMetricStep,
@@ -40,6 +45,8 @@ import {
   TriageSkeleton,
 } from './Skeleton';
 import { ExceptionTriage } from './ExceptionTriage';
+import { ProbableMatchesEmptyState } from './ProbableMatchesEmptyState';
+import { RuleDraftRejectedPanel } from './RuleDraftRejectedPanel';
 import { SemanticIcon } from './SemanticIcon';
 import { describeConfidence, groupByConfidence } from '../lib/matchConfidenceBands';
 import { openExceptions } from '../lib/openExceptions';
@@ -762,6 +769,7 @@ function MatchVerdictControls({
 
 function ProbableMatchesContent({
   probableMatches,
+  summary,
   decisionByTargetId,
   pendingTargetId,
   decisionError,
@@ -769,6 +777,7 @@ function ProbableMatchesContent({
   onClearDecision,
 }: Readonly<{
   probableMatches: RunData['probableMatches'];
+  summary: SummaryMetrics;
   decisionByTargetId: Record<string, ReviewerDecision>;
   pendingTargetId: string | null;
   decisionError: string | null;
@@ -787,14 +796,13 @@ function ProbableMatchesContent({
   });
   const virtualRows = virtualizer.getVirtualItems();
 
+  // UI-10 (#449), screen 11b. The card this replaces said only "No probable matches to review",
+  // which an analyst about to close cannot distinguish from a queue that failed to populate. Its
+  // copy was also wrong on the domain: it called candidates "low-confidence", but the band a
+  // candidate lands in is the engine's `confidence`, and Probable is a deliberate judgement rather
+  // than a weak one.
   if (probableMatches.length === 0) {
-    return (
-      <EmptyStateCard
-        eyebrow="No candidates"
-        title="No probable matches to review"
-        description="This run did not produce any low-confidence candidate pairings that need manual confirmation."
-      />
-    );
+    return <ProbableMatchesEmptyState summary={summary} />;
   }
 
   return (
@@ -1054,6 +1062,7 @@ export function ReviewSection({
       'probable-matches': (
         <ProbableMatchesContent
           probableMatches={run.probableMatches}
+          summary={run.summary}
           decisionByTargetId={matchDecisionByTargetId}
           pendingTargetId={matchPendingTargetId}
           decisionError={matchDecisionError}
@@ -1240,6 +1249,8 @@ export function RuleVersionHeader({
   onViewHistory,
   onBackToActive,
   onPublishDraft,
+  activeVersion,
+  nextVersionNumber,
 }: Readonly<{
   state: RuleVersionHeaderState;
   viewingVersion: MatchingConfigVersion | null;
@@ -1249,6 +1260,9 @@ export function RuleVersionHeader({
   onViewHistory?: () => void;
   onBackToActive?: () => void;
   onPublishDraft?: () => void;
+  activeVersion?: MatchingConfigVersion | null;
+  nextVersionNumber?: number;
+  metrics?: readonly RuleVarianceMetric[];
 }>) {
   return (
     <div className="rule-version-header" data-state={state}>
@@ -1264,6 +1278,14 @@ export function RuleVersionHeader({
               {viewingVersion.status === 'DRAFT' ? (
                 <span className="rule-version-header__detail">
                   Waiting on {viewingVersion.pendingApprovalOwner ?? 'an approver'}
+                </span>
+              ) : viewingVersion.status === 'REJECTED' ? (
+                // 13e (#451): REJECTED used to fall into the published branch below and render
+                // "Published by — · N/A". A rejected version was never published, and a dash where
+                // a name belongs reads as missing data rather than as a different outcome.
+                <span className="rule-version-header__detail">
+                  Rejected by {viewingVersion.rejectedBy ?? 'an approver'}
+                  {viewingVersion.rejectedAt ? ` · ${formatShortDate(viewingVersion.rejectedAt)}` : ''}
                 </span>
               ) : (
                 <span className="rule-version-header__detail">
@@ -1320,9 +1342,25 @@ export function RuleVersionHeader({
         </div>
       ) : null}
 
+      {/* 13c (#451). "Read-only — admins set thresholds" stated the restriction and not the
+          reason, which is the half that matters: a rule is not withheld because an analyst is
+          untrusted, it is withheld because changing one opens an organization version that a
+          second person must approve. An analyst who knows that asks an admin; one who does not
+          files a support ticket.
+
+          The controls themselves are already REMOVED rather than disabled (`RuleVarianceControl`
+          renders nothing when `canAdjust` is false), which is 13c's other rule. This supplies the
+          reason meant to take their place.
+
+          The mock also offers a "Request a change" button. No request path exists anywhere in the
+          tree, so it is not offered here -- a button that cannot act is the defect class 13c's own
+          "what never appears disabled" panel argues against. */}
       {state === 'read-only' ? (
         <div className="rule-version-banner rule-version-banner--muted" role="status">
-          Read-only — admins set thresholds.
+          <span>
+            <strong>Changing a rule needs admin</strong> — a change opens an organization version
+            that a second person must approve. You can read every value and its history.
+          </span>
         </div>
       ) : null}
 
@@ -1342,6 +1380,18 @@ export function RuleVersionHeader({
           with no retro-matching, so the replay is the only view of its consequences anyone gets. */}
       {state === 'draft-pending' && viewingVersion ? (
         <ReplayEstimatePanel versionId={viewingVersion.id} />
+      ) : null}
+
+      {/* 13e (#451). The pathway 2a/2b left open: nothing told the editor when a draft came back. */}
+      {state === 'draft-rejected' && viewingVersion ? (
+        <RuleDraftRejectedPanel
+          rejected={viewingVersion}
+          active={activeVersion ?? null}
+          nextVersionNumber={nextVersionNumber ?? viewingVersion.versionNumber + 1}
+          changes={diffVarianceOverrides(viewingVersion, activeVersion ?? null, (metric) =>
+            formatMetricLabel(metric),
+          )}
+        />
       ) : null}
 
       {state === 'superseded' ? (
@@ -1389,6 +1439,7 @@ export function RulesCatalogSection({
   versionActionError,
   activeVersion,
   mappingProfiles,
+  nextVersionNumber,
 }: Readonly<{
   rules: RuleCatalogEntry[];
   metrics: RuleVarianceMetric[];
@@ -1413,6 +1464,8 @@ export function RulesCatalogSection({
   activeVersion: MatchingConfigVersion | null;
   /** Distinct saved mapping profile names -- shown identically on every rule row (global scope) until per-rule assignment ships in Phase 4. */
   mappingProfiles: string[];
+  /** Next unallocated version number, for 13e's reopen copy. Never `rejected + 1`. */
+  nextVersionNumber: number;
 }>) {
   const changedCount = metrics.filter(
     (metric) => varianceOverrides[metric.id] !== undefined,
@@ -1554,6 +1607,9 @@ export function RulesCatalogSection({
           onViewHistory={onViewHistory}
           onBackToActive={onBackToActive}
           onPublishDraft={onPublishDraft}
+          activeVersion={activeVersion}
+          nextVersionNumber={nextVersionNumber}
+          metrics={metrics}
         />
 
         {versionActionError ? (

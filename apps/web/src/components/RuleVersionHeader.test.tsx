@@ -40,7 +40,10 @@ describe('RuleVersionHeader', () => {
 
     const banners = screen.getAllByRole('status');
     expect(banners).toHaveLength(1);
-    expect(banners[0]?.textContent).toContain('Read-only');
+    // 13c (#451): the banner states the REASON, not just the restriction -- naming the
+    // two-person rule is what tells an analyst who to ask.
+    expect(banners[0]?.textContent).toContain('Changing a rule needs admin');
+    expect(banners[0]?.textContent).toContain('a second person must approve');
     const editButton = screen.getByRole('button', { name: 'Edit as draft' }) as HTMLButtonElement;
     expect(editButton.disabled).toBe(true);
   });

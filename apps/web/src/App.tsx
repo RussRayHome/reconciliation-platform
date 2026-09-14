@@ -78,6 +78,7 @@ import {
   type ReconciliationRunResponse,
 } from './lib/api';
 import { resolveLatestRunPhase, type LatestRunPhase } from './lib/latestRunState';
+import { nextFreeVersionNumber, selectRejectedDraft } from './lib/ruleVersionState';
 import { subscribeToRunStatus } from './lib/runStatusStream';
 import { clearAuthToken, getAuthToken } from './lib/authToken';
 import type { AuthenticatedUserSession } from './lib/authSession';
@@ -1912,12 +1913,22 @@ function ReconciliationApp({
                       run={reportRun}
                       thresholdSetLabel={thresholdSetLabel}
                       thresholdSetTimestamp={thresholdSetTimestamp}
-                      viewingVersion={ruleVersions?.draft ?? ruleVersions?.active ?? null}
+                      // 13e (#451): a REJECTED version is neither `draft` nor `active` -- it lands
+                      // in `history`, so the one state the editor most needs was the only one this
+                      // screen could not reach. `selectRejectedDraft` stands down as soon as a new
+                      // draft is pending.
+                      viewingVersion={
+                        ruleVersions?.draft ??
+                        selectRejectedDraft(ruleVersions) ??
+                        ruleVersions?.active ??
+                        null
+                      }
                       overridesAppliedToEngine={ruleVersions?.overridesAppliedToEngine ?? false}
                       onEditAsDraft={handleEditAsDraft}
                       onPublishDraft={handlePublishDraft}
                       versionActionError={ruleVersionActionError}
                       activeVersion={ruleVersions?.active ?? null}
+                      nextVersionNumber={nextFreeVersionNumber(ruleVersions)}
                       mappingProfiles={mappingProfileNames}
                     />
                   )
