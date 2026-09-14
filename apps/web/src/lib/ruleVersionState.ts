@@ -91,22 +91,27 @@ export interface RuleChange {
 }
 
 /**
- * What the rejected draft proposed, against the version in force.
+ * What a proposed version changes, against the version in force.
  *
- * Only the draft's own `varianceOverrides` are walked: a key absent from the draft is not a
- * change, and reading the union of both sides would report the active version's untouched
- * settings as though the draft had reverted them.
+ * Only the proposal's own `varianceOverrides` are walked: a key absent from it is not a change,
+ * and reading the union of both sides would report the active version's untouched settings as
+ * though the proposal had reverted them.
+ *
+ * `proposed` is any version being compared to ACTIVE, not specifically a rejected one — it is the
+ * same question on both sides of the pathway. 13e (#451) asks it of a draft that came back; 2b
+ * (#404) asks it of a draft still awaiting a decision, which is the case that can still change an
+ * outcome.
  */
 export const diffVarianceOverrides = (
-  rejected: MatchingConfigVersion,
+  proposed: MatchingConfigVersion,
   active: MatchingConfigVersion | null,
   labelFor: (metric: keyof MatchingConfig) => string,
 ): RuleChange[] =>
-  (Object.keys(rejected.varianceOverrides) as Array<keyof MatchingConfig>)
+  (Object.keys(proposed.varianceOverrides) as Array<keyof MatchingConfig>)
     .map((metric) => ({
       metric,
       label: labelFor(metric),
       from: active?.varianceOverrides[metric],
-      to: rejected.varianceOverrides[metric] as number,
+      to: proposed.varianceOverrides[metric] as number,
     }))
     .filter((change) => change.from !== change.to);

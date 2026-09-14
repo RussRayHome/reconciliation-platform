@@ -46,6 +46,7 @@ import {
 } from './Skeleton';
 import { ExceptionTriage } from './ExceptionTriage';
 import { ProbableMatchesEmptyState } from './ProbableMatchesEmptyState';
+import { RuleDraftPendingPanel } from './RuleDraftPendingPanel';
 import { RuleDraftRejectedPanel } from './RuleDraftRejectedPanel';
 import { SemanticIcon } from './SemanticIcon';
 import { describeConfidence, groupByConfidence } from '../lib/matchConfidenceBands';
@@ -1375,9 +1376,25 @@ export function RuleVersionHeader({
         </div>
       ) : null}
 
+      {/* 2b (#404). The banner above has always claimed the screen was "reviewing draft vN against
+          the active version" while rendering no comparison, so the approver was asked to decide a
+          change they could not see. `diffVarianceOverrides` shipped with 13e and was wired only to
+          the rejection path -- this puts it on the path where the decision is still open. */}
+      {state === 'draft-pending' && viewingVersion ? (
+        <RuleDraftPendingPanel
+          draft={viewingVersion}
+          active={activeVersion ?? null}
+          changes={diffVarianceOverrides(viewingVersion, activeVersion ?? null, (metric) =>
+            formatMetricLabel(metric),
+          )}
+        />
+      ) : null}
+
       {/* ADR-0018 #533. Only while a draft is pending: this is the 2b approver moment, and the only
           point where the numbers can still change a decision. The change applies next run onward
-          with no retro-matching, so the replay is the only view of its consequences anyone gets. */}
+          with no retro-matching, so the replay is the only view of its consequences anyone gets.
+          Ordered after the diff deliberately -- the estimate is the consequence of the change, and
+          reading it before knowing what changed inverts the decision. */}
       {state === 'draft-pending' && viewingVersion ? (
         <ReplayEstimatePanel versionId={viewingVersion.id} />
       ) : null}
