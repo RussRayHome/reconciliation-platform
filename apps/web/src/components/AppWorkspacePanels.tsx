@@ -18,7 +18,11 @@ import { downloadWorkbookRequest } from '../lib/api';
 import type { DecisionAction } from '../hooks/useReviewerDecisions';
 import type { PriorPeriodRollforward } from '../hooks/usePriorPeriodRollforward';
 import { formatCompactDate, formatCurrency, formatCurrencyWhole, formatShortDate } from '../lib/format';
-import { computeRuleVersionHeaderState, type RuleVersionHeaderState } from '../lib/ruleVersionState';
+import {
+  computeRuleVersionHeaderState,
+  diffVarianceOverrides,
+  type RuleVersionHeaderState,
+} from '../lib/ruleVersionState';
 import { ReplayEstimatePanel } from './ReplayEstimatePanel';
 import {
   deriveMetricStep,
@@ -42,6 +46,7 @@ import {
 } from './Skeleton';
 import { ExceptionTriage } from './ExceptionTriage';
 import { ProbableMatchesEmptyState } from './ProbableMatchesEmptyState';
+import { RuleDraftRejectedPanel } from './RuleDraftRejectedPanel';
 import { SemanticIcon } from './SemanticIcon';
 import { describeConfidence, groupByConfidence } from '../lib/matchConfidenceBands';
 import { openExceptions } from '../lib/openExceptions';
@@ -1244,6 +1249,8 @@ export function RuleVersionHeader({
   onViewHistory,
   onBackToActive,
   onPublishDraft,
+  activeVersion,
+  nextVersionNumber,
 }: Readonly<{
   state: RuleVersionHeaderState;
   viewingVersion: MatchingConfigVersion | null;
@@ -1253,6 +1260,9 @@ export function RuleVersionHeader({
   onViewHistory?: () => void;
   onBackToActive?: () => void;
   onPublishDraft?: () => void;
+  activeVersion?: MatchingConfigVersion | null;
+  nextVersionNumber?: number;
+  metrics?: readonly RuleVarianceMetric[];
 }>) {
   return (
     <div className="rule-version-header" data-state={state}>
@@ -1268,6 +1278,14 @@ export function RuleVersionHeader({
               {viewingVersion.status === 'DRAFT' ? (
                 <span className="rule-version-header__detail">
                   Waiting on {viewingVersion.pendingApprovalOwner ?? 'an approver'}
+                </span>
+              ) : viewingVersion.status === 'REJECTED' ? (
+                // 13e (#451): REJECTED used to fall into the published branch below and render
+                // "Published by — · N/A". A rejected version was never published, and a dash where
+                // a name belongs reads as missing data rather than as a different outcome.
+                <span className="rule-version-header__detail">
+                  Rejected by {viewingVersion.rejectedBy ?? 'an approver'}
+                  {viewingVersion.rejectedAt ? ` · ${formatShortDate(viewingVersion.rejectedAt)}` : ''}
                 </span>
               ) : (
                 <span className="rule-version-header__detail">
@@ -1348,6 +1366,18 @@ export function RuleVersionHeader({
         <ReplayEstimatePanel versionId={viewingVersion.id} />
       ) : null}
 
+      {/* 13e (#451). The pathway 2a/2b left open: nothing told the editor when a draft came back. */}
+      {state === 'draft-rejected' && viewingVersion ? (
+        <RuleDraftRejectedPanel
+          rejected={viewingVersion}
+          active={activeVersion ?? null}
+          nextVersionNumber={nextVersionNumber ?? viewingVersion.versionNumber + 1}
+          changes={diffVarianceOverrides(viewingVersion, activeVersion ?? null, (metric) =>
+            formatMetricLabel(metric),
+          )}
+        />
+      ) : null}
+
       {state === 'superseded' ? (
         <div className="rule-version-banner rule-version-banner--muted" role="status">
           <span>You are viewing a superseded version.</span>
@@ -1393,6 +1423,7 @@ export function RulesCatalogSection({
   versionActionError,
   activeVersion,
   mappingProfiles,
+  nextVersionNumber,
 }: Readonly<{
   rules: RuleCatalogEntry[];
   metrics: RuleVarianceMetric[];
@@ -1417,6 +1448,8 @@ export function RulesCatalogSection({
   activeVersion: MatchingConfigVersion | null;
   /** Distinct saved mapping profile names -- shown identically on every rule row (global scope) until per-rule assignment ships in Phase 4. */
   mappingProfiles: string[];
+  /** Next unallocated version number, for 13e's reopen copy. Never `rejected + 1`. */
+  nextVersionNumber: number;
 }>) {
   const changedCount = metrics.filter(
     (metric) => varianceOverrides[metric.id] !== undefined,
@@ -1558,6 +1591,9 @@ export function RulesCatalogSection({
           onViewHistory={onViewHistory}
           onBackToActive={onBackToActive}
           onPublishDraft={onPublishDraft}
+          activeVersion={activeVersion}
+          nextVersionNumber={nextVersionNumber}
+          metrics={metrics}
         />
 
         {versionActionError ? (

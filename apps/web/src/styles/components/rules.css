@@ -645,4 +645,83 @@
   .replay-estimate__delta-value[data-direction='up'] {
     color: var(--negative);
   }
+
+  /* 13e (#451): a rejected draft, back with its editor. Tinted like a rejection rather than a
+     neutral banner -- the other version states are informational, this one needs a response. */
+  .rule-draft-rejected {
+    display: grid;
+    gap: 0.85rem;
+    margin-top: 0.75rem;
+    padding: 1rem;
+    background: var(--bg-base);
+    border: 1px solid var(--negative);
+    border-radius: var(--radius-panel);
+  }
+
+  .rule-draft-rejected__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .rule-draft-rejected__head h3 {
+    margin: 0;
+    margin-right: auto;
+    font-size: 1.05rem;
+  }
+
+  .rule-draft-rejected__attribution {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .rule-draft-rejected__note {
+    margin: 0;
+    padding: 0.6rem 0.85rem;
+    border-left: 3px solid var(--negative);
+    background: var(--bg-elevated, var(--bg-base));
+    color: var(--text-primary);
+  }
+
+  .rule-draft-rejected__note--absent {
+    border-left-color: var(--line);
+    color: var(--text-tertiary);
+  }
+
+  .rule-draft-rejected__numbering p,
+  .rule-draft-rejected__changes p {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary);
+  }
+
+  .rule-draft-rejected__changes dl {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0.4rem 0 0;
+  }
+
+  .rule-draft-rejected__changes dl > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rule-draft-rejected__changes dt,
+  .rule-draft-rejected__changes dd {
+    margin: 0;
+  }
+
+  .rule-draft-rejected__changes dd {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rule-draft-rejected__from {
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+  }
 }
