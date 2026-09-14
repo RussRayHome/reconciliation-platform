@@ -1342,9 +1342,25 @@ export function RuleVersionHeader({
         </div>
       ) : null}
 
+      {/* 13c (#451). "Read-only — admins set thresholds" stated the restriction and not the
+          reason, which is the half that matters: a rule is not withheld because an analyst is
+          untrusted, it is withheld because changing one opens an organization version that a
+          second person must approve. An analyst who knows that asks an admin; one who does not
+          files a support ticket.
+
+          The controls themselves are already REMOVED rather than disabled (`RuleVarianceControl`
+          renders nothing when `canAdjust` is false), which is 13c's other rule. This supplies the
+          reason meant to take their place.
+
+          The mock also offers a "Request a change" button. No request path exists anywhere in the
+          tree, so it is not offered here -- a button that cannot act is the defect class 13c's own
+          "what never appears disabled" panel argues against. */}
       {state === 'read-only' ? (
         <div className="rule-version-banner rule-version-banner--muted" role="status">
-          Read-only — admins set thresholds.
+          <span>
+            <strong>Changing a rule needs admin</strong> — a change opens an organization version
+            that a second person must approve. You can read every value and its history.
+          </span>
         </div>
       ) : null}
 
