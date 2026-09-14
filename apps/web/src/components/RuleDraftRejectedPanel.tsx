@@ -2,6 +2,7 @@ import type { MatchingConfigVersion } from '@recon/domain';
 
 import { formatShortDate } from '../lib/format';
 import type { RuleChange } from '../lib/ruleVersionState';
+import { RuleChangeList } from './RuleChangeList';
 
 /**
  * Screen 13e — a rejected rule draft, back with its editor (UI-12, #451).
@@ -41,7 +42,11 @@ export function RuleDraftRejectedPanel({
     >
       <header className="rule-draft-rejected__head">
         <h3>v{rejected.versionNumber} was rejected</h3>
-        <span className="badge badge--negative">v{rejected.versionNumber} · REJECTED</span>
+        {/* `--attention` is the only coloured pill patterns/badges.css defines (decision 23: two
+            variants and only two). This read `badge--negative`, which is not a class anywhere in
+            the tree, so the rejection pill silently rendered neutral -- the one badge on the screen
+            that had to be legible as bad looked identical to the ACTIVE one beside it. */}
+        <span className="badge badge--attention">v{rejected.versionNumber} · REJECTED</span>
         {active ? <span className="badge">v{active.versionNumber} · ACTIVE</span> : null}
       </header>
 
@@ -77,22 +82,7 @@ export function RuleDraftRejectedPanel({
 
       <div className="rule-draft-rejected__changes">
         <span className="eyebrow">What this draft proposed</span>
-        {changes.length === 0 ? (
-          <p>This draft changed no variance settings.</p>
-        ) : (
-          <dl>
-            {changes.map((change) => (
-              <div key={String(change.metric)}>
-                <dt>{change.label}</dt>
-                <dd>
-                  <span className="rule-draft-rejected__from">{change.from ?? 'not set'}</span>
-                  {' → '}
-                  <strong>{change.to}</strong>
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        <RuleChangeList changes={changes} emptyLabel="This draft changed no variance settings." />
         {/* Reopening carries every change forward, including ones the approver did not object to.
             The editor drops the rejected one rather than rebuilding the rest from memory -- which
             is what made a rejection expensive enough to discourage using the pathway at all. */}
