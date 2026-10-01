@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-03T13:15:09.912Z",
+  "generatedAt": "2026-10-01T13:19:38.878Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 511,
+  "packageCount": 514,
   "packages": [
     {
       "package": "@aws-cdk/asset-awscli-v1@2.2.292",
@@ -456,11 +456,11 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser-utils@10.72.0",
+      "package": "@sentry/browser-utils@11.0.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/browser@10.72.0",
+      "package": "@sentry/browser@11.0.0",
       "license": "MIT"
     },
     {
@@ -468,11 +468,19 @@
       "license": "MIT"
     },
     {
+      "package": "@sentry/conventions@0.23.0",
+      "license": "MIT"
+    },
+    {
       "package": "@sentry/core@10.72.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/feedback@10.72.0",
+      "package": "@sentry/core@11.0.0",
+      "license": "MIT"
+    },
+    {
+      "package": "@sentry/feedback@11.0.0",
       "license": "MIT"
     },
     {
@@ -488,15 +496,15 @@
       "license": "MIT"
     },
     {
-      "package": "@sentry/react@10.72.0",
+      "package": "@sentry/react@11.0.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay-canvas@10.72.0",
+      "package": "@sentry/replay-canvas@11.0.0",
       "license": "MIT"
     },
     {
-      "package": "@sentry/replay@10.72.0",
+      "package": "@sentry/replay@11.0.0",
       "license": "MIT"
     },
     {
@@ -1986,6 +1994,10 @@
     {
       "package": "web-streams-polyfill@3.3.3",
       "license": "MIT"
+    },
+    {
+      "package": "web-vitals@6.2.2",
+      "license": "Apache-2.0"
     },
     {
       "package": "which@2.0.2",
