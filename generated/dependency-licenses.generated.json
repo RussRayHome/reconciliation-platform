@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-03T13:15:09.912Z",
+  "generatedAt": "2026-10-01T13:20:04.777Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
-  "packageCount": 511,
+  "packageCount": 505,
   "packages": [
     {
       "package": "@aws-cdk/asset-awscli-v1@2.2.292",
@@ -16,11 +16,11 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@aws-cdk/cloud-assembly-schema@54.21.0",
+      "package": "@aws-cdk/cloud-assembly-schema@54.25.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@aws/cloudformation-validate@1.7.0-beta",
+      "package": "@aws/cloudformation-validate@1.12.1",
       "license": "Apache-2.0"
     },
     {
@@ -60,7 +60,7 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/api-logs@0.221.0",
+      "package": "@opentelemetry/api-logs@0.222.0",
       "license": "Apache-2.0"
     },
     {
@@ -68,19 +68,19 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/auto-instrumentations-node@0.79.0",
+      "package": "@opentelemetry/auto-instrumentations-node@0.80.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/configuration@0.221.0",
+      "package": "@opentelemetry/configuration@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/context-async-hooks@2.10.0",
+      "package": "@opentelemetry/context-async-hooks@2.11.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/core@2.10.0",
+      "package": "@opentelemetry/core@2.11.0",
       "license": "Apache-2.0"
     },
     {
@@ -88,211 +88,211 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-logs-otlp-grpc@0.221.0",
+      "package": "@opentelemetry/exporter-logs-otlp-grpc@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-logs-otlp-http@0.221.0",
+      "package": "@opentelemetry/exporter-logs-otlp-http@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-logs-otlp-proto@0.221.0",
+      "package": "@opentelemetry/exporter-logs-otlp-proto@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-metrics-otlp-grpc@0.221.0",
+      "package": "@opentelemetry/exporter-metrics-otlp-grpc@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-metrics-otlp-http@0.221.0",
+      "package": "@opentelemetry/exporter-metrics-otlp-http@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-metrics-otlp-proto@0.221.0",
+      "package": "@opentelemetry/exporter-metrics-otlp-proto@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-prometheus@0.221.0",
+      "package": "@opentelemetry/exporter-prometheus@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-trace-otlp-grpc@0.221.0",
+      "package": "@opentelemetry/exporter-trace-otlp-grpc@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-trace-otlp-http@0.221.0",
+      "package": "@opentelemetry/exporter-trace-otlp-http@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-trace-otlp-proto@0.221.0",
+      "package": "@opentelemetry/exporter-trace-otlp-proto@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/exporter-zipkin@2.10.0",
+      "package": "@opentelemetry/exporter-zipkin@2.11.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-amqplib@0.68.0",
+      "package": "@opentelemetry/instrumentation-amqplib@0.69.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-aws-lambda@0.73.0",
+      "package": "@opentelemetry/instrumentation-aws-lambda@0.74.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-aws-sdk@0.76.0",
+      "package": "@opentelemetry/instrumentation-aws-sdk@0.77.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-bunyan@0.66.0",
+      "package": "@opentelemetry/instrumentation-bunyan@0.67.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-cassandra-driver@0.66.0",
+      "package": "@opentelemetry/instrumentation-cassandra-driver@0.67.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-connect@0.64.0",
+      "package": "@opentelemetry/instrumentation-connect@0.65.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-cucumber@0.37.0",
+      "package": "@opentelemetry/instrumentation-cucumber@0.38.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-dataloader@0.38.0",
+      "package": "@opentelemetry/instrumentation-dataloader@0.39.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-dns@0.64.0",
+      "package": "@opentelemetry/instrumentation-dns@0.65.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-express@0.69.0",
+      "package": "@opentelemetry/instrumentation-express@0.70.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-fs@0.40.0",
+      "package": "@opentelemetry/instrumentation-fs@0.41.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-generic-pool@0.64.0",
+      "package": "@opentelemetry/instrumentation-generic-pool@0.65.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-graphql@0.69.0",
+      "package": "@opentelemetry/instrumentation-graphql@0.70.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-grpc@0.221.0",
+      "package": "@opentelemetry/instrumentation-grpc@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-hapi@0.67.0",
+      "package": "@opentelemetry/instrumentation-hapi@0.68.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-host-metrics@0.4.0",
+      "package": "@opentelemetry/instrumentation-host-metrics@0.5.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-http@0.221.0",
+      "package": "@opentelemetry/instrumentation-http@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-ioredis@0.69.0",
+      "package": "@opentelemetry/instrumentation-ioredis@0.70.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-kafkajs@0.30.0",
+      "package": "@opentelemetry/instrumentation-kafkajs@0.31.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-knex@0.65.0",
+      "package": "@opentelemetry/instrumentation-knex@0.66.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-koa@0.69.0",
+      "package": "@opentelemetry/instrumentation-koa@0.70.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-lru-memoizer@0.65.0",
+      "package": "@opentelemetry/instrumentation-lru-memoizer@0.66.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-memcached@0.64.0",
+      "package": "@opentelemetry/instrumentation-memcached@0.65.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-mongodb@0.74.0",
+      "package": "@opentelemetry/instrumentation-mongodb@0.75.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-mongoose@0.67.0",
+      "package": "@opentelemetry/instrumentation-mongoose@0.68.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-mysql@0.67.0",
+      "package": "@opentelemetry/instrumentation-mysql@0.68.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-mysql2@0.67.0",
+      "package": "@opentelemetry/instrumentation-mysql2@0.68.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-nestjs-core@0.67.0",
+      "package": "@opentelemetry/instrumentation-nestjs-core@0.68.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-net@0.65.0",
+      "package": "@opentelemetry/instrumentation-net@0.66.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-openai@0.19.0",
+      "package": "@opentelemetry/instrumentation-openai@0.20.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-oracledb@0.46.0",
+      "package": "@opentelemetry/instrumentation-oracledb@0.47.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-pg@0.73.0",
+      "package": "@opentelemetry/instrumentation-pg@0.74.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-pino@0.67.0",
+      "package": "@opentelemetry/instrumentation-pino@0.68.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-redis@0.69.0",
+      "package": "@opentelemetry/instrumentation-redis@0.70.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-restify@0.66.0",
+      "package": "@opentelemetry/instrumentation-restify@0.67.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-router@0.65.0",
+      "package": "@opentelemetry/instrumentation-router@0.66.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-runtime-node@0.34.0",
+      "package": "@opentelemetry/instrumentation-runtime-node@0.35.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-socket.io@0.68.0",
+      "package": "@opentelemetry/instrumentation-socket.io@0.69.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-tedious@0.40.0",
+      "package": "@opentelemetry/instrumentation-tedious@0.41.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-undici@0.31.0",
+      "package": "@opentelemetry/instrumentation-undici@0.32.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation-winston@0.65.0",
+      "package": "@opentelemetry/instrumentation-winston@0.66.0",
       "license": "Apache-2.0"
     },
     {
@@ -300,19 +300,19 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/instrumentation@0.221.0",
+      "package": "@opentelemetry/instrumentation@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/otlp-exporter-base@0.221.0",
+      "package": "@opentelemetry/otlp-exporter-base@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/otlp-grpc-exporter-base@0.221.0",
+      "package": "@opentelemetry/otlp-grpc-exporter-base@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/otlp-transformer@0.221.0",
+      "package": "@opentelemetry/otlp-transformer@0.222.0",
       "license": "Apache-2.0"
     },
     {
@@ -320,7 +320,7 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/propagator-b3@2.10.0",
+      "package": "@opentelemetry/propagator-b3@2.11.0",
       "license": "Apache-2.0"
     },
     {
@@ -332,51 +332,51 @@
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/resource-detector-alibaba-cloud@0.36.0",
+      "package": "@opentelemetry/resource-detector-alibaba-cloud@0.37.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/resource-detector-aws@2.21.0",
+      "package": "@opentelemetry/resource-detector-aws@2.22.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/resource-detector-azure@0.29.0",
+      "package": "@opentelemetry/resource-detector-azure@0.30.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/resource-detector-container@0.8.12",
+      "package": "@opentelemetry/resource-detector-container@0.8.13",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/resource-detector-gcp@0.56.0",
+      "package": "@opentelemetry/resource-detector-gcp@0.57.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/resources@2.10.0",
+      "package": "@opentelemetry/resources@2.11.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/sdk-logs@0.221.0",
+      "package": "@opentelemetry/sdk-logs@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/sdk-metrics@2.10.0",
+      "package": "@opentelemetry/sdk-metrics@2.11.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/sdk-node@0.221.0",
+      "package": "@opentelemetry/sdk-node@0.222.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/sdk-trace-base@2.10.0",
+      "package": "@opentelemetry/sdk-trace-base@2.11.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/sdk-trace-node@2.10.0",
+      "package": "@opentelemetry/sdk-trace-node@2.11.0",
       "license": "Apache-2.0"
     },
     {
-      "package": "@opentelemetry/sdk-trace@2.10.0",
+      "package": "@opentelemetry/sdk-trace@2.11.0",
       "license": "Apache-2.0"
     },
     {
@@ -456,6 +456,10 @@
       "license": "MIT"
     },
     {
+      "package": "@remix-run/route-pattern@0.22.1",
+      "license": "MIT"
+    },
+    {
       "package": "@sentry/browser-utils@10.72.0",
       "license": "MIT"
     },
@@ -512,39 +516,35 @@
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-core@5.102.8",
+      "package": "@tanstack/query-core@5.104.0",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-persist-client-core@5.102.8",
+      "package": "@tanstack/query-persist-client-core@5.104.0",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/query-sync-storage-persister@5.102.8",
+      "package": "@tanstack/query-sync-storage-persister@5.104.0",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-query-persist-client@5.102.8",
+      "package": "@tanstack/react-query-persist-client@5.104.0",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-query@5.102.8",
+      "package": "@tanstack/react-query@5.104.0",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/react-virtual@3.14.10",
+      "package": "@tanstack/react-virtual@3.14.13",
       "license": "MIT"
     },
     {
-      "package": "@tanstack/virtual-core@3.17.8",
+      "package": "@tanstack/virtual-core@3.17.11",
       "license": "MIT"
     },
     {
-      "package": "@types/aws-lambda@8.10.162",
-      "license": "MIT"
-    },
-    {
-      "package": "@types/bunyan@1.8.11",
+      "package": "@types/aws-lambda@8.10.163",
       "license": "MIT"
     },
     {
@@ -580,7 +580,7 @@
       "license": "MIT"
     },
     {
-      "package": "@types/d3-selection@3.0.11",
+      "package": "@types/d3-selection@3.0.12",
       "license": "MIT"
     },
     {
@@ -608,19 +608,11 @@
       "license": "MIT"
     },
     {
-      "package": "@types/mysql@2.15.27",
-      "license": "MIT"
-    },
-    {
       "package": "@types/node@14.18.63",
       "license": "MIT"
     },
     {
-      "package": "@types/node@26.4.0",
-      "license": "MIT"
-    },
-    {
-      "package": "@types/oracledb@6.5.2",
+      "package": "@types/node@26.6.3",
       "license": "MIT"
     },
     {
@@ -632,15 +624,11 @@
       "license": "MIT"
     },
     {
-      "package": "@types/react-dom@19.2.5",
+      "package": "@types/react-dom@19.3.0",
       "license": "MIT"
     },
     {
-      "package": "@types/react@19.2.18",
-      "license": "MIT"
-    },
-    {
-      "package": "@types/tedious@4.0.14",
+      "package": "@types/react@19.3.0",
       "license": "MIT"
     },
     {
@@ -648,11 +636,11 @@
       "license": "MIT"
     },
     {
-      "package": "@xyflow/react@12.11.5",
+      "package": "@xyflow/react@12.12.0",
       "license": "MIT"
     },
     {
-      "package": "@xyflow/system@0.0.81",
+      "package": "@xyflow/system@0.0.83",
       "license": "MIT"
     },
     {
@@ -704,7 +692,7 @@
       "license": "MIT"
     },
     {
-      "package": "aws-cdk-lib@2.267.0",
+      "package": "aws-cdk-lib@2.271.0",
       "license": "Apache-2.0"
     },
     {
@@ -760,10 +748,6 @@
       "license": "BSD-3-Clause"
     },
     {
-      "package": "buffer-from@1.1.2",
-      "license": "MIT"
-    },
-    {
       "package": "buffer-indexof-polyfill@1.0.2",
       "license": "MIT"
     },
@@ -776,7 +760,7 @@
       "license": "UNKNOWN"
     },
     {
-      "package": "bullmq@6.3.2",
+      "package": "bullmq@6.3.9",
       "license": "MIT"
     },
     {
@@ -844,10 +828,6 @@
       "license": "MIT"
     },
     {
-      "package": "concat-stream@2.0.0",
-      "license": "MIT"
-    },
-    {
       "package": "constructs@10.8.1",
       "license": "Apache-2.0"
     },
@@ -892,7 +872,7 @@
       "license": "MIT"
     },
     {
-      "package": "cron-parser@5.10.0",
+      "package": "cron-parser@5.10.1",
       "license": "MIT"
     },
     {
@@ -1492,7 +1472,7 @@
       "license": "MIT"
     },
     {
-      "package": "multer@2.3.0",
+      "package": "multer@2.4.0",
       "license": "MIT"
     },
     {
@@ -1684,7 +1664,7 @@
       "license": "MIT"
     },
     {
-      "package": "react-dom@19.2.8",
+      "package": "react-dom@19.3.0",
       "license": "MIT"
     },
     {
@@ -1696,11 +1676,11 @@
       "license": "MIT"
     },
     {
-      "package": "react-router@8.3.1",
+      "package": "react-router@8.4.0",
       "license": "MIT"
     },
     {
-      "package": "react@19.2.8",
+      "package": "react@19.3.0",
       "license": "MIT"
     },
     {
@@ -1788,7 +1768,7 @@
       "license": "ISC"
     },
     {
-      "package": "scheduler@0.27.0",
+      "package": "scheduler@0.28.0",
       "license": "MIT"
     },
     {
@@ -1900,7 +1880,7 @@
       "license": "MIT"
     },
     {
-      "package": "systeminformation@5.33.1",
+      "package": "systeminformation@5.33.13",
       "license": "MIT"
     },
     {
@@ -1944,11 +1924,7 @@
       "license": "MIT"
     },
     {
-      "package": "typedarray@0.0.6",
-      "license": "MIT"
-    },
-    {
-      "package": "undici-types@8.3.0",
+      "package": "undici-types@8.9.0",
       "license": "MIT"
     },
     {
@@ -2024,7 +2000,7 @@
       "license": "ISC"
     },
     {
-      "package": "yaml@2.9.0",
+      "package": "yaml@2.9.1",
       "license": "ISC"
     },
     {
@@ -2040,7 +2016,7 @@
       "license": "MIT"
     },
     {
-      "package": "zod@4.5.4",
+      "package": "zod@4.6.5",
       "license": "MIT"
     },
     {
