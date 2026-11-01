@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-functional-${{ matrix.shard }}-failure
@@ -427,7 +427,7 @@ jobs:
         # container writes there via its bind mount (compose.e2e.yaml), so it's already on the
         # runner's own filesystem by the time this step runs, same as e2e-functional's upload above.
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-visual-diff

@@ -101,7 +101,7 @@ jobs:
           npm run test:unit -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/unit/unit-results.json
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: unit
@@ -125,7 +125,7 @@ jobs:
           npm run test:integration:dashboard -- --reporter=default --reporter=json
           --outputFile.json=.ci-out/integration/integration-results.json
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: integration
@@ -148,7 +148,7 @@ jobs:
           npx tsx scripts/ci/run-check.ts --name "Postgres DB tests" --meta .ci-out/postgres/meta.json --
           npm run test:postgres -- --reporter=json --outputFile.json=.ci-out/postgres/postgres-results.json
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: postgres
@@ -172,7 +172,7 @@ jobs:
         if: always()
         run: npm run lint -- --format json --output-file .ci-out/lint/lint-results.json || true
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: lint
@@ -193,7 +193,7 @@ jobs:
       - run: npm ci
       - run: npx tsx scripts/ci/run-check.ts --name "Static analysis (typecheck)" --meta .ci-out/typecheck/meta.json -- npm run typecheck
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: typecheck
@@ -216,7 +216,7 @@ jobs:
       - if: always()
         run: mkdir -p .ci-out/coverage && cp coverage/coverage-summary.json .ci-out/coverage/coverage-summary.json || true
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: coverage
@@ -245,7 +245,7 @@ jobs:
       # the matching aggregate-dashboard-status.ts comment, which must be reverted at the same time.
       - run: npx tsx scripts/ci/run-check.ts --name "Complexity" --meta .ci-out/complexity/meta.json -- npm run analyze:complexity:json || true
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: complexity
@@ -274,7 +274,7 @@ jobs:
       # status.ts comment, which must be reverted at the same time.
       - run: npx tsx scripts/ci/run-check.ts --name "Dependencies" --meta .ci-out/dependencies/meta.json -- npm run analyze:deps:json || true
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: dependencies
@@ -321,7 +321,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/security/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: security
@@ -333,7 +333,7 @@ jobs:
         # had no answer for.
         run: npm run security:sbom --silent
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: sbom
@@ -391,7 +391,7 @@ jobs:
             "$exit_code" "$([ "$exit_code" -eq 0 ] && echo true || echo false)" "$((ended - started))" > .ci-out/secrets/meta.json
           exit "$exit_code"
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: secrets
@@ -518,7 +518,7 @@ jobs:
           DATABASE_URL: postgresql://app_user:P%40ssw0rd@postgres:5432/reconciliation_platform
           DISABLE_API_RATE_LIMIT: 'true'
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-functional-${{ matrix.shard }}
@@ -577,7 +577,7 @@ jobs:
           # doesn't declare this itself, so it must be passed through from the invoking shell here.
           PLAYWRIGHT_JSON_OUTPUT_NAME: .ci-out/e2e-visual/e2e-results.json
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           retention-days: 7  # was unset -> GitHub default 90d
           name: e2e-visual
@@ -723,7 +723,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: dashboard-status-${{ env.TARGET_BRANCH }}
           path: dashboard-status/${{ env.TARGET_BRANCH }}.json
