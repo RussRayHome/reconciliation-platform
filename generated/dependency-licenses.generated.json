@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-03T13:15:09.912Z",
+  "generatedAt": "2026-11-01T14:37:56.738Z",
   "scope": "production dependencies only (--omit=dev); internal @recon/* workspace packages excluded",
   "packageCount": 511,
   "packages": [
