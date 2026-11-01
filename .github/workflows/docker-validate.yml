@@ -65,7 +65,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -121,7 +121,7 @@ jobs:
           # PR-supplied code runs (npm ci lifecycle scripts, docker build) in this job.
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -179,7 +179,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -377,7 +377,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -473,7 +473,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -526,7 +526,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -611,7 +611,7 @@ jobs:
       # bounding the failure doesn't remove the dependency causing it. actions/setup-node pulls
       # Node from GitHub's own release CDN instead of an apt mirror at all -- the same fix
       # dashboard-status.yml's jobs already use, with no apt-get/mirror dependency to hang on.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
